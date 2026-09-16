@@ -2,6 +2,9 @@ import React from 'react';
 import {renderToPipeableStream} from 'react-dom/server';
 
 import App from '../src/components/App.js';
+import {resetFeedReveal} from '../src/components/NestedParentExit.js';
+import {resetPageReveal} from '../src/components/Page.js';
+import {resetNestedReveal} from '../src/components/NestedReveal.js';
 
 let assets;
 if (process.env.NODE_ENV === 'development') {
@@ -15,6 +18,10 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 export default function render(url, res) {
+  // Force resuspend on every load
+  resetFeedReveal();
+  resetPageReveal();
+  resetNestedReveal();
   res.socket.on('error', error => {
     // Log fatal errors
     console.error('Fatal', error);

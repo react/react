@@ -46,6 +46,7 @@ import {
 } from 'shared/ReactFeatureFlags';
 import {
   REACT_CONTEXT_TYPE,
+  REACT_RECOVERABLE_TYPE,
   REACT_MEMO_CACHE_SENTINEL,
 } from 'shared/ReactSymbols';
 
@@ -92,6 +93,7 @@ import {
   FormReset,
 } from './ReactFiberFlags';
 import {
+  NoFlags as HookNoFlags,
   HasEffect as HookHasEffect,
   Layout as HookLayout,
   Passive as HookPassive,
@@ -142,6 +144,7 @@ import {now} from './Scheduler';
 import {
   trackUsedThenable,
   checkIfUseWrappedInTryCatch,
+  checkIfUseWasUsedBefore,
   createThenableState,
   SuspenseException,
   SuspenseActionException,
@@ -649,6 +652,7 @@ function finishRenderingHooks<Props, SecondArg>(
     } else {
       workInProgress.dependencies._debugThenableState = thenableState;
     }
+    checkIfUseWasUsedBefore(workInProgress, thenableState);
   }
 
   // We can assume the previous dispatcher is always this one, since we set it
@@ -1098,7 +1102,12 @@ function useThenable<T>(thenable: Thenable<T>): T {
   if (thenableState === null) {
     thenableState = createThenableState();
   }
-  const result = trackUsedThenable(thenableState, thenable, index);
+  const result = trackUsedThenable(
+    thenableState,
+    thenable,
+    index,
+    __DEV__ ? currentlyRenderingFiber : null,
+  );
 
   // When something suspends with `use`, we replay the component with the
   // "re-render" dispatcher instead of the "mount" or "update" dispatcher.
@@ -1155,6 +1164,10 @@ function use<T>(usable: Usable<T>): T {
       // This is a thenable.
       const thenable: Thenable<T> = usable as any;
       return useThenable(thenable);
+    } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
+      // Fiber is the final renderer, so there is no downstream host that
+      // needs to recover this subtree. Continue rendering through it.
+      return undefined as any;
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
       const context: ReactContext<T> = usable as any;
       return readContext(context);
@@ -1774,21 +1787,31 @@ function updateSyncExternalStore<T>(
   // commit phase if there was an interleaved mutation. In concurrent mode
   // this can happen all the time, but even in synchronous mode, an earlier
   // effect may have mutated the store.
-  if (
+  const storeChanged =
     inst.getSnapshot !== getSnapshot ||
     snapshotChanged ||
     // Check if the subscribe function changed. We can save some memory by
     // checking whether we scheduled a subscription effect above.
     (workInProgressHook !== null &&
-      workInProgressHook.memoizedState.tag & HookHasEffect)
-  ) {
+      (workInProgressHook.memoizedState.tag & HookHasEffect) !== HookNoFlags);
+
+  // Even if nothing changed during this render, we push the effect so it is
+  // always in the effect list. That way it re-runs whenever the passive
+  // effects are reconnected, like when a hidden Activity tree is shown again.
+  // While the tree was hidden we were not subscribed to the store, so
+  // mutations during that window notified nobody, and if the reveal didn't
+  // re-render this component (or rendered before the mutation), nothing
+  // would ever detect them. When nothing changed, the effect is pushed
+  // without the HasEffect tag so a regular commit skips it.
+  pushSimpleEffect(
+    storeChanged ? HookHasEffect | HookPassive : HookPassive,
+    createEffectInstance(),
+    updateStoreInstance.bind(null, fiber, inst, nextSnapshot, getSnapshot),
+    null,
+  );
+
+  if (storeChanged) {
     fiber.flags |= PassiveEffect;
-    pushSimpleEffect(
-      HookHasEffect | HookPassive,
-      createEffectInstance(),
-      updateStoreInstance.bind(null, fiber, inst, nextSnapshot, getSnapshot),
-      null,
-    );
 
     // Unless we're rendering a blocking lane, schedule a consistency check.
     // Right before committing, we will walk the tree and check if any of the
@@ -1848,7 +1871,8 @@ function updateStoreInstance<T>(
   // Something may have been mutated in between render and commit. This could
   // have been in an event that fired before the passive effects, or it could
   // have been in a layout effect. In that case, we would have used the old
-  // snapsho and getSnapshot values to bail out. We need to check one more time.
+  // snapshot and getSnapshot values to bail out. We need to check one more
+  // time. This effect also re-runs when a hidden Activity tree is revealed.
   if (checkIfSnapshotChanged(inst)) {
     // Force a re-render.
     // We intentionally don't log update times and stacks here because this

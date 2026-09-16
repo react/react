@@ -210,6 +210,8 @@ describe('ReactDOMFizzServerNode', () => {
   it('should error the stream when an error is thrown at the root', async () => {
     const reportedErrors = [];
     const reportedShellErrors = [];
+    let shellReadyCalls = 0;
+    let allReadyCalls = 0;
     const {writable, output, completed} = getTestWritable();
     const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
       <div>
@@ -221,6 +223,12 @@ describe('ReactDOMFizzServerNode', () => {
         },
         onShellError(x) {
           reportedShellErrors.push(x);
+        },
+        onShellReady() {
+          shellReadyCalls++;
+        },
+        onAllReady() {
+          allReadyCalls++;
         },
       },
     );
@@ -235,6 +243,8 @@ describe('ReactDOMFizzServerNode', () => {
     // This type of error is reported to the error callback too.
     expect(reportedErrors).toEqual([theError]);
     expect(reportedShellErrors).toEqual([theError]);
+    expect(shellReadyCalls).toBe(0);
+    expect(allReadyCalls).toBe(0);
   });
 
   it('should not report aborts after the shell has fatally errored', async () => {
@@ -301,6 +311,7 @@ describe('ReactDOMFizzServerNode', () => {
   it('should not error the stream when an error is thrown inside suspense boundary', async () => {
     const reportedErrors = [];
     const reportedShellErrors = [];
+    let allReadyCalls = 0;
     const {writable, output, completed} = getTestWritable();
     const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
       <div>
@@ -315,6 +326,9 @@ describe('ReactDOMFizzServerNode', () => {
         onShellError(x) {
           reportedShellErrors.push(x);
         },
+        onAllReady() {
+          allReadyCalls++;
+        },
       },
     );
     pipe(writable);
@@ -326,6 +340,9 @@ describe('ReactDOMFizzServerNode', () => {
     // While no error is reported to the stream, the error is reported to the callback.
     expect(reportedErrors).toEqual([theError]);
     expect(reportedShellErrors).toEqual([]);
+    // The shell stays valid, the boundary client-renders, and the render
+    // completes, so onAllReady fires. This is documented behavior.
+    expect(allReadyCalls).toBe(1);
   });
 
   it('should not attempt to render the fallback if the main content completes first', async () => {

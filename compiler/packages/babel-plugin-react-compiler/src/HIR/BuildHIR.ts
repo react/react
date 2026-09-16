@@ -903,7 +903,11 @@ function lowerStatement(
     case 'VariableDeclaration': {
       const stmt = stmtPath as NodePath<t.VariableDeclaration>;
       const nodeKind: t.VariableDeclaration['kind'] = stmt.node.kind;
-      if (nodeKind === 'var') {
+      if (
+        nodeKind === 'var' ||
+        nodeKind === 'using' ||
+        nodeKind === 'await using'
+      ) {
         builder.recordError(
           new CompilerErrorDetail({
             reason: `(BuildHIR::lowerStatement) Handle ${nodeKind} kinds in VariableDeclaration`,
@@ -912,7 +916,10 @@ function lowerStatement(
             suggestions: null,
           }),
         );
-        // Treat `var` as `let` so references to the variable don't break
+        /*
+         * Treat `var` as `let` and `using`/`await using` as `const` so
+         * references to the variable don't break while the error unwinds
+         */
       }
       const kind =
         nodeKind === 'let' || nodeKind === 'var'
@@ -2692,16 +2699,6 @@ function lowerExpression(
           }),
         );
         return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
-      } else if (builder.isContextIdentifier(argument)) {
-        builder.recordError(
-          new CompilerErrorDetail({
-            reason: `(BuildHIR::lowerExpression) Handle UpdateExpression to variables captured within lambdas.`,
-            category: ErrorCategory.Todo,
-            loc: exprPath.node.loc ?? null,
-            suggestions: null,
-          }),
-        );
-        return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
       }
       const lvalue = lowerIdentifierForAssignment(
         builder,
@@ -2737,9 +2734,10 @@ function lowerExpression(
         return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
       }
       const value = lowerIdentifier(builder, argument);
+      const isContext = builder.isContextIdentifier(argument);
       if (expr.node.prefix) {
         return {
-          kind: 'PrefixUpdate',
+          kind: isContext ? 'PrefixUpdateContext' : 'PrefixUpdateLocal',
           lvalue,
           operation: expr.node.operator,
           value,
@@ -2747,7 +2745,7 @@ function lowerExpression(
         };
       } else {
         return {
-          kind: 'PostfixUpdate',
+          kind: isContext ? 'PostfixUpdateContext' : 'PostfixUpdateLocal',
           lvalue,
           operation: expr.node.operator,
           value,
@@ -3409,7 +3407,7 @@ function lowerJsxElementName(
   const exprLoc = exprNode.loc ?? GeneratedSource;
   if (exprPath.isJSXIdentifier()) {
     const tag: string = exprPath.node.name;
-    if (tag.match(/^[A-Z]/)) {
+    if (!tag.match(/^[a-z]/)) {
       const kind = getLoadKind(builder, exprPath);
       return lowerValueToTemporary(builder, {
         kind: kind,

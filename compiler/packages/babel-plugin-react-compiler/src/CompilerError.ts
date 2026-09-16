@@ -522,7 +522,7 @@ export class CompilerError extends Error {
   }
 }
 
-function printCodeFrame(
+export function printCodeFrame(
   source: string,
   loc: t.SourceLocation,
   message: string,

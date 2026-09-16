@@ -28,6 +28,7 @@ import {
   useFormStatus,
   useFormState,
 } from 'react-dom-bindings/src/shared/ReactDOMFormActions';
+import {browser} from './ReactDOMBrowser';
 
 if (__DEV__) {
   if (
@@ -69,6 +70,7 @@ function createPortal(
 
 export {
   ReactVersion as version,
+  browser,
   createPortal,
   flushSync,
   batchedUpdates as unstable_batchedUpdates,

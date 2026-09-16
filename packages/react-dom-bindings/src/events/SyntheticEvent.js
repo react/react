@@ -609,6 +609,7 @@ const ToggleEventInterface: EventInterfaceType = {
   ...EventInterface,
   newState: 0,
   oldState: 0,
+  source: 0,
 };
 export const SyntheticToggleEvent: $FlowFixMe =
   createSyntheticEvent(ToggleEventInterface);

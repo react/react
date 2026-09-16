@@ -193,7 +193,7 @@ export function formatConsoleArgumentsToSingleString(
   // If the first argument is a string, check for substitutions.
   if (typeof maybeMessage === 'string') {
     if (args.length) {
-      const REGEXP = /(%?)(%([jds]))/g;
+      const REGEXP = /(%?)(%([jdisf]))/g;
 
       // $FlowFixMe[incompatible-type]
       formatted = formatted.replace(REGEXP, (match, escaped, ptn, flag) => {

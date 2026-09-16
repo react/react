@@ -331,6 +331,11 @@ export type FunctionSignature = {
   mutableOnlyIfOperandsAreMutable?: boolean;
 
   impure?: boolean;
+  /**
+   * When true, `impure` only applies if the call/construct has no arguments.
+   * Used for `Date`: `new Date()` reads the clock, `new Date(timestamp)` does not.
+   */
+  impureIfNoArgs?: boolean;
   knownIncompatible?: string | null | undefined;
 
   canonicalName?: string;

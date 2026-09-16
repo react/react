@@ -13,6 +13,7 @@ import type {
   NodeInfo,
   ComponentSource,
   OwnersStack,
+  ParentEntry,
   OwnerEntry,
   FindComponentsResult,
   ToolError,
@@ -34,6 +35,8 @@ export type {
   ComponentSource,
   SourceLocation,
   OwnersStack,
+  ComponentBranchEntry,
+  ParentEntry,
   OwnerEntry,
   FindComponentsResult,
   ToolError,
@@ -55,7 +58,11 @@ export type Tools = {
     depth?: number,
     rootUid?: string,
   ) => Array<TreeNode> | ToolError,
-  getComponentByUid: (uid: string) => NodeInfo | ToolError,
+  getComponentByUid: (
+    uid: string,
+    includeHooks?: boolean,
+  ) => NodeInfo | ToolError,
+  getComponentByHostInstance: (hostInstance: mixed) => NodeInfo | ToolError,
   findComponents: (
     name: string,
     rootUid?: string,
@@ -64,6 +71,7 @@ export type Tools = {
   ) => FindComponentsResult | ToolError,
   getComponentSource: (uid: string) => ComponentSource | ToolError,
   getOwnerStackTrace: (uid: string) => OwnersStack | ToolError,
+  getParentStack: (uid: string) => Array<ParentEntry> | ToolError,
   getOwnerStack: (uid: string) => Array<OwnerEntry> | ToolError,
   startProfiling: (traceName?: string) => StartProfilingResult | ToolError,
   stopProfiling: () => StopProfilingResult | ToolError,
@@ -79,7 +87,7 @@ export type Tools = {
  * runtime state (fiber roots, per-renderer internals, profiling state) lazily
  * on each call and never touch globals, so the integrator fully owns both the
  * facade and the returned tools. Profiler tools share the tree tools' getUid
- * so component labels are consistent across all tools.
+ * so component uids are consistent across all tools.
  *
  * @param facade - A Facade returned by installFacade().
  */
@@ -94,9 +102,11 @@ export function createTools(facade: Facade): Tools {
   return {
     getComponentTree: tree.getComponentTree,
     getComponentByUid: tree.getComponentByUid,
+    getComponentByHostInstance: tree.getComponentByHostInstance,
     findComponents: tree.findComponents,
     getComponentSource: tree.getComponentSource,
     getOwnerStackTrace: tree.getOwnerStackTrace,
+    getParentStack: tree.getParentStack,
     getOwnerStack: tree.getOwnerStack,
     startProfiling: profiler.startProfiling,
     stopProfiling: profiler.stopProfiling,

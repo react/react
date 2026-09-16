@@ -93,21 +93,24 @@ export type HostDispatcher = {
   L /* preload */: (
     href: string,
     as: string,
-    options?: ?PreloadImplOptions,
+    options?: ?Required<PreloadImplOptions>,
   ) => void,
   m /* preloadModule */: (
     href: string,
-    options?: ?PreloadModuleImplOptions,
+    options?: ?Required<PreloadModuleImplOptions>,
   ) => void,
   S /* preinitStyle */: (
     href: string,
     precedence: ?string,
-    options?: ?PreinitStyleOptions,
+    options?: ?Required<PreinitStyleOptions>,
   ) => void,
-  X /* preinitScript */: (src: string, options?: ?PreinitScriptOptions) => void,
+  X /* preinitScript */: (
+    src: string,
+    options?: ?Required<PreinitScriptOptions>,
+  ) => void,
   M /* preinitModuleScript */: (
     src: string,
-    options?: ?PreinitModuleScriptOptions,
+    options?: ?Required<PreinitModuleScriptOptions>,
   ) => void,
 };
 

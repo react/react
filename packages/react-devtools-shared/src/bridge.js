@@ -9,7 +9,7 @@
 
 import EventEmitter from './events';
 
-import type {ComponentFilter, Wall} from './frontend/types';
+import type {ComponentFilter, Wall, WallMessage} from './frontend/types';
 import type {
   InspectedElementPayload,
   OwnersList,
@@ -74,9 +74,17 @@ export const currentBridgeProtocol: BridgeProtocol =
 
 type ElementAndRendererID = {id: number, rendererID: RendererID};
 
-export type Message = {
+export type Message = WallMessage;
+
+type QueuedMessage = {
   event: string,
-  payload: any,
+  payload: mixed,
+};
+
+type EventArguments<Payload> = Payload extends void ? [] : [Payload];
+
+type EventEmitterEvents<Events: Object> = {
+  [Event in keyof Events]: EventArguments<Events[Event]>,
 };
 
 type HighlightHostInstance = {
@@ -101,7 +109,7 @@ type OverrideValue = {
   ...ElementAndRendererID,
   path: Array<string | number>,
   wasForwarded?: boolean,
-  value: any,
+  value: mixed,
 };
 
 type OverrideHookState = {
@@ -131,7 +139,7 @@ type OverrideValueAtPath = {
   type: PathType,
   hookID?: ?number,
   path: Array<string | number>,
-  value: any,
+  value: mixed,
 };
 
 type OverrideError = {
@@ -197,95 +205,96 @@ export type SavedPreferencesParams = {
 };
 
 export type BackendEvents = {
-  backendInitialized: [],
-  backendVersion: [string],
-  bridgeProtocol: [BridgeProtocol],
-  extensionBackendInitialized: [],
-  fastRefreshScheduled: [],
-  getSavedPreferences: [],
-  inspectedElement: [InspectedElementPayload],
-  inspectedScreen: [InspectedElementPayload],
-  isReloadAndProfileSupportedByBackend: [boolean],
-  operations: [Array<number>],
-  ownersList: [OwnersList],
-  environmentNames: [Array<string>],
-  profilingData: [ProfilingDataBackend],
-  profilingStatus: [boolean],
-  reloadAppForProfiling: [],
-  saveToClipboard: [string],
-  selectElement: [number | null],
-  shutdown: [],
-  stopInspectingHost: [boolean],
-  scrollTo: [{left: number, top: number, right: number, bottom: number}],
-  syncSelectionToBuiltinElementsPanel: [],
-  unsupportedRendererVersion: [],
+  backendInitialized: void,
+  backendVersion: string,
+  bridgeProtocol: BridgeProtocol,
+  extensionBackendInitialized: void,
+  fastRefreshScheduled: void,
+  getSavedPreferences: void,
+  inspectedElement: InspectedElementPayload,
+  inspectedScreen: InspectedElementPayload,
+  isReloadAndProfileSupportedByBackend: boolean,
+  operations: Array<number>,
+  ownersList: OwnersList,
+  environmentNames: Array<string>,
+  profilingData: ProfilingDataBackend,
+  profilingStatus: boolean,
+  reloadAppForProfiling: void,
+  saveToClipboard: string,
+  selectElement: number | null,
+  shutdown: void,
+  stopInspectingHost: boolean,
+  scrollTo: {left: number, top: number, right: number, bottom: number},
+  syncSelectionToBuiltinElementsPanel: void,
+  unsupportedRendererVersion: void,
 
-  extensionComponentsPanelShown: [],
-  extensionComponentsPanelHidden: [],
+  extensionComponentsPanelShown: void,
+  extensionComponentsPanelHidden: void,
 
-  resumeElementPolling: [],
-  pauseElementPolling: [],
+  resumeElementPolling: void,
+  pauseElementPolling: void,
 
   // React Native style editor plug-in.
-  isNativeStyleEditorSupported: [
-    {isSupported: boolean, validAttributes: ?$ReadOnlyArray<string>},
-  ],
-  NativeStyleEditor_styleAndLayout: [StyleAndLayoutPayload],
+  isNativeStyleEditorSupported: {
+    isSupported: boolean,
+    validAttributes: ?$ReadOnlyArray<string>,
+  },
+  NativeStyleEditor_styleAndLayout: StyleAndLayoutPayload,
 
-  hookSettings: [$ReadOnly<DevToolsHookSettings>],
+  hookSettings: $ReadOnly<DevToolsHookSettings>,
 };
 
 type StartProfilingParams = ProfilingSettings;
 type ReloadAndProfilingParams = ProfilingSettings;
 
 export type FrontendEvents = {
-  clearErrorsAndWarnings: [{rendererID: RendererID}],
-  clearErrorsForElementID: [ElementAndRendererID],
-  clearHostInstanceHighlight: [],
-  clearWarningsForElementID: [ElementAndRendererID],
-  copyElementPath: [CopyElementPathParams],
-  deletePath: [DeletePath],
-  getBackendVersion: [],
-  getBridgeProtocol: [],
-  getIfHasUnsupportedRendererVersion: [],
-  getOwnersList: [ElementAndRendererID],
-  getProfilingData: [{rendererID: RendererID}],
-  getProfilingStatus: [],
-  highlightHostInstance: [HighlightHostInstance],
-  highlightHostInstances: [HighlightHostInstances],
-  inspectElement: [InspectElementParams],
-  inspectScreen: [InspectScreenParams],
-  logElementToConsole: [ElementAndRendererID],
-  overrideError: [OverrideError],
-  overrideSuspense: [OverrideSuspense],
-  overrideSuspenseMilestone: [OverrideSuspenseMilestone],
-  overrideValueAtPath: [OverrideValueAtPath],
-  profilingData: [ProfilingDataBackend],
-  reloadAndProfile: [ReloadAndProfilingParams],
-  renamePath: [RenamePath],
-  savedPreferences: [SavedPreferencesParams],
-  setTraceUpdatesEnabled: [boolean],
-  shutdown: [],
-  startInspectingHost: [boolean],
-  startProfiling: [StartProfilingParams],
-  stopInspectingHost: [],
-  scrollToHostInstance: [ScrollToHostInstance],
-  scrollTo: [{left: number, top: number, right: number, bottom: number}],
-  requestScrollPosition: [],
-  stopProfiling: [],
-  storeAsGlobal: [StoreAsGlobalParams],
-  updateComponentFilters: [Array<ComponentFilter>],
-  getEnvironmentNames: [],
-  updateHookSettings: [$ReadOnly<DevToolsHookSettings>],
-  viewAttributeSource: [ViewAttributeSourceParams],
-  viewElementSource: [ElementAndRendererID],
+  clearErrorsAndWarnings: {rendererID: RendererID},
+  clearErrorsForElementID: ElementAndRendererID,
+  clearHostInstanceHighlight: void,
+  clearWarningsForElementID: ElementAndRendererID,
+  copyElementPath: CopyElementPathParams,
+  deletePath: DeletePath,
+  getBackendVersion: void,
+  getBridgeProtocol: void,
+  getIfHasUnsupportedRendererVersion: void,
+  getOwnersList: ElementAndRendererID,
+  getProfilingData: {rendererID: RendererID},
+  getProfilingStatus: void,
+  highlightHostInstance: HighlightHostInstance,
+  highlightHostInstances: HighlightHostInstances,
+  inspectElement: InspectElementParams,
+  inspectScreen: InspectScreenParams,
+  logElementToConsole: ElementAndRendererID,
+  overrideError: OverrideError,
+  overrideSuspense: OverrideSuspense,
+  overrideSuspenseMilestone: OverrideSuspenseMilestone,
+  overrideValueAtPath: OverrideValueAtPath,
+  profilingData: ProfilingDataBackend,
+  reloadAndProfile: ReloadAndProfilingParams,
+  renamePath: RenamePath,
+  savedPreferences: SavedPreferencesParams,
+  setTraceUpdatesEnabled: boolean,
+  shutdown: void,
+  startInspectingHost: boolean,
+  startProfiling: StartProfilingParams,
+  stopInspectingHost: void,
+  scrollToHostInstance: ScrollToHostInstance,
+  scrollTo: {left: number, top: number, right: number, bottom: number},
+  requestScrollPosition: void,
+  stopProfiling: void,
+  storeAsGlobal: StoreAsGlobalParams,
+  updateComponentFilters: Array<ComponentFilter>,
+  getEnvironmentNames: void,
+  updateHookSettings: $ReadOnly<DevToolsHookSettings>,
+  viewAttributeSource: ViewAttributeSourceParams,
+  viewElementSource: ElementAndRendererID,
 
-  syncSelectionFromBuiltinElementsPanel: [],
+  syncSelectionFromBuiltinElementsPanel: void,
 
   // React Native style editor plug-in.
-  NativeStyleEditor_measure: [ElementAndRendererID],
-  NativeStyleEditor_renameAttribute: [NativeStyleEditor_RenameAttributeParams],
-  NativeStyleEditor_setValue: [NativeStyleEditor_SetValueParams],
+  NativeStyleEditor_measure: ElementAndRendererID,
+  NativeStyleEditor_renameAttribute: NativeStyleEditor_RenameAttributeParams,
+  NativeStyleEditor_setValue: NativeStyleEditor_SetValueParams,
 
   // Temporarily support newer standalone front-ends sending commands to older embedded backends.
   // We do this because React Native embeds the React DevTools backend,
@@ -297,35 +306,34 @@ export type FrontendEvents = {
   // Note that this approach does no support the combination of a newer backend with an older frontend.
   // It would be more work to support both approaches (and not run handlers twice)
   // so I chose to support the more likely/common scenario (and the one more difficult for an end user to "fix").
-  overrideContext: [OverrideValue],
-  overrideHookState: [OverrideHookState],
-  overrideProps: [OverrideValue],
-  overrideState: [OverrideValue],
+  overrideContext: OverrideValue,
+  overrideHookState: OverrideHookState,
+  overrideProps: OverrideValue,
+  overrideState: OverrideValue,
 
-  getHookSettings: [],
+  getHookSettings: void,
 };
 
 class Bridge<
   OutgoingEvents: Object,
   IncomingEvents: Object,
-> extends EventEmitter<IncomingEvents> {
+> extends EventEmitter<EventEmitterEvents<IncomingEvents>> {
   _isShutdown: boolean = false;
-  _messageQueue: Array<any> = [];
+  _messageQueue: Array<QueuedMessage> = [];
   _scheduledFlush: boolean = false;
   _wall: Wall;
-  _wallUnlisten: Function | null = null;
+  _wallUnlisten: (() => void) | null = null;
 
   constructor(wall: Wall) {
     super();
 
     this._wall = wall;
 
-    this._wallUnlisten =
-      wall.listen((message: Message) => {
-        if (message && message.event) {
-          (this as any).emit(message.event, message.payload);
-        }
-      }) || null;
+    const wallUnlisten = wall.listen(this._handleMessage);
+    if (typeof wallUnlisten !== 'function') {
+      throw new TypeError('Wall.listen() must return an unlisten function.');
+    }
+    this._wallUnlisten = wallUnlisten;
 
     // Temporarily support older standalone front-ends sending commands to newer embedded backends.
     // We do this because React Native embeds the React DevTools backend,
@@ -339,15 +347,30 @@ class Bridge<
     return this._wall;
   }
 
+  addListener<Event: $Keys<EventEmitterEvents<IncomingEvents>>>(
+    event: Event,
+    listener: (...EventEmitterEvents<IncomingEvents>[Event]) => mixed,
+  ): void {
+    this._assertNotShutdown('add a listener');
+    super.addListener(event, listener);
+  }
+
+  emit<Event: $Keys<EventEmitterEvents<IncomingEvents>>>(
+    event: Event,
+    ...args: EventEmitterEvents<IncomingEvents>[Event]
+  ): void {
+    this._assertNotShutdown('emit an event');
+    super.emit(event, ...args);
+  }
+
   send<EventName: $Keys<OutgoingEvents>>(
     event: EventName,
-    ...payload: OutgoingEvents[EventName]
-  ) {
-    if (this._isShutdown) {
-      console.warn(
-        `Cannot send message "${event}" through a Bridge that has been shutdown.`,
-      );
-      return;
+    payload?: OutgoingEvents[EventName],
+  ): void {
+    this._assertNotShutdown('send a message');
+
+    if (typeof event !== 'string' || event.length === 0) {
+      throw new TypeError('Bridge event names must be non-empty strings.');
     }
 
     // When we receive a message:
@@ -358,7 +381,10 @@ class Bridge<
     // - if there *has* been a message flushed in the last BATCH_DURATION ms
     //   (or we're waiting for our setTimeout-0 to fire), then _timeoutID will
     //   be set, and we'll simply add to the queue and wait for that
-    this._messageQueue.push(event, payload);
+    this._messageQueue.push({
+      event,
+      payload,
+    });
     if (!this._scheduledFlush) {
       this._scheduledFlush = true;
       // $FlowFixMe[cannot-resolve-name]
@@ -375,11 +401,8 @@ class Bridge<
     }
   }
 
-  shutdown() {
-    if (this._isShutdown) {
-      console.warn('Bridge was already shutdown.');
-      return;
-    }
+  shutdown(): void {
+    this._assertNotShutdown('shut down');
 
     // Queue the shutdown outgoing message for subscribers.
     this.emit('shutdown');
@@ -388,27 +411,23 @@ class Bridge<
     // Mark this bridge as destroyed, i.e. disable its public API.
     this._isShutdown = true;
 
-    // Disable the API inherited from EventEmitter that can add more listeners and send more messages.
-    // $FlowFixMe[cannot-write] This property is not writable.
-    this.addListener = function () {};
-    // $FlowFixMe[cannot-write] This property is not writable.
-    this.emit = function () {};
-    // NOTE: There's also EventEmitter API like `on` and `prependListener` that we didn't add to our Flow type of EventEmitter.
-
     // Unsubscribe this bridge incoming message listeners to be sure, and so they don't have to do that.
     this.removeAllListeners();
 
     // Stop accepting and emitting incoming messages from the wall.
     const wallUnlisten = this._wallUnlisten;
-    if (wallUnlisten) {
-      wallUnlisten();
+    this._wallUnlisten = null;
+    try {
+      if (wallUnlisten !== null) {
+        wallUnlisten();
+      }
+    } finally {
+      // Synchronously flush all queued outgoing messages.
+      // At this step the subscribers' code may run in this call stack.
+      do {
+        this._flush();
+      } while (this._messageQueue.length);
     }
-
-    // Synchronously flush all queued outgoing messages.
-    // At this step the subscribers' code may run in this call stack.
-    do {
-      this._flush();
-    } while (this._messageQueue.length);
   }
 
   _flush: () => void = () => {
@@ -417,9 +436,9 @@ class Bridge<
     // It is a private method that the bridge ensures is only called at the right times.
     try {
       if (this._messageQueue.length) {
-        for (let i = 0; i < this._messageQueue.length; i += 2) {
-          // This only supports one argument in practice but the types suggests it should support multiple.
-          this._wall.send(this._messageQueue[i], this._messageQueue[i + 1][0]);
+        for (let i = 0; i < this._messageQueue.length; i++) {
+          const {event, payload} = this._messageQueue[i];
+          this._wall.send(event, payload);
         }
         this._messageQueue.length = 0;
       }
@@ -428,6 +447,35 @@ class Bridge<
       // They're already handled so they shouldn't queue more flushes.
       this._scheduledFlush = false;
     }
+  };
+
+  _assertNotShutdown(action: string): void {
+    if (this._isShutdown) {
+      throw new Error(
+        `Cannot ${action} through a Bridge that has been shut down.`,
+      );
+    }
+  }
+
+  _handleMessage: (message: mixed) => void = message => {
+    // Some Walls share a transport with unrelated messages or legacy DevTools
+    // protocols. A message without an event field does not belong to this Bridge.
+    if (
+      message === null ||
+      typeof message !== 'object' ||
+      !('event' in message)
+    ) {
+      return;
+    }
+
+    const event = message.event;
+    if (typeof event !== 'string' || event.length === 0) {
+      throw new TypeError('Bridge event names must be non-empty strings.');
+    }
+
+    this._assertNotShutdown('receive a message');
+    // The wire event name cannot be statically refined to a key of IncomingEvents.
+    (this as any).emit(event, message.payload);
   };
 
   // Temporarily support older standalone backends by forwarding "overrideValueAtPath" commands

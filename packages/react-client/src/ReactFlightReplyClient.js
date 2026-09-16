@@ -39,6 +39,12 @@ import getPrototypeOf from 'shared/getPrototypeOf';
 
 const ObjectPrototype = Object.prototype;
 
+// Passed to replyLifetimeController.abort(). Nothing reads the reason, but a
+// call to abort() without one constructs an AbortError DOMException. Capturing
+// the stack trace dominates that cost, and the cost grows with the depth of the
+// stack.
+const REPLY_ENDED = 'The reply ended.';
+
 import {
   usedWithSSR,
   checkEvalAvailabilityOnceDev,
@@ -184,14 +190,58 @@ export function processReply(
   root: ReactServerValue,
   formFieldPrefix: string,
   temporaryReferences: void | TemporaryReferenceSet,
-  resolve: (string | FormData) => void,
-  reject: (error: mixed) => void,
-): (reason: mixed) => void {
+  onResolve: (string | FormData) => void,
+  onReject: (error: mixed) => void,
+  signal: void | AbortSignal,
+): void {
   let nextPartId = 1;
   let pendingParts = 0;
   let formData: null | FormData = null;
   const writtenObjects: WeakMap<Reference, string> = new WeakMap();
   let modelRoot: null | ReactServerValue = root;
+  let settled = false;
+  // Bounds the abort listener that attachAbortSignal attaches to the caller's
+  // signal. Null until a signal is attached, so a reply that gets no signal
+  // never creates a controller.
+  let replyLifetimeController: null | AbortController = null;
+
+  // Ending the lifetime makes the runtime remove the caller's abort listener.
+  // Without that, the listener keeps everything this reply serialized reachable
+  // for as long as the caller's signal lives, and a composite signal from
+  // AbortSignal.any() is itself retained by the runtime while it has any abort
+  // listener attached.
+  function endReplyLifetime(): void {
+    if (replyLifetimeController !== null) {
+      replyLifetimeController.abort(REPLY_ENDED);
+    }
+  }
+
+  function resolve(value: string | FormData): void {
+    settled = true;
+    endReplyLifetime();
+    onResolve(value);
+  }
+
+  function reject(error: mixed): void {
+    settled = true;
+    endReplyLifetime();
+    onReject(error);
+  }
+
+  function attachAbortSignal(abortSignal: AbortSignal): void {
+    if (abortSignal.aborted) {
+      abort(abortSignal.reason);
+      return;
+    }
+    replyLifetimeController = new AbortController();
+    abortSignal.addEventListener(
+      'abort',
+      () => {
+        abort(abortSignal.reason);
+      },
+      {signal: replyLifetimeController.signal},
+    );
+  }
 
   if (__DEV__) {
     // We use eval to create fake function stacks which includes Component stacks.
@@ -894,6 +944,9 @@ export function processReply(
   }
 
   function abort(reason: mixed): void {
+    // Nothing can make the reply pending again from here, so the caller's
+    // signal has no further effect on it.
+    endReplyLifetime();
     if (pendingParts > 0) {
       pendingParts = 0; // Don't resolve again later.
       // Resolve with what we have so far, which may have holes at this point.
@@ -920,7 +973,17 @@ export function processReply(
     }
   }
 
-  return abort;
+  // Wired up after serializing: abort() reads `json` and resolves with the
+  // parts that finished, so it must not be reachable before then. A reply that
+  // already settled gets no listener, since aborting it would be a no-op and
+  // the lifetime that removes the listener has already ended.
+  //
+  // TODO: Skip serializing when the signal is already aborted, the way the
+  // server entry points abort before rendering starts. Needs a decision on what
+  // to resolve with, since abort() resolves with the parts that finished.
+  if (signal !== undefined && !settled) {
+    attachAbortSignal(signal);
+  }
 }
 
 const boundCache: WeakMap<

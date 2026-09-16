@@ -96,15 +96,7 @@ function render(model: ReactClientValue, options?: Options): Destination {
   );
   const signal = options ? options.signal : undefined;
   if (signal) {
-    if (signal.aborted) {
-      ReactNoopFlightServer.abort(request, (signal as any).reason);
-    } else {
-      const listener = () => {
-        ReactNoopFlightServer.abort(request, (signal as any).reason);
-        signal.removeEventListener('abort', listener);
-      };
-      signal.addEventListener('abort', listener);
-    }
+    ReactNoopFlightServer.attachAbortSignal(request, signal);
   }
   if (__DEV__ && options && options.debugChannel !== undefined) {
     options.debugChannel.onMessage = message => {

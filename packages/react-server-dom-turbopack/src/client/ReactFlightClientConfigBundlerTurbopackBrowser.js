@@ -13,7 +13,9 @@ import type {
   ReactAsyncInfo,
 } from 'shared/ReactTypes';
 
-export function loadChunk(filename: string): Promise<mixed> {
+import type {Chunk} from '../shared/ReactFlightImportMetadata';
+
+export function loadChunk(filename: Chunk): Promise<mixed> {
   return __turbopack_load_by_url__(filename);
 }
 

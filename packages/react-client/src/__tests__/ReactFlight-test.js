@@ -92,16 +92,9 @@ describe('ReactFlight', () => {
   beforeEach(() => {
     // Mock performance.now for timing tests
     let time = 10;
-    const now = jest.fn().mockImplementation(() => {
+    jest.spyOn(performance, 'timeOrigin', 'get').mockReturnValue(time);
+    jest.spyOn(performance, 'now').mockImplementation(() => {
       return time++;
-    });
-    Object.defineProperty(performance, 'timeOrigin', {
-      value: time,
-      configurable: true,
-    });
-    Object.defineProperty(performance, 'now', {
-      value: now,
-      configurable: true,
     });
 
     jest.resetModules();
@@ -3913,6 +3906,25 @@ describe('ReactFlight', () => {
     });
 
     expect(ReactNoop).toMatchRenderedOutput(<span>Hello, Seb</span>);
+  });
+
+  it('restores the stack trace limit after recreating JSX call sites', async () => {
+    function Component() {
+      return ReactServer.createElement('div');
+    }
+
+    const transport = ReactNoopFlightServer.render(
+      ReactServer.createElement(Component),
+    );
+    const previousStackTraceLimit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 50;
+    try {
+      await ReactNoopFlightClient.read(transport);
+
+      expect(Error.stackTraceLimit).toBe(50);
+    } finally {
+      Error.stackTraceLimit = previousStackTraceLimit;
+    }
   });
 
   // @gate __DEV__

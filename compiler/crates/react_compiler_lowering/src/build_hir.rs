@@ -1031,21 +1031,6 @@ fn lower_expression(
                 }
                 Expression::Identifier(ident) => {
                     let start = ident.base.start.unwrap_or(0);
-                    if builder.is_context_identifier(&ident.name, start, ident.base.node_id) {
-                        builder.record_error(CompilerErrorDetail {
-                            category: ErrorCategory::Todo,
-                            reason: "(BuildHIR::lowerExpression) Handle UpdateExpression to variables captured within lambdas.".to_string(),
-                            description: None,
-                            loc: loc.clone(),
-                            suggestions: None,
-                        })?;
-                        return Ok(InstructionValue::UnsupportedNode {
-                            node_type: Some("UpdateExpression".to_string()),
-                            original_node: serialize_expression(expr),
-                            loc,
-                        });
-                    }
-
                     let ident_loc = convert_opt_loc(&ident.base.loc);
                     let binding = builder.resolve_identifier(
                         &ident.name,
@@ -1104,21 +1089,43 @@ fn lower_expression(
                     )?;
 
                     let operation = convert_update_operator(&update.operator);
+                    let is_context =
+                        builder.is_context_identifier(&ident.name, start, ident.base.node_id);
 
                     if update.prefix {
-                        Ok(InstructionValue::PrefixUpdate {
-                            lvalue: lvalue_place,
-                            operation,
-                            value,
-                            loc,
-                        })
+                        let value = if is_context {
+                            InstructionValue::PrefixUpdateContext {
+                                lvalue: lvalue_place,
+                                operation,
+                                value,
+                                loc,
+                            }
+                        } else {
+                            InstructionValue::PrefixUpdateLocal {
+                                lvalue: lvalue_place,
+                                operation,
+                                value,
+                                loc,
+                            }
+                        };
+                        Ok(value)
                     } else {
-                        Ok(InstructionValue::PostfixUpdate {
-                            lvalue: lvalue_place,
-                            operation,
-                            value,
-                            loc,
-                        })
+                        let value = if is_context {
+                            InstructionValue::PostfixUpdateContext {
+                                lvalue: lvalue_place,
+                                operation,
+                                value,
+                                loc,
+                            }
+                        } else {
+                            InstructionValue::PostfixUpdateLocal {
+                                lvalue: lvalue_place,
+                                operation,
+                                value,
+                                loc,
+                            }
+                        };
+                        Ok(value)
                     }
                 }
                 _ => {
@@ -2055,20 +2062,19 @@ fn lower_expression(
                     JsxTag::Builtin(b) => b.name.clone(),
                     _ => "fbt".to_string(),
                 };
-                // Get the opening element's name identifier and check if it's a local binding
                 if let react_compiler_ast::jsx::JSXElementName::JSXIdentifier(jsx_id) =
                     &jsx_element.opening_element.name
                 {
                     let id_loc = convert_opt_loc(&jsx_id.base.loc);
-                    // Check if fbt/fbs tag name resolves to a local binding.
-                    // JSX identifiers may not be in our position-based reference map,
-                    // so check if ANY binding with this name exists in the function scope.
-                    let is_local_binding = builder.has_local_binding(&jsx_id.name);
-                    if is_local_binding {
-                        // Record as a Diagnostic (not ErrorDetail) to match TS behavior
-                        // where CompilerError.invariant creates a CompilerDiagnostic.
-                        // TS invariant() throws immediately, so only the first fbt error
-                        // is reported. We return Err to match this behavior.
+                    let error_count = builder.environment().error_count();
+                    let local_binding =
+                        builder.resolve_local_binding_by_name(&jsx_id.name, id_loc.clone())?;
+                    if builder.environment().error_count() > error_count {
+                        // If fbt introduced a new error, return it specifically
+                        return Err(builder.environment_mut().take_errors_since(error_count));
+                    }
+
+                    if local_binding.is_some() {
                         let reason = format!("<{}> tags should be module-level imports", tag_name);
                         return Err(CompilerDiagnostic::new(
                             ErrorCategory::Invariant,
@@ -2589,8 +2595,12 @@ fn lower_block_statement(
     block: &react_compiler_ast::statements::BlockStatement,
     parent_scope: Option<react_compiler_ast::scope::ScopeId>,
 ) -> Result<(), CompilerError> {
-    let _ = lower_block_statement_inner(builder, block, None, parent_scope);
-    Ok(())
+    Ok(lower_block_statement_inner(
+        builder,
+        block,
+        None,
+        parent_scope,
+    )?)
 }
 
 fn lower_block_statement_with_scope(
@@ -2598,8 +2608,12 @@ fn lower_block_statement_with_scope(
     block: &react_compiler_ast::statements::BlockStatement,
     scope_override: react_compiler_ast::scope::ScopeId,
 ) -> Result<(), CompilerError> {
-    let _ = lower_block_statement_inner(builder, block, Some(scope_override), None);
-    Ok(())
+    Ok(lower_block_statement_inner(
+        builder,
+        block,
+        Some(scope_override),
+        None,
+    )?)
 }
 
 fn lower_block_statement_inner(
@@ -3058,22 +3072,30 @@ fn lower_statement(
         Statement::VariableDeclaration(var_decl) => {
             use react_compiler_ast::patterns::PatternLike;
             use react_compiler_ast::statements::VariableDeclarationKind;
-            if matches!(var_decl.kind, VariableDeclarationKind::Var) {
+            let unsupported_node_kind = match var_decl.kind {
+                VariableDeclarationKind::Var => Some("var"),
+                VariableDeclarationKind::Using => Some("using"),
+                VariableDeclarationKind::AwaitUsing => Some("await using"),
+                VariableDeclarationKind::Let | VariableDeclarationKind::Const => None,
+            };
+            if let Some(node_kind) = unsupported_node_kind {
                 builder.record_error(CompilerErrorDetail {
-                    reason: "(BuildHIR::lowerStatement) Handle var kinds in VariableDeclaration"
-                        .to_string(),
+                    reason: format!(
+                        "(BuildHIR::lowerStatement) Handle {node_kind} kinds in VariableDeclaration"
+                    ),
                     category: ErrorCategory::Todo,
                     loc: convert_opt_loc(&var_decl.base.loc),
                     description: None,
                     suggestions: None,
                 })?;
-                // Treat `var` as `let` so references to the variable don't break
+                // Treat `var` as `let` and `using`/`await using` as `const` so
+                // references to the variable don't break while the error unwinds
             }
             let kind = match var_decl.kind {
                 VariableDeclarationKind::Let | VariableDeclarationKind::Var => InstructionKind::Let,
-                VariableDeclarationKind::Const | VariableDeclarationKind::Using => {
-                    InstructionKind::Const
-                }
+                VariableDeclarationKind::Const
+                | VariableDeclarationKind::Using
+                | VariableDeclarationKind::AwaitUsing => InstructionKind::Const,
             };
             for declarator in &var_decl.declarations {
                 let stmt_loc = convert_opt_loc(&var_decl.base.loc);
@@ -6271,7 +6293,7 @@ fn lower_jsx_element_name(
             let tag = &id.name;
             let loc = convert_opt_loc(&id.base.loc);
             let start = id.base.start.unwrap_or(0);
-            if tag.starts_with(|c: char| c.is_ascii_uppercase()) {
+            if !tag.starts_with(|c: char| c.is_ascii_lowercase()) {
                 // Component tag: resolve as identifier and load
                 let place = lower_identifier(builder, tag, start, loc.clone(), id.base.node_id)?;
                 let load_value = if builder.is_context_identifier(tag, start, id.base.node_id) {

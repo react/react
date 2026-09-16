@@ -75,6 +75,7 @@ import {
   restoreUpdateViewTransitionForGesture,
   appearingViewTransitions,
   commitEnterViewTransitions,
+  commitParentExitViewTransitions,
   measureNestedViewTransitions,
   measureUpdateViewTransition,
   viewTransitionCancelableChildren,
@@ -93,6 +94,7 @@ import {
 import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
+  enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
 import {trackAnimatingTask} from './ReactProfilerTimer';
 import {scheduleGestureTransitionEvent} from './ReactFiberWorkLoop';
@@ -327,6 +329,9 @@ function applyExitViewTransition(placement: Fiber): void {
       scheduleGestureTransitionEvent(placement, props.onGestureShare);
     } else {
       scheduleGestureTransitionEvent(placement, props.onGestureExit);
+      if (enableViewTransitionParentEnterExit) {
+        commitParentExitViewTransitions(placement, true);
+      }
     }
   }
 }

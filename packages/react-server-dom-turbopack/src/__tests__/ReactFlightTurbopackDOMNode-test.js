@@ -53,7 +53,7 @@ describe('ReactFlightTurbopackDOMNode', () => {
     __unmockReact();
     jest.unmock('react-server-dom-turbopack/server');
     jest.mock('react-server-dom-turbopack/client', () =>
-      require('react-server-dom-turbopack/client.node'),
+      jest.requireActual('react-server-dom-turbopack/client.node'),
     );
 
     React = require('react');

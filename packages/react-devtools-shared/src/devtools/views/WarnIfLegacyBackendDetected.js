@@ -22,8 +22,12 @@ export default function WarnIfLegacyBackendDetected(_: {}): null {
   // We do this by listening to a message that it broadcasts but the v4 backend doesn't.
   // In this case the frontend should show upgrade instructions.
   useEffect(() => {
-    // Wall.listen returns a cleanup function
-    let unlisten: $FlowFixMe = bridge.wall.listen(message => {
+    let unlisten: (() => void) | null = null;
+    unlisten = bridge.wall.listen(message => {
+      if (message === null || typeof message !== 'object') {
+        return;
+      }
+
       switch (message.type) {
         case 'call':
         case 'event':
@@ -38,7 +42,7 @@ export default function WarnIfLegacyBackendDetected(_: {}): null {
           });
 
           // Once we've identified the backend version, it's safe to unsubscribe.
-          if (typeof unlisten === 'function') {
+          if (unlisten !== null) {
             unlisten();
             unlisten = null;
           }
@@ -54,7 +58,7 @@ export default function WarnIfLegacyBackendDetected(_: {}): null {
         case 'overrideComponentFilters':
           // Any of these is sufficient to indicate a v4 backend.
           // Once we've identified the backend version, it's safe to unsubscribe.
-          if (typeof unlisten === 'function') {
+          if (unlisten !== null) {
             unlisten();
             unlisten = null;
           }
@@ -65,7 +69,7 @@ export default function WarnIfLegacyBackendDetected(_: {}): null {
     });
 
     return () => {
-      if (typeof unlisten === 'function') {
+      if (unlisten !== null) {
         unlisten();
         unlisten = null;
       }

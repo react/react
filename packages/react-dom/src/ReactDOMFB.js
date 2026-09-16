@@ -21,6 +21,7 @@ Object.assign(Internals as any, {
 export {Internals as __DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE};
 
 export {
+  browser,
   createPortal,
   flushSync,
   unstable_createEventHandle,

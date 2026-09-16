@@ -358,6 +358,7 @@ type Options = {
   onShellReady?: () => void,
   onAllReady?: () => void,
   onError?: (error: mixed) => ?string,
+  onBrowserBailout?: (error: mixed) => void,
 };
 
 function render(children: React$Element<any>, options?: Options): Destination {
@@ -383,6 +384,7 @@ function render(children: React$Element<any>, options?: Options): Destination {
     null,
     options ? options.progressiveChunkSize : undefined,
     options ? options.onError : undefined,
+    options ? options.onBrowserBailout : undefined,
     options ? options.onAllReady : undefined,
     options ? options.onShellReady : undefined,
   );

@@ -2213,8 +2213,8 @@ function computeSignatureForInstruction(
       effects.push({kind: 'Assign', from: value.value, into: lvalue});
       break;
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PrefixUpdateLocal': {
       effects.push({
         kind: 'Create',
         into: lvalue,
@@ -2227,6 +2227,17 @@ function computeSignatureForInstruction(
         value: ValueKind.Primitive,
         reason: ValueReason.Other,
       });
+      break;
+    }
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext': {
+      effects.push({
+        kind: 'Create',
+        into: lvalue,
+        value: ValueKind.Primitive,
+        reason: ValueReason.Other,
+      });
+      effects.push({kind: 'Mutate', value: value.lvalue});
       break;
     }
     case 'StoreGlobal': {
@@ -2329,7 +2340,11 @@ function computeEffectsForLegacySignature(
     value: signature.returnValueKind,
     reason: returnValueReason,
   });
-  if (signature.impure && state.env.config.validateNoImpureFunctionsInRender) {
+  if (
+    signature.impure &&
+    state.env.config.validateNoImpureFunctionsInRender &&
+    (!signature.impureIfNoArgs || args.length === 0)
+  ) {
     effects.push({
       kind: 'Impure',
       place: receiver,
