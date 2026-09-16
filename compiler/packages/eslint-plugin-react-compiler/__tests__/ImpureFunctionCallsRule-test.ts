@@ -16,7 +16,17 @@ testRule(
   'no impure function calls rule',
   allRules[getRuleForCategory(ErrorCategory.Purity).name].rule,
   {
-    valid: [],
+    valid: [
+      {
+        name: 'Date constructed from a timestamp is not flagged',
+        code: normalizeIndent`
+      function Component({ timestamp }) {
+        const date = new Date(timestamp);
+        return <Foo date={date} />;
+      }
+    `,
+      },
+    ],
     invalid: [
       {
         name: 'Known impure function calls are caught',
@@ -26,6 +36,22 @@ testRule(
         const now = performance.now();
         const rand = Math.random();
         return <Foo date={date} now={now} rand={rand} />;
+      }
+    `,
+        errors: [
+          makeTestCaseError('Cannot call impure function during render'),
+          makeTestCaseError('Cannot call impure function during render'),
+          makeTestCaseError('Cannot call impure function during render'),
+        ],
+      },
+      {
+        name: 'Zero-argument Date constructor is impure',
+        code: normalizeIndent`
+      function Component() {
+        const date = new Date();
+        const time = new Date().getTime();
+        const year = new Date().getFullYear();
+        return <Foo date={date} time={time} year={year} />;
       }
     `,
         errors: [

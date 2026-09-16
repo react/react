@@ -1115,8 +1115,8 @@ fn get_component_or_hook_like(
     if let Some(fn_name) = name {
         if is_component_name(fn_name) {
             // Check if it actually looks like a component
-            let is_component = calls_hooks_or_creates_jsx(params, body)
-                && is_valid_component_params(params)
+            let is_component = is_valid_component_params(params)
+                && calls_hooks_or_creates_jsx(params, body)
                 && !returns_non_node_fn(params, body);
             return if is_component {
                 Some(ReactFunctionType::Component)

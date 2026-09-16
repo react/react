@@ -280,22 +280,40 @@ const TYPED_GLOBALS: Array<[string, BuiltInType]> = [
   ],
   [
     'Date',
-    addObject(DEFAULT_SHAPES, 'Date', [
-      // Static methods (TODO)
+    addFunction(
+      DEFAULT_SHAPES,
       [
-        'now',
-        // Date.now()
-        addFunction(DEFAULT_SHAPES, [], {
-          positionalParams: [],
-          restParam: Effect.Read,
-          returnType: {kind: 'Poly'}, // TODO: could be Primitive, but that would change existing compilation
-          calleeEffect: Effect.Read,
-          returnValueKind: ValueKind.Mutable, // same here
-          impure: true,
-          canonicalName: 'Date.now',
-        }),
+        // Static methods (TODO)
+        [
+          'now',
+          // Date.now()
+          addFunction(DEFAULT_SHAPES, [], {
+            positionalParams: [],
+            restParam: Effect.Read,
+            returnType: {kind: 'Poly'}, // TODO: could be Primitive, but that would change existing compilation
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Mutable, // same here
+            impure: true,
+            canonicalName: 'Date.now',
+          }),
+        ],
       ],
-    ]),
+      {
+        positionalParams: [],
+        restParam: Effect.Read,
+        returnType: {kind: 'Poly'},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+        /*
+         * Zero-arg `new Date()` / `Date()` reads the current clock.
+         * `new Date(timestamp)` is treated as pure via `impureIfNoArgs`.
+         */
+        impure: true,
+        impureIfNoArgs: true,
+        canonicalName: 'Date',
+      },
+      'Date',
+    ),
   ],
   [
     'Math',
