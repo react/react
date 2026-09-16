@@ -3725,6 +3725,17 @@ function lowerIdentifier(
             suggestions: null,
           }),
         );
+      } else if (binding.kind === 'Global' && binding.name === 'arguments') {
+        builder.recordError(
+          new CompilerErrorDetail({
+            reason: `Implicit 'arguments' is not supported`,
+            description:
+              'React Compiler does not support compiling functions that reference the implicit arguments object',
+            category: ErrorCategory.UnsupportedSyntax,
+            loc: exprPath.node.loc ?? null,
+            suggestions: null,
+          }),
+        );
       }
       return lowerValueToTemporary(builder, {
         kind: 'LoadGlobal',
