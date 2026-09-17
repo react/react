@@ -4500,9 +4500,9 @@ export function getFirstHydratableChildWithinSuspenseInstance(
   let first = parentInstance.nextSibling;
   if (
     isSuspenseInstanceFallback(parentInstance) &&
-    first !== null &&
+    first != null &&
     first.nodeName === 'TEMPLATE' &&
-    (first: any).hasAttribute('data-dgst')
+    (first as any as Element).hasAttribute('data-dgst')
   ) {
     // Fizz's failure metadata template is not a rendered fallback child.
     first = first.nextSibling;
@@ -4764,19 +4764,20 @@ export function commitHydratedSuspenseInstance(
   const parent = suspenseInstance.parentNode;
   const metadata = suspenseInstance.nextSibling;
   if (
-    parent !== null &&
+    parent != null &&
     suspenseInstance.data === SUSPENSE_FALLBACK_START_DATA &&
-    metadata !== null &&
+    metadata != null &&
     metadata.nodeName === 'TEMPLATE' &&
-    (metadata: any).getAttribute('data-dgst') === REACT_RECOVERABLE_DIGEST
+    (metadata as any as Element).getAttribute('data-dgst') ===
+      REACT_RECOVERABLE_DIGEST
   ) {
     // The fallback has become an ordinary hydrated fiber tree. Remove only
     // Fizz's enclosing metadata, retaining every claimed content node.
     let end = suspenseInstance.nextSibling;
     let depth = 0;
-    while (end !== null) {
+    while (end != null) {
       if (end.nodeType === COMMENT_NODE) {
-        const data = (end: any).data;
+        const data = (end as any as Comment).data;
         if (data === SUSPENSE_END_DATA || data === ACTIVITY_END_DATA) {
           if (depth === 0) break;
           depth--;
@@ -4792,7 +4793,7 @@ export function commitHydratedSuspenseInstance(
       }
       end = end.nextSibling;
     }
-    if (end !== null) {
+    if (end != null) {
       parent.removeChild(metadata);
       parent.removeChild(end);
       parent.removeChild(suspenseInstance);

@@ -2931,10 +2931,10 @@ function mountSuspenseFallbackAfterRetryWithoutHydrating(
   // boundary) already mounted but this is a new fiber.
   if (hydrateFallback) {
     fallbackChildFragment.flags |= Hydrating | PlacementDEV;
-    const previousState: SuspenseState = (current.memoizedState: any);
+    const previousState = current.memoizedState as SuspenseState;
     reenterHydrationStateFromDehydratedSuspenseInstance(
       workInProgress,
-      (previousState.dehydrated: any),
+      previousState.dehydrated as SuspenseInstance,
       previousState.treeContext,
     );
     // Undo only the deletion of the fragment whose DOM will be hydrated.

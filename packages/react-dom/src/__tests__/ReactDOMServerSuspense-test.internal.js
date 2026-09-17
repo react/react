@@ -217,6 +217,8 @@ describe('ReactDOMServerSuspense', () => {
       </React.Suspense>
     );
     const container = document.createElement('div');
+    // WWW delegates clicks to document, so event fixtures must be connected.
+    document.body.appendChild(container);
     container.innerHTML = ReactDOMServer.renderToString(app);
     let root;
 
@@ -245,6 +247,7 @@ describe('ReactDOMServerSuspense', () => {
       if (root !== undefined) {
         await act(() => root.unmount());
       }
+      document.body.removeChild(container);
     }
 
     // Baseline currently passes this guard: the fallback handles the click and
@@ -471,6 +474,8 @@ describe('ReactDOMServerSuspense', () => {
       </React.Suspense>
     );
     const container = document.createElement('div');
+    // WWW delegates clicks to document, so event fixtures must be connected.
+    document.body.appendChild(container);
     container.innerHTML = ReactDOMServer.renderToString(app);
     const serverLeft = container.querySelector('#left-marker');
     const serverRight = container.querySelector('#right-marker');
@@ -510,6 +515,7 @@ describe('ReactDOMServerSuspense', () => {
       if (root !== undefined) {
         await act(() => root.unmount());
       }
+      document.body.removeChild(container);
     }
 
     expect(fallbackCleanups).toBe(1);
@@ -575,6 +581,8 @@ describe('ReactDOMServerSuspense', () => {
       </React.Suspense>
     );
     const container = document.createElement('div');
+    // WWW delegates clicks to document, so event fixtures must be connected.
+    document.body.appendChild(container);
     container.innerHTML = ReactDOMServer.renderToString(app);
     const button = container.querySelector('#outer-action');
     const right = container.querySelector('#outer-right');
@@ -611,6 +619,7 @@ describe('ReactDOMServerSuspense', () => {
       expect(recoverable.length).toBeLessThanOrEqual(1);
     } finally {
       if (root !== undefined) await act(() => root.unmount());
+      document.body.removeChild(container);
     }
     expect(container.innerHTML).toBe('');
   });
@@ -801,6 +810,8 @@ describe('ReactDOMServerSuspense', () => {
       </React.Suspense>
     );
     const container = document.createElement('div');
+    // WWW delegates clicks to document, so event fixtures must be connected.
+    document.body.appendChild(container);
     container.innerHTML = ReactDOMServer.renderToString(serverApp);
     let root;
 
@@ -835,6 +846,7 @@ describe('ReactDOMServerSuspense', () => {
       if (root !== undefined) {
         await act(() => root.unmount());
       }
+      document.body.removeChild(container);
     }
 
     // The unmodified implementation also retains the ordinary outer markers.
@@ -908,6 +920,8 @@ describe('ReactDOMServerSuspense', () => {
       return <Tick.Provider value={tick}>{stableBoundary}</Tick.Provider>;
     }
     const container = document.createElement('div');
+    // WWW delegates clicks to document, so event fixtures must be connected.
+    document.body.appendChild(container);
     container.innerHTML = ReactDOMServer.renderToString(<Controller />);
     const serverFallback = container.querySelector('#fallback');
     shouldThrow = true;
@@ -944,6 +958,7 @@ describe('ReactDOMServerSuspense', () => {
       expect(container.querySelector('#loaded')).not.toBe(null);
     } finally {
       await act(() => root.unmount());
+      document.body.removeChild(container);
     }
     expect(container.innerHTML).toBe('');
   });
@@ -1021,6 +1036,8 @@ describe('ReactDOMServerSuspense', () => {
       onRecoverableError: error => otherErrors.push(error),
     });
     const container = document.createElement('div');
+    // WWW delegates clicks to document, so event fixtures must be connected.
+    document.body.appendChild(container);
     container.innerHTML = ReactDOMServer.renderToString(<Controller />);
     const serverFallback = container.querySelector('#fallback');
     shouldThrow = true;
@@ -1071,6 +1088,7 @@ describe('ReactDOMServerSuspense', () => {
         root.unmount();
         otherRoot.unmount();
       });
+      document.body.removeChild(container);
     }
     expect(container.innerHTML).toBe('');
     expect(otherContainer.innerHTML).toBe('');
@@ -1151,6 +1169,8 @@ describe('ReactDOMServerSuspense', () => {
       onRecoverableError: error => otherErrors.push(error),
     });
     const container = document.createElement('div');
+    // WWW delegates clicks to document, so event fixtures must be connected.
+    document.body.appendChild(container);
     container.innerHTML = ReactDOMServer.renderToString(<Controller />);
     const serverFallback = container.querySelector('#fallback');
     shouldThrow = true;
@@ -1210,6 +1230,7 @@ describe('ReactDOMServerSuspense', () => {
         root.unmount();
         otherRoot.unmount();
       });
+      document.body.removeChild(container);
     }
     expect(container.innerHTML).toBe('');
     expect(otherContainer.innerHTML).toBe('');
