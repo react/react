@@ -268,9 +268,28 @@ const B = hoc(Foo);
 _c4 = B;
 var _c, _c2, _c3, _c4;
 $RefreshReg$(_c, "Foo");
-$RefreshReg$(_c2, "%default%");
+$RefreshReg$(_c2, "%default%$hoc");
 $RefreshReg$(_c3, "A");
 $RefreshReg$(_c4, "B");
+`;
+
+exports[`ReactFreshBabelPlugin registers forwardRef default export 1`] = `
+function Component() {}
+_c = Component;
+export default _c2 = React.forwardRef(Component);
+var _c, _c2;
+$RefreshReg$(_c, "Component");
+$RefreshReg$(_c2, "%default%$React.forwardRef");
+`;
+
+exports[`ReactFreshBabelPlugin registers forwardRef default export 2`] = `
+import { forwardRef } from 'react';
+function Component() {}
+_c = Component;
+export default _c2 = forwardRef(Component);
+var _c, _c2;
+$RefreshReg$(_c, "Component");
+$RefreshReg$(_c2, "%default%$forwardRef");
 `;
 
 exports[`ReactFreshBabelPlugin registers identifiers used in JSX at definition site 1`] = `
@@ -395,6 +414,25 @@ var _c, _c2, _c3;
 $RefreshReg$(_c, "%default%$React.memo$forwardRef");
 $RefreshReg$(_c2, "%default%$React.memo");
 $RefreshReg$(_c3, "%default%");
+`;
+
+exports[`ReactFreshBabelPlugin registers memo default export 1`] = `
+function Component() {}
+_c = Component;
+export default _c2 = React.memo(Component);
+var _c, _c2;
+$RefreshReg$(_c, "Component");
+$RefreshReg$(_c2, "%default%$React.memo");
+`;
+
+exports[`ReactFreshBabelPlugin registers memo default export 2`] = `
+import { memo } from 'react';
+function Component() {}
+_c = Component;
+export default _c2 = memo(Component);
+var _c, _c2;
+$RefreshReg$(_c, "Component");
+$RefreshReg$(_c2, "%default%$memo");
 `;
 
 exports[`ReactFreshBabelPlugin registers top-level exported function declarations 1`] = `
