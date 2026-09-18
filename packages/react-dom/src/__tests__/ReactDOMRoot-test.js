@@ -444,4 +444,27 @@ describe('ReactDOMRoot', () => {
         '  root.render(Symbol(foo))',
     ]);
   });
+
+  // @gate enableComponentPerformanceTrack
+  it('does not throw when a scheduled task runs after window is torn down', async () => {
+    // Regression for #37100: DEV Performance Tracks attribution reads
+    // window.event at the entry of Scheduler tasks. Test runners that tear
+    // down per-file DOM environments can delete `window` while a task is still
+    // queued; that read must not crash the process.
+    const root = ReactDOMClient.createRoot(container);
+    root.render(<div>hello</div>);
+
+    const savedWindow = global.window;
+    const savedDocument = global.document;
+    try {
+      delete global.window;
+      delete global.document;
+      await waitForAll([]);
+    } finally {
+      global.window = savedWindow;
+      global.document = savedDocument;
+    }
+
+    expect(container.textContent).toBe('hello');
+  });
 });
