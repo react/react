@@ -1151,6 +1151,59 @@ describe('DOMPropertyOperations', () => {
       expect(customElement.getAttribute('foo')).toBe(null);
     });
 
+    it('aria attributes should have proper representation', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <my-custom-element
+            aria-disabled={true}
+            aria-label={'label test'}
+            aria-hidden={false}
+            aria-required={undefined}
+            aria-colindex={1}
+            aria-rowindex={0}
+          />,
+        );
+      });
+      const customElement = container.querySelector('my-custom-element');
+
+      expect(customElement.getAttribute('aria-disabled')).toBe('true');
+      expect(customElement.getAttribute('aria-label')).toBe('label test');
+      expect(customElement.getAttribute('aria-hidden')).toBe('false');
+      expect(customElement.getAttribute('aria-required')).toBe(null);
+      expect(customElement.getAttribute('aria-colindex')).toBe('1');
+      expect(customElement.getAttribute('aria-rowindex')).toBe('0');
+    });
+
+    it('data attributes should have proper representation', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <my-custom-element
+            data-false={false}
+            data-true={true}
+            data-undefined={undefined}
+            data-null={null}
+            data-label={'label test'}
+            data-index={1}
+            data-index-0={0}
+          />,
+        );
+      });
+      const customElement = container.querySelector('my-custom-element');
+      expect(customElement.getAttribute('data-false')).toBe('false');
+      expect(customElement.getAttribute('data-true')).toBe('true');
+      expect(customElement.getAttribute('data-undefined')).toBe(null);
+      expect(customElement.getAttribute('data-null')).toBe(null);
+      expect(customElement.getAttribute('data-label')).toBe('label test');
+      expect(customElement.getAttribute('data-index')).toBe('1');
+      expect(customElement.getAttribute('data-index-0')).toBe('0');
+    });
+
     it('custom element custom event handlers assign multiple types', async () => {
       const container = document.createElement('div');
       document.body.appendChild(container);
