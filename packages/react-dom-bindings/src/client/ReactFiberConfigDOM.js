@@ -905,6 +905,10 @@ export function commitMount(
     case 'input':
     case 'select':
     case 'textarea':
+      // We started applying the native `autofocus` attribute in 2026,
+      // but kept this polyfill (added in 2016, in
+      // a10131304b59abf68a234f0bc75f38a7bb4013a7)
+      // out of conservativity.
       if (newProps.autoFocus) {
         (
           domElement as any as
