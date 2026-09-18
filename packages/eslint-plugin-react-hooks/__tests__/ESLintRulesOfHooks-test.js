@@ -642,6 +642,19 @@ const allTests = {
       `,
     },
     {
+      code: normalizeIndent`
+        // Valid because functions created with useEffectEvent can be called in a useEffect (function expression).
+        const MyComponent = function({ theme }) {
+          const onClick = useEffectEvent(() => {
+            showNotification(theme);
+          });
+          useEffect(() => {
+            onClick();
+          });
+        }
+      `,
+    },
+    {
       syntax: 'flow',
       code: normalizeIndent`
         // Component syntax version
@@ -1771,6 +1784,18 @@ const allTests = {
       code: normalizeIndent`
         // Component syntax version
         component MyComponent(theme: any) {
+          const onClick = useEffectEvent(() => {
+            showNotification(theme);
+          });
+          return <Child onClick={onClick}></Child>;
+        }
+      `,
+      errors: [useEffectEventError('onClick', false)],
+    },
+    {
+      code: normalizeIndent`
+        // Invalid because useEffectEvent is being passed down (function expression).
+        const MyComponent = function({ theme }) {
           const onClick = useEffectEvent(() => {
             showNotification(theme);
           });
