@@ -419,6 +419,122 @@ describe('ReactDOMViewTransition', () => {
     });
 
     // @gate enableViewTransition
+    it('fires onUpdate when the name changes with no layout change (default="none" + share)', async () => {
+      // This is the camera-hero morph reduced to one boundary: the `name` prop
+      // changes between renders with no child DOM mutation and no layout change.
+      // It mirrors the repro's config (default="none" + share). The name change
+      // alone must drive the boundary's update so the share class is applied to
+      // the host instance and the morph runs.
+      //
+      // IMPORTANT: jsdom's getComputedStyle returns '' for clipPath/overflow/etc,
+      // which makes createMeasurement() flag every boundary as a "clip" parent so
+      // hasInstanceChanged() always returns true. That would mask whether the
+      // Update flag is actually driven by the name change (the behaviour a real
+      // browser depends on) instead of by a spurious measured change. We return
+      // realistic computed styles so clip=false; combined with an unchanged
+      // bounding rect, the name change is the ONLY thing that can mark this
+      // boundary as updated.
+      const realComputedStyle = new Proxy(
+        {},
+        {
+          get(_target, prop) {
+            switch (prop) {
+              case 'clipPath':
+                return 'none';
+              case 'overflow':
+                return 'visible';
+              case 'filter':
+                return 'none';
+              case 'mask':
+                return 'none';
+              case 'borderRadius':
+                return '0px';
+              case 'position':
+                return 'static';
+              case 'display':
+                return 'block';
+              default:
+                return '';
+            }
+          },
+        },
+      );
+      const originalGetComputedStyle = global.getComputedStyle;
+      global.getComputedStyle = () => realComputedStyle;
+
+      const onUpdate = jest.fn();
+
+      function App({name}) {
+        return (
+          <ViewTransition
+            name={name}
+            share="morph"
+            default="none"
+            onUpdate={onUpdate}>
+            <div>Static</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      try {
+        await act(() => {
+          startTransition(() => {
+            root.render(<App name="hero-a" />);
+          });
+        });
+
+        onUpdate.mockClear();
+
+        // Only the name changes. The child text is identical, so there is no DOM
+        // mutation and (with the computed-style mock) no measured change.
+        await act(() => {
+          startTransition(() => {
+            root.render(<App name="hero-b" />);
+          });
+        });
+
+        expect(onUpdate).toHaveBeenCalledTimes(1);
+      } finally {
+        global.getComputedStyle = originalGetComputedStyle;
+      }
+    });
+
+    // @gate enableViewTransition
+    it('does not treat a no-op render as an update when default="none" and no name change', async () => {
+      // Guard: default="none" with a share class must still gate out ordinary
+      // re-renders that neither mutate the DOM nor change the name.
+      const onUpdate = jest.fn();
+
+      function App() {
+        return (
+          <ViewTransition share="morph" default="none" onUpdate={onUpdate}>
+            <div>Static</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App />);
+        });
+      });
+
+      onUpdate.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App />);
+        });
+      });
+
+      expect(onUpdate).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition
     it('fires onEnter when Suspense content resolves', async () => {
       const onEnter = jest.fn();
 
