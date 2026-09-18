@@ -409,4 +409,76 @@ describe('ReactDOMFizzStatic', () => {
     expect(errors).toEqual(['async']);
     expect(getVisibleChildren(container)).toEqual(undefined);
   });
+
+  // Regression test for https://github.com/facebook/react/issues/36169
+  // When prerendering with both importMap and bootstrapModules, React injects
+  // its own <script type="importmap"> into <head>. A user <script> in <head>
+  // must not be matched against that injected importmap script during
+  // hydration, otherwise it produces a spurious hydration mismatch.
+  it('should hydrate a <script> in <head> without a mismatch when an importMap script is injected', async () => {
+    const importMap = {
+      imports: {
+        foo: 'path/to/foo.js',
+      },
+    };
+
+    function App() {
+      return (
+        <html>
+          <head>
+            <script src="https://example.test/script.js" defer={true} />
+            <title>Hello</title>
+          </head>
+          <body>
+            <div id="root">hello world</div>
+          </body>
+        </html>
+      );
+    }
+
+    const result = await ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
+      importMap,
+      bootstrapModules: ['init.js'],
+    });
+
+    // Read the full prerendered document, then hydrate it as a whole document so
+    // that the injected <script type="importmap"> in <head> participates in
+    // hydration (React resolves head as a singleton against the global document).
+    result.prelude.setEncoding('utf8');
+    const html = await new Promise((resolve, reject) => {
+      let content = '';
+      result.prelude.on('data', chunk => {
+        content += chunk;
+      });
+      result.prelude.on('end', () => resolve(content));
+      result.prelude.on('error', reject);
+    });
+
+    const doc = global.document;
+    const tempDom = new JSDOM(html);
+    doc.head.innerHTML = tempDom.window.document.head.innerHTML;
+    doc.body.innerHTML = tempDom.window.document.body.innerHTML;
+    // The render-blocking <link rel="expect"> is normally resolved by the Fizz
+    // runtime once the shell finishes streaming; we hydrate a static snapshot so
+    // remove it to let hydration proceed.
+    const expectLink = doc.querySelector('link[rel="expect"]');
+    if (expectLink) {
+      expectLink.remove();
+    }
+
+    const recoverableErrors = [];
+    global.requestAnimationFrame = global.window.requestAnimationFrame = cb =>
+      setTimeout(cb);
+    // Use the real (scheduler-flushing) act so hydration actually traverses.
+    const clientAct = require('internal-test-utils').act;
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(doc, <App />, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error.message);
+        },
+      });
+    });
+
+    expect(recoverableErrors).toEqual([]);
+  });
 });
