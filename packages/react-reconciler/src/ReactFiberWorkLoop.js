@@ -3192,6 +3192,7 @@ function replayBeginWork(unitOfWork: Fiber): null | Fiber {
       );
       break;
     }
+    case HostSingleton:
     case HostComponent: {
       // Some host components are stateful (that's how we implement form
       // actions) but we don't bother to reuse the memoized state because it's
@@ -3200,9 +3201,12 @@ function replayBeginWork(unitOfWork: Fiber): null | Fiber {
       // promises that a host component might suspend on are definitely cached
       // because they are controlled by us. So don't bother.
       resetHooksOnUnwind(unitOfWork);
-      // We are about to retry this host component and need to ensure the hydration
-      // state is appropriate for hydrating this unit. Other fiber types hydrate differently
-      // and aren't reliant on the cursor positioning so this function is only for HostComponent
+      // We are about to retry this unit and need to ensure the hydration state
+      // is appropriate for hydrating it again. HostSingleton is included because
+      // claiming a scoped singleton (<head>) saves the outer hydration cursor,
+      // and re-claiming it on replay would overwrite that saved value.
+      // HostHoistable is not included because updateHostHoistable does not
+      // reconcile children, so it cannot suspend on a usable this way.
       popHydrationStateOnInterruptedWork(unitOfWork);
       // Fallthrough to the next branch.
     }

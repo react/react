@@ -4432,4 +4432,165 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(content.style.display).not.toBe('none');
     expect(content.textContent).toBe('b');
   });
+
+  // Regression for https://github.com/facebook/react/issues/37551. `<head>` is
+  // the only "scoped" singleton: claiming it saves the outer hydration cursor so
+  // it can be restored when the scope is exited. Replaying the singleton
+  // re-claimed it and overwrote that saved cursor with one from inside <head>,
+  // so the content after the scope was not hydrated.
+  it('Can hydrate even when lazy content resumes immediately inside a scoped HostSingleton', async () => {
+    let resolve;
+    const promise = new Promise(r => {
+      resolve = () => r({default: null});
+    });
+
+    const lazyContent = React.lazy(() => {
+      Scheduler.log('Lazy initializer called');
+      return promise;
+    });
+
+    function App() {
+      return (
+        <html>
+          <head>{lazyContent}</head>
+          <body>
+            <div>hello</div>
+          </body>
+        </html>
+      );
+    }
+
+    // Server-rendered HTML
+    document.head.innerHTML = '';
+    document.body.innerHTML = '<div>hello</div>';
+    const serverRenderedDiv = document.body.firstChild;
+
+    const hydrationErrors = [];
+
+    React.startTransition(() => {
+      ReactDOMClient.hydrateRoot(document, <App />, {
+        onRecoverableError(error) {
+          hydrationErrors.push(normalizeError(error.message));
+        },
+      });
+    });
+
+    await waitFor(['Lazy initializer called']);
+    resolve();
+    await waitForAll([]);
+
+    expect(hydrationErrors).toEqual([]);
+    expect(document.documentElement.outerHTML).toEqual(
+      '<html><head></head><body><div>hello</div></body></html>',
+    );
+    // The server node must be hydrated, not discarded and re-created.
+    expect(document.body.firstChild).toBe(serverRenderedDiv);
+  });
+
+  it('Can hydrate when a scoped HostSingleton with existing content is replayed', async () => {
+    let resolve;
+    const promise = new Promise(r => {
+      resolve = () => r({default: <title>t</title>});
+    });
+
+    const lazyContent = React.lazy(() => {
+      Scheduler.log('Lazy initializer called');
+      return promise;
+    });
+
+    function App() {
+      return (
+        <html>
+          <head>{lazyContent}</head>
+          <body>
+            <div>hello</div>
+          </body>
+        </html>
+      );
+    }
+
+    // Server-rendered HTML
+    document.head.innerHTML = '<title>t</title>';
+    document.body.innerHTML = '<div>hello</div>';
+    const serverRenderedDiv = document.body.firstChild;
+
+    const hydrationErrors = [];
+
+    React.startTransition(() => {
+      ReactDOMClient.hydrateRoot(document, <App />, {
+        onRecoverableError(error) {
+          hydrationErrors.push(normalizeError(error.message));
+        },
+      });
+    });
+
+    await waitFor(['Lazy initializer called']);
+    resolve();
+    await waitForAll([]);
+
+    expect(hydrationErrors).toEqual([]);
+    expect(document.head.innerHTML).toEqual('<title>t</title>');
+    expect(document.body.firstChild).toBe(serverRenderedDiv);
+  });
+
+  it('Can hydrate when a scoped HostSingleton is replayed more than once', async () => {
+    let resolveA;
+    let resolveB;
+    const promiseA = new Promise(r => {
+      resolveA = () => r({default: null});
+    });
+    const promiseB = new Promise(r => {
+      resolveB = () => r({default: null});
+    });
+
+    const lazyA = React.lazy(() => {
+      Scheduler.log('A');
+      return promiseA;
+    });
+    const lazyB = React.lazy(() => {
+      Scheduler.log('B');
+      return promiseB;
+    });
+
+    function App() {
+      return (
+        <html>
+          <head>
+            {lazyA}
+            {lazyB}
+          </head>
+          <body>
+            <div>hello</div>
+          </body>
+        </html>
+      );
+    }
+
+    // Server-rendered HTML
+    document.head.innerHTML = '';
+    document.body.innerHTML = '<div>hello</div>';
+    const serverRenderedDiv = document.body.firstChild;
+
+    const hydrationErrors = [];
+
+    React.startTransition(() => {
+      ReactDOMClient.hydrateRoot(document, <App />, {
+        onRecoverableError(error) {
+          hydrationErrors.push(normalizeError(error.message));
+        },
+      });
+    });
+
+    await waitFor(['A']);
+    resolveA();
+    await waitFor(['B']);
+    resolveB();
+    await waitForAll([]);
+
+    expect(hydrationErrors).toEqual([]);
+    expect(document.documentElement.outerHTML).toEqual(
+      '<html><head></head><body><div>hello</div></body></html>',
+    );
+    expect(document.body.firstChild).toBe(serverRenderedDiv);
+  });
 });
