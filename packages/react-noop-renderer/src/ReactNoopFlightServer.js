@@ -51,6 +51,9 @@ const ReactNoopFlightServer = ReactFlightServer({
   stringToPrecomputedChunk(content: string): Uint8Array {
     return textEncoder.encode(content);
   },
+  byteLengthOfChunk(chunk: Uint8Array): number {
+    return chunk.byteLength;
+  },
   isClientReference(reference: Object): boolean {
     return reference.$$typeof === Symbol.for('react.client.reference');
   },
