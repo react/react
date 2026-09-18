@@ -4,7 +4,7 @@ React Forget test framework that executes compiler fixtures.
 Currently, Sprout runs each fixture with a known set of inputs and annotations. Sprout compares execution outputs (i.e. return values and console logs) of original source code and the corresponding Forget-transformed version.
 We hope to add fuzzing capabilities to Sprout, synthesizing sets of program inputs based on type and/or effect annotations.
 
-Sprout is now enabled for all fixtures! If Sprout cannot execute your fixture due to some technical limitations, add your fixture to [`SproutTodoFilter.ts`](./src/SproutTodoFilter.ts) with a comment explaining why.
+Sprout is now enabled for all fixtures! If Sprout cannot execute your fixture due to some technical limitations, add your fixture to [`SproutTodoFilter.ts`](../SproutTodoFilter.ts) with a comment explaining why.
 
 ### Sprout CLI
 Sprout is now run as a part of snap, except when in filter mode.
@@ -68,7 +68,7 @@ function customHelper(val1, val2) {
 
 - Sprout currently runs each fixture in an iife to prevent variable collisions, but it does not run fixtures in isolation. Please do not mutate any external state in fixtures.
 
-- Sprout does not run fixtures listed in [`SproutTodoFilter.ts`](./src/SproutTodoFilter.ts), even in filter mode.
+- Sprout does not run fixtures listed in [`SproutTodoFilter.ts`](../SproutTodoFilter.ts), even in filter mode.
 
 ### Milestones:
 - [✅] Render fixtures with React runtime / `testing-library/react`.
