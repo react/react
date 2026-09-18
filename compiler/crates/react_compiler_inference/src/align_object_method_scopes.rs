@@ -12,6 +12,9 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp;
 
+use react_compiler_diagnostics::{
+    CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory,
+};
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
     EvaluationOrder, HirFunction, IdentifierId, InstructionValue, ObjectPropertyOrSpread, ScopeId,
@@ -25,7 +28,27 @@ use react_compiler_utils::DisjointSet;
 /// Identifies ObjectMethod lvalue identifiers and then finds ObjectExpression
 /// instructions whose operands reference those methods. Returns a disjoint set
 /// of scopes that must be merged.
-fn find_scopes_to_merge(func: &HirFunction, env: &Environment) -> DisjointSet<ScopeId> {
+const NULL_SCOPE_REASON: &str =
+    "Internal error: Expected all ObjectExpressions and ObjectMethods to have non-null scope.";
+
+fn invariant_null_object_method_scope() -> CompilerError {
+    let mut err = CompilerError::new();
+    err.push_diagnostic(
+        CompilerDiagnostic::new(ErrorCategory::Invariant, NULL_SCOPE_REASON, None).with_detail(
+            CompilerDiagnosticDetail::Error {
+                loc: None,
+                message: Some(NULL_SCOPE_REASON.to_string()),
+                identifier_name: None,
+            },
+        ),
+    );
+    err
+}
+
+fn find_scopes_to_merge(
+    func: &HirFunction,
+    env: &Environment,
+) -> Result<DisjointSet<ScopeId>, CompilerError> {
     let mut object_method_decls: FxHashSet<IdentifierId> = FxHashSet::default();
     let mut merged_scopes = DisjointSet::<ScopeId>::new();
 
@@ -49,12 +72,13 @@ fn find_scopes_to_merge(func: &HirFunction, env: &Environment) -> DisjointSet<Sc
                                 env.identifiers[instr.lvalue.identifier.0 as usize].scope;
 
                             // TS: CompilerError.invariant(operandScope != null && lvalueScope != null, ...)
-                            let operand_sid = operand_scope.expect(
-                                "Internal error: Expected all ObjectExpressions and ObjectMethods to have non-null scope.",
-                            );
-                            let lvalue_sid = lvalue_scope.expect(
-                                "Internal error: Expected all ObjectExpressions and ObjectMethods to have non-null scope.",
-                            );
+                            // SSR disables memoization so scopes are None. `expect` panics the NAPI
+                            // thread; TS throws CompilerError which panicThreshold can skip.
+                            let (Some(operand_sid), Some(lvalue_sid)) =
+                                (operand_scope, lvalue_scope)
+                            else {
+                                return Err(invariant_null_object_method_scope());
+                            };
                             merged_scopes.union(&[operand_sid, lvalue_sid]);
                         }
                     }
@@ -64,7 +88,7 @@ fn find_scopes_to_merge(func: &HirFunction, env: &Environment) -> DisjointSet<Sc
         }
     }
 
-    merged_scopes
+    Ok(merged_scopes)
 }
 
 // =============================================================================
@@ -75,7 +99,10 @@ fn find_scopes_to_merge(func: &HirFunction, env: &Environment) -> DisjointSet<Sc
 /// ObjectExpression share the same scope.
 ///
 /// Corresponds to TS `alignObjectMethodScopes(fn: HIRFunction): void`.
-pub fn align_object_method_scopes(func: &mut HirFunction, env: &mut Environment) {
+pub fn align_object_method_scopes(
+    func: &mut HirFunction,
+    env: &mut Environment,
+) -> Result<(), CompilerError> {
     // Handle inner functions first (TS recurses before processing the outer function)
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
@@ -88,15 +115,16 @@ pub fn align_object_method_scopes(func: &mut HirFunction, env: &mut Environment)
                         &mut env.functions[func_id.0 as usize],
                         react_compiler_ssa::enter_ssa::placeholder_function(),
                     );
-                    align_object_method_scopes(&mut inner_func, env);
+                    let inner_result = align_object_method_scopes(&mut inner_func, env);
                     env.functions[func_id.0 as usize] = inner_func;
+                    inner_result?;
                 }
                 _ => {}
             }
         }
     }
 
-    let mut merged_scopes = find_scopes_to_merge(func, env);
+    let mut merged_scopes = find_scopes_to_merge(func, env)?;
 
     // Step 1: Merge affected scopes to their canonical root.
     // Use a FxHashMap to accumulate min/max across all scopes mapping to the same root,
@@ -166,4 +194,5 @@ pub fn align_object_method_scopes(func: &mut HirFunction, env: &mut Environment)
             }
         }
     }
+    Ok(())
 }
