@@ -94,15 +94,18 @@ import {
   REACT_ELEMENT_TYPE,
   ASYNC_ITERATOR,
   REACT_FRAGMENT_TYPE,
+  REACT_LEDGER_TOTAL_TYPE,
 } from 'shared/ReactSymbols';
 
 import type {
   LedgerKind,
+  LedgerCell,
   Ledger,
   LedgerUnitDeclaration,
   LedgerReferencesRow,
   UnitRecord,
   LedgerGraph,
+  DecodedLedgerTotal,
 } from 'react-server/src/ReactFlightLedgers';
 import {
   BIT_LEDGER,
@@ -111,7 +114,8 @@ import {
   MAX_LEDGER,
   SET_LEDGER,
   createLedgerCell,
-  reduceLedgerCell,
+  cloneLedgerCellValue,
+  readLedgerTotal,
 } from 'react-server/src/ReactFlightLedgers';
 
 import getComponentNameFromType from 'shared/getComponentNameFromType';
@@ -4050,14 +4054,20 @@ function resolveHint<Code: HintCode>(
 type LedgerTotalRecord = {
   chunk: SomeChunk<mixed>,
   type: Ledger<empty>,
-  roots: Array<UnitRecord>,
-  graph: LedgerGraph,
+  pendingCaptureUnits: Array<UnitRecord>,
+  graph: null | LedgerGraph,
+  cell: null | LedgerCell,
+  visitedUnits: null | WeakSet<UnitRecord>,
 };
 
 type ResponseLedgers = {
   totals: Map<number, LedgerTotalRecord>,
   types: Map<number, Ledger<empty>>,
   units: Map<number, UnitRecord>,
+  isTracking: boolean,
+  dirtyUnits: null | UnitRecord,
+  // A closed graph can never change again.
+  closed: boolean,
 };
 
 function getResponseLedgers(response: Response): ResponseLedgers {
@@ -4067,13 +4077,16 @@ function getResponseLedgers(response: Response): ResponseLedgers {
       totals: new Map(),
       types: new Map(),
       units: new Map(),
+      isTracking: false,
+      dirtyUnits: null,
+      closed: false,
     };
   }
   return ledgers;
 }
 
-// Closing the stream makes every total available. Compute totals with waiting
-// readers now; leave the others uninitialized until they are read.
+// Closing makes every total available. Finish totals with waiting readers or
+// earlier polls so they can release their graphs; leave unread totals lazy.
 //
 // Even if the stream closes early (due to an abort, an error, Partial
 // Prefetching, etc) we still compute the totals for what was already decoded.
@@ -4083,6 +4096,7 @@ function resolveLedgerTotalsAtClose(response: Response): void {
   }
   const ledgers = response._ledgers;
   if (ledgers !== null) {
+    ledgers.closed = true;
     ledgers.totals.forEach(record => {
       const chunk = record.chunk;
       if (chunk.status === PENDING) {
@@ -4101,6 +4115,10 @@ function resolveLedgerTotalsAtClose(response: Response): void {
             resolveListeners,
             rejectListeners,
           );
+        } else if (record.cell !== null) {
+          // Forwarding may have polled this total without subscribing to its
+          // promise. Finalize it now so the token can release the response graph.
+          initializeLedgerChunk(resolvedChunk);
         }
       }
     });
@@ -4110,7 +4128,7 @@ function resolveLedgerTotalsAtClose(response: Response): void {
 function initializeLedgerChunk<T>(chunk: ResolvedLedgerChunk<T>): void {
   const record = chunk.value;
   const response = chunk.reason;
-  const state = reduceLedgerCell(record).state;
+  const state = cloneLedgerCellValue(readLedgerTotal(record));
   // An unwritten min/max ledger resolves to undefined.
   const total = state === null ? undefined : state;
   const initializedChunk: InitializedChunk<mixed> = chunk as any;
@@ -4153,16 +4171,56 @@ function resolveLedgerTotal(response: Response, id: number, row: string): void {
   if (type === undefined) {
     return;
   }
-  ledgers.totals.set(id, {
-    chunk: createPendingChunk(response),
+  const chunk: SomeChunk<mixed> = createPendingChunk(response);
+  const record: LedgerTotalRecord = {
+    chunk,
     type,
-    roots: [],
+    pendingCaptureUnits: [],
     graph: ledgers,
-  });
+    cell: null,
+    visitedUnits: null,
+  };
+  ledgers.totals.set(id, record);
+  // Marked so a server serializing this total into its own response forwards
+  // the record instead of awaiting the chunk.
+  // TODO: Stamping fields onto a ReactPromise gives total chunks a second
+  // shape and stores these fields outside the object. A dedicated chunk
+  // constructor would avoid both at the cost of duplicating the pending
+  // bookkeeping; not worth it for the few totals a response declares.
+  const decoded: DecodedLedgerTotal = chunk as any;
+  decoded.$$typeof = REACT_LEDGER_TOTAL_TYPE;
+  decoded.total = record;
 }
 
-// Creator and total declarations arrive first, so these links can be resolved
-// while decoding.
+function getOrCreateUnit(ledgers: ResponseLedgers, id: number): UnitRecord {
+  let unit = ledgers.units.get(id);
+  if (unit === undefined) {
+    unit = {
+      children: null,
+      capturedLedgers: null,
+      cells: null,
+      references: null,
+      isQueued: false,
+      nextDirty: null,
+    };
+    ledgers.units.set(id, unit);
+  }
+  return unit;
+}
+
+// Coalesce changes until the next poll. Every started total consumes the same
+// queue before it is cleared; later readers use their cached reductions.
+function markUnitDirty(ledgers: ResponseLedgers, unit: UnitRecord): void {
+  if (!ledgers.isTracking || unit.isQueued) {
+    return;
+  }
+  unit.isQueued = true;
+  unit.nextDirty = ledgers.dirtyUnits;
+  ledgers.dirtyUnits = unit;
+}
+
+// Creator and total declarations arrive first. Reuse references may create a
+// placeholder earlier; fill that same record so existing edges stay connected.
 function resolveUnitDeclaration(
   response: Response,
   id: number,
@@ -4171,13 +4229,7 @@ function resolveUnitDeclaration(
   const declaration: LedgerUnitDeclaration = parseModel(response, row);
   const ledgers = getResponseLedgers(response);
   const units = ledgers.units;
-  const unit: UnitRecord = {
-    children: null,
-    capturedLedgers: null,
-    cells: null,
-    references: null,
-  };
-  units.set(id, unit);
+  const unit = getOrCreateUnit(ledgers, id);
   const creatorId = declaration[0];
   if (creatorId !== null) {
     const creator = units.get(parseInt(creatorId, 16));
@@ -4187,21 +4239,25 @@ function resolveUnitDeclaration(
         creator.children = children = [];
       }
       children.push(unit);
+      markUnitDirty(ledgers, creator);
     }
   }
   const totalIds = declaration[1];
   if (totalIds.length !== 0) {
+    // This unit starts a capture occurrence for each listed total. Occurrences
+    // can arrive after earlier polls, so queue them for the next traversal.
     const totals = ledgers.totals;
     const list: Array<Ledger<empty>> = [];
     for (let i = 0; i < totalIds.length; i++) {
       const record = totals.get(parseInt(totalIds[i], 16));
       if (record !== undefined) {
         list.push(record.type);
-        record.roots.push(unit);
+        record.pendingCaptureUnits.push(unit);
       }
     }
     unit.capturedLedgers = list;
   }
+  markUnitDirty(ledgers, unit);
 }
 
 function resolveLedgerDelta(response: Response, id: number, row: string): void {
@@ -4216,6 +4272,7 @@ function resolveLedgerDelta(response: Response, id: number, row: string): void {
   if (type === undefined) {
     return;
   }
+  markUnitDirty(ledgers, unit);
   let cells = unit.cells;
   if (cells === null) {
     unit.cells = cells = new Map();
@@ -4264,16 +4321,20 @@ function resolveUnitReferences(
   row: string,
 ): void {
   const references: LedgerReferencesRow = parseModel(response, row);
-  const unit = getResponseLedgers(response).units.get(id);
+  const ledgers = getResponseLedgers(response);
+  const units = ledgers.units;
+  const unit = units.get(id);
   if (unit === undefined) {
     return;
   }
+  markUnitDirty(ledgers, unit);
   let list = unit.references;
   if (list === null) {
     unit.references = list = [];
   }
   for (let i = 0; i < references.length; i++) {
-    list.push(parseInt(references[i], 16));
+    const target = getOrCreateUnit(ledgers, parseInt(references[i], 16));
+    list.push(target);
   }
 }
 
