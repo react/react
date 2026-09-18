@@ -93,6 +93,34 @@ let hydrationErrors: Array<CapturedValue<mixed>> | null = null;
 
 let rootOrSingletonContext = false;
 
+// A failed fallback must switch to client rendering for the rest of this
+// render attempt. Keep this separate from committed Suspense state so an
+// interrupted render cannot change the behavior of the next attempt.
+let failedFallbackHydrationBoundaries: null | Set<Fiber> = null;
+
+export function markFallbackHydrationFailed(current: Fiber): void {
+  if (failedFallbackHydrationBoundaries === null) {
+    failedFallbackHydrationBoundaries = new Set();
+  }
+  failedFallbackHydrationBoundaries.add(current);
+}
+
+export function didFallbackHydrationFail(current: Fiber): boolean {
+  return (
+    failedFallbackHydrationBoundaries !== null &&
+    failedFallbackHydrationBoundaries.has(current)
+  );
+}
+
+export function resetFallbackHydrationFailures(): void {
+  if (failedFallbackHydrationBoundaries !== null) {
+    // The previous attempt's fallback errors were not committed. A fresh
+    // stack must not report them through a different root's completion.
+    hydrationErrors = null;
+    failedFallbackHydrationBoundaries = null;
+  }
+}
+
 // Builds a common ancestor tree from the root down for collecting diffs.
 function buildHydrationDiffNode(
   fiber: Fiber,

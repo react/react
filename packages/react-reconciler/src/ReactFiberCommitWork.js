@@ -1905,7 +1905,10 @@ function commitSuspenseHydrationCallbacks(
     return;
   }
   const newState: SuspenseState | null = finishedWork.memoizedState;
-  if (newState === null) {
+  if (
+    newState === null ||
+    (newState.dehydrated === null && newState.isHydratingFallback === false)
+  ) {
     const current = finishedWork.alternate;
     if (current !== null) {
       const prevState: SuspenseState | null = current.memoizedState;

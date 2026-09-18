@@ -1003,6 +1003,18 @@ function completeDehydratedSuspenseBoundary(
 ): boolean {
   const wasHydrated = popHydrationState(workInProgress);
 
+  if (nextState !== null && nextState.isHydratingFallback === true) {
+    resetHydrationState();
+    workInProgress.memoizedState = {
+      ...nextState,
+      dehydrated: null,
+      treeContext: null,
+      isHydratingFallback: false,
+    };
+    workInProgress.flags |= Update;
+    return true;
+  }
+
   if (nextState !== null && nextState.dehydrated !== null) {
     // We might be inside a hydration state the first time we're picking up this
     // Suspense boundary, and also after we've reentered it for further hydration.

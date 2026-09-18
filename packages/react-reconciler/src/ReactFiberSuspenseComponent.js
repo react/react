@@ -29,6 +29,8 @@ import {
 // - A null dehydrated field means it's blocked by something suspending and
 //   we're currently showing a fallback instead.
 export type SuspenseState = {
+  // Transient render state; consumed when fallback hydration completes.
+  isHydratingFallback?: boolean,
   // If this boundary is still dehydrated, we store the SuspenseInstance
   // here to indicate that it is dehydrated (flag) and for quick access
   // to check things like isSuspenseInstancePending.
