@@ -10,7 +10,8 @@ import {
   BlockId,
   GeneratedSource,
   HIRFunction,
-  Instruction,
+  InstructionKind,
+  InstructionValue,
   assertConsistentIdentifiers,
   assertTerminalSuccessorsExist,
   mergeConsecutiveBlocks,
@@ -82,7 +83,7 @@ function pruneMaybeThrowsImpl(fn: HIRFunction): Map<BlockId, BlockId> | null {
       continue;
     }
     const canThrow = block.instructions.some(instr =>
-      instructionMayThrow(instr),
+      valueMayThrow(instr.value),
     );
     if (!canThrow) {
       const source = terminalMapping.get(block.id) ?? block.id;
@@ -93,12 +94,34 @@ function pruneMaybeThrowsImpl(fn: HIRFunction): Map<BlockId, BlockId> | null {
   return terminalMapping.size > 0 ? terminalMapping : null;
 }
 
-function instructionMayThrow(instr: Instruction): boolean {
-  switch (instr.value.kind) {
+export function valueMayThrow(value: InstructionValue): boolean {
+  switch (value.kind) {
+    case 'DeclareLocal':
+    case 'DeclareContext':
     case 'Primitive':
-    case 'ArrayExpression':
-    case 'ObjectExpression': {
+    case 'JSXText':
+    case 'TypeCastExpression':
+    case 'ObjectMethod':
+    case 'FunctionExpression':
+    case 'RegExpLiteral':
+    case 'MetaProperty':
+    case 'Debugger':
+    case 'StartMemoize':
+    case 'FinishMemoize': {
       return false;
+    }
+    case 'StoreLocal':
+    case 'StoreContext': {
+      return value.lvalue.kind !== InstructionKind.Reassign;
+    }
+    case 'ArrayExpression': {
+      return value.elements.some(element => element.kind === 'Spread');
+    }
+    case 'ObjectExpression': {
+      return value.properties.some(
+        property =>
+          property.kind === 'Spread' || property.key.kind === 'computed',
+      );
     }
     default: {
       return true;

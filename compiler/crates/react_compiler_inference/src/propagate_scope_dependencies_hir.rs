@@ -1935,6 +1935,25 @@ impl<'a> DependencyCollectionContext<'a> {
         self.visit_dependency(dep, env);
     }
 
+    fn visit_operand_root(&mut self, place: &Place, env: &mut Environment) {
+        let dep = self
+            .temporaries
+            .get(&place.identifier)
+            .map(|dep| ReactiveScopeDependency {
+                identifier: dep.identifier,
+                reactive: dep.reactive,
+                path: vec![],
+                loc: dep.loc,
+            })
+            .unwrap_or_else(|| ReactiveScopeDependency {
+                identifier: place.identifier,
+                reactive: place.reactive,
+                path: vec![],
+                loc: place.loc,
+            });
+        self.visit_dependency(dep, env);
+    }
+
     fn visit_property(
         &mut self,
         object: &Place,
@@ -2048,6 +2067,12 @@ fn visit_inner_function_blocks(
     ctx: &mut DependencyCollectionContext,
     env: &mut Environment,
 ) {
+    let semantic_only_caught_instructions =
+        react_compiler_optimization::find_semantic_only_caught_instructions(
+            &env.functions[func_id.0 as usize],
+            env,
+        );
+
     // Clone inner function's instructions and block structure to avoid
     // borrow conflicts when mutating env through handle_instruction.
     let inner_instrs: Vec<Instruction> = env.functions[func_id.0 as usize].instructions.clone();
@@ -2104,7 +2129,14 @@ fn visit_inner_function_blocks(
                     visit_inner_function_blocks(lowered_func.func, ctx, env);
                 }
                 _ => {
-                    handle_instruction(inner_instr, ctx, env);
+                    handle_instruction(
+                        inner_instr,
+                        semantic_only_caught_instructions
+                            .as_ref()
+                            .is_some_and(|instructions| instructions.contains(&iid)),
+                        ctx,
+                        env,
+                    );
                 }
             }
         }
@@ -2120,6 +2152,7 @@ fn visit_inner_function_blocks(
 
 fn handle_instruction(
     instr: &Instruction,
+    semantic_only_caught_instruction: bool,
     ctx: &mut DependencyCollectionContext,
     env: &mut Environment,
 ) {
@@ -2133,6 +2166,13 @@ fn handle_instruction(
         },
         env,
     );
+
+    if semantic_only_caught_instruction {
+        for operand in visitors::each_instruction_value_operand(&instr.value, env) {
+            ctx.visit_operand_root(&operand, env);
+        }
+        return;
+    }
 
     if ctx.is_deferred_dependency_instr(instr) {
         return;
@@ -2280,6 +2320,8 @@ fn handle_function_deps(
     ctx: &mut DependencyCollectionContext,
     traversal: &mut ScopeBlockTraversal,
 ) {
+    let semantic_only_caught_instructions =
+        react_compiler_optimization::find_semantic_only_caught_instructions(func, env);
     for (block_id, block) in &func.body.blocks {
         // Record scopes
         traversal.record_scopes(block);
@@ -2331,7 +2373,14 @@ fn handle_function_deps(
                     ctx.inner_fn_context = prev_inner;
                 }
                 _ => {
-                    handle_instruction(instr, ctx, env);
+                    handle_instruction(
+                        instr,
+                        semantic_only_caught_instructions
+                            .as_ref()
+                            .is_some_and(|instructions| instructions.contains(&instr_id)),
+                        ctx,
+                        env,
+                    );
                 }
             }
         }
