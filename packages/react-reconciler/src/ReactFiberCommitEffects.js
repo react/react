@@ -65,6 +65,7 @@ import {
   Passive as HookPassive,
 } from './ReactHookEffectTags';
 import {didWarnAboutReassigningProps} from './ReactFiberBeginWork';
+import hasOwnProperty from 'shared/hasOwnProperty';
 import {
   markComponentPassiveEffectMountStarted,
   markComponentPassiveEffectMountStopped,
@@ -805,7 +806,7 @@ function commitAttachRef(finishedWork: Fiber) {
         // phase (markRef).
         if (typeof ref === 'string') {
           console.error('String refs are no longer supported.');
-        } else if (!ref.hasOwnProperty('current')) {
+        } else if (!hasOwnProperty.call(ref, 'current')) {
           console.error(
             'Unexpected ref object provided for %s. ' +
               'Use either a ref-setter function or React.createRef().',
