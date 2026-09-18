@@ -509,22 +509,16 @@ function runActTests(render, unmount, rerender) {
 
       // @gate __DEV__
       it('warns if you do not await an act call', async () => {
-        spyOnDevAndProd(console, 'error').mockImplementation(() => {});
         act(async () => {});
         // it's annoying that we have to wait a tick before this warning comes in
         await sleep(0);
-        if (__DEV__) {
-          expect(console.error).toHaveBeenCalledTimes(1);
-          expect(console.error.mock.calls[0][0]).toMatch(
-            'You called act(async () => ...) without await.',
-          );
-        }
+        assertConsoleErrorDev([
+          'You called act(async () => ...) without await. ',
+        ]);
       });
 
       // @gate __DEV__
       it('warns if you try to interleave multiple act calls', async () => {
-        spyOnDevAndProd(console, 'error').mockImplementation(() => {});
-
         await Promise.all([
           act(async () => {
             await sleep(50);
@@ -535,15 +529,10 @@ function runActTests(render, unmount, rerender) {
         ]);
 
         await sleep(150);
-        if (__DEV__) {
-          expect(console.error).toHaveBeenCalledTimes(2);
-          expect(console.error.mock.calls[0][0]).toMatch(
-            'You seem to have overlapping act() calls',
-          );
-          expect(console.error.mock.calls[1][0]).toMatch(
-            'You seem to have overlapping act() calls',
-          );
-        }
+        assertConsoleErrorDev([
+          'Error: You seem to have overlapping act() calls, this is not supported.',
+          'Error: You seem to have overlapping act() calls, this is not supported.',
+        ]);
       });
 
       // @gate __DEV__
