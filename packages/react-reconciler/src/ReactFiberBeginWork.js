@@ -83,6 +83,7 @@ import {
   Throw,
   ViewTransitionComponent,
   ActivityComponent,
+  DehydratedFragment,
 } from './ReactWorkTags';
 import {
   NoFlags,
@@ -827,7 +828,14 @@ function bailoutOffscreenComponent(
     workInProgress.stateNode = primaryChildInstance;
   }
 
-  return workInProgress.sibling;
+  const sibling = workInProgress.sibling;
+  // A preserved dehydrated fallback has no children to render. Returning it
+  // as the next unit of work would try to process server HTML that must stay
+  // as-is (see updateDehydratedSuspenseComponent).
+  if (sibling !== null && sibling.tag === DehydratedFragment) {
+    return null;
+  }
+  return sibling;
 }
 
 function deferHiddenOffscreenComponent(
@@ -2850,10 +2858,18 @@ function updateSuspenseFallbackChildren(
   }
   let fallbackChildFragment;
   if (currentFallbackChildFragment !== null) {
-    fallbackChildFragment = createWorkInProgress(
-      currentFallbackChildFragment,
-      fallbackChildren,
-    );
+    if (currentFallbackChildFragment.tag === DehydratedFragment) {
+      // Keep a preserved SSR fallback as-is. It has no children to render.
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        null,
+      );
+    } else {
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        fallbackChildren,
+      );
+    }
   } else {
     fallbackChildFragment = createFiberFromFragment(
       fallbackChildren,
@@ -3189,6 +3205,62 @@ function updateDehydratedSuspenseComponent(
       // Suspended but we should no longer be in dehydrated mode.
       // Therefore we now have to render the fallback.
       pushFallbackTreeSuspenseHandler(workInProgress);
+
+      // When the server left a permanent fallback because of use(browser()),
+      // the first client retry can suspend again on a client-created promise
+      // (localStorage, IndexedDB, setTimeout, etc). Deleting the SSR fallback
+      // and mounting an identical one restarts CSS animations and drops DOM
+      // state. Keep the dehydrated fragment in place instead.
+      // https://github.com/facebook/react/issues/37620
+      //
+      // Gate tightly on the recoverable browser() digest so ordinary error
+      // fallbacks still client-render through the existing path. Unlike the
+      // reverted #24236, this does not throw away the commit: it rewires the
+      // fiber tree so the existing DOM nodes stay mounted.
+      const dehydratedFragment = current.child;
+      if (
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        dehydratedFragment !== null &&
+        dehydratedFragment.tag === DehydratedFragment &&
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST
+      ) {
+        const deletions = workInProgress.deletions;
+        if (deletions !== null) {
+          for (let i = deletions.length - 1; i >= 0; i--) {
+            if (deletions[i] === dehydratedFragment) {
+              deletions.splice(i, 1);
+            }
+          }
+          if (deletions.length === 0) {
+            workInProgress.deletions = null;
+            workInProgress.flags &= ~ChildDeletion;
+          }
+        }
+
+        const primaryChildFragment: Fiber = mountWorkInProgressOffscreenFiber(
+          {
+            mode: 'hidden',
+            children: nextProps.children,
+          },
+          workInProgress.mode,
+          NoLanes,
+        );
+        primaryChildFragment.memoizedState =
+          mountSuspenseOffscreenState(renderLanes);
+        primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
+          current,
+          didPrimaryChildrenDefer,
+          renderLanes,
+        );
+        primaryChildFragment.return = workInProgress;
+        // Reuse the SSR fallback fragment. It has no children to render.
+        primaryChildFragment.sibling = dehydratedFragment;
+        workInProgress.child = primaryChildFragment;
+        workInProgress.memoizedState = SUSPENDED_MARKER;
+        bailoutOffscreenComponent(null, primaryChildFragment);
+        return null;
+      }
 
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
