@@ -3252,19 +3252,25 @@ FragmentInstance.prototype.dispatchEvent = function (
       }
     }
     parentHostInstance.appendChild(temp);
-    const cancelable = temp.dispatchEvent(event);
-    if (eventListeners) {
-      for (let i = 0; i < eventListeners.length; i++) {
-        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
-        temp.removeEventListener(
-          type,
-          attachedListener,
-          getAttachOptions(optionsOrUseCapture),
-        );
+    try {
+      return temp.dispatchEvent(event);
+    } finally {
+      if (eventListeners) {
+        for (let i = 0; i < eventListeners.length; i++) {
+          const {type, attachedListener, optionsOrUseCapture} =
+            eventListeners[i];
+          temp.removeEventListener(
+            type,
+            attachedListener,
+            getAttachOptions(optionsOrUseCapture),
+          );
+        }
+      }
+      const tempParent = temp.parentNode;
+      if (tempParent !== null) {
+        tempParent.removeChild(temp);
       }
     }
-    parentHostInstance.removeChild(temp);
-    return cancelable;
   } else {
     return parentHostInstance.dispatchEvent(event);
   }
