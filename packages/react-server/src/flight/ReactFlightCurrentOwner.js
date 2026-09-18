@@ -22,6 +22,7 @@ export function setCurrentOwner(componentInfo: null | ReactComponentInfo) {
 
 export function resolveOwner(): null | ReactComponentInfo {
   if (currentOwner) return currentOwner;
+  // $FlowFixMe[constant-condition]
   if (supportsComponentStorage) {
     const owner = componentStorage.getStore();
     if (owner) return owner;

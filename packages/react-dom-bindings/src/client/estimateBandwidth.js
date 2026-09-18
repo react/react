@@ -98,7 +98,7 @@ export default function estimateBandwidth(): number {
   // Fallback to the navigator.connection estimate if available
   // $FlowFixMe[prop-missing]
   if (navigator.connection) {
-    // $FlowFixMe
+    // $FlowFixMe[incompatible-use]
     const downlink: ?number = navigator.connection.downlink;
     if (typeof downlink === 'number') {
       return downlink;

@@ -24,7 +24,7 @@ export opaque type ToStringValue =
 export function toString(value: ToStringValue): string {
   // The coercion safety check is performed in getToStringValue().
   // eslint-disable-next-line react-internal/safe-string-coercion
-  return '' + (value: any);
+  return '' + (value as any);
 }
 
 export function getToStringValue(value: mixed): ToStringValue {

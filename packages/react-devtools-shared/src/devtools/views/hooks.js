@@ -165,7 +165,7 @@ export function useLocalStorage<T>(
       console.log(error);
     }
     if (typeof initialValue === 'function') {
-      return ((initialValue: any): () => T)();
+      return (initialValue as any as () => T)();
     } else {
       return initialValue;
     }
@@ -188,7 +188,7 @@ export function useLocalStorage<T>(
     (value: $FlowFixMe) => {
       try {
         const valueToStore =
-          value instanceof Function ? (value: any)(storedValue) : value;
+          value instanceof Function ? (value as any)(storedValue) : value;
         localStorageSetItem(key, JSON.stringify(valueToStore));
 
         // Notify listeners that this setting has changed.
@@ -243,7 +243,7 @@ export function useModalDismissSignal(
     const handleRootNodeClick: MouseEventHandler = event => {
       if (
         modalRef.current !== null &&
-        /* $FlowExpectedError[incompatible-call] Instead of dealing with possibly multiple realms
+        /* $FlowExpectedError[incompatible-type] Instead of dealing with possibly multiple realms
          and multiple Node references to comply with Flow (e.g. checking with `event.target instanceof Node`)
          just delegate it to contains call */
         !modalRef.current.contains(event.target)

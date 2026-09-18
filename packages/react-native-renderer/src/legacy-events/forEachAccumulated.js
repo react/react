@@ -22,7 +22,7 @@ function forEachAccumulated<T>(
   scope: ?any,
 ) {
   if (Array.isArray(arr)) {
-    // $FlowFixMe[incompatible-call] if `T` is an array, `cb` cannot be called
+    // $FlowFixMe[incompatible-type] if `T` is an array, `cb` cannot be called
     arr.forEach(cb, scope);
   } else if (arr) {
     cb.call(scope, arr);

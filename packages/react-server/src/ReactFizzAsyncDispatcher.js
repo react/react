@@ -20,10 +20,10 @@ function cacheSignal(): null | AbortSignal {
   throw new Error('Not implemented.');
 }
 
-export const DefaultAsyncDispatcher: AsyncDispatcher = ({
+export const DefaultAsyncDispatcher: AsyncDispatcher = {
   getCacheForType,
   cacheSignal,
-}: any);
+} as any;
 
 if (__DEV__) {
   DefaultAsyncDispatcher.getOwner = (): ComponentStackNode | null => {

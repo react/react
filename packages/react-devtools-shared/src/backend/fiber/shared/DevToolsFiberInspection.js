@@ -21,7 +21,7 @@ export function isError(object: mixed): boolean {
 
 export function getFiberFlags(fiber: Fiber): number {
   // The name of this field changed from "effectTag" to "flags"
-  return fiber.flags !== undefined ? fiber.flags : (fiber: any).effectTag;
+  return fiber.flags !== undefined ? fiber.flags : (fiber as any).effectTag;
 }
 
 export function rootSupportsProfiling(root: any): boolean {
@@ -61,7 +61,7 @@ export function getSecondaryEnvironmentName(
   index: number,
 ): null | string {
   if (debugInfo != null) {
-    const componentInfo: ReactComponentInfo = (debugInfo[index]: any);
+    const componentInfo: ReactComponentInfo = debugInfo[index] as any;
     for (let i = index + 1; i < debugInfo.length; i++) {
       const debugEntry = debugInfo[i];
       if (typeof debugEntry.env === 'string') {

@@ -14,7 +14,12 @@ import {
   CompilerErrorDetail,
   ErrorCategory,
 } from '../CompilerError';
-import {CompilerOutputMode, Logger, ProgramContext} from '../Entrypoint';
+import {
+  CompilerOutputMode,
+  Logger,
+  ProgramContext,
+  formatDetailForLogging,
+} from '../Entrypoint';
 import {Err, Ok, Result} from '../Utils/Result';
 import {
   DEFAULT_GLOBALS,
@@ -707,7 +712,7 @@ export class Environment {
     for (const error of errors.unwrapErr().details) {
       this.logger.logEvent(this.filename, {
         kind: 'CompileError',
-        detail: error,
+        detail: formatDetailForLogging(error),
         fnLoc: null,
       });
     }

@@ -16,8 +16,8 @@ import invariant from 'invariant';
 
 // Event configs
 export const customBubblingEventTypes: {
-  [eventName: string]: $ReadOnly<{
-    phasedRegistrationNames: $ReadOnly<{
+  [eventName: string]: Readonly<{
+    phasedRegistrationNames: Readonly<{
       captured: string,
       bubbled: string,
       skipBubbling?: ?boolean,
@@ -25,7 +25,7 @@ export const customBubblingEventTypes: {
   }>,
 } = {};
 export const customDirectEventTypes: {
-  [eventName: string]: $ReadOnly<{
+  [eventName: string]: Readonly<{
     registrationName: string,
   }>,
 } = {};

@@ -699,6 +699,755 @@ describe('ReactFresh', () => {
     }
   });
 
+  it('can remount when change function to memo', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Test() {
+            return <p>hi test</p>;
+          }
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check the initial render
+      const el = container.firstChild;
+      expect(el.textContent).toBe('hi test');
+
+      // Patch to change function to memo
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test2');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check remount
+      expect(container.firstChild).not.toBe(el);
+      const nextEl = container.firstChild;
+      expect(nextEl.textContent).toBe('hi memo');
+
+      // Patch back to original function
+      await act(async () => {
+        await patch(() => {
+          function Test() {
+            return <p>hi test</p>;
+          }
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check final remount
+      expect(container.firstChild).not.toBe(nextEl);
+      const newEl = container.firstChild;
+      expect(newEl.textContent).toBe('hi test');
+    }
+  });
+
+  it('can remount when change memo to forwardRef', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test2');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+      // Check the initial render
+      const el = container.firstChild;
+      expect(el.textContent).toBe('hi memo');
+
+      // Patch to change memo to forwardRef
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi forwardRef</p>;
+          }
+          const Test = React.forwardRef(Test2);
+          $RefreshReg$(Test2, 'Test2');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+      // Check remount
+      expect(container.firstChild).not.toBe(el);
+      const nextEl = container.firstChild;
+      expect(nextEl.textContent).toBe('hi forwardRef');
+
+      // Patch back to memo
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test2');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+      // Check final remount
+      expect(container.firstChild).not.toBe(nextEl);
+      const newEl = container.firstChild;
+      expect(newEl.textContent).toBe('hi memo');
+    }
+  });
+
+  it('can remount when change function to forwardRef', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Test() {
+            return <p>hi test</p>;
+          }
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check the initial render
+      const el = container.firstChild;
+      expect(el.textContent).toBe('hi test');
+
+      // Patch to change function to forwardRef
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi forwardRef</p>;
+          }
+          const Test = React.forwardRef(Test2);
+          $RefreshReg$(Test2, 'Test2');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check remount
+      expect(container.firstChild).not.toBe(el);
+      const nextEl = container.firstChild;
+      expect(nextEl.textContent).toBe('hi forwardRef');
+
+      // Patch back to a new function
+      await act(async () => {
+        await patch(() => {
+          function Test() {
+            return <p>hi test1</p>;
+          }
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check final remount
+      expect(container.firstChild).not.toBe(nextEl);
+      const newEl = container.firstChild;
+      expect(newEl.textContent).toBe('hi test1');
+    }
+  });
+
+  it('can remount when change memo inner type from function to forwardRef', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check the initial render
+      const el = container.firstChild;
+      expect(el.textContent).toBe('hi memo');
+
+      // Patch to wrap the inner function in forwardRef.
+      // The outer type is still a memo, so only the inner family changes.
+      await act(async () => {
+        await patch(() => {
+          function Test2(props, ref) {
+            return <p>hi memo forwardRef</p>;
+          }
+          const Test2Ref = React.forwardRef(Test2);
+          const Test = React.memo(Test2Ref);
+          $RefreshReg$(Test2, 'Test$React.memo$React.forwardRef');
+          $RefreshReg$(Test2Ref, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check remount
+      expect(container.firstChild).not.toBe(el);
+      const nextEl = container.firstChild;
+      expect(nextEl.textContent).toBe('hi memo forwardRef');
+
+      // Patch back to a plain function inside memo
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check final remount
+      expect(container.firstChild).not.toBe(nextEl);
+      const newEl = container.firstChild;
+      expect(newEl.textContent).toBe('hi memo');
+    }
+  });
+
+  it('can mount an element created before its type changed kinds', async () => {
+    if (__DEV__) {
+      let oldElement;
+      let currentChild = null;
+
+      await act(async () => {
+        await render(() => {
+          function Test() {
+            return <p>hi test</p>;
+          }
+          $RefreshReg$(Test, 'Test');
+          oldElement = <Test />;
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>{currentChild}</div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Change the component kind before it has ever mounted.
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>{currentChild}</div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Mount the element created before the edit. The fiber must be
+      // created from the latest type, with the tag matching its kind.
+      currentChild = oldElement;
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(container.firstChild.textContent).toBe('hi memo');
+    }
+  });
+
+  it('can remount when adding or removing a memo comparison function', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check the initial render
+      const el = container.firstChild;
+      expect(el.textContent).toBe('hi memo');
+
+      // Patch to add a custom comparison function.
+      // The fiber can no longer be a SimpleMemoComponent.
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo with compare</p>;
+          }
+          const Test = React.memo(Test2, (prevProps, nextProps) => false);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check remount
+      expect(container.firstChild).not.toBe(el);
+      const nextEl = container.firstChild;
+      expect(nextEl.textContent).toBe('hi memo with compare');
+
+      // Patch to remove the comparison function again
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check final remount
+      expect(container.firstChild).not.toBe(nextEl);
+      const newEl = container.firstChild;
+      expect(newEl.textContent).toBe('hi memo');
+    }
+  });
+
+  it('can update a memo comparison function in place', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Inner({label}) {
+            return <p>{label}</p>;
+          }
+          const InnerMemo = React.memo(Inner, (prevProps, nextProps) => true);
+          $RefreshReg$(Inner, 'Inner$React.memo');
+          $RefreshReg$(InnerMemo, 'Inner');
+
+          function App() {
+            const [n, setN] = React.useState(1);
+            return (
+              <div onClick={() => setN(c => c + 1)}>
+                <InnerMemo label={'n:' + n} />
+              </div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Check the initial render
+      const el = container.firstChild;
+      expect(el.textContent).toBe('n:1');
+
+      // The comparison function blocks the update.
+      await act(async () => {
+        el.click();
+      });
+      expect(el.textContent).toBe('n:1');
+
+      // Patch to change only the comparison function implementation.
+      await act(async () => {
+        await patch(() => {
+          function Inner({label}) {
+            return <p>{label}</p>;
+          }
+          const InnerMemo = React.memo(Inner, (prevProps, nextProps) => false);
+          $RefreshReg$(Inner, 'Inner$React.memo');
+          $RefreshReg$(InnerMemo, 'Inner');
+
+          function App() {
+            const [n, setN] = React.useState(1);
+            return (
+              <div onClick={() => setN(c => c + 1)}>
+                <InnerMemo label={'n:' + n} />
+              </div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // No remount, and the previously blocked update shows through
+      // because the new comparison function is used.
+      expect(container.firstChild).toBe(el);
+      expect(el.textContent).toBe('n:2');
+
+      // The new comparison function applies to future updates too.
+      await act(async () => {
+        el.click();
+      });
+      expect(el.textContent).toBe('n:3');
+    }
+  });
+
+  it('mounts a pre-edit memo element with the latest comparison function', async () => {
+    if (__DEV__) {
+      let oldElement;
+      let newElement;
+      let currentChild = null;
+
+      await act(async () => {
+        await render(() => {
+          function Inner({label}) {
+            return <p>{label}</p>;
+          }
+          const InnerMemo = React.memo(Inner);
+          $RefreshReg$(Inner, 'Inner$React.memo');
+          $RefreshReg$(InnerMemo, 'Inner');
+          oldElement = <InnerMemo label="v1" />;
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>{currentChild}</div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Patch to add a comparison function that blocks all updates,
+      // before the memo has ever mounted.
+      await act(async () => {
+        await patch(() => {
+          function Inner({label}) {
+            return <p>{label}</p>;
+          }
+          const InnerMemo = React.memo(Inner, (prevProps, nextProps) => true);
+          $RefreshReg$(Inner, 'Inner$React.memo');
+          $RefreshReg$(InnerMemo, 'Inner');
+          newElement = <InnerMemo label="v2" />;
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>{currentChild}</div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Mount the element created before the edit. It must resolve to the
+      // latest type rather than mounting in the pre-edit shape.
+      currentChild = oldElement;
+      await act(async () => {
+        container.firstChild.click();
+      });
+      const innerEl = container.firstChild.firstChild;
+      expect(innerEl.textContent).toBe('v1');
+
+      // Switch to the element created after the edit. It belongs to the
+      // same family, so the fiber is reused (no remount)...
+      currentChild = newElement;
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(container.firstChild.firstChild).toBe(innerEl);
+      // ...and the comparison function blocks the props update, proving
+      // the fiber mounted with the comparison function in effect.
+      expect(innerEl.textContent).toBe('v1');
+    }
+  });
+
+  it('can remount lazy(memo()) when adding a comparison function', async () => {
+    if (__DEV__) {
+      let resolve;
+      await render(() => {
+        function Hello() {
+          return <p>hi memo</p>;
+        }
+        const Inner = React.memo(Hello);
+        $RefreshReg$(Hello, 'Hello');
+        $RefreshReg$(Inner, 'Inner');
+
+        const Outer = React.lazy(
+          () =>
+            new Promise(_resolve => {
+              resolve = () => _resolve({default: Inner});
+            }),
+        );
+        $RefreshReg$(Outer, 'Outer');
+
+        function App() {
+          return (
+            <React.Suspense fallback={<p>Loading</p>}>
+              <Outer />
+            </React.Suspense>
+          );
+        }
+        $RefreshReg$(App, 'App');
+        return App;
+      });
+
+      expect(container.textContent).toBe('Loading');
+      await act(() => {
+        resolve();
+      });
+      expect(container.textContent).toBe('hi memo');
+      const el = container.firstChild;
+
+      // Perform a hot update that adds a comparison function. The module
+      // creating the lazy also re-runs, like when an edit propagates.
+      await patch(() => {
+        function Hello() {
+          return <p>hi memo with compare</p>;
+        }
+        const Inner = React.memo(Hello, (prevProps, nextProps) => false);
+        $RefreshReg$(Hello, 'Hello');
+        $RefreshReg$(Inner, 'Inner');
+
+        const Outer = React.lazy(
+          () =>
+            new Promise(_resolve => {
+              resolve = () => _resolve({default: Inner});
+            }),
+        );
+        $RefreshReg$(Outer, 'Outer');
+
+        function App() {
+          return (
+            <React.Suspense fallback={<p>Loading</p>}>
+              <Outer />
+            </React.Suspense>
+          );
+        }
+        $RefreshReg$(App, 'App');
+        return App;
+      });
+
+      // The shape change requires a remount. It goes through the latest
+      // lazy type, which suspends until it resolves. The boundary shows
+      // the fallback while the previous content stays hidden in the DOM.
+      expect(container.textContent).toBe('hi memoLoading');
+      await act(() => {
+        resolve();
+      });
+      expect(container.textContent).toBe('hi memo with compare');
+      expect(container.firstChild).not.toBe(el);
+    }
+  });
+
+  it('can remount lazy(memo()) when adding a comparison function without re-creating the lazy', async () => {
+    if (__DEV__) {
+      let resolve;
+      await render(() => {
+        function Hello() {
+          return <p>hi memo</p>;
+        }
+        const Inner = React.memo(Hello);
+        $RefreshReg$(Hello, 'Hello');
+        $RefreshReg$(Inner, 'Inner');
+
+        const Outer = React.lazy(
+          () =>
+            new Promise(_resolve => {
+              resolve = () => _resolve({default: Inner});
+            }),
+        );
+        $RefreshReg$(Outer, 'Outer');
+
+        function App() {
+          return (
+            <React.Suspense fallback={<p>Loading</p>}>
+              <Outer />
+            </React.Suspense>
+          );
+        }
+        $RefreshReg$(App, 'App');
+        return App;
+      });
+
+      expect(container.textContent).toBe('Loading');
+      await act(() => {
+        resolve();
+      });
+      expect(container.textContent).toBe('hi memo');
+      const el = container.firstChild;
+
+      // Only the lazily loaded module re-runs this time, like when an
+      // edit is contained to it (the lazy type is not re-created, so the
+      // remount cannot go through it).
+      await patch(() => {
+        function Hello() {
+          return <p>hi memo with compare</p>;
+        }
+        const Inner = React.memo(Hello, (prevProps, nextProps) => false);
+        $RefreshReg$(Hello, 'Hello');
+        $RefreshReg$(Inner, 'Inner');
+        return Inner;
+      });
+
+      // The remount goes through the old lazy, whose payload is already
+      // resolved, so it doesn't suspend.
+      expect(container.textContent).toBe('hi memo with compare');
+      expect(container.firstChild).not.toBe(el);
+    }
+  });
+
+  it('can remount an unregistered memo wrapper without losing the wrapper', async () => {
+    if (__DEV__) {
+      let innerRenders = 0;
+      await act(async () => {
+        await render(() => {
+          function Inner({label}) {
+            innerRenders++;
+            return <p>{label}</p>;
+          }
+          $RefreshReg$(Inner, 'Inner');
+          $RefreshSig$(Inner, 'sig1');
+          // The wrapper is deliberately not registered, like a wrapper
+          // created inside a third-party HOC.
+          const InnerMemo = React.memo(Inner);
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>
+                <InnerMemo label="hi" />
+              </div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      expect(container.textContent).toBe('hi');
+      expect(innerRenders).toBe(1);
+
+      // The memo blocks re-renders with equal props.
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(innerRenders).toBe(1);
+
+      // Force a remount by changing the inner function's signature.
+      // Only the inner function's module re-runs; the wrapper and the
+      // element referencing it are not re-created.
+      await act(async () => {
+        await patch(() => {
+          function Inner({label}) {
+            innerRenders++;
+            return <p>{label}</p>;
+          }
+          $RefreshReg$(Inner, 'Inner');
+          $RefreshSig$(Inner, 'sig2');
+          return Inner;
+        });
+      });
+      expect(innerRenders).toBe(2);
+      const innerEl = container.firstChild.firstChild;
+
+      // The remounted fiber must still be a memo: equal props stay
+      // blocked, and the fiber reconciles against the original element
+      // instead of being replaced again.
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(innerRenders).toBe(2);
+      expect(container.firstChild.firstChild).toBe(innerEl);
+    }
+  });
+
+  it('resets state when switching between different component types', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Test() {
+            const [count, setCount] = React.useState(0);
+            return (
+              <div onClick={() => setCount(c => c + 1)}>count: {count}</div>
+            );
+          }
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      expect(container.firstChild.textContent).toBe('count: 0');
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(container.firstChild.textContent).toBe('count: 1');
+
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            const [count, setCount] = React.useState(0);
+            return (
+              <div onClick={() => setCount(c => c + 1)}>count: {count}</div>
+            );
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test2');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      expect(container.firstChild.textContent).toBe('count: 0');
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(container.firstChild.textContent).toBe('count: 1');
+
+      await act(async () => {
+        await patch(() => {
+          const Test = React.forwardRef((props, ref) => {
+            const [count, setCount] = React.useState(0);
+            const handleClick = () => setCount(c => c + 1);
+
+            // Ensure ref is extensible
+            const divRef = React.useRef(null);
+            React.useEffect(() => {
+              if (ref) {
+                if (typeof ref === 'function') {
+                  ref(divRef.current);
+                } else if (Object.isExtensible(ref)) {
+                  ref.current = divRef.current;
+                }
+              }
+            }, [ref]);
+
+            return (
+              <div ref={divRef} onClick={handleClick}>
+                count: {count}
+              </div>
+            );
+          });
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      expect(container.firstChild.textContent).toBe('count: 0');
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(container.firstChild.textContent).toBe('count: 1');
+    }
+  });
+
   it('can update simple memo function in isolation', async () => {
     if (__DEV__) {
       await render(() => {

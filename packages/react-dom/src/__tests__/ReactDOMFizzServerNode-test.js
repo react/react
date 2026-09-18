@@ -210,6 +210,8 @@ describe('ReactDOMFizzServerNode', () => {
   it('should error the stream when an error is thrown at the root', async () => {
     const reportedErrors = [];
     const reportedShellErrors = [];
+    let shellReadyCalls = 0;
+    let allReadyCalls = 0;
     const {writable, output, completed} = getTestWritable();
     const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
       <div>
@@ -222,6 +224,12 @@ describe('ReactDOMFizzServerNode', () => {
         onShellError(x) {
           reportedShellErrors.push(x);
         },
+        onShellReady() {
+          shellReadyCalls++;
+        },
+        onAllReady() {
+          allReadyCalls++;
+        },
       },
     );
 
@@ -233,6 +241,39 @@ describe('ReactDOMFizzServerNode', () => {
     expect(output.error).toBe(theError);
     expect(output.result).toBe('');
     // This type of error is reported to the error callback too.
+    expect(reportedErrors).toEqual([theError]);
+    expect(reportedShellErrors).toEqual([theError]);
+    expect(shellReadyCalls).toBe(0);
+    expect(allReadyCalls).toBe(0);
+  });
+
+  it('should not report aborts after the shell has fatally errored', async () => {
+    const reportedErrors = [];
+    const reportedShellErrors = [];
+    const {abort} = ReactDOMFizzServer.renderToPipeableStream(
+      <div>
+        <Suspense fallback="Loading">
+          <InfiniteSuspend />
+        </Suspense>
+        <Throw />
+      </div>,
+      {
+        onError(x) {
+          reportedErrors.push(x);
+        },
+        onShellError(x) {
+          reportedShellErrors.push(x);
+        },
+      },
+    );
+
+    await jest.runAllTimers();
+
+    expect(reportedErrors).toEqual([theError]);
+    expect(reportedShellErrors).toEqual([theError]);
+
+    abort(new Error('too late'));
+
     expect(reportedErrors).toEqual([theError]);
     expect(reportedShellErrors).toEqual([theError]);
   });
@@ -263,16 +304,14 @@ describe('ReactDOMFizzServerNode', () => {
 
     expect(output.error).toBe(theError);
     expect(output.result).toBe('');
-    expect(reportedErrors).toEqual([
-      theError.message,
-      'The destination stream errored while writing data.',
-    ]);
+    expect(reportedErrors).toEqual([theError.message]);
     expect(reportedShellErrors).toEqual([theError]);
   });
 
   it('should not error the stream when an error is thrown inside suspense boundary', async () => {
     const reportedErrors = [];
     const reportedShellErrors = [];
+    let allReadyCalls = 0;
     const {writable, output, completed} = getTestWritable();
     const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
       <div>
@@ -287,6 +326,9 @@ describe('ReactDOMFizzServerNode', () => {
         onShellError(x) {
           reportedShellErrors.push(x);
         },
+        onAllReady() {
+          allReadyCalls++;
+        },
       },
     );
     pipe(writable);
@@ -298,6 +340,9 @@ describe('ReactDOMFizzServerNode', () => {
     // While no error is reported to the stream, the error is reported to the callback.
     expect(reportedErrors).toEqual([theError]);
     expect(reportedShellErrors).toEqual([]);
+    // The shell stays valid, the boundary client-renders, and the render
+    // completes, so onAllReady fires. This is documented behavior.
+    expect(allReadyCalls).toBe(1);
   });
 
   it('should not attempt to render the fallback if the main content completes first', async () => {
@@ -354,6 +399,7 @@ describe('ReactDOMFizzServerNode', () => {
     expect(isCompleteCalls).toBe(0);
 
     abort(new Error('uh oh'));
+    await jest.runAllTimers();
 
     await completed;
 
@@ -406,6 +452,46 @@ describe('ReactDOMFizzServerNode', () => {
     expect(isCompleteCalls).toBe(0);
   });
 
+  it('should report abort errors for every suspended task but fail the shell only once', async () => {
+    const promise = new Promise(() => {});
+    const rendered = [];
+    function Suspend({label}) {
+      rendered.push(label);
+      React.use(promise);
+      return null;
+    }
+
+    const errors = [];
+    const shellErrors = [];
+    const {abort} = ReactDOMFizzServer.renderToPipeableStream(
+      <>
+        <Suspense fallback="Loading...">
+          <Suspend label="boundary" />
+        </Suspense>
+        <Suspend label="root one" />
+        <Suspend label="root two" />
+      </>,
+      {
+        onError(error) {
+          errors.push(error.message);
+        },
+        onShellError(error) {
+          shellErrors.push(error);
+        },
+      },
+    );
+
+    await jest.runAllTimers();
+    expect(rendered).toEqual(['boundary', 'root one', 'root two']);
+
+    const reason = new Error('abort reason');
+    abort(reason);
+    await jest.runAllTimers();
+
+    expect(shellErrors).toEqual([reason]);
+    expect(errors).toEqual(['abort reason', 'abort reason', 'abort reason']);
+  });
+
   it('should be able to complete by abort when the fallback is also suspended', async () => {
     let isCompleteCalls = 0;
     const errors = [];
@@ -437,6 +523,7 @@ describe('ReactDOMFizzServerNode', () => {
     expect(isCompleteCalls).toBe(0);
 
     abort();
+    await jest.runAllTimers();
 
     await completed;
 
@@ -679,6 +766,7 @@ describe('ReactDOMFizzServerNode', () => {
     resolve();
 
     await completed;
+    await jest.runAllTimers();
 
     expect(errors).toEqual([
       'The destination stream errored while writing data.',

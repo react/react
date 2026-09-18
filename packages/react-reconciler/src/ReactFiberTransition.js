@@ -94,7 +94,7 @@ ReactSharedInternals.S = function onStartTransitionFinishForReconciler(
     startAsyncTransitionTimer();
 
     // This is an async action
-    const thenable: Thenable<mixed> = (returnValue: any);
+    const thenable: Thenable<mixed> = returnValue as any;
     entangleAsyncAction(transition, thenable);
   }
   if (enableViewTransition) {
@@ -135,6 +135,7 @@ function chainGestureCancellation(
   prevCancel: null | (() => void),
 ): () => void {
   return function cancelGesture(): void {
+    // $FlowFixMe[invalid-compare]
     if (scheduledGesture !== null) {
       cancelScheduledGesture(root, scheduledGesture);
     }
@@ -217,7 +218,7 @@ function peekCacheFromPool(): Cache | null {
   }
 
   // Otherwise, check the root's cache pool.
-  const root = (getWorkInProgressRoot(): any);
+  const root = getWorkInProgressRoot() as any;
   const cacheFromRootCachePool = root.pooledCache;
 
   return cacheFromRootCachePool;
@@ -241,10 +242,11 @@ export function requestCacheFromPool(renderLanes: Lanes): Cache {
   // - One of several fiber types: host root, cache boundary, suspense
   //   component. These retain and release in the commit phase.
 
-  const root = (getWorkInProgressRoot(): any);
+  const root = getWorkInProgressRoot() as any;
   const freshCache = createCache();
   root.pooledCache = freshCache;
   retainCache(freshCache);
+  // $FlowFixMe[invalid-compare]
   if (freshCache !== null) {
     root.pooledCacheLanes |= renderLanes;
   }
@@ -329,6 +331,7 @@ export function getSuspendedCache(): SpawnedCachePool | null {
   return {
     // We must also save the parent, so that when we resume we can detect
     // a refresh.
+    // $FlowFixMe[constant-condition]
     parent: isPrimaryRenderer
       ? CacheContext._currentValue
       : CacheContext._currentValue2,
@@ -345,6 +348,7 @@ export function getOffscreenDeferredCache(): SpawnedCachePool | null {
   return {
     // We must also store the parent, so that when we resume we can detect
     // a refresh.
+    // $FlowFixMe[constant-condition]
     parent: isPrimaryRenderer
       ? CacheContext._currentValue
       : CacheContext._currentValue2,

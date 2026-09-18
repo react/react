@@ -89,6 +89,7 @@ export default function Element({data, index, style}: Props): React.Node {
 
   // $FlowFixMe[missing-local-annot]
   const handleClick = ({metaKey, button}) => {
+    // $FlowFixMe[invalid-compare]
     if (id !== null && button === 0) {
       logEvent({
         event_name: 'select-element',
@@ -103,6 +104,7 @@ export default function Element({data, index, style}: Props): React.Node {
 
   const handleMouseEnter = () => {
     setIsHovered(true);
+    // $FlowFixMe[invalid-compare]
     if (id !== null) {
       onElementMouseEnter(id);
     }

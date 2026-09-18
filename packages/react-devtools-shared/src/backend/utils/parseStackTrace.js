@@ -45,7 +45,7 @@ function parseStackTraceFromChromeStack(
     if (name === '<anonymous>') {
       name = '';
     } else if (name.startsWith('async ')) {
-      name = name.slice(5);
+      name = name.slice(6);
       isAsync = true;
     }
     let filename = parsed[2] || parsed[5] || '';
@@ -224,12 +224,12 @@ function collectStackTrace(
       const enclosingLine: number =
         // $FlowFixMe[prop-missing]
         typeof callSite.getEnclosingLineNumber === 'function'
-          ? (callSite: any).getEnclosingLineNumber() || 0
+          ? (callSite as any).getEnclosingLineNumber() || 0
           : 0;
       const enclosingCol: number =
         // $FlowFixMe[prop-missing]
         typeof callSite.getEnclosingColumnNumber === 'function'
-          ? (callSite: any).getEnclosingColumnNumber() || 0
+          ? (callSite as any).getEnclosingColumnNumber() || 0
           : 0;
       const isAsync =
         // $FlowFixMe[prop-missing]

@@ -112,6 +112,7 @@ function advanceTimers(currentTime: number) {
       pop(timerQueue);
       timer.sortIndex = timer.expirationTime;
       push(taskQueue, timer);
+      // $FlowFixMe[constant-condition]
       if (enableProfiling) {
         markTaskStart(timer, currentTime);
         timer.isQueued = true;
@@ -142,6 +143,7 @@ function handleTimeout(currentTime: number) {
 }
 
 function flushWork(initialTime: number) {
+  // $FlowFixMe[constant-condition]
   if (enableProfiling) {
     markSchedulerUnsuspended(initialTime);
   }
@@ -157,6 +159,7 @@ function flushWork(initialTime: number) {
   isPerformingWork = true;
   const previousPriorityLevel = currentPriorityLevel;
   try {
+    // $FlowFixMe[constant-condition]
     if (enableProfiling) {
       try {
         return workLoop(initialTime);
@@ -164,6 +167,7 @@ function flushWork(initialTime: number) {
         if (currentTask !== null) {
           const currentTime = getCurrentTime();
           // $FlowFixMe[incompatible-call] found when upgrading Flow
+          // $FlowFixMe[incompatible-type]
           markTaskErrored(currentTask, currentTime);
           // $FlowFixMe[incompatible-use] found when upgrading Flow
           currentTask.isQueued = false;
@@ -178,6 +182,7 @@ function flushWork(initialTime: number) {
     currentTask = null;
     currentPriorityLevel = previousPriorityLevel;
     isPerformingWork = false;
+    // $FlowFixMe[constant-condition]
     if (enableProfiling) {
       const currentTime = getCurrentTime();
       markSchedulerSuspended(currentTime);
@@ -205,8 +210,9 @@ function workLoop(initialTime: number) {
       currentPriorityLevel = currentTask.priorityLevel;
       // $FlowFixMe[incompatible-use] found when upgrading Flow
       const didUserCallbackTimeout = currentTask.expirationTime <= currentTime;
+      // $FlowFixMe[constant-condition]
       if (enableProfiling) {
-        // $FlowFixMe[incompatible-call] found when upgrading Flow
+        // $FlowFixMe[incompatible-type] found when upgrading Flow
         markTaskRun(currentTask, currentTime);
       }
       const continuationCallback = callback(didUserCallbackTimeout);
@@ -216,15 +222,17 @@ function workLoop(initialTime: number) {
         // regardless of how much time is left in the current time slice.
         // $FlowFixMe[incompatible-use] found when upgrading Flow
         currentTask.callback = continuationCallback;
+        // $FlowFixMe[constant-condition]
         if (enableProfiling) {
-          // $FlowFixMe[incompatible-call] found when upgrading Flow
+          // $FlowFixMe[incompatible-type] found when upgrading Flow
           markTaskYield(currentTask, currentTime);
         }
         advanceTimers(currentTime);
         return true;
       } else {
+        // $FlowFixMe[constant-condition]
         if (enableProfiling) {
-          // $FlowFixMe[incompatible-call] found when upgrading Flow
+          // $FlowFixMe[incompatible-type] found when upgrading Flow
           markTaskCompleted(currentTask, currentTime);
           // $FlowFixMe[incompatible-use] found when upgrading Flow
           currentTask.isQueued = false;
@@ -309,7 +317,7 @@ function unstable_next<T>(eventHandler: () => T): T {
 
 function unstable_wrapCallback<T: (...Array<mixed>) => mixed>(callback: T): T {
   var parentPriorityLevel = currentPriorityLevel;
-  // $FlowFixMe[incompatible-return]
+  // $FlowFixMe[incompatible-type]
   // $FlowFixMe[missing-this-annot]
   return function () {
     // This is a fork of runWithPriority, inlined for performance.
@@ -332,6 +340,7 @@ function unstable_scheduleCallback(
   var currentTime = getCurrentTime();
 
   var startTime;
+  // $FlowFixMe[invalid-compare]
   if (typeof options === 'object' && options !== null) {
     var delay = options.delay;
     if (typeof delay === 'number' && delay > 0) {
@@ -378,6 +387,7 @@ function unstable_scheduleCallback(
     expirationTime,
     sortIndex: -1,
   };
+  // $FlowFixMe[constant-condition]
   if (enableProfiling) {
     newTask.isQueued = false;
   }
@@ -400,6 +410,7 @@ function unstable_scheduleCallback(
   } else {
     newTask.sortIndex = expirationTime;
     push(taskQueue, newTask);
+    // $FlowFixMe[constant-condition]
     if (enableProfiling) {
       markTaskStart(newTask, currentTime);
       newTask.isQueued = true;
@@ -416,6 +427,7 @@ function unstable_scheduleCallback(
 }
 
 function unstable_cancelCallback(task: Task) {
+  // $FlowFixMe[constant-condition]
   if (enableProfiling) {
     if (task.isQueued) {
       const currentTime = getCurrentTime();
@@ -435,7 +447,7 @@ function unstable_getCurrentPriorityLevel(): PriorityLevel {
 }
 
 let isMessageLoopRunning = false;
-let taskTimeoutID: TimeoutID = (-1: any);
+let taskTimeoutID: TimeoutID = -1 as any;
 
 // Scheduler periodically yields in case there is other work on the main
 // thread, like user events. By default, it yields multiple times per frame.
@@ -460,6 +472,7 @@ function shouldYieldToHost(): boolean {
 }
 
 function requestPaint() {
+  // $FlowFixMe[constant-condition]
   if (enableRequestPaint) {
     needsPaint = true;
   }
@@ -483,6 +496,7 @@ function forceFrameRate(fps: number) {
 }
 
 const performWorkUntilDeadline = () => {
+  // $FlowFixMe[constant-condition]
   if (enableRequestPaint) {
     needsPaint = false;
   }
@@ -566,7 +580,7 @@ function requestHostTimeout(
 function cancelHostTimeout() {
   // $FlowFixMe[not-a-function] nullable value
   localClearTimeout(taskTimeoutID);
-  taskTimeoutID = ((-1: any): TimeoutID);
+  taskTimeoutID = -1 as any as TimeoutID;
 }
 
 export {
@@ -590,6 +604,7 @@ export {
 export const unstable_Profiling: {
   startLoggingProfilingEvents(): void,
   stopLoggingProfilingEvents(): ArrayBuffer | null,
+  // $FlowFixMe[constant-condition]
 } | null = enableProfiling
   ? {
       startLoggingProfilingEvents,

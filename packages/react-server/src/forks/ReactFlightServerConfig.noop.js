@@ -22,11 +22,11 @@ export type HintCode = string;
 export type HintModel<T: HintCode> = null; // eslint-disable-line no-unused-vars
 
 export const supportsRequestStorage = false;
-export const requestStorage: AsyncLocalStorage<Request | void> = (null: any);
+export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;
 export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =
-  (null: any);
+  null as any;
 
 export function createHints(): Hints {
   return null;

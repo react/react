@@ -12,7 +12,7 @@ import {isEnabled} from 'react-dom-bindings/src/events/ReactDOMEventListener';
 import Internals from './ReactDOMSharedInternalsFB';
 
 // For classic WWW builds, include a few internals that are already in use.
-Object.assign((Internals: any), {
+Object.assign(Internals as any, {
   ReactBrowserEventEmitter: {
     isEnabled,
   },
@@ -21,6 +21,7 @@ Object.assign((Internals: any), {
 export {Internals as __DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE};
 
 export {
+  browser,
   createPortal,
   flushSync,
   unstable_createEventHandle,

@@ -41,8 +41,8 @@ export const callComponentInDEV: <Props, R>(
   componentDebugInfo: ReactComponentInfo,
 ) => R = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
-    (callComponent.react_stack_bottom_frame.bind(callComponent): any)
-  : (null: any);
+    (callComponent.react_stack_bottom_frame.bind(callComponent) as any)
+  : (null as any);
 
 const callLazyInit = {
   react_stack_bottom_frame: function (lazy: LazyComponent<any, any>): any {
@@ -54,8 +54,8 @@ const callLazyInit = {
 
 export const callLazyInitInDEV: (lazy: LazyComponent<any, any>) => any = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
-    (callLazyInit.react_stack_bottom_frame.bind(callLazyInit): any)
-  : (null: any);
+    (callLazyInit.react_stack_bottom_frame.bind(callLazyInit) as any)
+  : (null as any);
 
 const callIterator = {
   react_stack_bottom_frame: function (
@@ -81,5 +81,5 @@ export const callIteratorInDEV: (
   error: (reason: mixed) => void,
 ) => void = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
-    (callIterator.react_stack_bottom_frame.bind(callIterator): any)
-  : (null: any);
+    (callIterator.react_stack_bottom_frame.bind(callIterator) as any)
+  : (null as any);

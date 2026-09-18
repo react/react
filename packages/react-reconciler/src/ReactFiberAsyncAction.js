@@ -122,7 +122,7 @@ function pingEngtangledActionScope() {
       // and notify all the listeners.
       if (currentEntangledActionThenable !== null) {
         const fulfilledThenable: FulfilledThenable<void> =
-          (currentEntangledActionThenable: any);
+          currentEntangledActionThenable as any;
         fulfilledThenable.status = 'fulfilled';
       }
       const listeners = currentEntangledListeners;
@@ -160,7 +160,7 @@ export function chainThenableValue<T>(
   thenable.then(
     (value: T) => {
       const fulfilledThenable: FulfilledThenable<T> =
-        (thenableWithOverride: any);
+        thenableWithOverride as any;
       fulfilledThenable.status = 'fulfilled';
       fulfilledThenable.value = result;
       for (let i = 0; i < listeners.length; i++) {
@@ -169,7 +169,7 @@ export function chainThenableValue<T>(
       }
     },
     error => {
-      const rejectedThenable: RejectedThenable<T> = (thenableWithOverride: any);
+      const rejectedThenable: RejectedThenable<T> = thenableWithOverride as any;
       rejectedThenable.status = 'rejected';
       rejectedThenable.reason = error;
       for (let i = 0; i < listeners.length; i++) {
@@ -179,7 +179,7 @@ export function chainThenableValue<T>(
         // consumer of these promises, and it passes the same listener to both.
         // We also know that it will read the error directly off the
         // `.reason` field.
-        listener((undefined: any));
+        listener(undefined as any);
       }
     },
   );

@@ -85,7 +85,7 @@ declare class ScrollTimeline extends AnimationTimeline {
 // $FlowFixMe[libdef-override]
 declare opaque type React$Element<
   +ElementType: React$ElementType,
-  +P = React$ElementProps<ElementType>,
+  +P = React$ElementConfig<ElementType>,
 >: {
   +type: ElementType,
   +props: P,
@@ -146,7 +146,11 @@ declare const __webpack_require__: ((id: string) => any) & {
   u: string => string,
 };
 
-declare function __turbopack_load_by_url__(id: string): Promise<mixed>;
+// A chunk id is a plain filename, or a merged chunk emitted as
+// `[mergedChunkFilename, componentChunkFilenames, componentChunkSizes]`.
+declare function __turbopack_load_by_url__(
+  id: string | [string, Array<string>, Array<number>],
+): Promise<mixed>;
 declare const __turbopack_require__: ((id: string) => any) & {
   u: string => string,
 };
@@ -197,56 +201,44 @@ declare module 'busboy' {
     addListener<Event: $Keys<BusboyEvents>>(
       event: Event,
       listener: BusboyEvents[Event],
-    ): Busboy;
-    addListener(
-      event: string | symbol,
-      listener: (...args: any[]) => void,
-    ): Busboy;
+    ): this;
+    addListener(event: string, listener: Function): this;
 
     on<Event: $Keys<BusboyEvents>>(
       event: Event,
       listener: BusboyEvents[Event],
-    ): Busboy;
-    on(event: string | symbol, listener: (...args: any[]) => void): Busboy;
+    ): this;
+    on(event: string, listener: Function): this;
 
     once<Event: $Keys<BusboyEvents>>(
       event: Event,
       listener: BusboyEvents[Event],
-    ): Busboy;
-    once(event: string | symbol, listener: (...args: any[]) => void): Busboy;
+    ): this;
+    once(event: string, listener: Function): this;
 
     removeListener<Event: $Keys<BusboyEvents>>(
       event: Event,
       listener: BusboyEvents[Event],
-    ): Busboy;
-    removeListener(
-      event: string | symbol,
-      listener: (...args: any[]) => void,
-    ): Busboy;
+    ): this;
+    removeListener(event: string, listener: Function): this;
 
     off<Event: $Keys<BusboyEvents>>(
       event: Event,
       listener: BusboyEvents[Event],
-    ): Busboy;
-    off(event: string | symbol, listener: (...args: any[]) => void): Busboy;
+    ): this;
+    off(event: string, listener: Function): this;
 
     prependListener<Event: $Keys<BusboyEvents>>(
       event: Event,
       listener: BusboyEvents[Event],
-    ): Busboy;
-    prependListener(
-      event: string | symbol,
-      listener: (...args: any[]) => void,
-    ): Busboy;
+    ): this;
+    prependListener(event: string, listener: Function): this;
 
     prependOnceListener<Event: $Keys<BusboyEvents>>(
       event: Event,
       listener: BusboyEvents[Event],
-    ): Busboy;
-    prependOnceListener(
-      event: string | symbol,
-      listener: (...args: any[]) => void,
-    ): Busboy;
+    ): this;
+    prependOnceListener(event: string, listener: Function): this;
   }
 }
 

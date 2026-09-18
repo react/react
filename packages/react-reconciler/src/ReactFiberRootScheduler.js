@@ -662,6 +662,7 @@ function scheduleImmediateRootScheduleTask() {
 
   // TODO: Can we land supportsMicrotasks? Which environments don't support it?
   // Alternatively, can we move this check to the host config?
+  // $FlowFixMe[constant-condition]
   if (supportsMicrotasks) {
     scheduleMicrotask(() => {
       // In Safari, appending an iframe forces microtasks to run.

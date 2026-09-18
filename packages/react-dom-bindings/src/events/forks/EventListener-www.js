@@ -66,4 +66,4 @@ export function removeEventListener(
 }
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): EventListenerType): EventListenerShimType): EventListenerType);
+null as any as EventListenerType as EventListenerShimType as EventListenerType;

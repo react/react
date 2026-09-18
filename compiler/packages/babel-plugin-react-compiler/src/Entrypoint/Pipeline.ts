@@ -161,7 +161,9 @@ function runWithEnvironment(
   log({kind: 'hir', name: 'PruneMaybeThrows', value: hir});
 
   validateContextVariableLValues(hir);
+  log({kind: 'debug', name: 'ValidateContextVariableLValues', value: 'ok'});
   validateUseMemo(hir);
+  log({kind: 'debug', name: 'ValidateUseMemo', value: 'ok'});
 
   if (env.enableDropManualMemoization) {
     dropManualMemoization(hir);
@@ -179,7 +181,9 @@ function runWithEnvironment(
   log({kind: 'hir', name: 'MergeConsecutiveBlocks', value: hir});
 
   assertConsistentIdentifiers(hir);
+  log({kind: 'debug', name: 'AssertConsistentIdentifiers', value: 'ok'});
   assertTerminalSuccessorsExist(hir);
+  log({kind: 'debug', name: 'AssertTerminalSuccessorsExist', value: 'ok'});
 
   enterSSA(hir);
   log({kind: 'hir', name: 'SSA', value: hir});
@@ -188,6 +192,7 @@ function runWithEnvironment(
   log({kind: 'hir', name: 'EliminateRedundantPhi', value: hir});
 
   assertConsistentIdentifiers(hir);
+  log({kind: 'debug', name: 'AssertConsistentIdentifiers', value: 'ok'});
 
   constantPropagation(hir);
   log({kind: 'hir', name: 'ConstantPropagation', value: hir});
@@ -198,9 +203,11 @@ function runWithEnvironment(
   if (env.enableValidations) {
     if (env.config.validateHooksUsage) {
       validateHooksUsage(hir);
+      log({kind: 'debug', name: 'ValidateHooksUsage', value: 'ok'});
     }
     if (env.config.validateNoCapitalizedCalls) {
       validateNoCapitalizedCalls(hir);
+      log({kind: 'debug', name: 'ValidateNoCapitalizedCalls', value: 'ok'});
     }
   }
 
@@ -230,17 +237,25 @@ function runWithEnvironment(
   log({kind: 'hir', name: 'InferMutationAliasingRanges', value: hir});
   if (env.enableValidations) {
     validateLocalsNotReassignedAfterRender(hir);
+    log({
+      kind: 'debug',
+      name: 'ValidateLocalsNotReassignedAfterRender',
+      value: 'ok',
+    });
 
     if (env.config.assertValidMutableRanges) {
       assertValidMutableRanges(hir);
+      log({kind: 'debug', name: 'AssertValidMutableRanges', value: 'ok'});
     }
 
     if (env.config.validateRefAccessDuringRender) {
       validateNoRefAccessInRender(hir);
+      log({kind: 'debug', name: 'ValidateNoRefAccessInRender', value: 'ok'});
     }
 
     if (env.config.validateNoSetStateInRender) {
       validateNoSetStateInRender(hir);
+      log({kind: 'debug', name: 'ValidateNoSetStateInRender', value: 'ok'});
     }
 
     if (
@@ -248,19 +263,36 @@ function runWithEnvironment(
       env.outputMode === 'lint'
     ) {
       env.logErrors(validateNoDerivedComputationsInEffects_exp(hir));
+      log({
+        kind: 'debug',
+        name: 'ValidateNoDerivedComputationsInEffects',
+        value: 'ok',
+      });
     } else if (env.config.validateNoDerivedComputationsInEffects) {
       validateNoDerivedComputationsInEffects(hir);
+      log({
+        kind: 'debug',
+        name: 'ValidateNoDerivedComputationsInEffects',
+        value: 'ok',
+      });
     }
 
     if (env.config.validateNoSetStateInEffects && env.outputMode === 'lint') {
       env.logErrors(validateNoSetStateInEffects(hir, env));
+      log({kind: 'debug', name: 'ValidateNoSetStateInEffects', value: 'ok'});
     }
 
     if (env.config.validateNoJSXInTryStatements && env.outputMode === 'lint') {
       env.logErrors(validateNoJSXInTryStatement(hir));
+      log({kind: 'debug', name: 'ValidateNoJSXInTryStatement', value: 'ok'});
     }
 
     validateNoFreezingKnownMutableFunctions(hir);
+    log({
+      kind: 'debug',
+      name: 'ValidateNoFreezingKnownMutableFunctions',
+      value: 'ok',
+    });
   }
 
   inferReactivePlaces(hir);
@@ -273,6 +305,7 @@ function runWithEnvironment(
     ) {
       // NOTE: this relies on reactivity inference running first
       validateExhaustiveDependencies(hir);
+      log({kind: 'debug', name: 'ValidateExhaustiveDependencies', value: 'ok'});
     }
   }
 
@@ -289,6 +322,7 @@ function runWithEnvironment(
     env.outputMode === 'lint'
   ) {
     env.logErrors(validateStaticComponents(hir));
+    log({kind: 'debug', name: 'ValidateStaticComponents', value: 'ok'});
   }
 
   if (env.enableMemoization) {
@@ -361,6 +395,7 @@ function runWithEnvironment(
     value: hir,
   });
   assertValidBlockNesting(hir);
+  log({kind: 'debug', name: 'AssertValidBlockNesting', value: 'ok'});
 
   buildReactiveScopeTerminalsHIR(hir);
   log({
@@ -370,6 +405,7 @@ function runWithEnvironment(
   });
 
   assertValidBlockNesting(hir);
+  log({kind: 'debug', name: 'AssertValidBlockNesting', value: 'ok'});
 
   flattenReactiveLoopsHIR(hir);
   log({
@@ -385,7 +421,9 @@ function runWithEnvironment(
     value: hir,
   });
   assertTerminalSuccessorsExist(hir);
+  log({kind: 'debug', name: 'AssertTerminalSuccessorsExist', value: 'ok'});
   assertTerminalPredsExist(hir);
+  log({kind: 'debug', name: 'AssertTerminalPredsExist', value: 'ok'});
 
   propagateScopeDependenciesHIR(hir);
   log({
@@ -402,6 +440,7 @@ function runWithEnvironment(
   });
 
   assertWellFormedBreakTargets(reactiveFunction);
+  log({kind: 'debug', name: 'AssertWellFormedBreakTargets', value: 'ok'});
 
   pruneUnusedLabels(reactiveFunction);
   log({
@@ -410,6 +449,11 @@ function runWithEnvironment(
     value: reactiveFunction,
   });
   assertScopeInstructionsWithinScopes(reactiveFunction);
+  log({
+    kind: 'debug',
+    name: 'AssertScopeInstructionsWithinScopes',
+    value: 'ok',
+  });
 
   pruneNonEscapingScopes(reactiveFunction);
   log({
@@ -500,6 +544,11 @@ function runWithEnvironment(
     env.config.validatePreserveExistingMemoizationGuarantees
   ) {
     validatePreservedManualMemoization(reactiveFunction);
+    log({
+      kind: 'debug',
+      name: 'ValidatePreservedManualMemoization',
+      value: 'ok',
+    });
   }
 
   const ast = codegenFunction(reactiveFunction, {

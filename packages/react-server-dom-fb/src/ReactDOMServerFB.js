@@ -9,7 +9,7 @@
 
 import type {ReactNodeList} from 'shared/ReactTypes';
 
-import type {Request} from 'react-server/src/ReactFizzServer';
+import type {Request, ErrorInfo} from 'react-server/src/ReactFizzServer';
 
 import type {Destination} from 'react-server/src/ReactServerStreamConfig';
 import type {BootstrapScriptDescriptor} from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
@@ -35,6 +35,7 @@ type Options = {
   bootstrapModules: Array<string>,
   progressiveChunkSize?: number,
   onError: (error: mixed) => void,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
 };
 
@@ -44,7 +45,7 @@ opaque type Stream = {
 };
 
 function renderToStream(children: ReactNodeList, options: Options): Stream {
-  const destination = {
+  const destination: Destination = {
     buffer: '',
     done: false,
     fatal: false,
@@ -68,6 +69,7 @@ function renderToStream(children: ReactNodeList, options: Options): Stream {
     createRootFormatContext(undefined),
     options ? options.progressiveChunkSize : undefined,
     options.onError,
+    options.onBrowserBailout,
     undefined,
     undefined,
   );
@@ -103,7 +105,7 @@ function hasFinished(stream: Stream): boolean {
 
 function debug(stream: Stream): any {
   // convert to any to silence flow errors from opaque type
-  const request = (stream.request: any);
+  const request = stream.request as any;
   return {
     pendingRootTasks: request.pendingRootTasks,
     clientRenderedBoundaries: request.clientRenderedBoundaries.length,

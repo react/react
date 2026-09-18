@@ -20,6 +20,34 @@ import * as HermesParser from 'hermes-parser';
 import {isDeepStrictEqual} from 'util';
 import type {ParseResult} from '@babel/parser';
 
+/**
+ * Lazy-loaded Rust compiler Babel plugin.
+ * Only loaded when __unstable_useRustCompiler is enabled.
+ */
+let _rustPluginLoaded = false;
+let _rustPlugin: ((babel: any) => any) | null = null;
+
+function getRustPlugin(): (babel: any) => any {
+  if (!_rustPluginLoaded) {
+    _rustPluginLoaded = true;
+    try {
+      _rustPlugin =
+        // eslint-disable-next-line no-restricted-syntax
+        require('babel-plugin-react-compiler-rust').default;
+    } catch {
+      _rustPlugin = null;
+    }
+  }
+  if (_rustPlugin == null) {
+    throw new Error(
+      'eslint-plugin-react-compiler: __unstable_useRustCompiler is enabled but ' +
+        'babel-plugin-react-compiler-rust is not available. ' +
+        'Make sure the package is installed and its native module is built.',
+    );
+  }
+  return _rustPlugin;
+}
+
 const COMPILER_OPTIONS: PluginOptions = {
   outputMode: 'lint',
   panicThreshold: 'none',
@@ -82,6 +110,9 @@ function runReactCompilerImpl({
   filename,
   userOpts,
 }: RunParams): RunCacheEntry {
+  const useRustCompiler =
+    (userOpts as Record<string, unknown>).__unstable_useRustCompiler === true;
+
   // Compat with older versions of eslint
   const options: PluginOptions = parsePluginOptions({
     ...COMPILER_OPTIONS,
@@ -138,18 +169,60 @@ function runReactCompilerImpl({
 
   if (babelAST != null) {
     results.flowSuppressions = getFlowSuppressions(sourceCode);
-    try {
-      transformFromAstSync(babelAST, sourceCode.text, {
-        filename,
-        highlightCode: false,
-        retainLines: true,
-        plugins: [[BabelPluginReactCompiler, options]],
-        sourceType: 'module',
-        configFile: false,
-        babelrc: false,
-      });
-    } catch (err) {
-      /* errors handled by injected logger */
+
+    if (useRustCompiler) {
+      // Rust compiler path: use the Rust NAPI Babel plugin instead of the
+      // TS compiler. The Rust plugin handles scope extraction, compilation,
+      // and event forwarding internally via its own resolveOptions +
+      // compileWithRust pipeline.
+      const RustPlugin = getRustPlugin();
+      const rustOpts: Record<string, unknown> = {
+        ...COMPILER_OPTIONS,
+        ...userOpts,
+        environment: {
+          ...(COMPILER_OPTIONS.environment as Record<string, unknown>),
+          ...((userOpts.environment as Record<string, unknown>) ?? {}),
+        },
+        logger: {
+          logEvent: (
+            eventFilename: string | null,
+            event: LoggerEvent,
+          ): void => {
+            userLogger?.logEvent(eventFilename ?? '', event);
+            results.events.push(event);
+          },
+        },
+      };
+      // Don't pass the ESLint-only flag to the compiler
+      delete rustOpts.__unstable_useRustCompiler;
+
+      try {
+        transformFromAstSync(babelAST, sourceCode.text, {
+          filename,
+          highlightCode: false,
+          retainLines: true,
+          plugins: [[RustPlugin, rustOpts]],
+          sourceType: 'module',
+          configFile: false,
+          babelrc: false,
+        });
+      } catch {
+        /* errors handled by injected logger */
+      }
+    } else {
+      try {
+        transformFromAstSync(babelAST, sourceCode.text, {
+          filename,
+          highlightCode: false,
+          retainLines: true,
+          plugins: [[BabelPluginReactCompiler, options]],
+          sourceType: 'module',
+          configFile: false,
+          babelrc: false,
+        });
+      } catch (err) {
+        /* errors handled by injected logger */
+      }
     }
   }
 

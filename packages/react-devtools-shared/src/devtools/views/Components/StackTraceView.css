@@ -8,8 +8,16 @@
   white-space-collapse: preserve;
 }
 
+.IgnoredCallSite {
+  opacity: 0.5;
+}
+
 .IgnoredCallSite, .BuiltInCallSite {
   display: none;
+}
+
+.IgnoredCallSite.CallSite {
+  display: flex;
 }
 
 .CallSite + .BuiltInCallSite {
@@ -33,3 +41,14 @@
   margin-left: 0.25rem;
 }
 
+.IgnoreListToggleContainer {
+  padding-left: 1rem;
+}
+
+.IgnoreListToggleButton {
+  background: none;
+  color: var(--color-link);
+  font: inherit;
+  font-style: italic;
+  text-decoration: underline;
+}

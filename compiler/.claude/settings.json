@@ -3,7 +3,12 @@
     "allow": [
       "Bash(yarn snap:*)",
       "Bash(yarn snap:build)",
-      "Bash(node scripts/enable-feature-flag.js:*)"
+      "Bash(node scripts/enable-feature-flag.js:*)",
+      "Bash(yarn workspace babel-plugin-react-compiler lint:*)",
+      "Bash(yarn prettier-all:*)",
+      "Bash(bash compiler/scripts/test-babel-ast.sh:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo check:*)"
     ],
     "deny": [
       "Skill(extract-errors)",

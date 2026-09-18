@@ -97,14 +97,11 @@ function measureStyle(
 ) {
   const data = agent.getInstanceAndStyle({id, rendererID});
   if (!data || !data.style) {
-    bridge.send(
-      'NativeStyleEditor_styleAndLayout',
-      ({
-        id,
-        layout: null,
-        style: null,
-      }: StyleAndLayout),
-    );
+    bridge.send('NativeStyleEditor_styleAndLayout', {
+      id,
+      layout: null,
+      style: null,
+    } as StyleAndLayout);
     return;
   }
 
@@ -119,14 +116,11 @@ function measureStyle(
   }
 
   if (!instance || typeof instance.measure !== 'function') {
-    bridge.send(
-      'NativeStyleEditor_styleAndLayout',
-      ({
-        id,
-        layout: null,
-        style: resolvedStyle || null,
-      }: StyleAndLayout),
-    );
+    bridge.send('NativeStyleEditor_styleAndLayout', {
+      id,
+      layout: null,
+      style: resolvedStyle || null,
+    } as StyleAndLayout);
     return;
   }
 
@@ -134,14 +128,11 @@ function measureStyle(
     // RN Android sometimes returns undefined here. Don't send measurements in this case.
     // https://github.com/jhen0409/react-native-debugger/issues/84#issuecomment-304611817
     if (typeof x !== 'number') {
-      bridge.send(
-        'NativeStyleEditor_styleAndLayout',
-        ({
-          id,
-          layout: null,
-          style: resolvedStyle || null,
-        }: StyleAndLayout),
-      );
+      bridge.send('NativeStyleEditor_styleAndLayout', {
+        id,
+        layout: null,
+        style: resolvedStyle || null,
+      } as StyleAndLayout);
       return;
     }
     const margin =
@@ -150,23 +141,20 @@ function measureStyle(
     const padding =
       (resolvedStyle != null && resolveBoxStyle('padding', resolvedStyle)) ||
       EMPTY_BOX_STYLE;
-    bridge.send(
-      'NativeStyleEditor_styleAndLayout',
-      ({
-        id,
-        layout: {
-          x,
-          y,
-          width,
-          height,
-          left,
-          top,
-          margin,
-          padding,
-        },
-        style: resolvedStyle || null,
-      }: StyleAndLayout),
-    );
+    bridge.send('NativeStyleEditor_styleAndLayout', {
+      id,
+      layout: {
+        x,
+        y,
+        width,
+        height,
+        left,
+        top,
+        margin,
+        padding,
+      },
+      style: resolvedStyle || null,
+    } as StyleAndLayout);
   });
 }
 
@@ -194,7 +182,7 @@ function renameStyle(
   const {instance, style} = data;
 
   const newStyle = newName
-    ? {[oldName]: (undefined: string | void), [newName]: value}
+    ? {[oldName]: undefined as string | void, [newName]: value}
     : {[oldName]: undefined};
 
   let customStyle;

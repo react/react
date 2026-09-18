@@ -54,6 +54,8 @@ A dashboard with ~25 components (16 client components), rendering:
 
 ## Output
 
+Each variant reports render latency stats, GC pauses, and (when run with `--expose-gc`, which the `yarn bench*` scripts do) the heap retained after the run settles.
+
 The overhead tables show two comparisons:
 
 1. **Flight overhead** -- Flight+Fizz vs Fizz-only (how much RSC adds)

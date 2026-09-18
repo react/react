@@ -107,4 +107,4 @@ function throwNotImplemented() {
 
 // Flow magic to verify the exports of this file match the original version.
 export type {Callback, Task};
-((((null: any): SchedulerExportsType): SchedulerNativeExportsType): SchedulerExportsType);
+null as any as SchedulerExportsType as SchedulerNativeExportsType as SchedulerExportsType;

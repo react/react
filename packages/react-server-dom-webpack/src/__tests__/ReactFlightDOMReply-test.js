@@ -45,6 +45,9 @@ describe('ReactFlightDOMReply', () => {
     ReactServerDOMServer = require('react-server-dom-webpack/server.browser');
     jest.resetModules();
     __unmockReact();
+    jest.mock('react-server-dom-webpack/client', () =>
+      require('react-server-dom-webpack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-webpack/client');
   });
 
@@ -740,9 +743,7 @@ describe('ReactFlightDOMReply', () => {
 
     const result = await ReactServerDOMServer.decodeReply(await bodyPromise);
     expect(result.hello).toBe('world');
-    // TODO: await result.promise should reject at this point because the stream
-    // has closed but that's a bug in both ReactFlightReplyServer and ReactFlightClient.
-    // It just halts in this case.
+    await expect(result.promise).rejects.toThrow('Connection closed.');
   });
 
   it('cannot deserialize a Blob reference backed by a string', async () => {
@@ -756,5 +757,50 @@ describe('ReactFlightDOMReply', () => {
       error = x;
     }
     expect(error.message).toContain('Referenced Blob is not a Blob.');
+  });
+
+  it('detaches the abort listener once the reply is encoded', async () => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    // Collects the lifetime signal that React bounds each abort listener with.
+    // React passes that signal to addEventListener instead of calling
+    // removeEventListener, so the runtime performs the removal and nothing here
+    // observes it directly. An aborted lifetime is what shows the listener is
+    // gone.
+    const lifetimes = [];
+    const add = signal.addEventListener.bind(signal);
+    signal.addEventListener = (type, listener, options) => {
+      if (type === 'abort') {
+        lifetimes.push(options.signal);
+      }
+      return add(type, listener, options);
+    };
+
+    let resolvePart;
+    const part = new Promise(r => (resolvePart = r));
+    const bodyPromise = ReactServerDOMClient.encodeReply(
+      {part, hello: 'world'},
+      {signal},
+    );
+    expect(lifetimes).toHaveLength(1);
+    expect(lifetimes[0].aborted).toBe(false);
+
+    resolvePart('done');
+    await bodyPromise;
+
+    expect(lifetimes[0].aborted).toBe(true);
+  });
+
+  it('resolves with the partial result when the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const neverResolves = new Promise(() => {});
+    const body = await ReactServerDOMClient.encodeReply(
+      {promise: neverResolves, hello: 'world'},
+      {signal: controller.signal},
+    );
+    const result = await ReactServerDOMServer.decodeReply(body);
+    expect(result.hello).toBe('world');
   });
 });

@@ -13,7 +13,6 @@ import {getCurrentFiberOwnerNameInDevOrNull} from 'react-reconciler/src/ReactCur
 import {getFiberCurrentPropsFromNode} from './ReactDOMComponentTree';
 import {getToStringValue, toString} from './ToStringValue';
 import {track, trackHydrated, updateValueIfChanged} from './inputValueTracking';
-import getActiveElement from './getActiveElement';
 import {
   disableInputAttributeSyncing,
   enableHydrationChangeEvent,
@@ -96,7 +95,7 @@ export function updateInput(
   type: ?string,
   name: ?string,
 ) {
-  const node: HTMLInputElement = (element: any);
+  const node: HTMLInputElement = element as any;
 
   // Temporarily disconnect the input from any radio buttons.
   // Changing the type or name as the same time as changing the checked value
@@ -121,11 +120,15 @@ export function updateInput(
   if (value != null) {
     if (type === 'number') {
       if (
+        // "" == 0, so a cleared field wouldn't otherwise be restored to 0.
         // $FlowFixMe[incompatible-type]
+        // $FlowFixMe[invalid-compare]
         (value === 0 && node.value === '') ||
-        // We explicitly want to coerce to number here if possible.
+        // We explicitly want to coerce to number here if possible, so that
+        // other spellings of the same number (e.g. "0.0" mid-edit) aren't
+        // clobbered while the user types.
         // eslint-disable-next-line
-        node.value != (value: any)
+        node.value != (value as any)
       ) {
         node.value = toString(getToStringValue(value));
       }
@@ -143,7 +146,7 @@ export function updateInput(
     // whenever the defaultValue React prop has changed. When not present,
     // React does nothing
     if (defaultValue != null) {
-      setDefaultValue(node, type, getToStringValue(defaultValue));
+      setDefaultValue(node, getToStringValue(defaultValue));
     } else if (lastDefaultValue != null) {
       node.removeAttribute('value');
     }
@@ -154,9 +157,22 @@ export function updateInput(
     //  2. The defaultValue React property
     //  3. Otherwise there should be no change
     if (value != null) {
-      setDefaultValue(node, type, getToStringValue(value));
+      if (
+        type === 'number' &&
+        // We explicitly want to coerce to number here if possible.
+        // eslint-disable-next-line
+        node.value == (value as any)
+      ) {
+        // node.value may be a different spelling of the same number (e.g.
+        // "0.0" for 0). Mirror what's displayed, like the value setter does.
+        // Not redundant with the assignment above: browsers sanitize invalid
+        // assigned values to "", in which case we sync the React value below.
+        setDefaultValue(node, getToStringValue(node.value));
+      } else {
+        setDefaultValue(node, getToStringValue(value));
+      }
     } else if (defaultValue != null) {
-      setDefaultValue(node, type, getToStringValue(defaultValue));
+      setDefaultValue(node, getToStringValue(defaultValue));
     } else if (lastDefaultValue != null) {
       node.removeAttribute('value');
     }
@@ -213,7 +229,7 @@ export function initInput(
   name: ?string,
   isHydrating: boolean,
 ) {
-  const node: HTMLInputElement = (element: any);
+  const node: HTMLInputElement = element as any;
 
   if (
     type != null &&
@@ -234,7 +250,7 @@ export function initInput(
     // default value provided by the browser. See: #12872
     if (isButton && (value === undefined || value === null)) {
       // We track the value just in case it changes type later on.
-      track((element: any));
+      track(element as any);
       return;
     }
 
@@ -341,7 +357,7 @@ export function initInput(
     }
     node.name = name;
   }
-  track((element: any));
+  track(element as any);
 }
 
 export function hydrateInput(
@@ -351,7 +367,7 @@ export function hydrateInput(
   checked: ?boolean,
   defaultChecked: ?boolean,
 ): void {
-  const node: HTMLInputElement = (element: any);
+  const node: HTMLInputElement = element as any;
 
   const defaultValueStr =
     defaultValue != null ? toString(getToStringValue(defaultValue)) : '';
@@ -369,7 +385,7 @@ export function hydrateInput(
   // Detach .checked from .defaultChecked but leave user input alone
   node.checked = node.checked;
 
-  const changed = trackHydrated((node: any), initialValue, initialChecked);
+  const changed = trackHydrated(node as any, initialValue, initialChecked);
   if (changed) {
     // If the current value is different, that suggests that the user
     // changed it before hydration. Queue a replay of the change event.
@@ -381,7 +397,7 @@ export function hydrateInput(
 }
 
 export function restoreControlledInputState(element: Element, props: Object) {
-  const rootNode: HTMLInputElement = (element: any);
+  const rootNode: HTMLInputElement = element as any;
   updateInput(
     rootNode,
     props.value,
@@ -397,7 +413,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
     let queryRoot: Element = rootNode;
 
     while (queryRoot.parentNode) {
-      queryRoot = ((queryRoot.parentNode: any): Element);
+      queryRoot = queryRoot.parentNode as any as Element;
     }
 
     // If `rootNode.form` was non-null, then we could try `form.elements`,
@@ -417,7 +433,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
     );
 
     for (let i = 0; i < group.length; i++) {
-      const otherNode = ((group[i]: any): HTMLInputElement);
+      const otherNode = group[i] as any as HTMLInputElement;
       if (otherNode === rootNode || otherNode.form !== rootNode.form) {
         continue;
       }
@@ -452,7 +468,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
     // If any updateInput() call set .checked to true, an input in this group
     // (often, `rootNode` itself) may have become unchecked
     for (let i = 0; i < group.length; i++) {
-      const otherNode = ((group[i]: any): HTMLInputElement);
+      const otherNode = group[i] as any as HTMLInputElement;
       if (otherNode.form !== rootNode.form) {
         continue;
       }
@@ -461,26 +477,8 @@ export function restoreControlledInputState(element: Element, props: Object) {
   }
 }
 
-// In Chrome, assigning defaultValue to certain input types triggers input validation.
-// For number inputs, the display value loses trailing decimal points. For email inputs,
-// Chrome raises "The specified value <x> is not a valid email address".
-//
-// Here we check to see if the defaultValue has actually changed, avoiding these problems
-// when the user is inputting text
-//
-// https://github.com/facebook/react/issues/7253
-export function setDefaultValue(
-  node: HTMLInputElement,
-  type: ?string,
-  value: ToStringValue,
-) {
-  if (
-    // Focused number inputs synchronize on blur. See ChangeEventPlugin.js
-    type !== 'number' ||
-    getActiveElement(node.ownerDocument) !== node
-  ) {
-    if (node.defaultValue !== toString(value)) {
-      node.defaultValue = toString(value);
-    }
+function setDefaultValue(node: HTMLInputElement, value: ToStringValue) {
+  if (node.defaultValue !== toString(value)) {
+    node.defaultValue = toString(value);
   }
 }

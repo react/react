@@ -34,14 +34,14 @@ function coerceFormActionProp(
   ) {
     return null;
   } else if (typeof actionProp === 'function') {
-    return (actionProp: any);
+    return actionProp as any;
   } else {
     if (__DEV__) {
       checkAttributeStringCoercion(actionProp, 'action');
     }
-    return (sanitizeURL(
-      enableTrustedTypesIntegration ? actionProp : '' + (actionProp: any),
-    ): any);
+    return sanitizeURL(
+      enableTrustedTypesIntegration ? actionProp : '' + (actionProp as any),
+    ) as any;
   }
 }
 
@@ -67,19 +67,20 @@ function extractEvents(
     return;
   }
   const formInst = maybeTargetInst;
-  const form: HTMLFormElement = (nativeEventTarget: any);
+  const form: HTMLFormElement = nativeEventTarget as any;
   let action = coerceFormActionProp(
-    (getFiberCurrentPropsFromNode(form): any).action,
+    (getFiberCurrentPropsFromNode(form) as any).action,
   );
-  let submitter: null | void | HTMLInputElement | HTMLButtonElement =
-    (nativeEvent: any).submitter;
+  let submitter: null | void | HTMLInputElement | HTMLButtonElement = (
+    nativeEvent as any
+  ).submitter;
   let submitterAction;
   if (submitter) {
     const submitterProps = getFiberCurrentPropsFromNode(submitter);
     submitterAction = submitterProps
-      ? coerceFormActionProp((submitterProps: any).formAction)
+      ? coerceFormActionProp((submitterProps as any).formAction)
       : // The built-in Flow type is ?string, wider than the spec
-        ((submitter.getAttribute('formAction'): any): string | null);
+        (submitter.getAttribute('formAction') as any as string | null);
     if (submitterAction !== null) {
       // The submitter overrides the form action.
       action = submitterAction;

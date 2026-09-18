@@ -20,6 +20,7 @@ import ErrorBoundaries from './ErrorBoundaries';
 import PartiallyStrictApp from './PartiallyStrictApp';
 import Segments from './Segments';
 import SuspenseTree from './SuspenseTree';
+import SearchableTable from './SearchableTable';
 import ActivityTree from './ActivityTree';
 import TraceUpdatesTest from './TraceUpdatesTest';
 import {ignoreErrors, ignoreLogs, ignoreWarnings} from './console';
@@ -54,7 +55,7 @@ const unmountFunctions: Array<() => void | boolean> = [];
 function createContainer() {
   const container = document.createElement('div');
 
-  ((document.body: any): HTMLBodyElement).appendChild(container);
+  (document.body as any as HTMLBodyElement).appendChild(container);
 
   return container;
 }
@@ -95,7 +96,7 @@ function mountLegacyApp(App: () => React$Node) {
   // $FlowFixMe[not-a-function]: These are removed in 19.
   render(createElement(LegacyRender), container);
 
-  // $FlowFixMe: These are removed in 19.
+  // $FlowFixMe[not-a-function]: These are removed in 19.
   unmountFunctions.push(() => unmountComponentAtNode(container));
 }
 
@@ -113,6 +114,7 @@ function mountTestApp() {
   mountApp(Toggle);
   mountApp(ErrorBoundaries);
   mountApp(SuspenseTree);
+  mountApp(SearchableTable);
   mountApp(DeeplyNestedComponents);
   mountApp(Iframe);
   mountApp(ActivityTree);

@@ -42,6 +42,7 @@ import {
   registerTemporaryReference,
 } from './ReactFlightServerTemporaryReferences';
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
+import {enableFlightObjectReferences} from 'shared/ReactFeatureFlags';
 
 import hasOwnProperty from 'shared/hasOwnProperty';
 import getPrototypeOf from 'shared/getPrototypeOf';
@@ -70,7 +71,7 @@ const ERRORED = 'rejected';
 const __PROTO__ = '__proto__';
 
 type RESPONSE_SYMBOL_TYPE = 'RESPONSE_SYMBOL'; // Fake symbol type.
-const RESPONSE_SYMBOL: RESPONSE_SYMBOL_TYPE = (Symbol(): any);
+const RESPONSE_SYMBOL: RESPONSE_SYMBOL_TYPE = Symbol() as any;
 
 type PendingChunk<T> = {
   status: 'pending',
@@ -124,9 +125,9 @@ function ReactPromise(status: any, value: any, reason: any) {
   this.reason = reason;
 }
 // We subclass Promise.prototype so that we get other methods like .catch
-ReactPromise.prototype = (Object.create(Promise.prototype): any);
+ReactPromise.prototype = Object.create(Promise.prototype) as any;
 // TODO: This doesn't return a new Promise chain unlike the real .then
-ReactPromise.prototype.then = function <T>(
+function reactPromiseThen<T>(
   this: SomeChunk<T>,
   resolve: (value: T) => mixed,
   reject: ?(reason: mixed) => mixed,
@@ -151,6 +152,7 @@ ReactPromise.prototype.then = function <T>(
         while (inspectedValue instanceof ReactPromise) {
           cycleProtection++;
           if (
+            // $FlowFixMe[invalid-compare]
             inspectedValue === chunk ||
             visited.has(inspectedValue) ||
             cycleProtection > 1000
@@ -161,6 +163,7 @@ ReactPromise.prototype.then = function <T>(
             return;
           }
           visited.add(inspectedValue);
+          // $FlowFixMe[invalid-compare]
           if (inspectedValue.status === INITIALIZED) {
             inspectedValue = inspectedValue.value;
           } else {
@@ -176,15 +179,15 @@ ReactPromise.prototype.then = function <T>(
     case BLOCKED:
       if (typeof resolve === 'function') {
         if (chunk.value === null) {
-          chunk.value = ([]: Array<InitializationReference | (T => mixed)>);
+          chunk.value = [] as Array<InitializationReference | (T => mixed)>;
         }
         chunk.value.push(resolve);
       }
       if (typeof reject === 'function') {
         if (chunk.reason === null) {
-          chunk.reason = ([]: Array<
+          chunk.reason = [] as Array<
             InitializationReference | (mixed => mixed),
-          >);
+          >;
         }
         chunk.reason.push(reject);
       }
@@ -195,7 +198,17 @@ ReactPromise.prototype.then = function <T>(
       }
       break;
   }
-};
+}
+// The shadowing `then` must be defined with `Object.defineProperty` instead of
+// assignment. Assignment would throw when `Promise.prototype` is frozen (e.g.
+// by SES lockdown) because assigning over an inherited non-writable property
+// is rejected.
+Object.defineProperty(ReactPromise.prototype, 'then', {
+  writable: true,
+  enumerable: true,
+  configurable: true,
+  value: reactPromiseThen,
+});
 
 const ObjectPrototype = Object.prototype;
 const ArrayPrototype = Array.prototype;
@@ -208,13 +221,16 @@ export type Response = {
   _closed: boolean,
   _closedReason: mixed,
   _temporaryReferences: void | TemporaryReferenceSet,
+  _serverReferenceObjects: null | WeakSet<Object>,
+  _serverReferenceCache: WeakMap<Object, SomeChunk<any>>,
+  _serverObjectReferenceCache: WeakMap<Object, SomeChunk<any>>,
   _rootArrayContexts: WeakMap<$ReadOnlyArray<mixed>, NestedArrayContext>,
   _arraySizeLimit: number,
 };
 
 export function getRoot<T>(response: Response): Thenable<T> {
   const chunk = getChunk(response, 0);
-  return (chunk: any);
+  return chunk as any;
 }
 
 function createPendingChunk<T>(response: Response): PendingChunk<T> {
@@ -299,14 +315,14 @@ function triggerErrorOnChunk<T>(
   if (chunk.status !== PENDING && chunk.status !== BLOCKED) {
     // If we get more data to an already resolved ID, we assume that it's
     // a stream chunk since any other row shouldn't have more than one entry.
-    const streamChunk: InitializedStreamChunk<any> = (chunk: any);
+    const streamChunk: InitializedStreamChunk<any> = chunk as any;
     const controller = streamChunk.reason;
-    // $FlowFixMe[incompatible-call]: The error method should accept mixed.
+    // $FlowFixMe[incompatible-type]: The error method should accept mixed.
     controller.error(error);
     return;
   }
   const listeners = chunk.reason;
-  const erroredChunk: ErroredChunk<T> = (chunk: any);
+  const erroredChunk: ErroredChunk<T> = chunk as any;
   erroredChunk.status = ERRORED;
   erroredChunk.reason = error;
   if (listeners !== null) {
@@ -343,7 +359,7 @@ function resolveModelChunk<T>(
   if (chunk.status !== PENDING) {
     // If we get more data to an already resolved ID, we assume that it's
     // a stream chunk since any other row shouldn't have more than one entry.
-    const streamChunk: InitializedStreamChunk<any> = (chunk: any);
+    const streamChunk: InitializedStreamChunk<any> = chunk as any;
     const controller = streamChunk.reason;
     if (value[0] === 'C') {
       controller.close(value === 'C' ? '"$undefined"' : value.slice(1));
@@ -354,7 +370,7 @@ function resolveModelChunk<T>(
   }
   const resolveListeners = chunk.value;
   const rejectListeners = chunk.reason;
-  const resolvedChunk: ResolvedModelChunk<T> = (chunk: any);
+  const resolvedChunk: ResolvedModelChunk<T> = chunk as any;
   resolvedChunk.status = RESOLVED_MODEL;
   resolvedChunk.value = value;
   resolvedChunk.reason = {id, [RESPONSE_SYMBOL]: response};
@@ -419,58 +435,35 @@ function loadServerReference<A: Iterable<any>, T>(
 ): (...A) => Promise<T> {
   const id: ServerReferenceId = metaData.id;
   if (typeof id !== 'string') {
-    return (null: any);
+    return null as any;
   }
   if (key === 'then') {
     // This should never happen because we always serialize objects with then-functions
     // as "thenable" which reduces to ReactPromise with no other fields.
-    return (null: any);
+    return null as any;
   }
 
   // Check for a cached promise from a previous call with the same metadata.
   // This handles deduplication when the same server reference appears multiple
-  // times in the payload.
-  const cachedPromise: SomeChunk<T> | void = (metaData: any).$$promise;
+  // times in the payload. The cache is a response-scoped map keyed by the
+  // metadata object rather than a field on it, so a client-supplied metadata
+  // field can't inject a resolved value and bypass the manifest lookup below.
+  const cachedPromise: SomeChunk<T> | void =
+    response._serverReferenceCache.get(metaData);
   if (cachedPromise !== undefined) {
-    if (cachedPromise.status === INITIALIZED) {
-      // The value was already resolved by a previous call.
-      const resolvedValue: T = cachedPromise.value;
-      if (key === __PROTO__) {
-        return (null: any);
-      }
-      parentObject[key] = resolvedValue;
-      return (resolvedValue: any);
-    }
-
-    // The promise is still blocked. Increment the handler dependency count ...
-    let handler: InitializationHandler;
-    if (initializingHandler) {
-      handler = initializingHandler;
-      handler.deps++;
-    } else {
-      handler = initializingHandler = {
-        chunk: null,
-        value: null,
-        reason: null,
-        deps: 1,
-        errored: false,
-      };
-    }
-    // ... and register resolve and reject listeners on the promise.
-    cachedPromise.then(
-      resolveReference.bind(null, response, handler, parentObject, key),
-      rejectReference.bind(null, response, handler),
-    );
-
-    // Return a place holder value for now.
-    return (null: any);
+    return readServerReference(
+      response,
+      cachedPromise,
+      parentObject,
+      key,
+    ) as any;
   }
 
   // This is the first call for this server reference metadata. Create a cached
   // promise to be used for subsequent calls.
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
   const blockedPromise: BlockedChunk<T> = new ReactPromise(BLOCKED, null, null);
-  (metaData: any).$$promise = blockedPromise;
+  response._serverReferenceCache.set(metaData, blockedPromise);
 
   const serverReference: ServerReference<T> =
     resolveServerReference<$FlowFixMe>(response._bundlerConfig, id);
@@ -484,92 +477,180 @@ function loadServerReference<A: Iterable<any>, T>(
     if (bound instanceof ReactPromise) {
       serverReferencePromise = Promise.resolve(bound);
     } else {
-      const resolvedValue = (requireModule(serverReference): any);
-      // Resolve the cached promise synchronously.
-      const initializedPromise: InitializedChunk<T> = (blockedPromise: any);
-      initializedPromise.status = INITIALIZED;
-      initializedPromise.value = resolvedValue;
-      initializedPromise.reason = null;
-      return resolvedValue;
+      // Nothing to preload and no bound arguments to wait for, so we can
+      // resolve the reference synchronously.
+      const value = requireServerReference(response, serverReference) as any;
+      resolveServerReferenceChunk(response, blockedPromise, value);
+      return readServerReference(
+        response,
+        blockedPromise,
+        parentObject,
+        key,
+      ) as any;
     }
   } else if (bound instanceof ReactPromise) {
     serverReferencePromise = Promise.all([serverReferencePromise, bound]);
   }
 
-  let handler: InitializationHandler;
-  if (initializingHandler) {
-    handler = initializingHandler;
-    handler.deps++;
-  } else {
-    handler = initializingHandler = {
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
-  }
-
   function fulfill(): void {
-    let resolvedValue = (requireModule(serverReference): any);
-
-    if (metaData.bound) {
-      // This promise is coming from us and should have initialized by now.
-      const promiseValue = (metaData.bound: any).value;
-      const boundArgs: Array<any> = isArray(promiseValue)
-        ? promiseValue.slice(0)
-        : [];
-      if (boundArgs.length > MAX_BOUND_ARGS) {
-        reject(
-          new Error(
+    let value;
+    try {
+      value = requireServerReference(response, serverReference) as any;
+      if (metaData.bound) {
+        // This promise is coming from us and should have initialized by now.
+        const promiseValue = (metaData.bound as any).value;
+        const boundArgs: Array<any> = isArray(promiseValue)
+          ? promiseValue.slice(0)
+          : [];
+        if (boundArgs.length > MAX_BOUND_ARGS) {
+          throw new Error(
             'Server Function has too many bound arguments. Received ' +
               boundArgs.length +
               ' but the limit is ' +
               MAX_BOUND_ARGS +
               '.',
-          ),
-        );
-        return;
+          );
+        }
+        boundArgs.unshift(null); // this
+        value = value.bind.apply(value, boundArgs);
       }
-      boundArgs.unshift(null); // this
-      resolvedValue = resolvedValue.bind.apply(resolvedValue, boundArgs);
+    } catch (error) {
+      triggerErrorOnChunk(response, blockedPromise, error);
+      return;
     }
+    resolveServerReferenceChunk(response, blockedPromise, value);
+  }
+  serverReferencePromise.then(fulfill, error => {
+    triggerErrorOnChunk(response, blockedPromise, error);
+  });
+  return readServerReference(
+    response,
+    blockedPromise,
+    parentObject,
+    key,
+  ) as any;
+}
 
-    // Resolve the cached promise so subsequent references can use the value.
-    const resolveListeners = blockedPromise.value;
-    const initializedPromise: InitializedChunk<T> = (blockedPromise: any);
-    initializedPromise.status = INITIALIZED;
-    initializedPromise.value = resolvedValue;
-    initializedPromise.reason = null;
-    if (resolveListeners !== null) {
-      // Notify any resolve listeners that were added via .then() from
-      // subsequent loadServerReference calls for the same reference.
-      wakeChunk(response, resolveListeners, resolvedValue, initializedPromise);
+function requireServerReference<T>(
+  response: Response,
+  reference: ServerReference<T>,
+): T {
+  const value = requireModule(reference);
+  if (
+    typeof value === 'object' &&
+    // $FlowFixMe[invalid-compare] Module exports can be null at runtime.
+    value !== null
+  ) {
+    // A manifest export can be a fresh, untagged object. Remember its origin
+    // so reply property paths cannot read it as if it came from the client.
+    let serverReferenceObjects = response._serverReferenceObjects;
+    if (serverReferenceObjects === null) {
+      serverReferenceObjects = response._serverReferenceObjects = new WeakSet();
     }
+    serverReferenceObjects.add(value);
+  }
+  return value;
+}
 
-    resolveReference(response, handler, parentObject, key, resolvedValue);
+function resolveServerReferenceChunk<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+): void {
+  const resolveListeners = chunk.value;
+  const initializedChunk: InitializedChunk<T> = chunk as any;
+  initializedChunk.status = INITIALIZED;
+  initializedChunk.value = value;
+  initializedChunk.reason = null;
+  if (resolveListeners !== null) {
+    wakeChunk(response, resolveListeners, value, initializedChunk);
+  }
+}
+
+function readServerReference<T>(
+  response: Response,
+  chunk: SomeChunk<T>,
+  parentObject: Object,
+  key: string,
+): T {
+  switch (chunk.status) {
+    case INITIALIZED:
+      return chunk.value;
+    case BLOCKED:
+      return waitForReference(
+        response,
+        chunk,
+        parentObject,
+        key,
+        null,
+        createModel,
+        [],
+      );
+    default:
+      throw chunk.reason;
+  }
+}
+
+function loadServerObjectReference(
+  response: Response,
+  metaData: {id: any},
+  parentObject: Object,
+  key: string,
+): mixed {
+  const id: ServerReferenceId = metaData.id;
+  if (typeof id !== 'string') {
+    return null;
   }
 
-  function reject(error: mixed): void {
-    // Mark the cached promise as errored so subsequent references fail too.
-    const rejectListeners = blockedPromise.reason;
-    const erroredPromise: ErroredChunk<T> = (blockedPromise: any);
-    erroredPromise.status = ERRORED;
-    erroredPromise.value = null;
-    erroredPromise.reason = error;
-    if (rejectListeners !== null) {
-      // Notify any reject listeners that were added via .then() from subsequent
-      // loadServerReference calls for the same reference.
-      rejectChunk(response, rejectListeners, error);
-    }
-
-    rejectReference(response, handler, error);
+  // Object references are cached in a separate response-scoped map from
+  // function references. The same metadata object can be referenced both ways,
+  // and each path must read only its own cache so it always applies its own
+  // validation instead of the other's cached value.
+  const cachedPromise: SomeChunk<Object> | void =
+    response._serverObjectReferenceCache.get(metaData);
+  if (cachedPromise !== undefined) {
+    return readServerReference(response, cachedPromise, parentObject, key);
   }
 
-  serverReferencePromise.then(fulfill, reject);
+  // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
+  const blockedPromise: BlockedChunk<Object> = new ReactPromise(
+    BLOCKED,
+    null,
+    null,
+  );
+  response._serverObjectReferenceCache.set(metaData, blockedPromise);
 
-  // Return a place holder value for now.
-  return (null: any);
+  const serverReference = resolveServerReference<$FlowFixMe>(
+    response._bundlerConfig,
+    id,
+  );
+  const serverReferencePromise = preloadModule(serverReference);
+
+  function fulfill(): void {
+    let value;
+    try {
+      value = requireServerReference(response, serverReference);
+      // Objects can appear under "then", but a function here would turn
+      // the containing object into a thenable during reply decoding.
+      if (typeof value !== 'object' || value === null) {
+        throw new Error(
+          'Expected a Server Reference to an object to resolve to an object.',
+        );
+      }
+    } catch (error) {
+      triggerErrorOnChunk(response, blockedPromise, error);
+      return;
+    }
+    resolveServerReferenceChunk(response, blockedPromise, value);
+  }
+  if (serverReferencePromise === null) {
+    fulfill();
+  } else {
+    serverReferencePromise.then(fulfill, error => {
+      triggerErrorOnChunk(response, blockedPromise, error);
+    });
+  }
+  return readServerReference(response, blockedPromise, parentObject, key);
 }
 
 function reviveModel(
@@ -606,10 +687,10 @@ function reviveModel(
     if (isArray(value)) {
       let childContext: NestedArrayContext;
       if (arrayRoot === null) {
-        childContext = ({
+        childContext = {
           count: 0,
           fork: false,
-        }: NestedArrayContext);
+        } as NestedArrayContext;
         response._rootArrayContexts.set(value, childContext);
       } else {
         childContext = arrayRoot;
@@ -729,7 +810,7 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
   // We go to the BLOCKED state until we've fully resolved this.
   // We do this before parsing in case we try to initialize the same chunk
   // while parsing the model. Such as in a cyclic reference.
-  const cyclicChunk: BlockedChunk<T> = (chunk: any);
+  const cyclicChunk: BlockedChunk<T> = chunk as any;
   cyclicChunk.status = BLOCKED;
   cyclicChunk.value = null;
   cyclicChunk.reason = null;
@@ -781,12 +862,12 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
         return;
       }
     }
-    const initializedChunk: InitializedChunk<T> = (chunk: any);
+    const initializedChunk: InitializedChunk<T> = chunk as any;
     initializedChunk.status = INITIALIZED;
     initializedChunk.value = value;
     initializedChunk.reason = arrayRoot;
   } catch (error) {
-    const erroredChunk: ErroredChunk<T> = (chunk: any);
+    const erroredChunk: ErroredChunk<T> = chunk as any;
     erroredChunk.status = ERRORED;
     erroredChunk.reason = error;
   } finally {
@@ -808,7 +889,7 @@ export function reportGlobalError(response: Response, error: Error): void {
     } else if (chunk.status === INITIALIZED) {
       const initializedChunk:
         | InitializedChunk<any>
-        | InitializedStreamChunk<any> = (chunk: any);
+        | InitializedStreamChunk<any> = chunk as any;
       if (initializedChunk.reason !== null) {
         const maybeController = initializedChunk.reason;
         // $FlowFixMe[method-unbinding] Just doing a typeof check
@@ -855,12 +936,15 @@ function fulfillReference(
   try {
     let localLength: number = 0;
     const rootArrayContexts = response._rootArrayContexts;
+    const serverReferenceObjects = response._serverReferenceObjects;
     for (let i = 1; i < path.length; i++) {
       // The server doesn't have any lazy references so we don't expect to go through a Promise.
       const name = path[i];
       if (
         typeof value === 'object' &&
         value !== null &&
+        (serverReferenceObjects === null ||
+          !serverReferenceObjects.has(value)) &&
         (getPrototypeOf(value) === ObjectPrototype ||
           getPrototypeOf(value) === ArrayPrototype) &&
         hasOwnProperty.call(value, name)
@@ -945,7 +1029,7 @@ function resolveReference(
       return;
     }
     const resolveListeners = chunk.value;
-    const initializedChunk: InitializedChunk<any> = (chunk: any);
+    const initializedChunk: InitializedChunk<any> = chunk as any;
     initializedChunk.status = INITIALIZED;
     initializedChunk.value = handler.value;
     initializedChunk.reason =
@@ -1024,7 +1108,7 @@ function waitForReference<T>(
   }
 
   // Return a place holder value for now.
-  return (null: any);
+  return null as any;
 }
 
 function getOutlinedModel<T>(
@@ -1041,8 +1125,8 @@ function getOutlinedModel<T>(
   switch (chunk.status) {
     case RESOLVED_MODEL:
       initializeModelChunk(chunk);
-      // $FlowFixMe[incompatible-cast] We just initialized this chunk so it can't be a ResolvedModelChunk anymore.
-      chunk = (chunk: Exclude<SomeChunk<T>, ResolvedModelChunk<T>>);
+      // $FlowFixMe[incompatible-type] We just initialized this chunk so it can't be a ResolvedModelChunk anymore.
+      chunk = chunk as Exclude<SomeChunk<T>, ResolvedModelChunk<T>>;
       break;
   }
   // The status might have changed after initialization.
@@ -1063,11 +1147,15 @@ function getOutlinedModel<T>(
 
       let localLength: number = 0;
       const rootArrayContexts = response._rootArrayContexts;
+      const serverReferenceObjects = response._serverReferenceObjects;
       for (let i = 1; i < path.length; i++) {
         const name = path[i];
         if (
           typeof value === 'object' &&
+          // $FlowFixMe[invalid-compare] This check is still needed at runtime.
           value !== null &&
+          (serverReferenceObjects === null ||
+            !serverReferenceObjects.has(value)) &&
           (getPrototypeOf(value) === ObjectPrototype ||
             getPrototypeOf(value) === ArrayPrototype) &&
           hasOwnProperty.call(value, name)
@@ -1077,8 +1165,8 @@ function getOutlinedModel<T>(
             localLength = 0;
             arrayRoot =
               rootArrayContexts.get(
-                // $FlowFixMe[incompatible-cast] Our `isArray` typing can't narrow `mixed`
-                (value: $ReadOnlyArray<mixed>),
+                // $FlowFixMe[incompatible-type] Our `isArray` typing can't narrow `mixed`
+                value as $ReadOnlyArray<mixed>,
               ) || arrayRoot;
           } else {
             arrayRoot = null;
@@ -1152,15 +1240,31 @@ function getOutlinedModel<T>(
         };
       }
       // Placeholder
-      return (null: any);
+      return null as any;
   }
+}
+
+function isServerReferenceObject(response: Response, value: mixed): boolean {
+  // A Server Reference to an object is opaque: the client may only pass it
+  // back to the server, never have its contents read out. The consuming
+  // decoders below (Map, Set, iterator) read their initializer array directly,
+  // without traversing a property path, so the opacity guard in the path
+  // walkers doesn't cover them. They reject a server-owned array up front,
+  // before consuming or mutating it, by checking this alongside `isArray`.
+  const serverReferenceObjects = response._serverReferenceObjects;
+  return (
+    serverReferenceObjects !== null &&
+    typeof value === 'object' &&
+    value !== null &&
+    serverReferenceObjects.has(value)
+  );
 }
 
 function createMap(
   response: Response,
   model: Array<[any, any]>,
 ): Map<any, any> {
-  if (!isArray(model)) {
+  if (!isArray(model) || isServerReferenceObject(response, model)) {
     throw new Error('Invalid Map initializer.');
   }
   if ((model as any).$$consumed === true) {
@@ -1173,7 +1277,7 @@ function createMap(
 }
 
 function createSet(response: Response, model: Array<any>): Set<any> {
-  if (!isArray(model)) {
+  if (!isArray(model) || isServerReferenceObject(response, model)) {
     throw new Error('Invalid Set initializer.');
   }
   if ((model as any).$$consumed === true) {
@@ -1186,7 +1290,7 @@ function createSet(response: Response, model: Array<any>): Set<any> {
 }
 
 function extractIterator(response: Response, model: Array<any>): Iterator<any> {
-  if (!isArray(model)) {
+  if (!isArray(model) || isServerReferenceObject(response, model)) {
     throw new Error('Invalid Iterator initializer.');
   }
   if ((model as any).$$consumed === true) {
@@ -1238,7 +1342,7 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
 
   // We should have this backingEntry in the store already because we emitted
   // it before referencing it. It should be a Blob.
-  const backingEntry: Blob = (getBackingEntry(response._formData, key): any);
+  const backingEntry: Blob = getBackingEntry(response._formData, key) as any;
 
   const promise: Promise<ArrayBuffer> = backingEntry.arrayBuffer();
 
@@ -1267,8 +1371,8 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
 
       const resolvedValue: T =
         constructor === ArrayBuffer
-          ? (buffer: any)
-          : (new constructor(buffer): any);
+          ? (buffer as any)
+          : (new constructor(buffer) as any);
 
       if (key !== __PROTO__) {
         parentObject[parentKey] = resolvedValue;
@@ -1292,7 +1396,7 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
         return;
       }
       const resolveListeners = chunk.value;
-      const initializedChunk: InitializedChunk<T> = (chunk: any);
+      const initializedChunk: InitializedChunk<T> = chunk as any;
       initializedChunk.status = INITIALIZED;
       initializedChunk.value = handler.value;
       // We don't keep an array count for this since it won't be referenced again.
@@ -1364,7 +1468,7 @@ function parseReadableStream<T>(
     throw new Error('Already initialized stream.');
   }
 
-  let controller: ReadableStreamController = (null: any);
+  let controller: ReadableStreamController = null as any;
   let closed = false;
   const stream = new ReadableStream({
     type: type,
@@ -1434,13 +1538,13 @@ function parseReadableStream<T>(
       }
       closed = true;
       if (previousBlockedChunk === null) {
-        // $FlowFixMe[incompatible-call]
+        // $FlowFixMe[incompatible-type]
         controller.error(error);
       } else {
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.error((error: any)));
+        blockedChunk.then(() => controller.error(error as any));
       }
     },
   };
@@ -1458,7 +1562,7 @@ function FlightIterator(
 // TODO: The iterator could inherit the AsyncIterator prototype which is not exposed as
 // a global but exists as a prototype of an AsyncGenerator. However, it's not needed
 // to satisfy the iterable protocol.
-FlightIterator.prototype = ({}: any);
+FlightIterator.prototype = {} as any;
 FlightIterator.prototype[ASYNC_ITERATOR] = function asyncIterator(
   this: $AsyncIterator<any, any, void>,
 ) {
@@ -1612,6 +1716,24 @@ function parseModelString(
           loadServerReference,
         );
       }
+      case 'H': {
+        if (enableFlightObjectReferences) {
+          // Server Reference to an object. Its metadata carries only an id —
+          // no bound arguments — and it resolves through the same manifest
+          // lookup as a function reference, which returns the module export
+          // without calling it.
+          const ref = value.slice(2);
+          return getOutlinedModel(
+            response,
+            ref,
+            obj,
+            key,
+            null,
+            loadServerObjectReference,
+          );
+        }
+        return undefined;
+      }
       case 'T': {
         // Temporary Reference
         if (
@@ -1664,7 +1786,7 @@ function parseModelString(
             );
             const referencedFormDataKey = formDataKey.slice(formPrefix.length);
             for (let i = 0; i < referencedFormDataValue.length; i++) {
-              // $FlowFixMe[incompatible-call]
+              // $FlowFixMe[incompatible-type]
               data.append(referencedFormDataKey, referencedFormDataValue[i]);
             }
             consumeBackingEntry(backingFormData, formDataKey);
@@ -1865,10 +1987,10 @@ function parseModelString(
         const blobKey = prefix + id;
         // We should have this backingEntry in the store already because we emitted
         // it before referencing it. It should be a Blob.
-        const backingEntry: Blob = (getBackingEntry(
+        const backingEntry: Blob = getBackingEntry(
           response._formData,
           blobKey,
-        ): any);
+        ) as any;
         if (!(backingEntry instanceof Blob)) {
           throw new Error('Referenced Blob is not a Blob.');
         }
@@ -1924,6 +2046,9 @@ export function createResponse(
     _closed: false,
     _closedReason: null,
     _temporaryReferences: temporaryReferences,
+    _serverReferenceObjects: null,
+    _serverReferenceCache: new WeakMap(),
+    _serverObjectReferenceCache: new WeakMap(),
     _rootArrayContexts: new WeakMap(),
     _arraySizeLimit: arraySizeLimit,
   };

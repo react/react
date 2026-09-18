@@ -96,13 +96,13 @@ export function createTemporaryReference<T>(
   id: string,
 ): TemporaryReference<T> {
   const reference: TemporaryReference<any> = Object.defineProperties(
-    (function () {
+    function () {
       throw new Error(
         `Attempted to call a temporary Client Reference from the server but it is on the client. ` +
           `It's not possible to invoke a client function from the server, it can ` +
           `only be rendered as a Component or passed to props of a Client Component.`,
       );
-    }: any),
+    } as any,
     {
       $$typeof: {value: TEMPORARY_REFERENCE_TAG},
     },

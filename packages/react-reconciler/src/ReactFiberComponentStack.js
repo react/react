@@ -120,7 +120,7 @@ export function getOwnerStackByFiberInDev(workInProgress: Fiber): string {
     if (workInProgress.tag === HostText) {
       // Text nodes never have an owner/stack because they're not created through JSX.
       // We use the parent since text nodes are always created through a host parent.
-      workInProgress = (workInProgress.return: any);
+      workInProgress = workInProgress.return as any;
     }
 
     // The owner stack of the current fiber will be where it was created, i.e. inside its owner.
@@ -175,7 +175,7 @@ export function getOwnerStackByFiberInDev(workInProgress: Fiber): string {
 
     while (owner) {
       if (typeof owner.tag === 'number') {
-        const fiber: Fiber = (owner: any);
+        const fiber: Fiber = owner as any;
         owner = fiber._debugOwner;
         const debugStack = fiber._debugStack;
         // If we don't actually print the stack if there is no owner of this JSX element.

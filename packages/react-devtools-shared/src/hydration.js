@@ -26,15 +26,15 @@ import type {
 import noop from 'shared/noop';
 
 export const meta = {
-  inspectable: (Symbol('inspectable'): symbol),
-  inspected: (Symbol('inspected'): symbol),
-  name: (Symbol('name'): symbol),
-  preview_long: (Symbol('preview_long'): symbol),
-  preview_short: (Symbol('preview_short'): symbol),
-  readonly: (Symbol('readonly'): symbol),
-  size: (Symbol('size'): symbol),
-  type: (Symbol('type'): symbol),
-  unserializable: (Symbol('unserializable'): symbol),
+  inspectable: Symbol('inspectable') as symbol,
+  inspected: Symbol('inspected') as symbol,
+  name: Symbol('name') as symbol,
+  preview_long: Symbol('preview_long') as symbol,
+  preview_short: Symbol('preview_short') as symbol,
+  readonly: Symbol('readonly') as symbol,
+  size: Symbol('size') as symbol,
+  type: Symbol('type') as symbol,
+  unserializable: Symbol('unserializable') as symbol,
 };
 
 export type Dehydrated = {

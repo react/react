@@ -30,6 +30,7 @@ export function isLegacyActEnvironment(fiber: Fiber): boolean {
     // $FlowFixMe[cannot-resolve-name] - Flow doesn't know about jest
     const jestIsDefined = typeof jest !== 'undefined';
     return (
+      // $FlowFixMe[constant-condition]
       warnsIfNotActing && jestIsDefined && isReactActEnvironmentGlobal !== false
     );
   }

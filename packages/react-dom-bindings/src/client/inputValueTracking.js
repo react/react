@@ -125,7 +125,7 @@ export function track(node: ElementWithValueTracker) {
   // This is read from the DOM so always safe to coerce. We really shouldn't
   // be coercing to a string at all. It's just historical.
   // eslint-disable-next-line react-internal/safe-string-coercion
-  const initialValue = '' + (node[valueField]: any);
+  const initialValue = '' + (node[valueField] as any);
   node._valueTracker = trackValueOnNode(node, valueField, initialValue);
 }
 
@@ -145,16 +145,15 @@ export function trackHydrated(
   if (isCheckable(node)) {
     valueField = 'checked';
     // eslint-disable-next-line react-internal/safe-string-coercion
-    expectedValue = '' + (initialChecked: any);
+    expectedValue = '' + (initialChecked as any);
   } else {
     valueField = 'value';
     expectedValue = initialValue;
   }
   const currentValue =
     // eslint-disable-next-line react-internal/safe-string-coercion
-    '' +
-    (// $FlowFixMe[prop-missing]
-    node[valueField]: any);
+    '' + // $FlowFixMe[prop-missing]
+    (node[valueField] as any);
   node._valueTracker = trackValueOnNode(node, valueField, expectedValue);
   return currentValue !== expectedValue;
 }

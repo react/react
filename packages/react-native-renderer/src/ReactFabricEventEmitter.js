@@ -31,7 +31,7 @@ import {runEventsInBatch} from './legacy-events/EventBatching';
 import {
   RawEventEmitter,
   dispatchNativeEvent,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+} from 'react-native/react-private-interface';
 import {getPublicInstance} from './ReactFiberConfigFabric';
 import {enableNativeEventTargetEventDispatching} from './ReactNativeFeatureFlags';
 
@@ -51,9 +51,9 @@ function extractPluginEvents(
   nativeEventTarget: null | EventTarget,
 ): Array<ReactSyntheticEvent> | ReactSyntheticEvent | null {
   let events: Array<ReactSyntheticEvent> | ReactSyntheticEvent | null = null;
-  const legacyPlugins = ((plugins: any): Array<
+  const legacyPlugins = plugins as any as Array<
     LegacyPluginModule<AnyNativeEvent>,
-  >);
+  >;
   for (let i = 0; i < legacyPlugins.length; i++) {
     // Not every plugin in the ordering may be loaded at runtime.
     const possiblePlugin = legacyPlugins[i];
@@ -94,17 +94,17 @@ export function dispatchEvent(
 ) {
   const nativeEvent: AnyNativeEvent =
     nativeEventParam != null && typeof nativeEventParam === 'object'
-      ? (nativeEventParam: any)
+      ? (nativeEventParam as any)
       : {};
-  const targetFiber = (target: null | Fiber);
+  const targetFiber = target as null | Fiber;
 
   let eventTarget = null;
   if (targetFiber != null) {
     const stateNode = targetFiber.stateNode;
     // Guard against Fiber being unmounted
     if (stateNode != null) {
-      // $FlowExpectedError[incompatible-cast] public instances in Fabric do not implement `EventTarget` yet.
-      eventTarget = (getPublicInstance(stateNode): EventTarget);
+      // $FlowExpectedError[incompatible-type] public instances in Fabric do not implement `EventTarget` yet.
+      eventTarget = getPublicInstance(stateNode) as EventTarget;
     }
   }
 

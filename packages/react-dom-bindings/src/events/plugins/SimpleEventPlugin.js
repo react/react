@@ -32,6 +32,7 @@ import {
 } from '../../events/SyntheticEvent';
 
 import {
+  ANIMATION_CANCEL,
   ANIMATION_END,
   ANIMATION_ITERATION,
   ANIMATION_START,
@@ -76,7 +77,7 @@ function extractEvents(
       // non-printable. One would expect Tab to be as well (but it isn't).
       // TODO: Fixed in https://bugzilla.mozilla.org/show_bug.cgi?id=968056. Can
       // probably remove.
-      if (getEventCharCode(((nativeEvent: any): KeyboardEvent)) === 0) {
+      if (getEventCharCode(nativeEvent as any as KeyboardEvent) === 0) {
         return;
       }
     /* falls through */
@@ -133,6 +134,7 @@ function extractEvents(
     case 'touchstart':
       SyntheticEventCtor = SyntheticTouchEvent;
       break;
+    case ANIMATION_CANCEL:
     case ANIMATION_END:
     case ANIMATION_ITERATION:
     case ANIMATION_START:
@@ -184,7 +186,7 @@ function extractEvents(
     const listeners = accumulateEventHandleNonManagedNodeListeners(
       // TODO: this cast may not make sense for events like
       // "focus" where React listens to e.g. "focusin".
-      ((reactEventType: any): DOMEventName),
+      reactEventType as any as DOMEventName,
       targetContainer,
       inCapturePhase,
     );
@@ -210,7 +212,10 @@ function extractEvents(
       // nonDelegatedEvents list in DOMPluginEventSystem.
       // Then we can remove this special list.
       // This is a breaking change that can wait until React 18.
-      (domEventName === 'scroll' || domEventName === 'scrollend');
+      (domEventName === 'scroll' ||
+        domEventName === 'scrollend' ||
+        domEventName === 'toggle' ||
+        domEventName === 'beforetoggle');
 
     const listeners = accumulateSinglePhaseListeners(
       targetInst,

@@ -35,7 +35,7 @@ import {parseStackTracePrivate} from './ReactFlightServerConfig';
 const getAsyncId = AsyncResource.prototype.asyncId;
 
 const pendingOperations: Map<number, AsyncSequence> =
-  __DEV__ && enableAsyncDebugInfo ? new Map() : (null: any);
+  __DEV__ && enableAsyncDebugInfo ? new Map() : (null as any);
 
 // Keep the last resolved await as a workaround for async functions missing data.
 let lastRanAwait: null | AwaitNode = null;
@@ -44,10 +44,10 @@ function resolvePromiseOrAwaitNode(
   unresolvedNode: UnresolvedAwaitNode | UnresolvedPromiseNode,
   endTime: number,
 ): AwaitNode | PromiseNode {
-  const resolvedNode: AwaitNode | PromiseNode = (unresolvedNode: any);
-  resolvedNode.tag = ((unresolvedNode.tag === UNRESOLVED_PROMISE_NODE
-    ? PROMISE_NODE
-    : AWAIT_NODE): any);
+  const resolvedNode: AwaitNode | PromiseNode = unresolvedNode as any;
+  resolvedNode.tag = (
+    unresolvedNode.tag === UNRESOLVED_PROMISE_NODE ? PROMISE_NODE : AWAIT_NODE
+  ) as any;
   resolvedNode.end = endTime;
   return resolvedNode;
 }
@@ -93,13 +93,13 @@ export function initAsyncDebugInfo(): void {
               stack = emptyStack;
               if (resource._debugInfo !== undefined) {
                 // We may need to forward this debug info at the end so we need to retain this promise.
-                promiseRef = new WeakRef((resource: Promise<any>));
+                promiseRef = new WeakRef(resource as Promise<any>);
               } else {
                 // Otherwise, we can just refer to the inner one since that's the one we'll log anyway.
                 promiseRef = trigger.promise;
               }
             } else {
-              promiseRef = new WeakRef((resource: Promise<any>));
+              promiseRef = new WeakRef(resource as Promise<any>);
               const request = resolveRequest();
               if (request === null) {
                 // We don't collect stacks for awaits that weren't in the scope of a specific render.
@@ -114,7 +114,7 @@ export function initAsyncDebugInfo(): void {
               }
             }
             const current = pendingOperations.get(currentAsyncId);
-            node = ({
+            node = {
               tag: UNRESOLVED_AWAIT_NODE,
               owner: resolveOwner(),
               stack: stack,
@@ -123,23 +123,23 @@ export function initAsyncDebugInfo(): void {
               promise: promiseRef,
               awaited: trigger, // The thing we're awaiting on. Might get overrriden when we resolve.
               previous: current === undefined ? null : current, // The path that led us here.
-            }: UnresolvedAwaitNode);
+            } as UnresolvedAwaitNode;
           } else {
             const owner = resolveOwner();
-            node = ({
+            node = {
               tag: UNRESOLVED_PROMISE_NODE,
               owner: owner,
               stack:
                 owner === null ? null : parseStackTracePrivate(new Error(), 5),
               start: performance.now(),
               end: -1.1, // Set when we resolve.
-              promise: new WeakRef((resource: Promise<any>)),
+              promise: new WeakRef(resource as Promise<any>),
               awaited:
                 trigger === undefined
                   ? null // It might get overridden when we resolve.
                   : trigger,
               previous: null,
-            }: UnresolvedPromiseNode);
+            } as UnresolvedPromiseNode;
           }
         } else if (
           // bound-anonymous-fn is the default name for snapshots and .bind() without a name.
@@ -167,7 +167,7 @@ export function initAsyncDebugInfo(): void {
           if (trigger === undefined) {
             // We have begun a new I/O sequence.
             const owner = resolveOwner();
-            node = ({
+            node = {
               tag: IO_NODE,
               owner: owner,
               stack:
@@ -177,14 +177,14 @@ export function initAsyncDebugInfo(): void {
               promise: null,
               awaited: null,
               previous: null,
-            }: IONode);
+            } as IONode;
           } else if (
             trigger.tag === AWAIT_NODE ||
             trigger.tag === UNRESOLVED_AWAIT_NODE
           ) {
             // We have begun a new I/O sequence after the await.
             const owner = resolveOwner();
-            node = ({
+            node = {
               tag: IO_NODE,
               owner: owner,
               stack:
@@ -194,7 +194,7 @@ export function initAsyncDebugInfo(): void {
               promise: null,
               awaited: null,
               previous: trigger,
-            }: IONode);
+            } as IONode;
           } else {
             // Otherwise, this is just a continuation of the same I/O sequence.
             node = trigger;
@@ -209,7 +209,7 @@ export function initAsyncDebugInfo(): void {
             case IO_NODE: {
               lastRanAwait = null;
               // Log the end time when we resolved the I/O.
-              const ioNode: IONode = (node: any);
+              const ioNode: IONode = node as any;
               if (ioNode.end < 0) {
                 ioNode.end = performance.now();
               } else {
@@ -237,7 +237,7 @@ export function initAsyncDebugInfo(): void {
               // If we begin before we resolve, that means that this is actually already resolved but
               // the promiseResolve hook is called at the end of the execution. So we track the time
               // in the before call instead.
-              // $FlowFixMe
+              // $FlowFixMe[incompatible-type]
               lastRanAwait = resolvePromiseOrAwaitNode(node, performance.now());
               break;
             }

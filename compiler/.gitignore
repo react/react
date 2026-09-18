@@ -5,6 +5,8 @@ node_modules
 .watchmanconfig
 .watchman-cookie-*
 dist
+target
+crates/react_compiler_ast/tests/fixtures
 .vscode
 !packages/playground/.vscode
 testfilter.txt

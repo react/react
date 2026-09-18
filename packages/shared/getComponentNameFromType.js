@@ -38,7 +38,7 @@ function getWrappedName(
   innerType: any,
   wrapperName: string,
 ): string {
-  const displayName = (outerType: any).displayName;
+  const displayName = (outerType as any).displayName;
   if (displayName) {
     return displayName;
   }
@@ -60,11 +60,11 @@ export default function getComponentNameFromType(type: mixed): string | null {
     return null;
   }
   if (typeof type === 'function') {
-    if ((type: any).$$typeof === REACT_CLIENT_REFERENCE) {
+    if ((type as any).$$typeof === REACT_CLIENT_REFERENCE) {
       // TODO: Create a convention for naming client references with debug info.
       return null;
     }
-    return (type: any).displayName || type.name || null;
+    return (type as any).displayName || type.name || null;
   }
   if (typeof type === 'string') {
     return type;
@@ -94,7 +94,7 @@ export default function getComponentNameFromType(type: mixed): string | null {
   }
   if (typeof type === 'object') {
     if (__DEV__) {
-      if (typeof (type: any).tag === 'number') {
+      if (typeof (type as any).tag === 'number') {
         console.error(
           'Received an unexpected object in getComponentNameFromType(). ' +
             'This is likely a bug in React. Please file an issue.',
@@ -105,21 +105,21 @@ export default function getComponentNameFromType(type: mixed): string | null {
       case REACT_PORTAL_TYPE:
         return 'Portal';
       case REACT_CONTEXT_TYPE:
-        const context: ReactContext<any> = (type: any);
+        const context: ReactContext<any> = type as any;
         return getContextName(context);
       case REACT_CONSUMER_TYPE:
-        const consumer: ReactConsumerType<any> = (type: any);
+        const consumer: ReactConsumerType<any> = type as any;
         return getContextName(consumer._context) + '.Consumer';
       case REACT_FORWARD_REF_TYPE:
         return getWrappedName(type, type.render, 'ForwardRef');
       case REACT_MEMO_TYPE:
-        const outerName = (type: any).displayName || null;
+        const outerName = (type as any).displayName || null;
         if (outerName !== null) {
           return outerName;
         }
         return getComponentNameFromType(type.type) || 'Memo';
       case REACT_LAZY_TYPE: {
-        const lazyComponent: LazyComponent<any, any> = (type: any);
+        const lazyComponent: LazyComponent<any, any> = type as any;
         const payload = lazyComponent._payload;
         const init = lazyComponent._init;
         try {

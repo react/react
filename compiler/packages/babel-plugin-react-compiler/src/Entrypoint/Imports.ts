@@ -151,6 +151,17 @@ export class ProgramContext {
     );
   }
 
+  removeMemoCacheImport(): void {
+    const moduleImports = this.imports.get(this.reactRuntimeModule);
+    if (moduleImports == null) {
+      return;
+    }
+    moduleImports.delete('c');
+    if (moduleImports.size === 0) {
+      this.imports.delete(this.reactRuntimeModule);
+    }
+  }
+
   /**
    *
    * @param externalFunction

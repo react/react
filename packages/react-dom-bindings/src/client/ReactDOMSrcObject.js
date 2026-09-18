@@ -10,7 +10,7 @@
 export function setSrcObject(domElement: Element, tag: string, value: any) {
   // We optimistically create the URL regardless of object type. This lets us
   // support cross-realms and any type that the browser supports like new types.
-  const url = URL.createObjectURL((value: any));
+  const url = URL.createObjectURL(value as any);
   const loadEvent = tag === 'img' ? 'load' : 'loadstart';
   const cleanUp = () => {
     // Once the object has started loading, then it's already collected by the

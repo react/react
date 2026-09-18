@@ -88,7 +88,7 @@ export function inspectElement(
     let inspectedElement;
     switch (type) {
       case 'error': {
-        const {message, stack, errorType} = ((data: any): InspectElementError);
+        const {message, stack, errorType} = data as any as InspectElementError;
 
         // create a different error class for each error type
         // and keep useful information from backend.
@@ -124,7 +124,7 @@ export function inspectElement(
         throw Error(`Element "${id}" not found`);
 
       case 'full-data':
-        const fullData = ((data: any): InspectElementFullData);
+        const fullData = data as any as InspectElementFullData;
 
         // New data has come in.
         // We should replace the data in our local mutable copy.
@@ -137,12 +137,13 @@ export function inspectElement(
         return [inspectedElement, type];
 
       case 'hydrated-path':
-        const hydratedPathData = ((data: any): InspectElementHydratedPath);
+        const hydratedPathData = data as any as InspectElementHydratedPath;
         const {value} = hydratedPathData;
 
         // A path has been hydrated.
         // Merge it with the latest copy we have locally and resolve with the merged value.
         inspectedElement = inspectedElementCache.get(id) || null;
+        // $FlowFixMe[invalid-compare]
         if (inspectedElement !== null) {
           // Clone element
           inspectedElement = {...inspectedElement};

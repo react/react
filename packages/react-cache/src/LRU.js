@@ -56,21 +56,21 @@ export function createLRU<T>(limit: number): LRU<T> {
   function deleteLeastRecentlyUsedEntries(targetSize: number) {
     // Delete entries from the cache, starting from the end of the list.
     if (first !== null) {
-      const resolvedFirst: Entry<T> = (first: any);
+      const resolvedFirst: Entry<T> = first as any;
       let last: null | Entry<T> = resolvedFirst.previous;
       while (size > targetSize && last !== null) {
         const onDelete = last.onDelete;
         const previous = last.previous;
-        last.onDelete = (null: any);
+        last.onDelete = null as any;
 
         // Remove from the list
-        last.previous = last.next = (null: any);
+        last.previous = last.next = null as any;
         if (last === first) {
           // Reached the head of the list.
           first = last = null;
         } else {
-          (first: any).previous = previous;
-          previous.next = (first: any);
+          (first as any).previous = previous;
+          previous.next = first as any;
           last = previous;
         }
 
@@ -88,8 +88,8 @@ export function createLRU<T>(limit: number): LRU<T> {
     const entry = {
       value,
       onDelete,
-      next: (null: any),
-      previous: (null: any),
+      next: null as any,
+      previous: null as any,
     };
     if (first === null) {
       entry.previous = entry.next = entry;
@@ -115,9 +115,10 @@ export function createLRU<T>(limit: number): LRU<T> {
 
   function access(entry: Entry<T>): T {
     const next = entry.next;
+    // $FlowFixMe[invalid-compare]
     if (next !== null) {
       // Entry already cached
-      const resolvedFirst: Entry<T> = (first: any);
+      const resolvedFirst: Entry<T> = first as any;
       if (first !== entry) {
         // Remove from current position
         const previous = entry.previous;

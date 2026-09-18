@@ -12,6 +12,7 @@ declare module 'hermes-parser' {
     babel?: boolean;
     flow?: 'all' | 'detect';
     enableExperimentalComponentSyntax?: boolean;
+    enableExperimentalFlowMatchSyntax?: boolean;
     sourceFilename?: string;
     sourceType?: 'module' | 'script' | 'unambiguous';
     tokens?: boolean;

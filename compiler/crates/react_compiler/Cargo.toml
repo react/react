@@ -1,0 +1,24 @@
+[package]
+name = "react_compiler"
+description = "Rust implementation of the React Compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+react_compiler_ast.workspace = true
+react_compiler_diagnostics.workspace = true
+react_compiler_hir.workspace = true
+react_compiler_inference.workspace = true
+react_compiler_lowering.workspace = true
+react_compiler_optimization.workspace = true
+react_compiler_reactive_scopes.workspace = true
+react_compiler_ssa.workspace = true
+react_compiler_typeinference.workspace = true
+react_compiler_validation.workspace = true
+indexmap = "2"
+rustc-hash = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }

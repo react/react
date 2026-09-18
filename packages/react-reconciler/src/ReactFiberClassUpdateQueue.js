@@ -193,8 +193,8 @@ export function cloneUpdateQueue<State>(
   workInProgress: Fiber,
 ): void {
   // Clone the update queue from current. Unless it's already a clone.
-  const queue: UpdateQueue<State> = (workInProgress.updateQueue: any);
-  const currentQueue: UpdateQueue<State> = (current.updateQueue: any);
+  const queue: UpdateQueue<State> = workInProgress.updateQueue as any;
+  const currentQueue: UpdateQueue<State> = current.updateQueue as any;
   if (queue === currentQueue) {
     const clone: UpdateQueue<State> = {
       baseState: currentQueue.baseState,
@@ -231,7 +231,7 @@ export function enqueueUpdate<State>(
     return null;
   }
 
-  const sharedQueue: SharedQueue<State> = (updateQueue: any).shared;
+  const sharedQueue: SharedQueue<State> = (updateQueue as any).shared;
 
   if (__DEV__) {
     if (
@@ -280,7 +280,7 @@ export function entangleTransitions(root: FiberRoot, fiber: Fiber, lane: Lane) {
     return;
   }
 
-  const sharedQueue: SharedQueue<mixed> = (updateQueue: any).shared;
+  const sharedQueue: SharedQueue<mixed> = (updateQueue as any).shared;
   if (isTransitionLane(lane)) {
     let queueLanes = sharedQueue.lanes;
 
@@ -308,12 +308,12 @@ export function enqueueCapturedUpdate<State>(
   // Captured updates are updates that are thrown by a child during the render
   // phase. They should be discarded if the render is aborted. Therefore,
   // we should only put them on the work-in-progress queue, not the current one.
-  let queue: UpdateQueue<State> = (workInProgress.updateQueue: any);
+  let queue: UpdateQueue<State> = workInProgress.updateQueue as any;
 
   // Check if the work-in-progress queue is a clone.
   const current = workInProgress.alternate;
   if (current !== null) {
-    const currentQueue: UpdateQueue<State> = (current.updateQueue: any);
+    const currentQueue: UpdateQueue<State> = current.updateQueue as any;
     if (queue === currentQueue) {
       // The work-in-progress queue is the same as current. This happens when
       // we bail out on a parent fiber that then captures an error thrown by
@@ -350,6 +350,7 @@ export function enqueueCapturedUpdate<State>(
         } while (update !== null);
 
         // Append the captured update the end of the cloned list.
+        // $FlowFixMe[invalid-compare]
         if (newLast === null) {
           newFirst = newLast = capturedUpdate;
         } else {
@@ -492,7 +493,7 @@ export function processUpdateQueue<State>(
   didReadFromEntangledAsyncAction = false;
 
   // This is always non-null on a ClassComponent or HostRoot
-  const queue: UpdateQueue<State> = (workInProgress.updateQueue: any);
+  const queue: UpdateQueue<State> = workInProgress.updateQueue as any;
 
   hasForceUpdate = false;
 
@@ -529,7 +530,7 @@ export function processUpdateQueue<State>(
     const current = workInProgress.alternate;
     if (current !== null) {
       // This is always non-null on a ClassComponent or HostRoot
-      const currentQueue: UpdateQueue<State> = (current.updateQueue: any);
+      const currentQueue: UpdateQueue<State> = current.updateQueue as any;
       const currentLastBaseUpdate = currentQueue.lastBaseUpdate;
       if (currentLastBaseUpdate !== lastBaseUpdate) {
         if (currentLastBaseUpdate === null) {
@@ -655,7 +656,7 @@ export function processUpdateQueue<State>(
           // Intentionally unsound. Pending updates form a circular list, but we
           // unravel them when transferring them to the base queue.
           const firstPendingUpdate =
-            ((lastPendingUpdate.next: any): Update<State>);
+            lastPendingUpdate.next as any as Update<State>;
           lastPendingUpdate.next = null;
           update = firstPendingUpdate;
           queue.lastBaseUpdate = lastPendingUpdate;
@@ -668,10 +669,11 @@ export function processUpdateQueue<State>(
       newBaseState = newState;
     }
 
-    queue.baseState = ((newBaseState: any): State);
+    queue.baseState = newBaseState as any as State;
     queue.firstBaseUpdate = newFirstBaseUpdate;
     queue.lastBaseUpdate = newLastBaseUpdate;
 
+    // $FlowFixMe[invalid-compare]
     if (firstBaseUpdate === null) {
       // `queue.lanes` is used for entangling transitions. We can set it back to
       // zero once the queue is empty.

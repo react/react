@@ -4,6 +4,7 @@ import * as React from 'react';
 import {forwardRef} from 'react';
 import Bridge from 'react-devtools-shared/src/bridge';
 import Store from 'react-devtools-shared/src/devtools/store';
+import {subscribeToStoreErrors} from 'react-devtools-shared/src/devtools/storeErrorLogger';
 import DevTools from 'react-devtools-shared/src/devtools/views/DevTools';
 import {getSavedComponentFilters} from 'react-devtools-shared/src/utils';
 
@@ -13,12 +14,13 @@ import type {Props} from 'react-devtools-shared/src/devtools/views/DevTools';
 import type {Config} from 'react-devtools-shared/src/devtools/store';
 
 export function createStore(bridge: FrontendBridge, config?: Config): Store {
-  return new Store(bridge, {
+  const store = new Store(bridge, {
     checkBridgeProtocolCompatibility: true,
     supportsTraceUpdates: true,
-    supportsTimeline: true,
     ...config,
   });
+  subscribeToStoreErrors(store, bridge);
+  return store;
 }
 
 export function createBridge(contentWindow: any, wall?: Wall): FrontendBridge {
@@ -34,13 +36,17 @@ export function createBridge(contentWindow: any, wall?: Wall): FrontendBridge {
           window.removeEventListener('message', onMessage);
         };
       },
-      send(event: string, payload: any, transferable?: Array<any>) {
+      send(
+        event: string,
+        payload: mixed,
+        transferable?: $ReadOnlyArray<mixed>,
+      ) {
         contentWindow.postMessage({event, payload}, '*', transferable);
       },
     };
   }
 
-  return (new Bridge(wall): FrontendBridge);
+  return new Bridge(wall) as FrontendBridge;
 }
 
 export function initialize(
@@ -58,7 +64,7 @@ export function initialize(
   }
 
   // Type refinement.
-  const frontendBridge = ((bridge: any): FrontendBridge);
+  const frontendBridge = bridge as any as FrontendBridge;
 
   if (store == null) {
     store = createStore(frontendBridge);

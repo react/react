@@ -221,7 +221,9 @@ describe('ReactDOMFizzServerBrowser', () => {
       ),
     );
 
-    controller.abort();
+    await serverAct(() => {
+      controller.abort();
+    });
 
     const result = await readResult(stream);
     expect(result).toContain('Loading');
@@ -247,7 +249,9 @@ describe('ReactDOMFizzServerBrowser', () => {
     );
 
     const theReason = new Error('aborted for reasons');
-    controller.abort(theReason);
+    await serverAct(() => {
+      controller.abort(theReason);
+    });
 
     let caughtError = null;
     try {
@@ -364,7 +368,7 @@ describe('ReactDOMFizzServerBrowser', () => {
 
     const reader = stream.getReader();
     await reader.read();
-    await reader.cancel();
+    await serverAct(() => reader.cancel());
 
     expect(errors).toEqual([
       'The render was aborted by the server without a reason.',
@@ -463,7 +467,9 @@ describe('ReactDOMFizzServerBrowser', () => {
       }),
     );
 
-    controller.abort('foobar');
+    await serverAct(() => {
+      controller.abort('foobar');
+    });
 
     expect(errors).toEqual(['foobar', 'foobar']);
   });
@@ -502,7 +508,9 @@ describe('ReactDOMFizzServerBrowser', () => {
       }),
     );
 
-    controller.abort(new Error('uh oh'));
+    await serverAct(() => {
+      controller.abort(new Error('uh oh'));
+    });
 
     expect(errors).toEqual(['uh oh', 'uh oh']);
   });

@@ -25,7 +25,6 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
 import { useRef } from "react";
 
 const useControllableState = (options) => {};

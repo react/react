@@ -27,6 +27,7 @@ import {like, greet, increment} from './actions.js';
 
 import {getServerState} from './ServerState.js';
 import {sdkMethod} from './library.js';
+import FileReader from './FileReader.js';
 
 const promisedText = new Promise(resolve =>
   setTimeout(() => resolve('deferred text'), 50)
@@ -243,6 +244,11 @@ export default async function App({prerender, noCache}) {
           {prerender ? null : ( // TODO: prerender is broken for large content for some reason.
             <React.Suspense fallback={null}>
               <LargeContent />
+              {/*
+                This text prop is above the threshold, so in the debug info for
+                the element we'll see a placeholder instead of the actual value.
+              */}
+              <FileReader largeText={'a'.repeat(1000001)} />
             </React.Suspense>
           )}
         </Container>

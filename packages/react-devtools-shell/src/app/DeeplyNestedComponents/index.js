@@ -15,7 +15,7 @@ function wrapWithHoc(Component: () => any, index: number) {
     return <Component />;
   }
 
-  const displayName = (Component: any).displayName || Component.name;
+  const displayName = (Component as any).displayName || Component.name;
 
   HOC.displayName = `withHoc${index}(${displayName})`;
   return HOC;

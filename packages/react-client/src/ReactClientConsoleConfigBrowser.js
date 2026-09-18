@@ -35,7 +35,7 @@ export function bindToConsole(
     case 'groupEnd':
     case 'table': {
       // These methods cannot be colorized because they don't take a formatting string.
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       return bind.apply(console[methodName], [console].concat(args)); // eslint-disable-line react-internal/no-production-logging
     }
     case 'assert': {
@@ -68,6 +68,7 @@ export function bindToConsole(
   // The "this" binding in the "bind";
   newArgs.unshift(console);
 
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
+  // $FlowFixMe[invalid-computed-prop]
   return bind.apply(console[methodName], newArgs); // eslint-disable-line react-internal/no-production-logging
 }

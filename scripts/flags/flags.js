@@ -12,7 +12,10 @@ const Module = require('module');
 const path = require('path');
 const fs = require('fs');
 babel({
-  plugins: ['@babel/plugin-transform-modules-commonjs'],
+  plugins: [
+    'babel-plugin-syntax-hermes-parser',
+    '@babel/plugin-transform-modules-commonjs',
+  ],
 });
 
 const yargs = require('yargs');
@@ -90,7 +93,10 @@ function getReactFeatureFlagsMajor() {
       'const __NEXT_MAJOR__ = "next";'
     ),
     {
-      plugins: ['@babel/plugin-transform-modules-commonjs'],
+      plugins: [
+        'babel-plugin-syntax-hermes-parser',
+        '@babel/plugin-transform-modules-commonjs',
+      ],
     }
   ).code;
 
@@ -125,7 +131,10 @@ function getReactNativeFeatureFlagsMajor() {
         'const __TODO_NEXT_RN_MAJOR__ = "next-todo";'
       ),
     {
-      plugins: ['@babel/plugin-transform-modules-commonjs'],
+      plugins: [
+        'babel-plugin-syntax-hermes-parser',
+        '@babel/plugin-transform-modules-commonjs',
+      ],
     }
   ).code;
 

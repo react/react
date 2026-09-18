@@ -18,12 +18,12 @@ import {runWithFiberInDEV} from './ReactCurrentFiber';
 // assigned view-transition-name outside React too.
 const mountedNamedViewTransitions: Map<string, Fiber> = __DEV__
   ? new Map()
-  : (null: any);
-const didWarnAboutName: {[string]: boolean} = __DEV__ ? {} : (null: any);
+  : (null as any);
+const didWarnAboutName: {[string]: boolean} = __DEV__ ? {} : (null as any);
 
 export function trackNamedViewTransition(fiber: Fiber): void {
   if (__DEV__) {
-    const name = (fiber.memoizedProps: ViewTransitionProps).name;
+    const name = (fiber.memoizedProps as ViewTransitionProps).name;
     if (name != null && name !== 'auto') {
       const existing = mountedNamedViewTransitions.get(name);
       if (existing !== undefined) {
@@ -57,7 +57,7 @@ export function trackNamedViewTransition(fiber: Fiber): void {
 
 export function untrackNamedViewTransition(fiber: Fiber): void {
   if (__DEV__) {
-    const name = (fiber.memoizedProps: ViewTransitionProps).name;
+    const name = (fiber.memoizedProps as ViewTransitionProps).name;
     if (name != null && name !== 'auto') {
       const existing = mountedNamedViewTransitions.get(name);
       if (

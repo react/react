@@ -34,7 +34,7 @@ type Context = {
 };
 
 const SettingsModalContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 SettingsModalContext.displayName = 'SettingsModalContext';
 

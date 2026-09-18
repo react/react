@@ -1,12 +1,12 @@
 {
   "name": "react-devtools-inline",
-  "version": "7.0.1",
+  "version": "8.0.0",
   "description": "Embed react-devtools within a website",
   "license": "MIT",
   "main": "./dist/backend.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-devtools-inline"
   },
   "files": [

@@ -726,7 +726,7 @@ async function transformModuleIfNeeded(
   if (sourceMappingURL) {
     const sourceMapResult = await loader(
       sourceMappingURL,
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       {
         format: 'json',
         conditions: [],
@@ -738,7 +738,7 @@ async function transformModuleIfNeeded(
     const sourceMapString =
       typeof sourceMapResult.source === 'string'
         ? sourceMapResult.source
-        : // $FlowFixMe
+        : // $FlowFixMe[extra-arg]
           sourceMapResult.source.toString('utf8');
     sourceMap = JSON.parse(sourceMapString);
 

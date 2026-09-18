@@ -28,3 +28,13 @@ export const FIXTURES_PATH = path.join(
   'compiler',
 );
 export const SNAPSHOT_EXTENSION = '.expect.md';
+
+export const BABEL_PLUGIN_RUST_ROOT = path.normalize(
+  path.join(PROJECT_ROOT, 'packages', 'babel-plugin-react-compiler-rust'),
+);
+export const BABEL_PLUGIN_RUST_SRC = path.normalize(
+  path.join(BABEL_PLUGIN_RUST_ROOT, 'dist', 'index.js'),
+);
+export const CRATES_PATH = path.normalize(
+  path.join(PROJECT_ROOT, '..', 'crates'),
+);
