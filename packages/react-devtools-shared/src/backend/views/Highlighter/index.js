@@ -37,6 +37,10 @@ export default function setupHighlighter(
   bridge.addListener('scrollTo', scrollDocumentTo);
   bridge.addListener('requestScrollPosition', sendScroll);
 
+  agent.addListener('startInspectingNative', () => {
+    startInspectingHost(false);
+  });
+
   let applyingScroll = false;
 
   function scrollDocumentTo({
