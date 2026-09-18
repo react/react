@@ -32,6 +32,7 @@ The documentation is divided into several sections:
 * [Adding Interactivity](https://react.dev/learn/adding-interactivity)
 * [Managing State](https://react.dev/learn/managing-state)
 * [Advanced Guides](https://react.dev/learn/escape-hatches)
+* [Hooks Reference](https://react.dev/reference/react/hooks) - Complete guide to built-in Hooks
 * [API Reference](https://react.dev/reference/react)
 * [Where to Get Support](https://react.dev/community)
 * [Contributing Guide](https://legacy.reactjs.org/docs/how-to-contribute.html)
