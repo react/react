@@ -157,6 +157,32 @@ export type PluginOptions = Partial<{
    */
   customOptOutDirectives: CustomOptOutDirective;
 
+  /**
+   * Controls which files the compiler will process.
+   *
+   * - When `null` (the default), the compiler uses a built-in filter that
+   *   compiles every file *except* those whose path contains `node_modules`.
+   * - When a function, it is called with the file's absolute path and should
+   *   return `true` to compile the file. This is the recommended form: it gives
+   *   you full control and is unambiguous.
+   * - When an array of strings, a file is compiled if any entry matches the
+   *   file's absolute path as an *unanchored substring* (i.e.
+   *   `filename.includes(entry)`). Note two footguns of the array form:
+   *
+   *   1. Matching is against the *absolute* path and is *not* anchored to a
+   *      path segment. A bare prefix such as `'/myapp/'` can therefore match an
+   *      ancestor directory of your project root — e.g. a CI checkout at
+   *      `/home/ci/myapp` — and thereby match *every* file in the build,
+   *      including dependencies under `node_modules`. Prefer anchoring entries
+   *      to a segment that cannot coincide with the build root (e.g.
+   *      `'/myapp/src/'`), or use the function form.
+   *   2. Supplying an array *replaces* the default filter entirely, so the
+   *      built-in `node_modules` exclusion no longer applies. If you want it,
+   *      re-add it yourself (most easily via the function form).
+   *
+   * The compiler emits a warning (via `logger`) when an array `sources` filter
+   * matches in one of these footgun-prone ways.
+   */
   sources: Array<string> | ((filename: string) => boolean) | null;
 
   /**
