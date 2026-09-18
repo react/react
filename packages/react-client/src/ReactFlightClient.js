@@ -1840,6 +1840,8 @@ function fulfillReference(
       if (
         typeof value === 'object' &&
         value !== null &&
+        (getPrototypeOf(value) === ObjectPrototype ||
+          getPrototypeOf(value) === ArrayPrototype) &&
         hasOwnProperty.call(value, name)
       ) {
         value = value[name];
