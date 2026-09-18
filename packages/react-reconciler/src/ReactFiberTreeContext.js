@@ -63,7 +63,6 @@
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 
 import {getIsHydrating} from './ReactFiberHydrationContext';
-import {clz32} from './clz32';
 import {Forked, NoFlags} from './ReactFiberFlags';
 
 export type TreeContext = {
@@ -218,7 +217,7 @@ export function pushMaterializedTreeId(workInProgress: Fiber) {
 }
 
 function getBitLength(number: number): number {
-  return 32 - clz32(number);
+  return 32 - Math.clz32(number);
 }
 
 function getLeadingBit(id: number) {
