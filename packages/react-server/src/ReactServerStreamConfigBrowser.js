@@ -14,10 +14,17 @@ export opaque type Chunk = Uint8Array;
 export type BinaryChunk = Uint8Array;
 
 const channel = new MessageChannel();
-const taskQueue = [];
+const taskQueue: Array<null | (() => void)> = [];
+// Keep a head index so draining a burst does not repeatedly shift the array.
+let taskQueueIndex = 0;
 channel.port1.onmessage = () => {
-  const task = taskQueue.shift();
-  if (task) {
+  const task = taskQueue[taskQueueIndex];
+  taskQueue[taskQueueIndex++] = null;
+  if (taskQueueIndex === taskQueue.length) {
+    taskQueue.length = 0;
+    taskQueueIndex = 0;
+  }
+  if (task != null) {
     task();
   }
 };
