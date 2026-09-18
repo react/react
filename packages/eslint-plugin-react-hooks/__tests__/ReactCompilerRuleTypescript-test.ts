@@ -192,6 +192,22 @@ const tests: CompilerTestCases = {
         },
       ],
     },
+    {
+      name: '[Heuristic] Compiles HOF-wrapped PascalCase component - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        const wrap = (value) => value;
+        const MyComponent = wrap(({a}) => {
+          a.key = 'value';
+          return <div />;
+        });
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
   ],
 };
 
@@ -199,3 +215,71 @@ const eslintTester = new ESLintTesterV8({
   parser: require.resolve('@typescript-eslint/parser-v5'),
 });
 eslintTester.run('react-compiler', allRules['immutability'].rule, tests);
+
+// Tests for set-state-in-effect rule with HOF-wrapped components
+// Reproduction test for https://github.com/facebook/react/issues/35910
+const setStateInEffectTests: CompilerTestCases = {
+  valid: [
+    {
+      name: 'Direct component with no setState in effect',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import { useEffect, useState } from 'react';
+        function DirectComponent() {
+          const [value, setValue] = useState(0);
+          useEffect(() => {
+            console.log(value);
+          }, []);
+          return <div>{value}</div>;
+        }
+      `,
+    },
+  ],
+  invalid: [
+    {
+      name: 'Direct component with setState in effect',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import { useEffect, useState } from 'react';
+        function DirectComponent() {
+          const [value, setValue] = useState(0);
+          useEffect(() => {
+            setValue(1);
+          }, []);
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [
+        {
+          message: /Calling setState synchronously within an effect/,
+        },
+      ],
+    },
+    {
+      name: 'Anonymous component callback passed to HOF has setState in effect',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import { useEffect, useState } from 'react';
+        const wrap = (value) => value;
+        const WrappedComponent = wrap(() => {
+          const [value, setValue] = useState(0);
+          useEffect(() => {
+            setValue(1);
+          }, []);
+          return <div>{value}</div>;
+        });
+      `,
+      errors: [
+        {
+          message: /Calling setState synchronously within an effect/,
+        },
+      ],
+    },
+  ],
+};
+
+eslintTester.run(
+  'react-compiler-set-state-in-effect',
+  allRules['set-state-in-effect'].rule,
+  setStateInEffectTests,
+);
