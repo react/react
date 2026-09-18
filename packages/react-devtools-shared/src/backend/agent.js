@@ -37,7 +37,7 @@ import type {
   DehydratedData,
   ElementType,
 } from 'react-devtools-shared/src/frontend/types';
-import type {GroupItem} from './views/TraceUpdates/canvas';
+import type {GroupItem} from './views/canvas';
 import {isReactNativeEnvironment} from './utils';
 import {
   sessionStorageGetItem,

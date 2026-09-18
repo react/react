@@ -8,7 +8,7 @@
  */
 
 import Agent from 'react-devtools-shared/src/backend/agent';
-import {destroy as destroyCanvas, draw} from './canvas';
+import {destroy as destroyCanvas, draw} from '../canvas';
 import {extractHOCNames, getNestedBoundingClientRect} from '../utils';
 
 import type {HostInstance} from '../../types';
