@@ -1076,4 +1076,112 @@ describe('Store component filters', () => {
           <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
     `);
   });
+
+  // @reactVersion >= 19.0
+  it('stays in sync when a slice is focused as its boundary suspends', async () => {
+    const Activity = React.Activity || React.unstable_Activity;
+    const neverResolves = new Promise(() => {});
+
+    function Reader() {
+      React.use(neverResolves);
+      return <div>read</div>;
+    }
+
+    function App({suspend}) {
+      return (
+        <div>
+          <React.Suspense fallback={<div>fallback</div>}>
+            {suspend ? <Reader /> : null}
+            <Activity name="target" mode="visible">
+              <span>inside</span>
+            </Activity>
+          </React.Suspense>
+        </div>
+      );
+    }
+
+    store.componentFilters = [
+      utils.createElementTypeFilter(Types.ElementTypeHostComponent),
+    ];
+
+    await actAsync(() => render(<App suspend={false} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Suspense>
+              <Activity name="target" mode="visible">
+      [suspense-root]  rects={[{x:1,y:2,width:6,height:1}]}
+        <Suspense name="App" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
+    `);
+
+    // Indices 0, 1, 2 are App, Suspense, Activity.
+    const activity = store.getElementAtIndex(2);
+
+    // Focusing the Activity is what the Suspense tab does with the id it read
+    // out of the tree; here the app suspends the boundary in the same commit.
+    await actAsync(() => {
+      render(<App suspend={true} />);
+      store.componentFilters = [utils.createActivitySliceFilter(activity.id)];
+    });
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <div>
+            ▾ <Suspense>
+                <div>
+      [suspense-root]  rects={[{x:1,y:2,width:8,height:1}]}
+        <Suspense name="App" uniqueSuspenders={true} rects={[{x:1,y:2,width:8,height:1}]}>
+    `);
+  });
+
+  // @reactVersion >= 19.0
+  it('stays in sync when the slice is focused before the boundary suspends', async () => {
+    const Activity = React.Activity || React.unstable_Activity;
+    const neverResolves = new Promise(() => {});
+
+    function Reader() {
+      React.use(neverResolves);
+      return <div>read</div>;
+    }
+
+    function App({suspend}) {
+      return (
+        <div>
+          <React.Suspense fallback={<div>fallback</div>}>
+            {suspend ? <Reader /> : null}
+            <Activity name="target" mode="visible">
+              <span>inside</span>
+            </Activity>
+          </React.Suspense>
+        </div>
+      );
+    }
+
+    store.componentFilters = [
+      utils.createElementTypeFilter(Types.ElementTypeHostComponent),
+    ];
+
+    await actAsync(() => render(<App suspend={false} />));
+    const activity = store.getElementAtIndex(2);
+
+    await actAsync(() => {
+      store.componentFilters = [utils.createActivitySliceFilter(activity.id)];
+    });
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Activity name="target" mode="visible">
+            <span>
+      [suspense-root]  rects={[{x:1,y:2,width:6,height:1}]}
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
+    `);
+
+    await actAsync(() => render(<App suspend={true} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Activity name="target" mode="visible">
+            <span>
+      [suspense-root]  rects={[{x:1,y:2,width:8,height:1}]}
+        <Suspense name="Unknown" uniqueSuspenders={true} rects={[{x:1,y:2,width:8,height:1}]}>
+    `);
+  });
 });
