@@ -18,6 +18,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::dominator::post_dominator_frontier;
+use react_compiler_hir::dominator::PostDominator;
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::object_shape::HookKind;
 use react_compiler_hir::visitors;
@@ -64,6 +65,12 @@ pub fn infer_reactive_places(
     // Collect block IDs for iteration
     let block_ids: Vec<BlockId> = func.body.blocks.keys().copied().collect();
 
+    // Cache each block's post-dominator frontier. The frontier depends only on
+    // the CFG structure, which is fixed during this pass, so it is computed at
+    // most once per block instead of on every fixpoint iteration. Mirrors the
+    // TS `postDominatorFrontierCache` in `ControlDominators.ts`.
+    let mut frontier_cache: FxHashMap<BlockId, FxHashSet<BlockId>> = FxHashMap::default();
+
     // Track phi operand reactive flags during fixpoint.
     // In TS, isReactive() sets place.reactive as a side effect. But when a phi
     // is already reactive, the TS `continue`s and skips operand processing.
@@ -75,8 +82,13 @@ pub fn infer_reactive_places(
     loop {
         for block_id in &block_ids {
             let block = func.body.blocks.get(block_id).unwrap();
-            let has_reactive_control =
-                is_reactive_controlled_block(block.id, func, &post_dominators, &mut reactive_map);
+            let has_reactive_control = is_reactive_controlled_block(
+                block.id,
+                func,
+                &post_dominators,
+                &mut frontier_cache,
+                &mut reactive_map,
+            );
 
             // Process phi nodes
             let block = func.body.blocks.get(block_id).unwrap();
@@ -104,6 +116,7 @@ pub fn infer_reactive_places(
                             *pred,
                             func,
                             &post_dominators,
+                            &mut frontier_cache,
                             &mut reactive_map,
                         ) {
                             reactive_map.mark_reactive(phi.place.identifier);
@@ -372,11 +385,14 @@ impl StableSidemap {
 fn is_reactive_controlled_block(
     block_id: BlockId,
     func: &HirFunction,
-    post_dominators: &react_compiler_hir::dominator::PostDominator,
+    post_dominators: &PostDominator,
+    frontier_cache: &mut FxHashMap<BlockId, FxHashSet<BlockId>>,
     reactive_map: &mut ReactivityMap,
 ) -> bool {
-    let frontier = post_dominator_frontier(func, post_dominators, block_id);
-    for frontier_block_id in &frontier {
+    let frontier = frontier_cache
+        .entry(block_id)
+        .or_insert_with(|| post_dominator_frontier(func, post_dominators, block_id));
+    for frontier_block_id in &*frontier {
         let control_block = func.body.blocks.get(frontier_block_id).unwrap();
         match &control_block.terminal {
             Terminal::If { test, .. } | Terminal::Branch { test, .. } => {
