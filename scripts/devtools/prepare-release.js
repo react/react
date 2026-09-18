@@ -45,7 +45,7 @@ async function main() {
 
   const path = join(ROOT_PATH, PACKAGE_PATHS[0]);
   const previousVersion = readJsonSync(path).version;
-  const {major, minor, patch} = semver(previousVersion);
+  const {major, minor, patch} = semver.parse(previousVersion);
   const nextVersion =
     releaseType === 'minor'
       ? `${major}.${minor + 1}.0`
