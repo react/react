@@ -47,3 +47,30 @@ test('use-state', async () => {
     </DocumentFragment>
   `);
 });
+
+// Postfix updates of properties must observe the value prior to the update,
+// even when the update occurs inside an outlined function.
+function MemberPostfixUpdate(props) {
+  'use memo';
+  const results = [];
+  const counter = {value: props.initial};
+  props.inputs.forEach(input => {
+    const previous = counter.value++;
+    results.push(previous + input);
+  });
+  return <span>{results.join(',')}</span>;
+}
+
+test('member-postfix-update', async () => {
+  const {asFragment} = render(
+    <MemberPostfixUpdate initial={0} inputs={[10]} />
+  );
+  // The first iteration observes the initial value, not the incremented one.
+  expect(asFragment()).toMatchInlineSnapshot(`
+    <DocumentFragment>
+      <span>
+        10
+      </span>
+    </DocumentFragment>
+  `);
+});
