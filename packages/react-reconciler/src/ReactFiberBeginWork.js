@@ -3209,6 +3209,8 @@ function updateDehydratedSuspenseComponent(
       if (
         isSuspenseInstanceFallback(suspenseInstance) &&
         current.memoizedProps === nextProps &&
+        // This is unreachable in renderers that do not support hydration.
+        // $FlowFixMe[invalid-compare]
         getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
           REACT_RECOVERABLE_DIGEST &&
         dehydratedFragment !== null &&
