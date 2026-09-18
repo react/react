@@ -34,7 +34,7 @@ const DEVTOOLS_VERSION = getVersionString();
 
 // If the React version isn't set, we will use the
 // current React version instead. Likewise if the
-// React version isnt' set, we'll use the build folder
+// React version isn't set, we'll use the build folder
 // for both React DevTools and React
 const REACT_VERSION = process.env.REACT_VERSION
   ? semver.coerce(process.env.REACT_VERSION).version

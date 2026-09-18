@@ -377,7 +377,7 @@ server.tool(
   <requirements>
   - The url should be a full url with the protocol (http:// or https://) and the domain name (e.g. localhost:3000).
   - Also the user should be running a Chrome browser running on debug mode on port 9222. If you receive an error message, advise the user to run
-  the following comand in the terminal:
+  the following command in the terminal:
   MacOS: "/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome"
   Windows: "chrome.exe --remote-debugging-port=9222 --user-data-dir=C:\temp\chrome"
   </requirements>

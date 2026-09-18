@@ -76,8 +76,8 @@ import {retainWhere} from '../Utils/utils';
  *    StoreLocal to the temporary we allocated before plus a Goto to the fallthrough
  *    block (code following the CallExpression).
  *
- * Note that if the inliined function has only one return, we avoid the labeled block
- * and fully inline the code. The original return is replaced with an assignmen to the
+ * Note that if the inlined function has only one return, we avoid the labeled block
+ * and fully inline the code. The original return is replaced with an assignment to the
  * IIFE's call expression lvalue.
  */
 export function inlineImmediatelyInvokedFunctionExpressions(

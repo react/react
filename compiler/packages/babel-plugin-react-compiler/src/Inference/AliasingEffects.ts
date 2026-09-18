@@ -36,7 +36,7 @@ export type AliasingEffect =
    * For example:
    * const x = {};
    * const y = [x];
-   * y.pop(); // y dosn't contain x anymore!
+   * y.pop(); // y doesn't contain x anymore!
    * freeze(y);
    * mutate(x); // safe to mutate!
    *
@@ -164,7 +164,7 @@ export type AliasingEffect =
    */
   | {kind: 'Impure'; place: Place; error: CompilerDiagnostic}
   /**
-   * Indicates that a given place is accessed during render. Used to distingush
+   * Indicates that a given place is accessed during render. Used to distinguish
    * hook arguments that are known to be called immediately vs those used for
    * event handlers/effects, and for JSX values known to be called during render
    * (tags, children) vs those that may be events/effect (other props).
