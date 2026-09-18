@@ -193,6 +193,11 @@ function flushSyncWorkAcrossRoots_impl(
     return;
   }
 
+  const executionContext = getExecutionContext();
+  if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
+    return;
+  }
+
   if (!mightHavePendingSyncWork) {
     // Fast path. There's no sync work to do.
     return;
@@ -527,9 +532,10 @@ function performWorkOnRootViaSchedulerTask(
     trackSchedulerEvent();
   }
 
-  if (hasPendingCommitEffects()) {
-    // We are currently in the middle of an async committing (such as a View Transition).
-    // We could force these to flush eagerly but it's better to defer any work until
+  const executionContext = getExecutionContext();
+  if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
+    // We are currently in the middle of a render or commit. We could force
+    // these to flush eagerly but it's better to defer any work until
     // it finishes. This may not be the same root as we're waiting on.
     // TODO: This relies on the commit eventually calling ensureRootIsScheduled which
     // always calls processRootScheduleInMicrotask which in turn always loops through
