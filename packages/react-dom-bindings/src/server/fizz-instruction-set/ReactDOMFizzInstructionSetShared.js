@@ -435,6 +435,7 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
   suspenseNodeOuter.data = SUSPENSE_QUEUED_START_DATA;
   // Queue this boundary for the next batch
   window['$RB'].push(suspenseIdNodeOuter, contentNodeOuter);
+  contentNodeOuter.removeAttribute('id');
 
   if (window['$RB'].length === 2) {
     // This is the first time we've pushed to the batch. We need to schedule a callback
