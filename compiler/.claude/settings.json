@@ -8,7 +8,8 @@
       "Bash(yarn prettier-all:*)",
       "Bash(bash compiler/scripts/test-babel-ast.sh:*)",
       "Bash(cargo test:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)"
     ],
     "deny": [
       "Skill(extract-errors)",

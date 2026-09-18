@@ -577,10 +577,7 @@ fn evaluate_instruction(
                 // No subexpressions: join all cooked quasis
                 let mut result_string = String::new();
                 for q in quasis {
-                    match &q.cooked {
-                        Some(cooked) => result_string.push_str(cooked),
-                        None => return None,
-                    }
+                    result_string.push_str(q.cooked.as_ref()?)
                 }
                 let loc = *loc;
                 let result = Constant::Primitive {
@@ -622,10 +619,7 @@ fn evaluate_instruction(
                     PrimitiveValue::Undefined => return None,
                 };
 
-                let suffix = match &quasis[quasi_index].cooked {
-                    Some(s) => s.clone(),
-                    None => return None,
-                };
+                let suffix = quasis[quasi_index].cooked.clone()?;
                 quasi_index += 1;
 
                 result_string.push_str(&expression_str);
