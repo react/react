@@ -182,6 +182,7 @@ declare class Buffer extends Uint8Array {
   static from(value: Iterable<number>): this;
   static isBuffer(obj: any): boolean;
   static isEncoding(encoding: string): boolean;
+  static poolSize: number;
 }
 
 declare type Node$Buffer = typeof Buffer;
