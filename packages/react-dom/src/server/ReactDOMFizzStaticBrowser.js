@@ -26,6 +26,7 @@ import {
   abort,
   attachAbortSignal,
   getPostponedState,
+  getFinalizedPostponedState,
 } from 'react-server/src/ReactFizzServer';
 
 import {
@@ -91,9 +92,17 @@ function prerender(
       );
 
       const result: StaticResult = {
-        postponed: getPostponedState(request),
+        postponed: null,
         prelude: stream,
       };
+
+      const postponed = getPostponedState(request);
+      if (postponed !== null) {
+        Object.defineProperty(result, 'postponed', {
+          get: getFinalizedPostponedState.bind(null, request, postponed),
+        });
+      }
+
       resolve(result);
     }
 
