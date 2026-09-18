@@ -28,6 +28,7 @@ export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
 export const enableFlightObjectReferences: boolean = false;
+export const enableFlightLedgers: boolean = false;
 export const enableCPUSuspense: boolean = false;
 export const enableCreateEventHandleAPI: boolean = false;
 export const enableBrowserAPI: boolean = true;
