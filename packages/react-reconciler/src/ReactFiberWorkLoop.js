@@ -2353,10 +2353,15 @@ function handleThrow(root: FiberRoot, thrownValue: any): void {
     workInProgressSuspendedReason = SuspendedOnHydration;
   } else {
     // This is a regular error.
-    const isWakeable =
-      thrownValue !== null &&
-      typeof thrownValue === 'object' &&
-      typeof thrownValue.then === 'function';
+    let isWakeable = false;
+    try {
+      isWakeable =
+        thrownValue !== null &&
+        typeof thrownValue === 'object' &&
+        typeof thrownValue.then === 'function';
+    } catch (thenAccessError) {
+      thrownValue = thenAccessError;
+    }
 
     workInProgressSuspendedReason = isWakeable
       ? // A wakeable object was thrown by a legacy Suspense implementation.
@@ -2630,6 +2635,10 @@ function renderRootSync(
   const prevDispatcher = pushDispatcher(root.containerInfo);
   const prevAsyncDispatcher = pushAsyncDispatcher();
 
+  // Restore executionContext even if the work loop throws (for example a
+  // throwing `then` getter on a thrown value). Otherwise RenderContext stays
+  // set and useEffectEvent later thinks it is still rendering.
+  try {
   // If the root or lanes have changed, throw out the existing stack
   // and prepare a fresh one. Otherwise we'll continue where we left off.
   if (workInProgressRoot !== root || workInProgressRootRenderLanes !== lanes) {
@@ -2741,10 +2750,11 @@ function renderRootSync(
   }
 
   resetContextDependencies();
-
-  executionContext = prevExecutionContext;
-  popDispatcher(prevDispatcher);
-  popAsyncDispatcher(prevAsyncDispatcher);
+  } finally {
+    executionContext = prevExecutionContext;
+    popDispatcher(prevDispatcher);
+    popAsyncDispatcher(prevAsyncDispatcher);
+  }
 
   if (enableSchedulingProfiler) {
     markRenderStopped();
@@ -2782,6 +2792,8 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
   const prevDispatcher = pushDispatcher(root.containerInfo);
   const prevAsyncDispatcher = pushAsyncDispatcher();
 
+  // Same as renderRootSync: always restore executionContext if the loop throws.
+  try {
   // If the root or lanes have changed, throw out the existing stack
   // and prepare a fresh one. Otherwise we'll continue where we left off.
   if (workInProgressRoot !== root || workInProgressRootRenderLanes !== lanes) {
@@ -3022,10 +3034,11 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
     }
   } while (true);
   resetContextDependencies();
-
-  popDispatcher(prevDispatcher);
-  popAsyncDispatcher(prevAsyncDispatcher);
-  executionContext = prevExecutionContext;
+  } finally {
+    popDispatcher(prevDispatcher);
+    popAsyncDispatcher(prevAsyncDispatcher);
+    executionContext = prevExecutionContext;
+  }
 
   // Check if the tree has completed.
   if (workInProgress !== null) {
