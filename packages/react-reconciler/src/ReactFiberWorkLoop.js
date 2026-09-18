@@ -498,6 +498,11 @@ let workInProgressRootRenderPhaseUpdatedLanes: Lanes = NoLanes;
 let workInProgressRootPingedLanes: Lanes = NoLanes;
 // If this render scheduled deferred work, this is the lane of the deferred task.
 let workInProgressDeferredLane: Lane = NoLane;
+// Shared retry lane for all ScheduleRetry effects in the current render.
+// Sibling Suspense prewarm must batch onto one lane; claiming per-boundary
+// leaves remaining retries looking like fresh updates after markRootFinished
+// and loops under act() (facebook/react#37556).
+let workInProgressRetryLane: Lane = NoLane;
 // Represents the retry lanes that were spawned by this render and have not
 // been pinged since, implying that they are still suspended.
 let workInProgressSuspendedRetryLanes: Lanes = NoLanes;
@@ -2267,6 +2272,7 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   workInProgressRootRenderPhaseUpdatedLanes = NoLanes;
   workInProgressRootPingedLanes = NoLanes;
   workInProgressDeferredLane = NoLane;
+  workInProgressRetryLane = NoLane;
   workInProgressSuspendedRetryLanes = NoLanes;
   workInProgressRootConcurrentErrors = null;
   workInProgressRootRecoverableErrors = null;
@@ -3337,6 +3343,15 @@ function throwAndUnwindWorkLoop(
     // this particular path is how that would be implemented.
     completeUnitOfWork(unitOfWork);
   }
+}
+
+export function requestImmediateSuspenseRetryLane(): Lane {
+  // Used by ScheduleRetry during sibling-skipping prewarm. Multiple boundaries
+  // in one render share a single retry lane (same idea as requestDeferredLane).
+  if (workInProgressRetryLane === NoLane) {
+    workInProgressRetryLane = claimNextRetryLane();
+  }
+  return workInProgressRetryLane;
 }
 
 export function markSpawnedRetryLane(lane: Lane): void {
