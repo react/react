@@ -232,16 +232,8 @@ describe('ReactDOMFizzServerBrowser', () => {
   });
 
   it('removes AbortSignal listeners when renderToReadableStream completes', async () => {
-    // Regression for #36763: long-lived/shared AbortSignals must not accumulate
-    // abort listeners across successful SSR requests.
-    //
-    // attachAbortSignal() ties the caller's listener to the request's own
-    // AbortController via the `signal` addEventListener option, so removal
-    // happens inside jsdom's native implementation rather than through an
-    // explicit removeEventListener() call this test can spy on. Read the
-    // listener count from jsdom's own internal state instead (this test
-    // environment's AbortSignal is jsdom's, not a polyfill -- see the
-    // `window !== undefined` branch in scripts/jest/setupEnvironment.js).
+    // jsdom removes signal-bound listeners internally, not through a
+    // removeEventListener call that a spy could observe.
     const controller = new AbortController();
     const signal = controller.signal;
     const implSymbol = Object.getOwnPropertySymbols(signal).find(
@@ -249,10 +241,25 @@ describe('ReactDOMFizzServerBrowser', () => {
     );
 
     function activeAbortListenerCount() {
+      expect(implSymbol).toBeDefined();
       const impl = signal[implSymbol];
-      const listeners = impl && impl._eventListeners;
-      return listeners && listeners.abort ? listeners.abort.length : 0;
+      expect(impl).toBeDefined();
+      expect(impl._eventListeners).toBeDefined();
+      const listeners = impl._eventListeners.abort;
+      if (listeners === undefined) {
+        return 0;
+      }
+      expect(Array.isArray(listeners)).toBe(true);
+      return listeners.length;
     }
+
+    // Prove the counter observes additions and removals before relying on it.
+    const probe = () => {};
+    expect(activeAbortListenerCount()).toBe(0);
+    signal.addEventListener('abort', probe);
+    expect(activeAbortListenerCount()).toBe(1);
+    signal.removeEventListener('abort', probe);
+    expect(activeAbortListenerCount()).toBe(0);
 
     for (let i = 0; i < 3; i++) {
       const stream = await serverAct(() =>
@@ -262,9 +269,8 @@ describe('ReactDOMFizzServerBrowser', () => {
       );
       await readResult(stream);
       await stream.allReady;
+      expect(activeAbortListenerCount()).toBe(0);
     }
-
-    expect(activeAbortListenerCount()).toBe(0);
   });
 
   it('should reject if aborting before the shell is complete', async () => {
