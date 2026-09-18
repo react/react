@@ -904,6 +904,14 @@ impl<'a> PrintFormatter<'a> {
                     format_loc(loc)
                 ));
             }
+            InstructionValue::NonNullExpression { value: val, loc } => {
+                self.line("NonNullExpression {");
+                self.indent();
+                self.format_place_field("value", val);
+                self.line(&format!("loc: {}", format_loc(loc)));
+                self.dedent();
+                self.line("}");
+            }
             InstructionValue::TypeCastExpression {
                 value: val,
                 type_,

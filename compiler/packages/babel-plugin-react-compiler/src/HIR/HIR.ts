@@ -978,6 +978,11 @@ export type InstructionValue =
           typeAnnotationKind: 'as' | 'satisfies';
         }
     ))
+  | {
+      kind: 'NonNullExpression';
+      value: Place;
+      loc: SourceLocation;
+    }
   | JsxExpression
   | {
       kind: 'ObjectExpression';
