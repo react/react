@@ -463,8 +463,9 @@ export function compileProgram(
   // outputMode takes precedence if specified
   const outputMode: CompilerOutputMode =
     pass.opts.outputMode ?? (pass.opts.noEmit ? 'lint' : 'client');
-  while (queue.length !== 0) {
-    const current = queue.shift()!;
+  let queueIndex = 0;
+  while (queueIndex < queue.length) {
+    const current = queue[queueIndex++];
     const compiled = processFn(
       current.fn,
       current.fnType,
