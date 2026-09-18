@@ -105,11 +105,31 @@ const TYPED_GLOBALS: Array<[string, BuiltInType]> = [
          */
         'fromEntries',
         addFunction(DEFAULT_SHAPES, [], {
-          positionalParams: [Effect.ConditionallyMutate],
+          positionalParams: [Effect.Capture],
           restParam: null,
           returnType: {kind: 'Object', shapeId: BuiltInObjectId},
           calleeEffect: Effect.Read,
           returnValueKind: ValueKind.Mutable,
+          aliasing: {
+            receiver: '@receiver',
+            params: ['@iterable'],
+            rest: null,
+            returns: '@returns',
+            temporaries: [],
+            effects: [
+              {
+                kind: 'Create',
+                into: '@returns',
+                reason: ValueReason.KnownReturnSignature,
+                value: ValueKind.Mutable,
+              },
+              {
+                kind: 'Capture',
+                from: '@iterable',
+                into: '@returns',
+              },
+            ],
+          },
         }),
       ],
       [
