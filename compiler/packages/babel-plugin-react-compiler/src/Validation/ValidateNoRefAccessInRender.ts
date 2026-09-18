@@ -156,6 +156,9 @@ function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
           ) {
             continue;
           }
+          if (isUseRefType(lvalue.identifier)) {
+            break;
+          }
           const temp = env.lookup(value.object);
           if (temp != null) {
             env.define(lvalue, temp);
