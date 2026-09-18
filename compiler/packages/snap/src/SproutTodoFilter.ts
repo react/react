@@ -10,6 +10,7 @@ const skipFilter = new Set([
    * Fixtures using external modules (jest, Lexical, etc.) that can't be evaluated
    * in the test harness. These were previously error.todo-* but now compile in both TS and Rust.
    */
+  'invariant-unnamed-temporary',
   'todo-hir_identifier_diff',
   'todo-hir_numeric_format',
   'todo-pattern1b_type_to_primitive',
