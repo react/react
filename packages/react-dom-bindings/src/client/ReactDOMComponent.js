@@ -832,7 +832,7 @@ function setProp(
         value != null &&
         typeof value !== 'function' &&
         typeof value !== 'symbol' &&
-        !isNaN(value) &&
+        (typeof value === 'bigint' || !isNaN(value)) &&
         (value as any) >= 1
       ) {
         if (__DEV__) {
@@ -851,7 +851,7 @@ function setProp(
         value != null &&
         typeof value !== 'function' &&
         typeof value !== 'symbol' &&
-        !isNaN(value)
+        (typeof value === 'bigint' || !isNaN(value))
       ) {
         if (__DEV__) {
           checkAttributeStringCoercion(value, key);
@@ -2319,7 +2319,7 @@ function hydrateNumericAttribute(
       case 'boolean':
         return;
       default:
-        if (isNaN(value)) {
+        if (typeof value !== 'bigint' && isNaN(value)) {
           return;
         }
     }
@@ -2334,7 +2334,7 @@ function hydrateNumericAttribute(
         case 'boolean':
           break;
         default: {
-          if (isNaN(value)) {
+          if (typeof value !== 'bigint' && isNaN(value)) {
             // We had an attribute but shouldn't have had one, so read it
             // for the error message.
             break;
@@ -2371,7 +2371,7 @@ function hydratePositiveNumericAttribute(
       case 'boolean':
         return;
       default:
-        if (isNaN(value) || value < 1) {
+        if ((typeof value !== 'bigint' && isNaN(value)) || value < 1) {
           return;
         }
     }
@@ -2386,7 +2386,7 @@ function hydratePositiveNumericAttribute(
         case 'boolean':
           break;
         default: {
-          if (isNaN(value) || value < 1) {
+          if ((typeof value !== 'bigint' && isNaN(value)) || value < 1) {
             // We had an attribute but shouldn't have had one, so read it
             // for the error message.
             break;
