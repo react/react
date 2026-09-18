@@ -13,7 +13,9 @@ import {
 import {
   Environment,
   HIRFunction,
+  Identifier,
   IdentifierId,
+  isDispatcherType,
   isSetStateType,
   isUseEffectHookType,
   isUseEffectEventType,
@@ -35,12 +37,23 @@ import {Result} from '../Utils/Result';
 import {assertExhaustive, Iterable_some} from '../Utils/utils';
 
 /**
+ * State updaters that synchronously schedule a re-render when called: the setter
+ * from useState and the dispatch function from useReducer.
+ */
+function isStateUpdaterType(id: Identifier): boolean {
+  return isSetStateType(id) || isDispatcherType(id);
+}
+
+/**
  * Validates against calling setState in the body of an effect (useEffect and friends),
  * while allowing calling setState in callbacks scheduled by the effect.
  *
  * Calling setState during execution of a useEffect triggers a re-render, which is
  * often bad for performance and frequently has more efficient and straightforward
  * alternatives. See https://react.dev/learn/you-might-not-need-an-effect for examples.
+ *
+ * The `dispatch` function returned by useReducer schedules the same cascading render
+ * as a state setter, so it is validated identically.
  */
 export function validateNoSetStateInEffects(
   fn: HIRFunction,
@@ -78,7 +91,7 @@ export function validateNoSetStateInEffects(
             // faster-path to check if the function expression references a setState
             [...eachInstructionValueOperand(instr.value)].some(
               operand =>
-                isSetStateType(operand.identifier) ||
+                isStateUpdaterType(operand.identifier) ||
                 setStateFunctions.has(operand.identifier.id),
             )
           ) {
@@ -121,6 +134,9 @@ export function validateNoSetStateInEffects(
             if (arg !== undefined && arg.kind === 'Identifier') {
               const setState = setStateFunctions.get(arg.identifier.id);
               if (setState !== undefined) {
+                const updaterMessage = isDispatcherType(setState.identifier)
+                  ? 'Avoid calling dispatch() directly within an effect'
+                  : 'Avoid calling setState() directly within an effect';
                 const enableVerbose =
                   env.config.enableVerboseNoSetStateInEffect;
                 if (enableVerbose) {
@@ -147,8 +163,7 @@ export function validateNoSetStateInEffects(
                     }).withDetails({
                       kind: 'error',
                       loc: setState.loc,
-                      message:
-                        'Avoid calling setState() directly within an effect',
+                      message: updaterMessage,
                     }),
                   );
                 } else {
@@ -168,8 +183,7 @@ export function validateNoSetStateInEffects(
                     }).withDetails({
                       kind: 'error',
                       loc: setState.loc,
-                      message:
-                        'Avoid calling setState() directly within an effect',
+                      message: updaterMessage,
                     }),
                   );
                 }
@@ -313,7 +327,7 @@ function getSetStateCall(
         case 'CallExpression': {
           const callee = instr.value.callee;
           if (
-            isSetStateType(callee.identifier) ||
+            isStateUpdaterType(callee.identifier) ||
             setStateFunctions.has(callee.identifier.id)
           ) {
             if (enableAllowSetStateFromRefsInEffects) {
