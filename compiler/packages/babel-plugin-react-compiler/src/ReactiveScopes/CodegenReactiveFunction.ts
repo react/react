@@ -1685,7 +1685,7 @@ function codegenInstructionValue(
                 key,
                 fn.params,
                 fn.body,
-                false,
+                property.key.kind === 'computed',
               );
               babelNode.async = fn.async;
               babelNode.generator = fn.generator;
