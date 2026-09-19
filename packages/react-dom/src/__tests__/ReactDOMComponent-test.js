@@ -3270,6 +3270,27 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('Custom attributes', function () {
+    it('allows a custom element prop named hasOwnProperty', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(<my-element hasOwnProperty="first" />);
+      });
+      const el = container.firstChild;
+      expect(el.hasOwnProperty).toBe('first');
+
+      await act(() => {
+        root.render(<my-element hasOwnProperty="second" />);
+      });
+      expect(el.hasOwnProperty).toBe('second');
+
+      await act(() => {
+        root.render(<my-element />);
+      });
+      expect(el.hasOwnProperty).toBe(undefined);
+    });
+
     it('allows assignment of custom attributes with string values', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
