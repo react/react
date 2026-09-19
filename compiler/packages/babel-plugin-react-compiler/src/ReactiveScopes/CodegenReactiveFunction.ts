@@ -1685,7 +1685,7 @@ function codegenInstructionValue(
                 key,
                 fn.params,
                 fn.body,
-                false,
+                property.key.kind === 'computed',
               );
               babelNode.async = fn.async;
               babelNode.generator = fn.generator;
@@ -2370,7 +2370,7 @@ function codegenValue(
   value: boolean | number | string | null | undefined,
 ): t.Expression {
   if (typeof value === 'number') {
-    if (value < 0) {
+    if (value < 0 || Object.is(value, -0)) {
       /**
        * Babel's code generator produces invalid JS for negative numbers when
        * run with { compact: true }.

@@ -3906,7 +3906,7 @@ fn codegen_primitive_value(value: &PrimitiveValue, loc: Option<DiagSourceLocatio
                         argument: Box::new(Expression::Identifier(make_identifier("Infinity"))),
                     })
                 }
-            } else if f < 0.0 {
+            } else if f < 0.0 || (f == 0.0 && f.is_sign_negative()) {
                 Expression::UnaryExpression(ast_expr::UnaryExpression {
                     base: base_node_with_loc("UnaryExpression", loc),
                     operator: AstUnaryOperator::Neg,
