@@ -22,6 +22,7 @@ export const disableTextareaChildren = false;
 export const enableAsyncDebugInfo = true;
 export const enableAsyncIterableChildren = false;
 export const enableFlightWeakThenables = false;
+export const enableFlightObjectReferences = false;
 export const enableCPUSuspense = true;
 export const enableCreateEventHandleAPI = false;
 export const enableBrowserAPI = true;

@@ -17,6 +17,7 @@ import {
   enableComponentPerformanceTrack,
   enableAsyncDebugInfo,
   enableFlightWeakThenables,
+  enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -2962,6 +2963,8 @@ function resolveModel(
   if (
     value !== null &&
     typeof value === 'object' &&
+    // Registered objects are opaque, including objects with a toJSON method.
+    !(enableFlightObjectReferences && isServerReference(value)) &&
     // $FlowFixMe[method-unbinding]
     typeof value.toJSON === 'function'
   ) {
@@ -3085,6 +3088,10 @@ function serializeWeakPromiseID(id: number): string {
 
 function serializeServerReferenceID(id: number): string {
   return '$h' + id.toString(16);
+}
+
+function serializeServerObjectReferenceID(id: number): string {
+  return '$H' + id.toString(16);
 }
 
 function serializeSymbolReference(name: string): string {
@@ -3307,63 +3314,76 @@ function serializeServerReference(
   request: Request,
   serverReference: ServerReference<any>,
 ): string {
+  const isObjectReference =
+    enableFlightObjectReferences && typeof serverReference === 'object';
   const writtenServerReferences = request.writtenServerReferences;
   const existingId = writtenServerReferences.get(serverReference);
   if (existingId !== undefined) {
-    return serializeServerReferenceID(existingId);
+    return isObjectReference
+      ? serializeServerObjectReferenceID(existingId)
+      : serializeServerReferenceID(existingId);
   }
 
-  const boundArgs: null | Array<any> = getServerReferenceBoundArguments(
-    request.bundlerConfig,
-    serverReference,
-  );
-  const bound = boundArgs === null ? null : Promise.resolve(boundArgs);
   const id = getServerReferenceId(request.bundlerConfig, serverReference);
-
-  let location: null | ReactFunctionLocation = null;
-  if (__DEV__) {
-    const error = getServerReferenceLocation(
-      request.bundlerConfig,
-      serverReference,
-    );
-    // $FlowFixMe[constant-condition]
-    if (error) {
-      const frames = parseStackTrace(error, 1);
-      if (frames.length > 0) {
-        const firstFrame = frames[0];
-        location = [
-          firstFrame[0],
-          firstFrame[1],
-          firstFrame[2], // The line and col of the callsite represents the
-          firstFrame[3], // enclosing line and col of the function.
-        ];
-      }
-    }
-  }
-
-  const serverReferenceMetadata: {
+  let serverReferenceMetadata: {
     id: ServerReferenceId,
-    bound: null | Promise<Array<any>>,
+    bound?: null | Promise<Array<any>>,
     name?: string, // DEV-only
     env?: string, // DEV-only
     location?: ReactFunctionLocation, // DEV-only
-  } =
-    __DEV__ && location !== null
-      ? {
-          id,
-          bound,
-          name:
-            typeof serverReference === 'function' ? serverReference.name : '',
-          env: (0, request.environmentName)(),
-          location,
+  };
+  if (isObjectReference) {
+    // Objects share the manifest lookup with functions, but have no bound
+    // arguments or function debug metadata.
+    serverReferenceMetadata = {id};
+  } else {
+    const boundArgs: null | Array<any> = getServerReferenceBoundArguments(
+      request.bundlerConfig,
+      serverReference,
+    );
+    const bound = boundArgs === null ? null : Promise.resolve(boundArgs);
+
+    let location: null | ReactFunctionLocation = null;
+    if (__DEV__) {
+      const error = getServerReferenceLocation(
+        request.bundlerConfig,
+        serverReference,
+      );
+      // $FlowFixMe[constant-condition]
+      if (error) {
+        const frames = parseStackTrace(error, 1);
+        if (frames.length > 0) {
+          const firstFrame = frames[0];
+          location = [
+            firstFrame[0],
+            firstFrame[1],
+            firstFrame[2], // The line and col of the callsite represents the
+            firstFrame[3], // enclosing line and col of the function.
+          ];
         }
-      : {
-          id,
-          bound,
-        };
+      }
+    }
+
+    serverReferenceMetadata =
+      __DEV__ && location !== null
+        ? {
+            id,
+            bound,
+            name:
+              typeof serverReference === 'function' ? serverReference.name : '',
+            env: (0, request.environmentName)(),
+            location,
+          }
+        : {
+            id,
+            bound,
+          };
+  }
   const metadataId = outlineModel(request, serverReferenceMetadata);
   writtenServerReferences.set(serverReference, metadataId);
-  return serializeServerReferenceID(metadataId);
+  return isObjectReference
+    ? serializeServerObjectReferenceID(metadataId)
+    : serializeServerReferenceID(metadataId);
 }
 
 function serializeTemporaryReference(
@@ -3992,6 +4012,13 @@ function renderModelDestructive(
         parentPropertyName,
         value as any,
       );
+    }
+
+    if (enableFlightObjectReferences && isServerReference(value)) {
+      // An object registered as a Server Reference. This must be checked
+      // before the thenable case below so that a reference that happens to
+      // be a Promise is serialized by reference instead of being awaited.
+      return serializeServerReference(request, value as any);
     }
 
     if (request.temporaryReferences !== undefined) {
@@ -6165,6 +6192,18 @@ function emitChunk(
       }
     }
     emitTextChunk(request, id, value, false);
+    return;
+  }
+  if (
+    enableFlightObjectReferences &&
+    typeof value === 'object' &&
+    value !== null &&
+    isServerReference(value)
+  ) {
+    // Streamed values reach this function before model serialization. Keep
+    // registered binary objects opaque instead of emitting their bytes.
+    const json = stringify(serializeServerReference(request, value as any));
+    emitModelChunk(request, id, json);
     return;
   }
   if (value instanceof ArrayBuffer) {

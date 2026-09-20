@@ -47,6 +47,7 @@ import {
   enableComponentPerformanceTrack,
   enableAsyncDebugInfo,
   enableFlightWeakThenables,
+  enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -69,6 +70,7 @@ import {
 import {
   createBoundServerReference,
   registerBoundServerReference,
+  createServerObjectReference,
 } from './ReactFlightReplyClient';
 
 import {readTemporaryReference} from './ReactFlightTemporaryReferences';
@@ -2226,6 +2228,28 @@ function loadServerReference<A: Iterable<any>, T>(
   return null as any;
 }
 
+function loadServerObjectReference(
+  response: Response,
+  metaData: {id: any, $$reference?: Object},
+  parentObject: Object,
+  key: string,
+): mixed {
+  // A Server Reference to an object is always opaque on the client, even if
+  // we have a module mapping for Server References: unlike a function
+  // reference, the module that produced it is only meant to be evaluated in a
+  // true server environment. The reference can only be passed back to the
+  // server, where it resolves to the object.
+  // The server reuses this metadata when the same object occurs again.
+  // Cache its handle so reference equality is preserved within this response.
+  const existingReference = metaData.$$reference;
+  if (existingReference !== undefined) {
+    return existingReference;
+  }
+  const reference = createServerObjectReference(metaData.id);
+  metaData.$$reference = reference;
+  return reference;
+}
+
 function resolveLazy(value: any): mixed {
   while (
     typeof value === 'object' &&
@@ -2706,6 +2730,20 @@ function parseModelString(
           key,
           loadServerReference,
         );
+      }
+      case 'H': {
+        if (enableFlightObjectReferences) {
+          // Server Reference to an object
+          const ref = value.slice(2);
+          return getOutlinedModel(
+            response,
+            ref,
+            parentObject,
+            key,
+            loadServerObjectReference,
+          );
+        }
+        return undefined;
       }
       case 'T': {
         // Temporary Reference
