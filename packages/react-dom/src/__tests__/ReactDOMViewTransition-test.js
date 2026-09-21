@@ -1348,5 +1348,83 @@ describe('ReactDOMViewTransition', () => {
 
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
+
+    function skipViewTransitionWith(message) {
+      document.startViewTransition = function ({update}) {
+        const updateCallbackDone = Promise.resolve().then(update);
+        return {
+          ready: Promise.reject(new DOMException(message, 'InvalidStateError')),
+          finished: updateCallbackDone,
+          updateCallbackDone,
+          skipTransition() {},
+        };
+      };
+    }
+
+    // @gate enableViewTransition
+    it('does not report a skip reason appended to the generic message', async () => {
+      const onRecoverableError = jest.fn();
+      skipViewTransitionWith(
+        'Transition was aborted because of invalid state. Document hidden',
+      );
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition>
+            <div>Hello</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container, {onRecoverableError});
+
+      await act(() => {
+        root.render(<App show={false} />);
+      });
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      expect(onRecoverableError).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition
+    it('does not report a hidden document skip as a recoverable error', async () => {
+      const onRecoverableError = jest.fn();
+      skipViewTransitionWith(
+        'Skipped ViewTransition due to document being hidden',
+      );
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition>
+            <div>Hello</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container, {onRecoverableError});
+
+      await act(() => {
+        root.render(<App show={false} />);
+      });
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      expect(onRecoverableError).not.toHaveBeenCalled();
+    });
   });
 });

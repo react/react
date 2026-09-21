@@ -2133,13 +2133,18 @@ function customizeViewTransitionError(
           error.message ===
             'Skipping view transition because document visibility state has become hidden.' ||
           error.message ===
+            'Skipped ViewTransition due to document being hidden' ||
+          error.message ===
             'Skipping view transition because viewport size changed.' ||
           // Chrome uses a generic error message instead of specific reasons. It will log a
           // more specific reason in the console but the user might not look there.
+          // Newer versions append that reason to the same generic prefix.
           // Some of these errors are important to surface like duplicate name errors but
           // it's too noisy for unactionable cases like the document was hidden. Therefore,
           // we hide all of them and hopefully it surfaces in another browser.
-          error.message === 'Transition was aborted because of invalid state'
+          error.message.startsWith(
+            'Transition was aborted because of invalid state',
+          )
         ) {
           // Skip logging this. This is not considered an error.
           return null;
