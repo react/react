@@ -248,6 +248,20 @@ describe('ReactDOMViewTransition', () => {
       }
     });
 
+    function mockSkippedViewTransition(message) {
+      const startViewTransitionSpy = jest.fn(function ({update}) {
+        const updateCallbackDone = Promise.resolve().then(update);
+        return {
+          ready: Promise.reject(new DOMException(message, 'InvalidStateError')),
+          finished: updateCallbackDone,
+          updateCallbackDone,
+          skipTransition() {},
+        };
+      });
+      document.startViewTransition = startViewTransitionSpy;
+      return startViewTransitionSpy;
+    }
+
     // @gate enableViewTransition
     it('fires onEnter when a ViewTransition mounts', async () => {
       const onEnter = jest.fn();
@@ -1349,22 +1363,10 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
 
-    function skipViewTransitionWith(message) {
-      document.startViewTransition = function ({update}) {
-        const updateCallbackDone = Promise.resolve().then(update);
-        return {
-          ready: Promise.reject(new DOMException(message, 'InvalidStateError')),
-          finished: updateCallbackDone,
-          updateCallbackDone,
-          skipTransition() {},
-        };
-      };
-    }
-
     // @gate enableViewTransition
-    it('does not report a skip reason appended to the generic message', async () => {
+    it('does not report a generic skip with an appended reason as a recoverable error', async () => {
       const onRecoverableError = jest.fn();
-      skipViewTransitionWith(
+      const startViewTransitionSpy = mockSkippedViewTransition(
         'Transition was aborted because of invalid state. Document hidden',
       );
 
@@ -1391,13 +1393,14 @@ describe('ReactDOMViewTransition', () => {
         });
       });
 
+      expect(startViewTransitionSpy).toHaveBeenCalled();
       expect(onRecoverableError).not.toHaveBeenCalled();
     });
 
     // @gate enableViewTransition
     it('does not report a hidden document skip as a recoverable error', async () => {
       const onRecoverableError = jest.fn();
-      skipViewTransitionWith(
+      const startViewTransitionSpy = mockSkippedViewTransition(
         'Skipped ViewTransition due to document being hidden',
       );
 
@@ -1424,6 +1427,7 @@ describe('ReactDOMViewTransition', () => {
         });
       });
 
+      expect(startViewTransitionSpy).toHaveBeenCalled();
       expect(onRecoverableError).not.toHaveBeenCalled();
     });
   });
