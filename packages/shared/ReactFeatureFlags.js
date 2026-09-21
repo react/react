@@ -85,6 +85,12 @@ export const enableAsyncIterableChildren = __EXPERIMENTAL__;
 // left unfulfilled.
 export const enableFlightWeakThenables = __EXPERIMENTAL__;
 
+// Support Server References that point to objects (including Promises), not
+// just functions. On the server the reference is the real object; on the
+// client it's an opaque handle that can only be passed back to the server,
+// where it resolves via the manifest.
+export const enableFlightObjectReferences = __EXPERIMENTAL__;
+
 export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;
