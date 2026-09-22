@@ -747,4 +747,80 @@ describe('ReactDOMFizzViewTransition', () => {
     expect(applied.get('fbC')).toBe('skeleton-exit');
     expect(applied.get('fbD')).toBe('skeleton-exit-deep');
   });
+
+  // @gate enableViewTransition
+  it('restores the original view-transition-class after the reveal transition', async () => {
+    document.startViewTransition = function (arg) {
+      const update = typeof arg === 'function' ? arg : arg.update;
+      if (update) {
+        update();
+      }
+      return {
+        ready: Promise.resolve(),
+        finished: Promise.resolve(),
+        skipTransition() {},
+        types: [],
+      };
+    };
+    if (!global.window.CSS) {
+      global.window.CSS = {escape: s => s};
+    }
+    Object.defineProperty(document, 'fonts', {
+      value: {status: 'loaded', ready: Promise.resolve()},
+      configurable: true,
+    });
+    // The reveal skips a boundary whose parent measures as empty, so give
+    // elements a non-zero rect.
+    global.window.Element.prototype.getBoundingClientRect = function () {
+      return {left: 0, top: 0, width: 100, height: 20, right: 100, bottom: 20};
+    };
+
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<div>loading</div>}>
+            <ViewTransition enter="page-enter">
+              <Suspend />
+            </ViewTransition>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    await serverAct(async () => {
+      await resolve(
+        <div
+          id="both"
+          style={{viewTransitionName: 'n', viewTransitionClass: 'c'}}>
+          <div id="classOnly" style={{viewTransitionClass: 'c2'}}>
+            Hi
+          </div>
+        </div>,
+      );
+    });
+
+    // Let transition.ready.finally() run the restore loop.
+    await null;
+    await null;
+    await null;
+
+    const both = document.getElementById('both');
+    expect(both.style.viewTransitionName).toBe('n');
+    expect(both.style.viewTransitionClass).toBe('c');
+
+    // When the class was the element's only inline style, restoring the wrong
+    // slot empties the declaration and the style attribute is removed entirely.
+    const classOnly = document.getElementById('classOnly');
+    expect(classOnly.style.viewTransitionClass).toBe('c2');
+    expect(classOnly.getAttribute('style')).not.toBe(null);
+  });
 });
