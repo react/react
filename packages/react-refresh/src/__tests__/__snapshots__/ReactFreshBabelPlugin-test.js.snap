@@ -151,6 +151,22 @@ var _c;
 $RefreshReg$(_c, "App");
 `;
 
+exports[`ReactFreshBabelPlugin generates valid signature for nested ways to call Hooks 1`] = `
+var _s = $RefreshSig$();
+import FancyHook from 'fancy';
+export default function App() {
+  _s();
+  const foo = FancyHook.property.useNestedThing();
+  return <h1>{foo}</h1>;
+}
+_s(App, "useNestedThing{foo}", false, function () {
+  return [FancyHook.property.useNestedThing];
+});
+_c = App;
+var _c;
+$RefreshReg$(_c, "App");
+`;
+
 exports[`ReactFreshBabelPlugin ignores HOC definitions 1`] = `
 let connect = () => {
   function Comp() {
