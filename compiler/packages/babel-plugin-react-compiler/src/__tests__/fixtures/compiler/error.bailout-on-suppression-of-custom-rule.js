@@ -1,4 +1,4 @@
-// @eslintSuppressionRules:["my-app","react-rule"] @validateExhaustiveMemoizationDependencies:false
+// @eslintSuppressionRules:["my-app/react-rule"] @validateExhaustiveMemoizationDependencies:false
 
 /* eslint-disable my-app/react-rule */
 function lowercasecomponent() {
