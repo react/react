@@ -595,6 +595,21 @@ describe('ReactDOMServerIntegration', () => {
           expect(e.firstChild.getAttribute('stroke-dasharray')).toBe('10 10');
         },
       );
+
+      itRenders(
+        'panose1 prop as the hyphenated SVG attribute',
+        async render => {
+          const e = await render(
+            <svg>
+              <text panose1="2 0 5 9 0 0 0 0 0 0" />
+            </svg>,
+          );
+          expect(e.firstChild.getAttribute('panose-1')).toBe(
+            '2 0 5 9 0 0 0 0 0 0',
+          );
+          expect(e.firstChild.hasAttribute('panose1')).toBe(false);
+        },
+      );
     });
 
     describe('unknown attributes', function () {
