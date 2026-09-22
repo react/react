@@ -999,7 +999,7 @@ describe('ReactFlightAsyncDebugInfo', () => {
     }
   });
 
-  it('can ingores the start of I/O when immediately resolved non-native promise is awaited', async () => {
+  it('can ignore the start of I/O when immediately resolved non-native promise is awaited', async () => {
     async function Component() {
       return await {
         then(callback) {
@@ -1045,7 +1045,7 @@ describe('ReactFlightAsyncDebugInfo', () => {
                 1011,
                 109,
                 1002,
-                94,
+                93,
               ],
             ],
           },

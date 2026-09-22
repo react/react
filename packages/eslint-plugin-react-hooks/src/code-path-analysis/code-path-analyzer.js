@@ -488,7 +488,7 @@ function processCodePathToEnter(analyzer, node) {
 
     case 'SwitchCase':
       /*
-       * Fork if this node is after the 2st node in `cases`.
+       * Fork if this node is after the 2nd node in `cases`.
        * It's similar to `else` blocks.
        * The next `test` node is processed in this path.
        */
