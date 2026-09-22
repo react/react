@@ -107,13 +107,13 @@ impl Node {
 }
 
 struct AliasingState {
-    nodes: IndexMap<IdentifierId, Node, FxBuildHasher>,
+    nodes: FxHashMap<IdentifierId, Node>,
 }
 
 impl AliasingState {
     fn new() -> Self {
         AliasingState {
-            nodes: IndexMap::default(),
+            nodes: FxHashMap::default(),
         }
     }
 
