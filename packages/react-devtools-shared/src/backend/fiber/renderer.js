@@ -205,6 +205,7 @@ function createFiberInstance(fiber: Fiber): FiberInstance {
     treeBaseDuration: 0,
     suspendedBy: null,
     suspenseNode: null,
+    connected: false,
     data: fiber,
   };
 }
@@ -222,6 +223,7 @@ function createFilteredFiberInstance(fiber: Fiber): FilteredFiberInstance {
     treeBaseDuration: 0,
     suspendedBy: null,
     suspenseNode: null,
+    connected: false,
     data: fiber,
   } as any;
 }
@@ -240,6 +242,7 @@ function createVirtualInstance(
     treeBaseDuration: 0,
     suspendedBy: null,
     suspenseNode: null,
+    connected: false,
     data: debugEntry,
   };
 }
@@ -1736,6 +1739,7 @@ export function attach(
       // We're disconnected. We'll reconnect a hidden mount after the parent reappears.
       return;
     }
+    fiberInstance.connected = true;
     const id = fiberInstance.id;
     const fiber = fiberInstance.data;
 
@@ -1917,6 +1921,7 @@ export function attach(
       // We're disconnected. We'll reconnect a hidden mount after the parent reappears.
       return;
     }
+    instance.connected = true;
     const componentInfo = instance.data;
 
     const key =
@@ -2086,6 +2091,7 @@ export function attach(
       setTrackedPath(null);
     }
 
+    fiberInstance.connected = false;
     const id = fiberInstance.id;
     pendingRealUnmountedIDs.push(id);
   }
@@ -2815,6 +2821,7 @@ export function attach(
       setTrackedPath(null);
     }
 
+    instance.connected = false;
     const id = instance.id;
     pendingRealUnmountedIDs.push(id);
   }
@@ -3820,7 +3827,7 @@ export function attach(
         } else {
           addUnfilteredChildrenIDs(child, nextChildren);
         }
-      } else {
+      } else if (child.connected) {
         nextChildren.push(child.id);
       }
       child = child.nextSibling;

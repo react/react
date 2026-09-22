@@ -644,6 +644,81 @@ describe('Store component filters', () => {
     `);
   });
 
+  // @reactVersion >= 19.0
+  it('stays in sync when filtered boundaries suspend inside a hidden Activity', async () => {
+    const Activity = React.Activity || React.unstable_Activity;
+    const neverResolves = new Promise(() => {});
+
+    function Gate({blocked}) {
+      if (blocked) {
+        React.use(neverResolves);
+      }
+      return <span>content</span>;
+    }
+
+    function Fallback({label}) {
+      return <span>{label}</span>;
+    }
+
+    function App({hidden, first, second}) {
+      return (
+        <Activity mode={hidden ? 'hidden' : 'visible'}>
+          <React.Suspense fallback={<Fallback label="first" />}>
+            <Gate blocked={first} />
+          </React.Suspense>
+          <React.Suspense fallback={<Fallback label="second" />}>
+            <Gate blocked={second} />
+          </React.Suspense>
+        </Activity>
+      );
+    }
+
+    store.componentFilters = [
+      utils.createElementTypeFilter(Types.ElementTypeSuspense),
+    ];
+
+    await actAsync(() =>
+      render(<App hidden={false} first={false} second={false} />),
+    );
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Activity mode="visible">
+            ▾ <Gate>
+                <span>
+            ▾ <Gate>
+                <span>
+    `);
+
+    await actAsync(() =>
+      render(<App hidden={true} first={true} second={true} />),
+    );
+    const activity = store.getElementAtIndex(1);
+    await actAsync(() => store.toggleIsCollapsed(activity.id, false));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Activity mode="hidden">
+            ▾ <Fallback>
+                <span>
+            ▾ <Fallback>
+                <span>
+    `);
+
+    await actAsync(() =>
+      render(<App hidden={true} first={true} second={false} />),
+    );
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Activity mode="hidden">
+            ▾ <Fallback>
+                <span>
+            ▾ <Gate>
+                <span>
+    `);
+  });
+
   describe('inline errors and warnings', () => {
     const {render: legacyRender} = getLegacyRenderImplementation();
 
