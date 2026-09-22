@@ -51,4 +51,11 @@ if (!primaryRenderer) {
   process.exit(1);
 }
 
-runFlow(primaryRenderer.shortName, ['status']);
+async function main() {
+  await runFlow(primaryRenderer.shortName, ['status']);
+}
+
+main().catch(error => {
+  console.error(error);
+  process.exit(1);
+});
