@@ -64,6 +64,64 @@ describe('FragmentRefs', () => {
     document.body.removeChild(container);
   });
 
+  it.each(['remove', 'abort', 'replace'])(
+    'skips listeners removed during dispatchEvent (%s)',
+    async kind => {
+      const ref = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+      await act(() =>
+        root.render(
+          <Fragment ref={ref}>
+            <button />
+          </Fragment>,
+        ),
+      );
+      const controller = new AbortController();
+      const listener = jest.fn();
+      const first = () => {
+        if (kind === 'abort') {
+          controller.abort();
+        } else {
+          ref.current.removeEventListener('click', listener);
+          if (kind === 'replace') {
+            ref.current.addEventListener('click', listener);
+          }
+        }
+      };
+      ref.current.addEventListener('click', first);
+      ref.current.addEventListener('click', listener, {
+        signal: controller.signal,
+      });
+      ref.current.dispatchEvent(new MouseEvent('click'));
+      expect(listener).toHaveBeenCalledTimes(0);
+      ref.current.removeEventListener('click', first);
+      ref.current.dispatchEvent(new MouseEvent('click'));
+      expect(listener).toHaveBeenCalledTimes(kind === 'replace' ? 1 : 0);
+    },
+  );
+
+  it('dispatches listener objects with the correct receiver', async () => {
+    const ref = React.createRef();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() =>
+      root.render(
+        <Fragment ref={ref}>
+          <button />
+        </Fragment>,
+      ),
+    );
+    let receiver;
+    const listener = {
+      handleEvent: jest.fn(function () {
+        receiver = this;
+      }),
+    };
+    ref.current.addEventListener('click', listener);
+    ref.current.dispatchEvent(new MouseEvent('click'));
+    expect(listener.handleEvent).toHaveBeenCalledTimes(1);
+    expect(receiver).toBe(listener);
+  });
+
   it('attaches a ref to Fragment', async () => {
     const fragmentRef = React.createRef();
     const root = ReactDOMClient.createRoot(container);
