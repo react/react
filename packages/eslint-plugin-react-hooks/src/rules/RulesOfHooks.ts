@@ -43,19 +43,33 @@ function isHook(node: Node): boolean {
     isHook(node.property)
   ) {
     const obj = node.object;
-    const isPascalCaseNameSpace = /^[A-Z].*/;
-    return obj.type === 'Identifier' && isPascalCaseNameSpace.test(obj.name);
+    return obj.type === 'Identifier' && isComponentNameString(obj.name);
   } else {
     return false;
   }
 }
 
 /**
+ * True if `name` looks like a React component (or a PascalCase namespace that
+ * may hold hooks, e.g. `React.useState` / `工具.useFoo`).
+ *
+ * JSX only treats ASCII-lowercase tags (`div`, `span`, …) as DOM elements; any
+ * other starting character — including CJK letters — is a user component. The
+ * historical `/^[A-Z]/` check missed those and caused rules-of-hooks to treat
+ * CJK-named components as ordinary functions (false positives / missed
+ * early-return violations). See facebook/react#37665.
+ */
+function isComponentNameString(name: string): boolean {
+  // ASCII A-Z, or first code unit outside ASCII (CJK identifiers, etc.).
+  return /^[A-Z]/.test(name) || (name.length > 0 && name.charCodeAt(0) > 0x7f);
+}
+
+/**
  * Checks if the node is a React component name. React component names must
- * always start with an uppercase letter.
+ * always start with an uppercase letter (ASCII) or a non-ASCII letter (e.g. CJK).
  */
 function isComponentName(node: Node): boolean {
-  return node.type === 'Identifier' && /^[A-Z]/.test(node.name);
+  return node.type === 'Identifier' && isComponentNameString(node.name);
 }
 
 function isReactFunction(node: Node, functionName: string): boolean {
