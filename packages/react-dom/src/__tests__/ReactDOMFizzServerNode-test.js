@@ -87,6 +87,40 @@ describe('ReactDOMFizzServerNode', () => {
     expect(result).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
+  it('removes AbortSignal listeners when renderToReadableStream completes', async () => {
+    const {getEventListeners} = require('node:events');
+    const {transferableAbortController} = require('node:util');
+    const previousAbortController = global.AbortController;
+    // This environment's polyfill ignores the signal listener option.
+    // Use native controllers for both the caller and the render lifetime.
+    global.AbortController = transferableAbortController().constructor;
+    try {
+      const controller = new AbortController();
+      const signal = controller.signal;
+      const activeAbortListenerCount = () =>
+        getEventListeners(signal, 'abort').length;
+      const probe = () => {};
+      expect(activeAbortListenerCount()).toBe(0);
+      signal.addEventListener('abort', probe);
+      expect(activeAbortListenerCount()).toBe(1);
+      signal.removeEventListener('abort', probe);
+      expect(activeAbortListenerCount()).toBe(0);
+
+      for (let i = 0; i < 3; i++) {
+        const stream = await act(() =>
+          ReactDOMFizzServer.renderToReadableStream(<div>hello {i}</div>, {
+            signal,
+          }),
+        );
+        await readContentWeb(stream);
+        await stream.allReady;
+        expect(activeAbortListenerCount()).toBe(0);
+      }
+    } finally {
+      global.AbortController = previousAbortController;
+    }
+  });
+
   it('flush fully if piping in on onShellReady', async () => {
     const {writable, output} = getTestWritable();
     await act(() => {
