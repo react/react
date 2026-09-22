@@ -32,6 +32,7 @@ import {
   includesSyncLane,
   markStarvedLanesAsExpired,
   claimNextTransitionUpdateLane,
+  claimNextTransitionDeferredLane,
   getNextLanesToFlushSync,
   checkIfRootIsPrerendering,
   isGestureRender,
@@ -721,6 +722,42 @@ export function requestTransitionLane(
           claimNextTransitionUpdateLane();
   }
   return currentEventTransitionLane;
+}
+
+const optimisticTransitionLanes: WeakMap<Transition, Lane> = new WeakMap();
+
+export function requestOptimisticTransitionLane(
+  transition: Transition | null,
+): Lane {
+  // requestTransitionLane reuses the active async action scope lane when one
+  // exists. For useOptimistic that pins the revert to the outer scope, so an
+  // unrelated pending action delays rollback. Use a deferred transition lane
+  // instead: it is independent of ordinary transition update lanes and can
+  // flush even while the outer action scope remains suspended.
+  if (transition === null) {
+    return requestTransitionLane(transition);
+  }
+  const existing = optimisticTransitionLanes.get(transition);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const actionScopeLane = peekEntangledActionLane();
+  const lane =
+    actionScopeLane !== NoLane
+      ? claimNextTransitionDeferredLane()
+      : requestTransitionLane(transition);
+  optimisticTransitionLanes.set(transition, lane);
+  return lane;
+}
+
+export function peekOptimisticTransitionLane(
+  transition: Transition | null,
+): Lane | null {
+  if (transition === null) {
+    return null;
+  }
+  const lane = optimisticTransitionLanes.get(transition);
+  return lane === undefined ? null : lane;
 }
 
 export function didCurrentEventScheduleTransition(): boolean {
