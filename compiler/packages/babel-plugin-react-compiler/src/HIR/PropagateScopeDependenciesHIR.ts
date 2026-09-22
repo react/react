@@ -32,6 +32,7 @@ import {
   PropertyLiteral,
   convertHoistedLValueKind,
   SourceLocation,
+  OptionalTerminal,
 } from './HIR';
 import {
   collectHoistablePropertyLoads,
@@ -58,6 +59,7 @@ export function propagateScopeDependenciesHIR(fn: HIRFunction): void {
     temporariesReadInOptional,
     processedInstrsInOptional,
     hoistableObjects,
+    unusedOptionalChains,
   } = collectOptionalChainSidemap(fn);
 
   const hoistablePropertyLoads = keyByScopeId(
@@ -70,6 +72,7 @@ export function propagateScopeDependenciesHIR(fn: HIRFunction): void {
     usedOutsideDeclaringScope,
     new Map([...temporaries, ...temporariesReadInOptional]),
     processedInstrsInOptional,
+    unusedOptionalChains,
   );
 
   /**
@@ -763,6 +766,7 @@ function collectDependencies(
   usedOutsideDeclaringScope: ReadonlySet<DeclarationId>,
   temporaries: ReadonlyMap<IdentifierId, ReactiveScopeDependency>,
   processedInstrsInOptional: ReadonlySet<Instruction | Terminal>,
+  unusedOptionalChains: ReadonlyMap<OptionalTerminal, ReactiveScopeDependency>,
 ): Map<ReactiveScope, Array<ReactiveScopeDependency>> {
   const context = new DependencyCollectionContext(
     usedOutsideDeclaringScope,
@@ -827,6 +831,17 @@ function collectDependencies(
           );
         } else {
           handleInstruction(instr, context);
+        }
+      }
+
+      if (block.terminal.kind === 'optional') {
+        /*
+         * Unused chains have no consuming phi, so record them here.
+         * See `OptionalChainSidemap.unusedOptionalChains`.
+         */
+        const unusedOptionalChain = unusedOptionalChains.get(block.terminal);
+        if (unusedOptionalChain != null) {
+          context.visitDependency(unusedOptionalChain);
         }
       }
 
