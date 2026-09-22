@@ -25,6 +25,7 @@ export function waitForSuspense<T>(fn: () => T): Promise<T> {
     cacheSignal(): null {
       return null;
     },
+    units: null,
     getOwner(): null {
       return null;
     },
