@@ -13,6 +13,7 @@ import type {HostInstance} from '../../types';
 import type Agent from '../../agent';
 
 import {isReactNativeEnvironment} from 'react-devtools-shared/src/backend/utils';
+import {getCumulativeZoom} from '../utils';
 
 // Note these colors are in sync with DevTools Profiler chart colors.
 const COLORS = [
@@ -49,10 +50,20 @@ function drawWeb(nodeToData: Map<HostInstance, Data>) {
 
   const dpr = window.devicePixelRatio || 1;
   const canvasFlow: HTMLCanvasElement = canvas as any as HTMLCanvasElement;
+
+  // CSS `zoom` on an ancestor (e.g. `html { zoom: 0.9 }`) scales this
+  // canvas a second time because, unlike `transform`, Chromium still
+  // applies `zoom` to `position: fixed` descendants. Shrinking/growing the
+  // canvas's CSS size by the same factor keeps it covering the full
+  // viewport and, since that also changes the ratio between the canvas's
+  // (unscaled) backing resolution and its CSS size, it keeps everything we
+  // draw using the already zoom-adjusted rects from `measureNode` aligned
+  // with the elements they represent.
+  const zoom = getCumulativeZoom(window.document.documentElement);
   canvasFlow.width = window.innerWidth * dpr;
   canvasFlow.height = window.innerHeight * dpr;
-  canvasFlow.style.width = `${window.innerWidth}px`;
-  canvasFlow.style.height = `${window.innerHeight}px`;
+  canvasFlow.style.width = `${window.innerWidth / zoom}px`;
+  canvasFlow.style.height = `${window.innerHeight / zoom}px`;
 
   const context = canvasFlow.getContext('2d');
   context.scale(dpr, dpr);
