@@ -4555,6 +4555,103 @@ body {
     );
   });
 
+  it.only('can emit preloads for suspended components', async () => {
+    function Child({text}) {
+      ReactDOM.preload('script', {as: 'script'});
+      ReactDOM.preload('a', {as: 'image'});
+      ReactDOM.preload('b', {as: 'image'});
+
+      return (
+        <>
+          <AsyncText text={text} />
+          <img src="a" />
+          <img src="b" loading="lazy" />
+          <img src="b2" loading="lazy" />
+          <img src="c" srcSet="srcsetc" />
+          <img src="d" srcSet="srcsetd" sizes="sizesd" />
+          <img src="d" srcSet="srcsetd" sizes="sizesd2" />
+        </>
+      );
+    }
+
+    function App({text}) {
+      return (
+        <html>
+          <body>
+            <Suspense fallback={<span>{`Waiting for ${text}...`}</span>}>
+              <Child text={text} />
+            </Suspense>
+          </body>
+        </html>
+      );
+    }
+
+    await act(() => {
+      renderToPipeableStream(<App text="A" />).pipe(writable);
+    });
+
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="preload" href="a" as="image" />
+          <link rel="preload" as="image" imagesrcset="srcsetc" />
+          <link
+            rel="preload"
+            as="image"
+            imagesrcset="srcsetd"
+            imagesizes="sizesd"
+          />
+          <link
+            rel="preload"
+            as="image"
+            imagesrcset="srcsetd"
+            imagesizes="sizesd2"
+          />
+          <link rel="preload" href="script" as="script" />
+          <link rel="preload" href="b" as="image" />
+        </head>
+        <body>
+          <span>Waiting for A...</span>
+        </body>
+      </html>,
+    );
+
+    await act(() => {
+      resolveText('A');
+    });
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="preload" href="a" as="image" />
+          <link rel="preload" as="image" imagesrcset="srcsetc" />
+          <link
+            rel="preload"
+            as="image"
+            imagesrcset="srcsetd"
+            imagesizes="sizesd"
+          />
+          <link
+            rel="preload"
+            as="image"
+            imagesrcset="srcsetd"
+            imagesizes="sizesd2"
+          />
+          <link rel="preload" href="script" as="script" />
+          <link rel="preload" href="b" as="image" />
+        </head>
+        <body>
+          A
+          <img src="a" />
+          <img src="b" loading="lazy" />
+          <img src="b2" loading="lazy" />
+          <img src="c" srcset="srcsetc" />
+          <img src="d" srcset="srcsetd" sizes="sizesd" />
+          <img src="d" srcset="srcsetd" sizes="sizesd2" />
+        </body>
+      </html>,
+    );
+  });
+
   it('Does not preload lazy images', async () => {
     function App() {
       ReactDOM.preload('a', {as: 'image'});
