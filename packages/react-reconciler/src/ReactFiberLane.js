@@ -32,7 +32,6 @@ import {
   enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
-import {clz32} from './clz32';
 import {LegacyRoot} from './ReactRootTags';
 
 // Lane values below should be kept in sync with getLabelForLane(), used by react-devtools-timeline.
@@ -761,7 +760,7 @@ function getLanesOfEqualOrHigherPriority(lanes: Lane | Lanes): Lanes {
   // Create a mask with all bits to the right or same as the highest bit.
   // So if lanes is 0b100, the result would be 0b111.
   // If lanes is 0b101, the result would be 0b111.
-  const lowestPriorityLaneIndex = 31 - clz32(lanes);
+  const lowestPriorityLaneIndex = 31 - Math.clz32(lanes);
   return (1 << (lowestPriorityLaneIndex + 1)) - 1;
 }
 
@@ -774,7 +773,7 @@ export function pickArbitraryLane(lanes: Lanes): Lane {
 }
 
 function pickArbitraryLaneIndex(lanes: Lanes) {
-  return 31 - clz32(lanes);
+  return 31 - Math.clz32(lanes);
 }
 
 function laneToIndex(lane: Lane) {
