@@ -16,6 +16,7 @@ import type {
 } from 'react-client/src/ReactFlightClient';
 
 import type {Readable} from 'stream';
+import {finished} from 'stream';
 
 import {
   createResponse,
@@ -79,11 +80,15 @@ function startReadingFromStream(
     }
   });
 
-  stream.on('error', error => {
-    reportGlobalError(response, error);
+  // A destroyed Readable may emit close without end or error. Track the
+  // readable side only: a duplex debug channel can remain writable after EOF.
+  finished(stream, {readable: true, writable: false}, error => {
+    if (error) {
+      reportGlobalError(response, error);
+    } else {
+      onEnd();
+    }
   });
-
-  stream.on('end', onEnd);
 }
 
 function createFromNodeStream<T>(
