@@ -165,7 +165,12 @@ export function inferMutationAliasingRanges(
         } else if (effect.kind === 'MaybeAlias') {
           state.maybeAlias(index++, effect.from, effect.into);
         } else if (effect.kind === 'Capture') {
-          state.capture(index++, effect.from, effect.into);
+          state.capture(
+            index++,
+            effect.from,
+            effect.into,
+            effect.isObjectSpreadCapture === true,
+          );
         } else if (
           effect.kind === 'MutateTransitive' ||
           effect.kind === 'MutateTransitiveConditionally'
@@ -579,7 +584,7 @@ export enum MutationKind {
 type Node = {
   id: Identifier;
   createdFrom: Map<Identifier, number>;
-  captures: Map<Identifier, number>;
+  captures: Map<Identifier, {index: number; isObjectSpreadCapture: boolean}>;
   aliases: Map<Identifier, number>;
   maybeAliases: Map<Identifier, number>;
   edges: Array<{
@@ -628,7 +633,12 @@ class AliasingState {
     }
   }
 
-  capture(index: number, from: Place, into: Place): void {
+  capture(
+    index: number,
+    from: Place,
+    into: Place,
+    isObjectSpreadCapture: boolean,
+  ): void {
     const fromNode = this.nodes.get(from.identifier);
     const toNode = this.nodes.get(into.identifier);
     if (fromNode == null || toNode == null) {
@@ -636,7 +646,7 @@ class AliasingState {
     }
     fromNode.edges.push({index, node: into.identifier, kind: 'capture'});
     if (!toNode.captures.has(from.identifier)) {
-      toNode.captures.set(from.identifier, index);
+      toNode.captures.set(from.identifier, {index, isObjectSpreadCapture});
     }
   }
 
@@ -692,8 +702,8 @@ class AliasingState {
         }
         queue.push(alias);
       }
-      for (const [capture, when] of node.captures) {
-        if (when >= index) {
+      for (const [capture, info] of node.captures) {
+        if (info.index >= index) {
           continue;
         }
         queue.push(capture);
@@ -730,6 +740,7 @@ class AliasingState {
       if (node == null) {
         continue;
       }
+      const wasMutated = node.local != null || node.transitive != null;
       node.mutationReason ??= reason;
       node.lastMutated = Math.max(node.lastMutated, index);
       if (end != null) {
@@ -826,15 +837,19 @@ class AliasingState {
        * but only transitive mutations affect captures
        */
       if (transitive) {
-        for (const [capture, when] of node.captures) {
-          if (when >= index) {
+        for (const [capture, info] of node.captures) {
+          if (info.index >= index) {
             continue;
           }
           queue.push({
             place: capture,
             transitive,
             direction: 'backwards',
-            kind,
+            // An earlier mutation may have replaced the property being mutated.
+            kind:
+              info.isObjectSpreadCapture && wasMutated
+                ? MutationKind.Conditional
+                : kind,
           });
         }
       }
