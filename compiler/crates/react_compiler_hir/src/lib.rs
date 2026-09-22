@@ -108,7 +108,10 @@ impl std::fmt::Display for FloatValue {
 /// Key differences from Rust's default `Display`:
 /// - Uses scientific notation for |x| >= 1e21 (e.g. `1e+21`, `2.18739127891275e+22`)
 /// - Uses scientific notation for 0 < |x| < 1e-6 (e.g. `1e-7`, `1.5e-8`)
-/// - Uses minimal significant digits that round-trip to the same f64
+/// - Uses minimal significant digits that round-trip to the same f64, padding
+///   large integers with zeros (e.g. `2 ** 60` is `1152921504606847000`)
+/// - Picks the closest of equally short digit strings, ties to even
+///   (e.g. `2 ** -25` is `2.9802322387695312e-8`)
 /// - Formats -0 as "0"
 pub fn format_js_number(n: f64) -> String {
     if n.is_nan() {
@@ -128,25 +131,48 @@ pub fn format_js_number(n: f64) -> String {
     let abs = n.abs();
     let sign = if n < 0.0 { "-" } else { "" };
 
-    if abs >= 1e21 || (abs > 0.0 && abs < 1e-6) {
-        // Use scientific notation matching JS format: coefficient + "e+" or "e-" + exponent
-        // Rust's {:e} uses "e" (lowercase) like JS, but formats as e.g. "1.5e21" not "1.5e+21"
-        let formatted = format!("{:e}", abs);
-        // Split into coefficient and exponent parts
-        let (coeff, exp_str) = formatted.split_once('e').unwrap();
-        let exp: i32 = exp_str.parse().unwrap();
-        // JS uses e+N for positive exponents, e-N for negative
+    // Rust's {:e} gives the fewest digits that round-trip, but breaks ties between
+    // equally short candidates by rounding up. Formatting with that many digits at
+    // exact precision rounds half to even like JS; keep that only if it still
+    // round-trips, which can fail next to a power of two.
+    let shortest = format!("{:e}", abs);
+    let digit_count = shortest.split_once('e').unwrap().0.replace('.', "").len();
+    let closest = format!("{:.*e}", digit_count - 1, abs);
+    let formatted = if closest.parse::<f64>() == Ok(abs) {
+        closest
+    } else {
+        shortest
+    };
+
+    // abs == 0.<digits> * 10^point, as in ECMA-262 Number::toString
+    let (coeff, exp_str) = formatted.split_once('e').unwrap();
+    let digits = coeff.replace('.', "");
+    let digits = digits.trim_end_matches('0');
+    let k = digits.len() as i32;
+    let point = exp_str.parse::<i32>().unwrap() + 1;
+
+    if k <= point && point <= 21 {
+        // Integer: digits padded with zeros
+        format!("{}{}{}", sign, digits, "0".repeat((point - k) as usize))
+    } else if 0 < point && point <= 21 {
+        let (int_part, frac_part) = digits.split_at(point as usize);
+        format!("{}{}.{}", sign, int_part, frac_part)
+    } else if -6 < point && point <= 0 {
+        format!("{}0.{}{}", sign, "0".repeat((-point) as usize), digits)
+    } else {
+        // Scientific notation: JS uses e+N for positive exponents, e-N for negative
+        let exp = point - 1;
+        let (first, rest) = digits.split_at(1);
+        let coeff = if rest.is_empty() {
+            first.to_string()
+        } else {
+            format!("{}.{}", first, rest)
+        };
         if exp >= 0 {
             format!("{}{}e+{}", sign, coeff, exp)
         } else {
             format!("{}{}e-{}", sign, coeff, exp.unsigned_abs())
         }
-    } else if abs.fract() == 0.0 && abs < (i64::MAX as f64) {
-        // Integer that fits in i64 — format without decimal point
-        format!("{}{}", sign, abs as i64)
-    } else {
-        // Regular float: Rust's default Display gives us the right digits
-        format!("{}", n)
     }
 }
 
@@ -1638,6 +1664,22 @@ mod tests {
         assert_eq!(format_js_number(1.5), "1.5");
         assert_eq!(format_js_number(0.5), "0.5");
         assert_eq!(format_js_number(0.1), "0.1");
+
+        // Large integers use the fewest round-tripping digits, padded with zeros
+        assert_eq!(format_js_number(2f64.powi(55)), "36028797018963970");
+        assert_eq!(format_js_number(2f64.powi(60)), "1152921504606847000");
+        assert_eq!(format_js_number(-(2f64.powi(62))), "-4611686018427388000");
+        assert_eq!(format_js_number(9007199254740992.0), "9007199254740992");
+
+        // Ties between equally short digit strings go to the even one
+        assert_eq!(format_js_number(2f64.powi(-25)), "2.9802322387695312e-8");
+        assert_eq!(format_js_number(1000000000000000.25), "1000000000000000.2");
+
+        // The closest candidate must still round-trip
+        assert_eq!(
+            format_js_number(7.120236347223045e-307),
+            "7.120236347223045e-307"
+        );
 
         // Special values
         assert_eq!(format_js_number(f64::NAN), "NaN");
