@@ -15,11 +15,11 @@ use react_compiler_ast::visitor::Visitor;
 use react_compiler_diagnostics::CompilerError;
 use react_compiler_diagnostics::CompilerErrorDetail;
 use react_compiler_diagnostics::ErrorCategory;
-use react_compiler_diagnostics::Position;
 use react_compiler_diagnostics::SourceLocation;
 use react_compiler_hir::environment::Environment;
 
 use crate::FunctionNode;
+use crate::source_location::convert_base_loc;
 
 #[derive(Default)]
 struct BindingInfo {
@@ -195,63 +195,34 @@ fn walk_lval_for_reassignment(
             // Interior mutability - not a variable reassignment
         }
         PatternLike::TSAsExpression(node) => {
-            record_unsupported_lval(
-                visitor.env,
-                "TSAsExpression",
-                convert_opt_loc(&node.base.loc),
-            )?;
+            record_unsupported_lval(visitor.env, "TSAsExpression", convert_base_loc(&node.base))?;
         }
         PatternLike::TSSatisfiesExpression(node) => {
             record_unsupported_lval(
                 visitor.env,
                 "TSSatisfiesExpression",
-                convert_opt_loc(&node.base.loc),
+                convert_base_loc(&node.base),
             )?;
         }
         PatternLike::TSNonNullExpression(node) => {
             record_unsupported_lval(
                 visitor.env,
                 "TSNonNullExpression",
-                convert_opt_loc(&node.base.loc),
+                convert_base_loc(&node.base),
             )?;
         }
         PatternLike::TSTypeAssertion(node) => {
-            record_unsupported_lval(
-                visitor.env,
-                "TSTypeAssertion",
-                convert_opt_loc(&node.base.loc),
-            )?;
+            record_unsupported_lval(visitor.env, "TSTypeAssertion", convert_base_loc(&node.base))?;
         }
         PatternLike::TypeCastExpression(node) => {
             record_unsupported_lval(
                 visitor.env,
                 "TypeCastExpression",
-                convert_opt_loc(&node.base.loc),
+                convert_base_loc(&node.base),
             )?;
         }
     }
     Ok(())
-}
-
-fn convert_loc(loc: &react_compiler_ast::common::SourceLocation) -> SourceLocation {
-    SourceLocation {
-        start: Position {
-            line: loc.start.line,
-            column: loc.start.column,
-            index: loc.start.index,
-        },
-        end: Position {
-            line: loc.end.line,
-            column: loc.end.column,
-            index: loc.end.index,
-        },
-    }
-}
-
-fn convert_opt_loc(
-    loc: &Option<react_compiler_ast::common::SourceLocation>,
-) -> Option<SourceLocation> {
-    loc.as_ref().map(convert_loc)
 }
 
 /// Record the TS-faithful Todo for an unsupported assignment-target wrapper

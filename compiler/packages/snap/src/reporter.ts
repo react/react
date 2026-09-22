@@ -188,6 +188,9 @@ const TS_SKIP_FIXTURES: Set<string> = new Set([
   'todo-hoist-type-alias-before-declaration',
   // Error message/format divergences
   'fbt/error.todo-locally-require-fbt',
+  // Rust preserves the source offsets needed by the FBT transform.
+  'fbt/bug-fbt-plural-multiple-function-calls',
+  'fbt/bug-fbt-plural-multiple-mixed-call-tag',
   // Minor output difference (TS adds unused runtime import)
   'use-no-forget-multiple-with-eslint-suppression',
   // Cosmetic blank-line/unused-var differences between Rust and TS codegen
