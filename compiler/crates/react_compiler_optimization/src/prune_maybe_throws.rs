@@ -15,7 +15,10 @@ use rustc_hash::FxHashMap;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, GENERATED_SOURCE,
 };
-use react_compiler_hir::{BlockId, HirFunction, Instruction, InstructionValue, Terminal};
+use react_compiler_hir::{
+    ArrayElement, BlockId, HirFunction, InstructionKind, InstructionValue, ObjectPropertyKey,
+    ObjectPropertyOrSpread, Terminal,
+};
 use react_compiler_lowering::{
     get_reverse_postordered_blocks, mark_instruction_ids, remove_dead_do_while_statements,
     remove_unnecessary_try_catch, remove_unreachable_for_updates,
@@ -99,7 +102,7 @@ fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<FxHashMap<BlockId, 
         let can_throw = block
             .instructions
             .iter()
-            .any(|instr_id| instruction_may_throw(&instructions[instr_id.0 as usize]));
+            .any(|instr_id| value_may_throw(&instructions[instr_id.0 as usize].value));
 
         if !can_throw {
             let source = terminal_mapping.get(&block.id).copied().unwrap_or(block.id);
@@ -121,11 +124,33 @@ fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<FxHashMap<BlockId, 
     }
 }
 
-fn instruction_may_throw(instr: &Instruction) -> bool {
-    match &instr.value {
-        InstructionValue::Primitive { .. }
-        | InstructionValue::ArrayExpression { .. }
-        | InstructionValue::ObjectExpression { .. } => false,
+pub(crate) fn value_may_throw(value: &InstructionValue) -> bool {
+    match value {
+        InstructionValue::DeclareLocal { .. }
+        | InstructionValue::DeclareContext { .. }
+        | InstructionValue::Primitive { .. }
+        | InstructionValue::JSXText { .. }
+        | InstructionValue::TypeCastExpression { .. }
+        | InstructionValue::ObjectMethod { .. }
+        | InstructionValue::FunctionExpression { .. }
+        | InstructionValue::RegExpLiteral { .. }
+        | InstructionValue::MetaProperty { .. }
+        | InstructionValue::Debugger { .. }
+        | InstructionValue::StartMemoize { .. }
+        | InstructionValue::FinishMemoize { .. } => false,
+        InstructionValue::StoreLocal { lvalue, .. }
+        | InstructionValue::StoreContext { lvalue, .. } => lvalue.kind != InstructionKind::Reassign,
+        InstructionValue::ArrayExpression { elements, .. } => elements
+            .iter()
+            .any(|element| matches!(element, ArrayElement::Spread(_))),
+        InstructionValue::ObjectExpression { properties, .. } => {
+            properties.iter().any(|property| match property {
+                ObjectPropertyOrSpread::Property(property) => {
+                    matches!(property.key, ObjectPropertyKey::Computed { .. })
+                }
+                ObjectPropertyOrSpread::Spread(_) => true,
+            })
+        }
         _ => true,
     }
 }
