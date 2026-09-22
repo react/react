@@ -181,10 +181,17 @@ function handleAssignment(
       for (const property of path.get('properties')) {
         if (property.isObjectProperty()) {
           const valuePath = property.get('value');
-          CompilerError.invariant(valuePath.isLVal(), {
-            reason: `[FindContextIdentifiers] Expected object property value to be an LVal, got: ${valuePath.type}`,
-            loc: valuePath.node.loc ?? GeneratedSource,
-          });
+          /*
+           * Babel 8 removed AssignmentPattern from the LVal alias; Babel 7's
+           * still includes it, so this check reads as redundant until the bump.
+           */
+          CompilerError.invariant(
+            valuePath.isLVal() || valuePath.isAssignmentPattern(),
+            {
+              reason: `[FindContextIdentifiers] Expected object property value to be an LVal, got: ${valuePath.type}`,
+              loc: valuePath.node.loc ?? GeneratedSource,
+            },
+          );
           handleAssignment(currentFn, identifiers, valuePath);
         } else {
           CompilerError.invariant(property.isRestElement(), {
