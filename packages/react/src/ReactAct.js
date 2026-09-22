@@ -137,8 +137,8 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
           thenable.then(
             returnValue => {
               popActScope(prevActQueue, prevActScopeDepth);
-              if (prevActScopeDepth === 0) {
-                // We're exiting the outermost `act` scope. Flush the queue.
+              if (prevActQueue === null) {
+                // This call created the queue. Flush it before yielding.
                 try {
                   flushActQueue(queue);
                   queueMacrotask(() =>
@@ -182,8 +182,8 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       // The callback is not an async function. Exit the current
       // scope immediately.
       popActScope(prevActQueue, prevActScopeDepth);
-      if (prevActScopeDepth === 0) {
-        // We're exiting the outermost `act` scope. Flush the queue.
+      if (prevActQueue === null) {
+        // This call created the queue. Flush it before yielding.
         flushActQueue(queue);
 
         // If the queue is not empty, it implies that we intentionally yielded
@@ -234,8 +234,8 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       return {
         then(resolve: T => mixed, reject: mixed => mixed) {
           didAwaitActCall = true;
-          if (prevActScopeDepth === 0) {
-            // If the `act` call is awaited, restore the queue we were
+          if (prevActQueue === null) {
+            // If the `act` call created the queue and is awaited, restore it
             // using before (see long comment above) so we can flush it.
             ReactSharedInternals.actQueue = queue;
             queueMacrotask(() =>
