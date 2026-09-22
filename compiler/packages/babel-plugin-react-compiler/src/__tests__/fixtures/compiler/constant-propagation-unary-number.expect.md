@@ -44,7 +44,7 @@ function foo() {
       <Stringify
         value={[
           -2,
-          0,
+          -0,
           true,
           -Infinity,
           -NaN,
