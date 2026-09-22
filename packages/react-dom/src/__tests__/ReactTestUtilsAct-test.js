@@ -777,6 +777,70 @@ function runActTests(render, unmount, rerender) {
           expect(document.querySelector('[data-test-id=spinner]')).toBeNull();
           expect(container.textContent).toBe('was suspended');
         });
+
+        // @gate __DEV__
+        // Regression test for https://github.com/facebook/react/issues/37556
+        it('does not infinite-loop when re-rendering 3+ suspended sibling Suspense boundaries', async () => {
+          const count = 3;
+          const entries = Array.from({length: count}, () => {
+            let resolve;
+            const state = {status: 'pending', value: ''};
+            const promise = new Promise(r => {
+              resolve = r;
+            }).then(v => {
+              state.status = 'fulfilled';
+              state.value = v;
+            });
+            return {state, promise, resolve};
+          });
+
+          let attempts = 0;
+          function Tile({index}) {
+            attempts++;
+            // Cap so a hang fails the test instead of wedging the worker.
+            if (attempts > 1000) {
+              throw new Error(
+                'Infinite Suspense retry loop under act(): tile render attempts exceeded 1000',
+              );
+            }
+            const entry = entries[index];
+            if (entry.state.status === 'pending') {
+              throw entry.promise;
+            }
+            return <span>{`content ${entry.state.value}`}</span>;
+          }
+
+          function Parent() {
+            const [, bump] = React.useState(0);
+            React.useEffect(() => {
+              bump(1);
+            }, []);
+            return (
+              <>
+                {entries.map((_, index) => (
+                  <React.Suspense key={index} fallback={<span>loading</span>}>
+                    <Tile index={index} />
+                  </React.Suspense>
+                ))}
+              </>
+            );
+          }
+
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
+
+          expect(attempts).toBeLessThan(1000);
+          expect(container.textContent).toBe('loading'.repeat(count));
+
+          await act(async () => {
+            entries.forEach(entry => entry.resolve('done'));
+            await Promise.resolve();
+          });
+
+          expect(container.textContent).toBe('content done'.repeat(count));
+        });
       }
     });
   });

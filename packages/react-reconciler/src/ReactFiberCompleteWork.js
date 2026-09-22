@@ -171,6 +171,7 @@ import {
   getWorkInProgressTransitions,
   shouldRemainOnPreviousScreen,
   markSpawnedRetryLane,
+  requestImmediateSuspenseRetryLane,
 } from './ReactFiberWorkLoop';
 import {
   OffscreenLane,
@@ -178,7 +179,6 @@ import {
   NoLanes,
   includesSomeLane,
   mergeLanes,
-  claimNextRetryLane,
   includesOnlySuspenseyCommitEligibleLanes,
 } from './ReactFiberLane';
 import {resetChildFibers} from './ReactChildFiber';
@@ -661,7 +661,7 @@ function scheduleRetryEffect(
       // I also suspect that we need some further consolidation of offscreen
       // and retry lanes.
       workInProgress.tag !== OffscreenComponent
-        ? claimNextRetryLane()
+        ? requestImmediateSuspenseRetryLane()
         : OffscreenLane;
     workInProgress.lanes = mergeLanes(workInProgress.lanes, retryLane);
 
