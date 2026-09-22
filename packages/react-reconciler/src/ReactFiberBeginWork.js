@@ -83,6 +83,7 @@ import {
   Throw,
   ViewTransitionComponent,
   ActivityComponent,
+  DehydratedFragment,
 } from './ReactWorkTags';
 import {
   NoFlags,
@@ -827,7 +828,14 @@ function bailoutOffscreenComponent(
     workInProgress.stateNode = primaryChildInstance;
   }
 
-  return workInProgress.sibling;
+  const sibling = workInProgress.sibling;
+  if (sibling !== null && sibling.tag === DehydratedFragment) {
+    // A dehydrated fragment is a placeholder for server-rendered content that
+    // is kept in place as-is. It has no children to render, so it must never
+    // become the next unit of work.
+    return null;
+  }
+  return sibling;
 }
 
 function deferHiddenOffscreenComponent(
@@ -2850,10 +2858,20 @@ function updateSuspenseFallbackChildren(
   }
   let fallbackChildFragment;
   if (currentFallbackChildFragment !== null) {
-    fallbackChildFragment = createWorkInProgress(
-      currentFallbackChildFragment,
-      fallbackChildren,
-    );
+    if (currentFallbackChildFragment.tag === DehydratedFragment) {
+      // This boundary is showing a server-rendered fallback that was kept in
+      // place instead of remounting (see updateDehydratedSuspenseComponent).
+      // Keep it as-is; there's nothing to render inside it.
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        null,
+      );
+    } else {
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        fallbackChildren,
+      );
+    }
   } else {
     fallbackChildFragment = createFiberFromFragment(
       fallbackChildren,
@@ -3189,6 +3207,61 @@ function updateDehydratedSuspenseComponent(
       // Suspended but we should no longer be in dehydrated mode.
       // Therefore we now have to render the fallback.
       pushFallbackTreeSuspenseHandler(workInProgress);
+
+      const dehydratedFragment = current.child;
+      if (
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        dehydratedFragment !== null &&
+        dehydratedFragment.tag === DehydratedFragment
+      ) {
+        // This boundary was client rendered on the server, so its fallback
+        // was emitted into the HTML as a permanent fallback (<!--$!-->).
+        // The primary children suspended again during this render, so instead
+        // of deleting the server-rendered fallback and mounting an identical
+        // one — which would restart CSS animations and discard DOM state —
+        // keep the dehydrated fragment in place as the fallback branch.
+        // (See https://github.com/facebook/react/issues/37620)
+
+        // Undo the deletion scheduled when we retried without hydrating.
+        // We're keeping the dehydrated fragment instead of replacing it.
+        const deletions = workInProgress.deletions;
+        if (deletions !== null) {
+          for (let i = deletions.length - 1; i >= 0; i--) {
+            if (deletions[i] === dehydratedFragment) {
+              deletions.splice(i, 1);
+            }
+          }
+        }
+
+        // Mount the primary children as hidden, but don't render them yet.
+        // They'll be retried when the suspended data resolves.
+        const primaryChildFragment: Fiber = mountWorkInProgressOffscreenFiber(
+          {
+            mode: 'hidden',
+            children: nextProps.children,
+          },
+          workInProgress.mode,
+          NoLanes,
+        );
+        primaryChildFragment.memoizedState =
+          mountSuspenseOffscreenState(renderLanes);
+        primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
+          current,
+          didPrimaryChildrenDefer,
+          renderLanes,
+        );
+        primaryChildFragment.return = workInProgress;
+        // Reuse the dehydrated fragment as the fallback branch. It has no
+        // children to render.
+        primaryChildFragment.sibling = dehydratedFragment;
+        workInProgress.child = primaryChildFragment;
+        workInProgress.memoizedState = SUSPENDED_MARKER;
+        // Creates the Offscreen instance and skips rendering the children.
+        // (We ignore the return value, which would be the next sibling to
+        // render, because the dehydrated fallback has no children to render.)
+        bailoutOffscreenComponent(null, primaryChildFragment);
+        return null;
+      }
 
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
