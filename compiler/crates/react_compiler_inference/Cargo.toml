@@ -16,3 +16,6 @@ react_compiler_ssa.workspace = true
 react_compiler_utils.workspace = true
 indexmap = "2"
 rustc-hash = "2"
+
+[lints]
+workspace = true

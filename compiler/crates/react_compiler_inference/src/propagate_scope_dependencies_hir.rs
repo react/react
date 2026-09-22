@@ -1294,20 +1294,23 @@ fn collect_non_nulls_in_blocks(
                 if ctx.assumed_invoked_fns.contains(&lowered_func.func) {
                     let inner_func = &env.functions[lowered_func.func.0 as usize];
                     // Build nested fn immutable context
-                    let nested_fn_immutable_context: FxHashSet<IdentifierId> =
-                        if ctx.nested_fn_immutable_context.is_some() {
-                            // Already in a nested fn context, use existing
-                            ctx.nested_fn_immutable_context.unwrap().clone()
-                        } else {
-                            inner_func
-                                .context
-                                .iter()
-                                .filter(|place| {
-                                    is_immutable_at_instr(place.identifier, instr.id, env, ctx)
-                                })
-                                .map(|place| place.identifier)
-                                .collect()
-                        };
+                    let nested_fn_immutable_context: FxHashSet<IdentifierId> = if let Some(
+                        nested_fn_immutable_context,
+                    ) =
+                        ctx.nested_fn_immutable_context
+                    {
+                        // Already in a nested fn context, use existing
+                        nested_fn_immutable_context.clone()
+                    } else {
+                        inner_func
+                            .context
+                            .iter()
+                            .filter(|place| {
+                                is_immutable_at_instr(place.identifier, instr.id, env, ctx)
+                            })
+                            .map(|place| place.identifier)
+                            .collect()
+                    };
                     let inner_assumed = get_assumed_invoked_functions(inner_func, env);
                     let inner_ctx = CollectHoistableContext {
                         temporaries: ctx.temporaries,

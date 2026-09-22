@@ -10,3 +10,6 @@ repository.workspace = true
 [dependencies]
 indexmap = "2"
 rustc-hash = "2"
+
+[lints]
+workspace = true

@@ -1585,8 +1585,10 @@ fn process_fn(
         }
         Ok(codegen_fn) => {
             // Check opt-out
-            if !context.opts.ignore_use_no_forget && opt_out.is_some() {
-                let opt_out_value = &opt_out.unwrap().value.value;
+            if let Some(opt_out) = opt_out
+                && !context.opts.ignore_use_no_forget
+            {
+                let opt_out_value = &opt_out.value.value;
                 let source_filename = source
                     .fn_ast_loc
                     .as_ref()
@@ -1594,7 +1596,7 @@ fn process_fn(
                 context.log_event(LoggerEvent::CompileSkip {
                     fn_loc: to_logger_loc(source.fn_ast_loc.as_ref(), source_filename),
                     reason: format!("Skipped due to '{}' directive.", opt_out_value),
-                    loc: opt_out.and_then(|d| to_logger_loc(d.base.loc.as_ref(), source_filename)),
+                    loc: to_logger_loc(opt_out.base.loc.as_ref(), source_filename),
                 });
                 // The function is skipped due to opt-out. Do NOT register the memo
                 // cache import here — it will be registered in apply_compiled_functions()
@@ -2907,9 +2909,8 @@ impl MutVisitor for ReplaceWithGatedVisitor<'_> {
                         });
                         return VisitResult::Stop;
                     } else {
-                        export.declaration = Box::new(ExportDefaultDecl::Expression(Box::new(
-                            self.gating_expression.clone(),
-                        )));
+                        *export.declaration =
+                            ExportDefaultDecl::Expression(Box::new(self.gating_expression.clone()));
                         return VisitResult::Stop;
                     }
                 }
@@ -2929,7 +2930,7 @@ impl MutVisitor for ReplaceWithGatedVisitor<'_> {
                             optional: None,
                             decorators: None,
                         });
-                        *decl = Box::new(Declaration::VariableDeclaration(VariableDeclaration {
+                        **decl = Declaration::VariableDeclaration(VariableDeclaration {
                             base: BaseNode::typed("VariableDeclaration"),
                             kind: VariableDeclarationKind::Const,
                             declarations: vec![VariableDeclarator {
@@ -2939,7 +2940,7 @@ impl MutVisitor for ReplaceWithGatedVisitor<'_> {
                                 definite: None,
                             }],
                             declare: None,
-                        }));
+                        });
                         return VisitResult::Stop;
                     }
                 }
@@ -3709,7 +3710,7 @@ impl MutVisitor for ReplaceFnVisitor {
             Expression::ArrowFunctionExpression(f) if f.base.node_id == Some(self.node_id) => {
                 let compiled = self.take();
                 f.params = compiled.params;
-                f.body = Box::new(ArrowFunctionBody::BlockStatement(compiled.body));
+                *f.body = ArrowFunctionBody::BlockStatement(compiled.body);
                 f.generator = compiled.generator;
                 f.is_async = compiled.is_async;
                 f.expression = Some(false);
