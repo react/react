@@ -30,21 +30,20 @@ function Component(props) {
   const $ = _c(1);
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    const object = {
-      foo() {
-        try {
-          return [];
-        } catch (t1) {
-          return;
-        }
-      },
-    };
+    const object = { foo: _temp };
     t0 = object.foo();
     $[0] = t0;
   } else {
     t0 = $[0];
   }
   return t0;
+}
+function _temp() {
+  try {
+    return [];
+  } catch (t0) {
+    return;
+  }
 }
 
 export const FIXTURE_ENTRYPOINT = {
