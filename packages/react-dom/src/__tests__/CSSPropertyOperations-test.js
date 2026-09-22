@@ -181,6 +181,28 @@ describe('CSSPropertyOperations', () => {
     ]);
   });
 
+  it('supports null-prototype style objects', async () => {
+    const styles = Object.create(null);
+    styles.color = 'red';
+    styles.left = 10;
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<div style={styles} />);
+    });
+    expect(container.firstChild.style.color).toBe('red');
+    expect(container.firstChild.style.left).toBe('10px');
+
+    const nextStyles = Object.create(null);
+    nextStyles.color = 'blue';
+    await act(() => {
+      root.render(<div style={nextStyles} />);
+    });
+    expect(container.firstChild.style.color).toBe('blue');
+    expect(container.firstChild.style.left).toBe('');
+  });
+
   it('should warn about style having a trailing semicolon', async () => {
     class Comp extends React.Component {
       static displayName = 'Comp';
