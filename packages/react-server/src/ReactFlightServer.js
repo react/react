@@ -141,11 +141,15 @@ import {
   REACT_MEMO_TYPE,
   ASYNC_ITERATOR,
   REACT_OPTIMISTIC_KEY,
+  REACT_LEDGER_TOTAL_TYPE,
+  REACT_LEDGER_DATA_TYPE,
 } from 'shared/ReactSymbols';
 
 import type {
   Ledger,
   LedgerCell,
+  LedgerTotal,
+  LedgerDataObject,
   LedgerDelta,
   LedgerDeltaRow,
 } from 'react-server/src/ReactFlightLedgers';
@@ -574,17 +578,22 @@ type Task = {
   debugTask: null | ConsoleTask, // DEV-only
 };
 
-// A unit is a piece of work that can be reused: a Flight task or a cache entry.
+// Units track reusable work, such as Flight tasks and cache entries.
 // We associate ledger writes with these units so reusing a result also reuses
 // the writes made while producing it.
 //
 // Units form a graph through their creators and reuse references. The client
 // uses this graph to determine which writes belong to each captured ledger.
+// Capturing an existing result creates a unit for its new position, even
+// though the underlying work is reused.
 type Unit = {
   request: Request,
   // Shares the task's row ID when the unit belongs to a Flight task.
   id: number,
   creator: null | Unit,
+  // Ledger totals captured at this unit. These shadow enclosing captures
+  // of the same ledger.
+  totals: null | Array<number>,
   declared: boolean,
   dirtyDeltas: null | Map<Ledger<empty>, LedgerCell>,
   dirtyReferences: null | number | Set<number>,
@@ -592,8 +601,8 @@ type Unit = {
 
 type RequestLedgers = {
   dirtyUnits: Array<Unit>,
-  // Maps each ledger type to its declaration row ID.
-  declaredTypes: null | Map<Ledger<empty>, number>,
+  // Maps ledger types and total handles to their declaration row IDs.
+  declarations: null | Map<Ledger<empty> | LedgerTotal, number>,
 };
 
 interface Reference {}
@@ -1025,6 +1034,7 @@ function createUnit(request: Request, creator: null | Unit, id: number): Unit {
     request,
     id,
     creator,
+    totals: null,
     declared: false,
     dirtyDeltas: null,
     dirtyReferences: null,
@@ -1102,8 +1112,72 @@ export function addToLedger(type: Ledger<empty>, entry: mixed): void {
 function createRequestLedgers(): RequestLedgers {
   return {
     dirtyUnits: [],
-    declaredTypes: null,
+    declarations: null,
   };
+}
+
+// Give the captured input its own unit so its writes can be distinguished
+// from the surrounding render. The wrapper itself is omitted from the output.
+function outlineLedgerData(
+  request: Request,
+  task: Task,
+  data: LedgerDataObject<ReactClientValue>,
+): ReactJSONValue {
+  const ledgers = ensureRequestLedgers(request);
+  const totals = [];
+  for (let i = 0; i < data.totals.length; i++) {
+    totals.push(ensureLedgerTotalDeclared(request, ledgers, data.totals[i]));
+  }
+  const input = data.input;
+  if (
+    input !== null &&
+    typeof input === 'object' &&
+    // Reuse is only safe when the surrounding component keys don't affect
+    // how the input is serialized.
+    task.keyPath === null &&
+    !task.implicitSlot
+  ) {
+    const existingEntry = request.writtenObjects.get(input);
+    if (existingEntry !== undefined) {
+      // The data is already serialized, but this capture still needs a unit
+      // to associate the reused work's ledger writes with this position.
+      const reuseUnit = createUnit(
+        request,
+        currentUnitForRequest(request),
+        request.nextChunkId++,
+      );
+      reuseUnit.totals = totals;
+      recordUnitReference(reuseUnit, existingEntry.id);
+      return existingEntry.reference;
+    }
+  }
+  const newTask = createTask(
+    request,
+    input,
+    task.keyPath,
+    task.implicitSlot,
+    task.formatContext,
+    request.abortableTasks,
+    enableProfilerTimer &&
+      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+      ? task.time
+      : 0,
+    __DEV__ ? task.debugOwner : null,
+    __DEV__ ? task.debugStack : null,
+    __DEV__ ? task.debugTask : null,
+  );
+  const unit = newTask.unit;
+  if (unit !== null) {
+    // Establish the capture before rendering starts, since rendering may
+    // flush this unit's declaration.
+    unit.totals = totals;
+  }
+  retryTask(request, newTask);
+  if (newTask.status === COMPLETED) {
+    // Preserve the input's synchronous availability when it didn't suspend.
+    return serializeByValueID(newTask.id);
+  }
+  return serializeLazyID(newTask.id);
 }
 
 function readEntryUnit(u: mixed): Unit {
@@ -4304,6 +4378,20 @@ function renderModelDestructive(
           resolvedModel,
         );
       }
+      case REACT_LEDGER_DATA_TYPE: {
+        if (enableFlightLedgers) {
+          return outlineLedgerData(request, task, value as any);
+        }
+        break;
+      }
+      // Handle ledger totals before the generic thenable path, which would
+      // try to unwrap them on the server.
+      case REACT_LEDGER_TOTAL_TYPE: {
+        if (enableFlightLedgers) {
+          return serializeLedgerTotal(request, value as any);
+        }
+        break;
+      }
       case REACT_LEGACY_ELEMENT_TYPE: {
         throw new Error(
           'A React Element from an older version of React was rendered. ' +
@@ -5162,15 +5250,55 @@ function ensureLedgerDeclared(
   ledgers: RequestLedgers,
   type: Ledger<empty>,
 ): number {
-  let declaredTypes = ledgers.declaredTypes;
-  if (declaredTypes === null) {
-    ledgers.declaredTypes = declaredTypes = new Map();
+  let declarations = ledgers.declarations;
+  if (declarations === null) {
+    ledgers.declarations = declarations = new Map();
   }
-  let id = declaredTypes.get(type);
+  let id = declarations.get(type);
   if (id === undefined) {
     id = request.nextChunkId++;
-    declaredTypes.set(type, id);
+    declarations.set(type, id);
     emitLedgerChunk(request, serializeRowHeader('K', id) + type.kind + '\n');
+  }
+  return id;
+}
+
+// Declare totals before the model or unit rows that refer to them.
+function declareLedgerTotal(
+  request: Request,
+  ledgers: RequestLedgers,
+  type: Ledger<empty>,
+): number {
+  const typeId = ensureLedgerDeclared(request, ledgers, type);
+  const id = request.nextChunkId++;
+  emitLedgerChunk(
+    request,
+    serializeRowHeader('Y', id) + typeId.toString(16) + '\n',
+  );
+  return id;
+}
+
+function ensureLedgerTotalDeclared(
+  request: Request,
+  ledgers: RequestLedgers,
+  total: LedgerTotal,
+): number {
+  // $FlowFixMe[constant-condition]
+  if (!supportsRequestStorage) {
+    throw new Error(
+      'Cannot render captured ledgers because this Server Components ' +
+        'renderer has no async context. Use a Node or Edge Server ' +
+        'Components entry point.',
+    );
+  }
+  let declarations = ledgers.declarations;
+  if (declarations === null) {
+    ledgers.declarations = declarations = new Map();
+  }
+  let id = declarations.get(total);
+  if (id === undefined) {
+    id = declareLedgerTotal(request, ledgers, total.type);
+    declarations.set(total, id);
   }
   return id;
 }
@@ -5178,11 +5306,19 @@ function ensureLedgerDeclared(
 function emitUnitDeclaration(request: Request, unit: Unit): void {
   unit.declared = true;
   const creator = unit.creator;
+  let totalIds = '';
+  const totals = unit.totals;
+  if (totals !== null) {
+    for (let i = 0; i < totals.length; i++) {
+      totalIds += ',"' + totals[i].toString(16) + '"';
+    }
+  }
   emitLedgerChunk(
     request,
     serializeRowHeader('Q', unit.id) +
-      (creator === null ? '[null]' : '["' + creator.id.toString(16) + '"]') +
-      '\n',
+      (creator === null ? '[null,[' : '["' + creator.id.toString(16) + '",[') +
+      totalIds.slice(1) +
+      ']]\n',
   );
 }
 
@@ -5251,9 +5387,9 @@ function completeLedgerWork(request: Request): void {
   if (ledgers === null) {
     return;
   }
-  if (ledgers.declaredTypes === null) {
-    // Wait for a capture before sending ledger records. Earlier work may still
-    // be reused by a capture that is created later.
+  if (ledgers.declarations === null) {
+    // Wait until a capture is used before sending ledger records. Earlier work
+    // may still be reused by a capture that is rendered later.
     return;
   }
   const dirtyUnits = ledgers.dirtyUnits;
@@ -5272,6 +5408,15 @@ function completeLedgerWork(request: Request): void {
     }
   }
   dirtyUnits.length = 0;
+}
+
+function serializeLedgerTotal(
+  request: Request,
+  total: LedgerTotal,
+): ReactJSONValue {
+  const ledgers = ensureRequestLedgers(request);
+  const id = ensureLedgerTotalDeclared(request, ledgers, total);
+  return '$y' + id.toString(16);
 }
 
 function emitSymbolChunk(request: Request, id: number, name: string): void {
@@ -5713,6 +5858,12 @@ function renderDebugModel(
   }
 
   if (typeof value === 'object') {
+    if (enableFlightLedgers && value.$$typeof === REACT_LEDGER_TOTAL_TYPE) {
+      // Totals can only be read after the response closes. Debug inspection
+      // must not unwrap them or forward their effects into this response.
+      return '$Y';
+    }
+
     if (isClientReference(value)) {
       // We actually have this value on the client so we could import it.
       // This might be confusing though because on the Server it won't actually
