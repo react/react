@@ -150,11 +150,18 @@ import type {
   LedgerCell,
   LedgerTotal,
   LedgerDataObject,
+  LedgerEntryWireForm,
   LedgerDelta,
   LedgerDeltaRow,
 } from 'react-server/src/ReactFlightLedgers';
 import type {UnitCacheHooks} from 'react-reconciler/src/ReactInternalTypes';
-import {createLedgerCell} from 'react-server/src/ReactFlightLedgers';
+import {
+  BIT_LEDGER,
+  MASK_LEDGER,
+  MIN_LEDGER,
+  MAX_LEDGER,
+  createLedgerCell,
+} from 'react-server/src/ReactFlightLedgers';
 
 import {
   describeObjectForErrorMessage,
@@ -1015,18 +1022,58 @@ function ensureRequestLedgers(request: Request): RequestLedgers {
 }
 
 // Returns whether the entry changed the accumulated value.
-// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
 function accumulateLedgerEntry(cell: LedgerCell, entry: mixed): boolean {
-  if (typeof entry !== 'number') {
-    return false;
+  switch (cell.kind) {
+    case BIT_LEDGER: {
+      if (cell.state) {
+        return false;
+      }
+      cell.state = true;
+      return true;
+    }
+    case MASK_LEDGER: {
+      if (typeof entry !== 'number') {
+        return false;
+      }
+      const state = cell.state;
+      const next = (state | entry) >>> 0;
+      if (next === state) {
+        return false;
+      }
+      cell.state = next;
+      return true;
+    }
+    case MIN_LEDGER: {
+      if (typeof entry !== 'number') {
+        return false;
+      }
+      const state = cell.state;
+      if (state !== null && state <= entry) {
+        return false;
+      }
+      cell.state = entry;
+      return true;
+    }
+    case MAX_LEDGER: {
+      if (typeof entry !== 'number') {
+        return false;
+      }
+      const state = cell.state;
+      if (state !== null && state >= entry) {
+        return false;
+      }
+      cell.state = entry;
+      return true;
+    }
+    default: {
+      const state = cell.state;
+      if (state.has(entry)) {
+        return false;
+      }
+      state.add(entry);
+      return true;
+    }
   }
-  const state = cell.state;
-  const next = (state | entry) >>> 0;
-  if (next === state) {
-    return false;
-  }
-  cell.state = next;
-  return true;
 }
 
 function createUnit(request: Request, creator: null | Unit, id: number): Unit {
@@ -5303,6 +5350,32 @@ function ensureLedgerTotalDeclared(
   return id;
 }
 
+// Use the model's scalar encoding so values like undefined and NaN survive
+// serialization.
+function serializeLedgerEntry(entry: mixed): LedgerEntryWireForm {
+  switch (typeof entry) {
+    case 'string':
+      return escapeStringValue(entry);
+    case 'number':
+      return serializeNumber(entry);
+    case 'bigint':
+      return serializeBigInt(entry);
+    case 'symbol': {
+      const name = Symbol.keyFor(entry);
+      if (name != null) {
+        return serializeSymbolReference(name);
+      }
+    }
+    // Fallthrough
+    case 'undefined':
+      return serializeUndefined();
+    case 'boolean':
+      return entry;
+    default:
+      return null;
+  }
+}
+
 function emitUnitDeclaration(request: Request, unit: Unit): void {
   unit.declared = true;
   const creator = unit.creator;
@@ -5347,8 +5420,33 @@ function emitLedgerDeltas(
   dirtyDeltas: Map<Ledger<empty>, LedgerCell>,
 ): void {
   dirtyDeltas.forEach((cell, type) => {
-    // TODO: Only the mask kind exists yet; the other kinds land in a later PR.
-    const delta: LedgerDelta = serializeNumber(cell.state);
+    let delta: LedgerDelta;
+    switch (cell.kind) {
+      case BIT_LEDGER:
+        delta = 1;
+        break;
+      case MASK_LEDGER:
+        delta = serializeNumber(cell.state);
+        break;
+      case MIN_LEDGER:
+      case MAX_LEDGER: {
+        const state = cell.state;
+        if (state === null) {
+          // A cell is created by its first entry, so Min and Max cells cannot
+          // be empty when emitted. This check only refines the state type.
+          return;
+        }
+        delta = serializeNumber(state);
+        break;
+      }
+      default: {
+        const entries: Array<LedgerEntryWireForm> = [];
+        cell.state.forEach(entry => {
+          entries.push(serializeLedgerEntry(entry));
+        });
+        delta = entries;
+      }
+    }
     const typeId = ensureLedgerDeclared(request, ledgers, type);
     const row: LedgerDeltaRow = [typeId.toString(16), delta];
     emitLedgerChunk(

@@ -598,5 +598,7 @@
   "610": "Cannot assign to a Server Reference to an object on the client.",
   "611": "Expected a Server Reference to an object to resolve to an object.",
   "666": "Cannot render captured ledgers because this Server Components renderer has no async context. Use a Node or Edge Server Components entry point.",
-  "669": "A ledger total cannot be read in a Server Components environment. Pass it to the client, where it resolves after the response has finished streaming."
+  "668": "Only a primitive can be added to a set ledger. A set ledger nets entries by value, but a Set can only compare this entry by reference, so structurally equal entries would silently count as distinct. Primitives are the only entries whose equality is well defined.",
+  "669": "A ledger total cannot be read in a Server Components environment. Pass it to the client, where it resolves after the response has finished streaming.",
+  "672": "Only a global symbol received from Symbol.for(...) can be added to a set ledger. A set ledger nets entries by value, but a symbol that is not registered has no name to net it by, so no other entry could ever equal it and it could not reach the client."
 }
