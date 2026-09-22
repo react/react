@@ -210,6 +210,7 @@ function normalizeValue(val: mixed, seen?: Set<mixed>, depth?: number): mixed {
   if (typeof val === 'function')
     return val.name ? '[fn ' + val.name + ']' : '[fn]';
   if (typeof val === 'symbol') return '[symbol]';
+  if (typeof val === 'bigint') return val.toString() + 'n';
   if (typeof val === 'object' && val !== null) {
     if ((val as any).$$typeof != null) return '[React element]';
     const currentDepth = depth || 0;
