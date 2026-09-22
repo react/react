@@ -10,10 +10,12 @@ import {transformFromAstSync} from '@babel/core';
 import * as BabelParser from '@babel/parser';
 import BabelPluginReactCompiler, {
   ErrorSeverity,
-  type CompilerErrorDetailOptions,
   type PluginOptions,
 } from 'babel-plugin-react-compiler/src';
-import {LoggerEvent as RawLoggerEvent} from 'babel-plugin-react-compiler/src/Entrypoint';
+import {
+  type LoggerEvent as RawLoggerEvent,
+  type CompileErrorDetail,
+} from 'babel-plugin-react-compiler/src/Entrypoint';
 import chalk from 'chalk';
 
 type LoggerEvent = RawLoggerEvent & {filename: string | null};
@@ -53,18 +55,19 @@ const COMPILER_OPTIONS: PluginOptions = {
   logger,
 };
 
-function isActionableDiagnostic(detail: CompilerErrorDetailOptions) {
+function isActionableDiagnostic(detail: CompileErrorDetail) {
   switch (detail.severity) {
-    case ErrorSeverity.InvalidReact:
-    case ErrorSeverity.InvalidJS:
+    case ErrorSeverity.Error:
       return true;
-    case ErrorSeverity.InvalidConfig:
-    case ErrorSeverity.Invariant:
-    case ErrorSeverity.CannotPreserveMemoization:
-    case ErrorSeverity.Todo:
+    case ErrorSeverity.Warning:
+    case ErrorSeverity.Hint:
+    case ErrorSeverity.Off:
       return false;
     default:
-      throw new Error(`Unhandled error severity \`${detail.severity}\``);
+      // Unknown severity — count as non-actionable but don't throw,
+      // since throwing here is swallowed by the caller and silently
+      // loses the diagnostic.
+      return false;
   }
 }
 
