@@ -1992,11 +1992,29 @@ fn build_typed_globals(
         shapes,
         Vec::new(),
         FunctionSignatureBuilder {
-            positional_params: vec![Effect::ConditionallyMutate],
+            positional_params: vec![Effect::Capture],
             return_type: Type::Object {
                 shape_id: Some(BUILT_IN_OBJECT_ID.to_string()),
             },
             return_value_kind: ValueKind::Mutable,
+            aliasing: Some(AliasingSignatureConfig {
+                receiver: "@receiver".to_string(),
+                params: vec!["@iterable".to_string()],
+                rest: None,
+                returns: "@returns".to_string(),
+                temporaries: Vec::new(),
+                effects: vec![
+                    AliasingEffectConfig::Create {
+                        into: "@returns".to_string(),
+                        value: ValueKind::Mutable,
+                        reason: ValueReason::KnownReturnSignature,
+                    },
+                          AliasingEffectConfig::Capture {
+                        from: "@iterable".to_string(),
+                        into: "@returns".to_string(),
+                    },
+                ],
+            }),
             ..Default::default()
         },
         None,
