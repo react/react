@@ -498,6 +498,9 @@ pub fn infer_mutation_aliasing_ranges(
     let should_record_errors = !is_function_expression && env.enable_validations();
 
     // Create nodes for params, context vars, and return
+    if let Some(self_binding) = &func.self_binding {
+        state.create(self_binding, NodeValue::Object);
+    }
     for param in &func.params {
         let place = match param {
             react_compiler_hir::ParamPattern::Place(p) => p,

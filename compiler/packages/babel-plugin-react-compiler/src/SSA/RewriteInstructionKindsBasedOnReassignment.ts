@@ -49,6 +49,12 @@ export function rewriteInstructionKindsBasedOnReassignment(
       });
     }
   }
+  if (fn.selfBinding !== null) {
+    declarations.set(fn.selfBinding.identifier.declarationId, {
+      kind: InstructionKind.Let,
+      place: fn.selfBinding,
+    });
+  }
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       const {value} = instr;
