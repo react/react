@@ -602,7 +602,7 @@ class Result extends React.Component {
 
   componentWillUnmount() {
     if (this.timeout) {
-      clearTimeout(this.interval);
+      clearTimeout(this.timeout);
     }
   }
 
