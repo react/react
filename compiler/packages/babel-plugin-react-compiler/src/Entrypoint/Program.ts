@@ -527,6 +527,31 @@ type CompileSource = {
   fn: BabelFn;
   fnType: ReactFunctionType;
 };
+
+function isWithinJestMockFactory(fn: BabelFn): boolean {
+  let current: NodePath = fn;
+  while (current.parentPath != null) {
+    const parent = current.parentPath;
+    if (
+      parent.isCallExpression() &&
+      parent.node.arguments[1] === current.node
+    ) {
+      const callee = parent.get('callee');
+      if (
+        callee.isMemberExpression() &&
+        !callee.node.computed &&
+        callee.get('object').isIdentifier({name: 'jest'}) &&
+        !callee.get('object').scope.hasBinding('jest') &&
+        callee.get('property').isIdentifier({name: 'mock'})
+      ) {
+        return true;
+      }
+    }
+    current = parent;
+  }
+  return false;
+}
+
 /**
  * Find all React components and hooks that need to be compiled
  *
@@ -561,6 +586,9 @@ function findFunctionsToCompile(
     programContext.alreadyCompiled.add(fn.node);
     fn.skip();
 
+    if (isWithinJestMockFactory(fn)) {
+      programContext.useJestMockCompatibleMemoCacheIdentifier = true;
+    }
     queue.push({kind: 'original', fn, fnType});
   };
 
