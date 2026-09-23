@@ -10,7 +10,10 @@
 import type {Writable} from 'stream';
 
 import {TextEncoder} from 'util';
-import {createHash} from 'crypto';
+// $FlowFixMe[missing-export]: getFips is missing from Flow's crypto libdef.
+import {createHash, getFips} from 'crypto';
+
+import {createFastHashJS} from './createFastHashJS';
 
 interface MightBeFlushable {
   flush?: () => void;
@@ -237,6 +240,11 @@ export function closeWithError(destination: Destination, error: mixed): void {
 }
 
 export function createFastHash(input: string): string | number {
+  // md5 is disallowed in FIPS mode, so fall back to the pure JS hash. FIPS can
+  // be switched on at runtime, so this is checked per call rather than once.
+  if (getFips()) {
+    return createFastHashJS(input);
+  }
   const hash = createHash('md5');
   hash.update(input);
   return hash.digest('hex');
