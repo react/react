@@ -240,8 +240,9 @@ export function closeWithError(destination: Destination, error: mixed): void {
 }
 
 export function createFastHash(input: string): string | number {
+  // md5 is disallowed in FIPS mode, so fall back to the pure JS hash. FIPS can
+  // be switched on at runtime, so this is checked per call rather than once.
   if (getFips()) {
-    // md5 is disallowed in FIPS mode, so fall back to the pure JS hash.
     return createFastHashJS(input);
   }
   const hash = createHash('md5');

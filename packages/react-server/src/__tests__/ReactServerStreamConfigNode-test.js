@@ -17,7 +17,8 @@ describe('ReactServerStreamConfigNode', () => {
 
   it('hashes with md5', () => {
     const crypto = require('crypto');
-    const {createFastHash} = require('../ReactServerStreamConfigNode');
+    const createFastHash =
+      require('react-server/src/ReactServerStreamConfigNode').createFastHash;
 
     expect(createFastHash('hello')).toBe(
       crypto.createHash('md5').update('hello').digest('hex'),
@@ -32,8 +33,10 @@ describe('ReactServerStreamConfigNode', () => {
         throw new Error('md5 is not available in FIPS mode');
       },
     }));
-    const {createFastHashJS} = require('../createFastHashJS');
-    const {createFastHash} = require('../ReactServerStreamConfigNode');
+    const createFastHashJS =
+      require('react-server/src/createFastHashJS').createFastHashJS;
+    const createFastHash =
+      require('react-server/src/ReactServerStreamConfigNode').createFastHash;
 
     expect(createFastHash('hello')).toBe(createFastHashJS('hello'));
   });
