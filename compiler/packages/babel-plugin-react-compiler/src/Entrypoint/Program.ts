@@ -391,6 +391,77 @@ function isFilePartOfSources(
 }
 
 /**
+ * When `sources` is provided as an array, entries are matched as unanchored
+ * substrings of the file's absolute path (see `isFilePartOfSources`). This is a
+ * footgun: a bare prefix can accidentally match an ancestor of the project root
+ * (common in CI/containers, where the checkout root is often named after the
+ * app), silently expanding the "opt-in" allowlist to match every file in the
+ * build — including `node_modules` dependencies.
+ *
+ * This emits a non-fatal warning (via `logger`) for a file that is in scope
+ * when either footgun is detected. It never changes which files are compiled.
+ */
+function warnAboutSourcesFootguns(
+  sources: Array<string> | ((filename: string) => boolean),
+  filename: string,
+  pass: CompilerPass,
+): void {
+  const logger = pass.opts.logger;
+  if (typeof sources === 'function' || logger == null) {
+    return;
+  }
+  const warn = (reason: string, description: string): void => {
+    logger.logEvent(filename, {
+      kind: 'CompileDiagnostic',
+      fnLoc: null,
+      detail: {
+        category: ErrorCategory.Config,
+        reason,
+        description,
+        loc: null,
+      },
+    });
+  };
+
+  /**
+   * A `sources` entry without a path separator is matched as a bare substring
+   * of the absolute path and can match unintended files.
+   */
+  for (const prefix of sources) {
+    if (
+      filename.indexOf(prefix) !== -1 &&
+      !prefix.includes('/') &&
+      !prefix.includes('\\')
+    ) {
+      warn(
+        `The \`sources\` entry '${prefix}' has no path separator`,
+        `\`sources\` array entries are matched as unanchored substrings of the ` +
+          `absolute file path, so '${prefix}' can match unintended files. Anchor ` +
+          `the entry to a path segment (e.g. '/${prefix}/src/') or use the ` +
+          `function form of \`sources\` for full control.`,
+      );
+    }
+  }
+
+  /**
+   * The default `sources` filter excludes `node_modules`, but supplying an array
+   * replaces the default entirely. Compiling a dependency is almost never the
+   * intent and usually signals that a prefix over-matched (e.g. matched the
+   * checkout root).
+   */
+  if (filename.indexOf('node_modules') !== -1) {
+    warn(
+      'React Compiler is compiling a `node_modules` file',
+      `The \`sources\` array matched a file under \`node_modules\` ('${filename}'). ` +
+        `Providing \`sources\` as an array replaces the default filter, which ` +
+        `excludes \`node_modules\`. If this is unintended, anchor your prefixes ` +
+        `to a path segment that cannot coincide with the build root, or use the ` +
+        `function form of \`sources\` (re-adding a \`node_modules\` check).`,
+    );
+  }
+}
+
+/**
  * Main entrypoint for React Compiler.
  *
  * @param program The Babel program node to compile
@@ -849,6 +920,8 @@ function shouldSkipCompilation(
     if (!isFilePartOfSources(pass.opts.sources, pass.filename)) {
       return true;
     }
+
+    warnAboutSourcesFootguns(pass.opts.sources, pass.filename, pass);
   }
 
   if (
