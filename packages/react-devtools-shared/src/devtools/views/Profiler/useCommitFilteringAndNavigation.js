@@ -40,19 +40,6 @@ export function useCommitFilteringAndNavigation(
   const [minCommitDuration, setMinCommitDurationValue] =
     useLocalStorage<number>('minCommitDuration', 0);
 
-  // Currently selected commit index (in the unfiltered list)
-  const [selectedCommitIndex, selectCommitIndex] = useState<number | null>(
-    null,
-  );
-
-  // Reset commit index when commitData changes (e.g., when switching roots).
-  const [previousCommitData, setPreviousCommitData] =
-    useState<Array<CommitDataFrontend>>(commitData);
-  if (previousCommitData !== commitData) {
-    setPreviousCommitData(commitData);
-    selectCommitIndex(commitData.length > 0 ? 0 : null);
-  }
-
   const calculateFilteredIndices = useCallback(
     (enabled: boolean, minDuration: number): Array<number> => {
       return commitData.reduce((reduced: Array<number>, commitDatum, index) => {
@@ -64,6 +51,26 @@ export function useCommitFilteringAndNavigation(
     },
     [commitData],
   );
+
+  const filteredCommitIndices = useMemo(
+    () => calculateFilteredIndices(isCommitFilterEnabled, minCommitDuration),
+    [calculateFilteredIndices, isCommitFilterEnabled, minCommitDuration],
+  );
+
+  // Currently selected commit index (in the unfiltered list)
+  const [selectedCommitIndex, selectCommitIndex] = useState<number | null>(
+    null,
+  );
+
+  // Reset to the first commit that passes the active filter when commit data changes.
+  const [previousCommitData, setPreviousCommitData] =
+    useState<Array<CommitDataFrontend>>(commitData);
+  if (previousCommitData !== commitData) {
+    setPreviousCommitData(commitData);
+    selectCommitIndex(
+      filteredCommitIndices.length > 0 ? filteredCommitIndices[0] : null,
+    );
+  }
 
   const findFilteredIndex = useCallback(
     (commitIndex: number | null, filtered: Array<number>): number | null => {
@@ -113,11 +120,6 @@ export function useCommitFilteringAndNavigation(
       // Otherwise, the current selection is still valid in the filtered list, keep it
     },
     [findFilteredIndex, selectedCommitIndex, selectCommitIndex],
-  );
-
-  const filteredCommitIndices = useMemo(
-    () => calculateFilteredIndices(isCommitFilterEnabled, minCommitDuration),
-    [calculateFilteredIndices, isCommitFilterEnabled, minCommitDuration],
   );
 
   const selectedFilteredCommitIndex = useMemo(
