@@ -1817,6 +1817,19 @@ function markRootSuspended(
     suspendedLanes,
     workInProgressRootInterleavedUpdatedLanes,
   );
+  if (spawnedLane !== NoLane && supportsHydration && isRootDehydrated(root)) {
+    const rootWorkInProgress = root.current.alternate;
+    if (
+      rootWorkInProgress !== null &&
+      (rootWorkInProgress.flags & ForceClientRender) === NoFlags
+    ) {
+      // Until the shell hydrates, there is no committed tree for deferred work
+      // to update. Running it now would commit an empty tree, unsuspend the
+      // hydration lane, and repeatedly restart hydration without a ping.
+      // The deferred task will be scheduled when hydration commits instead.
+      spawnedLane = NoLane;
+    }
+  }
   _markRootSuspended(root, suspendedLanes, spawnedLane, didAttemptEntireTree);
 }
 
