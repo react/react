@@ -94,7 +94,10 @@ export function revealCompletedBoundaries(batch) {
 
     suspenseNode.data = SUSPENSE_START_DATA;
     if (suspenseNode['_reactRetry']) {
-      requestAnimationFrame(suspenseNode['_reactRetry']);
+      // rAF won't fire in background tabs, so race a setTimeout alongside it (safe since retries are idempotent).
+      const retry = suspenseNode['_reactRetry'];
+      requestAnimationFrame(retry)
+      setTimeout(retry);
     }
   }
   batch.length = 0;
@@ -440,8 +443,11 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
     // This is the first time we've pushed to the batch. We need to schedule a callback
     // to flush the batch. This is delayed by the throttle heuristic.
     if (typeof window['$RT'] !== 'number') {
-      // If we haven't had our rAF callback yet, schedule everything for the first paint.
-      requestAnimationFrame(window['$RV'].bind(null, window['$RB']));
+      // rAF won't fire in background tabs, so race a setTimeout alongside it. 
+      // Safe if both fire: revealing is idempotent as $RV resets its batch in place.
+      const flush = window['$RV'].bind(null, window['$RB']);
+      requestAnimationFrame(flush)
+      setTimeout(flush);
     } else {
       const currentTime = performance.now();
       const msUntilTimeout =
