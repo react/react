@@ -243,6 +243,48 @@ describe('ReactFlightDOMForm', () => {
     expect(foo).toBe('barobject');
   });
 
+  it('can customize a form action while reusing the default encoding', async () => {
+    let foo = null;
+
+    const serverAction = serverExports(function action(bound, formData) {
+      foo = formData.get('foo') + bound.complex;
+      return 'hello';
+    });
+    function App() {
+      return (
+        <form action={serverAction.bind(null, {complex: 'object'})}>
+          <input type="text" name="foo" defaultValue="bar" />
+        </form>
+      );
+    }
+
+    const rscStream = ReactServerDOMServer.renderToReadableStream(<App />);
+    const response = ReactServerDOMClient.createFromReadableStream(rscStream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+      encodeFormAction(id, args, encodeDefault) {
+        expect(id).toBe(serverAction.$$id);
+        expect(typeof args.then).toBe('function');
+        return {
+          ...encodeDefault(),
+          action: '/custom-action',
+        };
+      },
+    });
+    const ssrStream = await ReactDOMServer.renderToReadableStream(response);
+    await readIntoContainer(ssrStream);
+
+    const form = container.firstChild;
+    expect(form.action).toBe('http://localhost/custom-action');
+
+    const {returnValue} = await submit(form);
+
+    expect(returnValue).toBe('hello');
+    expect(foo).toBe('barobject');
+  });
+
   it('can submit a multiple complex closure server action without hydrating it', async () => {
     let foo = null;
 
