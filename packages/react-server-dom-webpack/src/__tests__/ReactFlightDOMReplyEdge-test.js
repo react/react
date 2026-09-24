@@ -45,6 +45,22 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(decoded).toEqual({some: 'object'});
   });
 
+  it('does not produce unhandled rejections when reading from an inconsistent async iterable', async () => {
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        yield ['0', '"hello"'];
+        yield ['0', '"sebbie"'];
+      },
+    };
+
+    const result = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+
+    expect(result).toBe('hello');
+  });
+
   it('should be able to serialize any kind of typed array', async () => {
     const buffer = new Uint8Array([
       123, 4, 10, 5, 100, 255, 244, 45, 56, 67, 43, 124, 67, 89, 100, 20,
