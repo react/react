@@ -217,12 +217,30 @@ impl<'a> ReactiveFunctionTransform for PruneVisitor<'a> {
         self.traverse_scope(scope, state)?;
 
         let scope_id = scope.scope;
+        // Dependencies on a variable that this scope reassigns describe the value flowing in
+        // from an earlier scope. That value only exists as a phi, which has been lowered away
+        // by now, so it never appears in `state`.
+        let reassigned_declarations: FxHashSet<_> = self.env.scopes[scope_id.0 as usize]
+            .reassignments
+            .iter()
+            .map(|id| self.env.identifiers[id.0 as usize].declaration_id)
+            .collect();
+        let retained: FxHashSet<IdentifierId> = self.env.scopes[scope_id.0 as usize]
+            .dependencies
+            .iter()
+            .filter(|dep| {
+                state.contains(&dep.identifier)
+                    || reassigned_declarations
+                        .contains(&self.env.identifiers[dep.identifier.0 as usize].declaration_id)
+            })
+            .map(|dep| dep.identifier)
+            .collect();
         let scope_data = &mut self.env.scopes[scope_id.0 as usize];
 
         // Remove non-reactive dependencies
         scope_data
             .dependencies
-            .retain(|dep| state.contains(&dep.identifier));
+            .retain(|dep| retained.contains(&dep.identifier));
 
         // If any deps remain, mark all declarations and reassignments as reactive
         if !scope_data.dependencies.is_empty() {
