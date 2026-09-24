@@ -8,12 +8,14 @@
 import {CompilerError} from '..';
 import {
   BlockId,
+  BasicBlock,
   HIRFunction,
   LabelTerminal,
   PrunedScopeTerminal,
   getHookKind,
   isUseOperator,
 } from '../HIR';
+import {eachTerminalSuccessor} from '../HIR/visitors';
 import {retainWhere} from '../Utils/utils';
 
 /**
@@ -40,10 +42,10 @@ import {retainWhere} from '../Utils/utils';
 export function flattenScopesWithHooksOrUseHIR(fn: HIRFunction): void {
   const activeScopes: Array<{block: BlockId; fallthrough: BlockId}> = [];
   const prune: Array<BlockId> = [];
+  const blocksWithHooks = new Set<BlockId>();
 
+  // First pass: identify blocks that contain hooks
   for (const [, block] of fn.body.blocks) {
-    retainWhere(activeScopes, current => current.fallthrough !== block.id);
-
     for (const instr of block.instructions) {
       const {value} = instr;
       switch (value.kind) {
@@ -55,17 +57,65 @@ export function flattenScopesWithHooksOrUseHIR(fn: HIRFunction): void {
             getHookKind(fn.env, callee.identifier) != null ||
             isUseOperator(callee.identifier)
           ) {
-            prune.push(...activeScopes.map(entry => entry.block));
-            activeScopes.length = 0;
+            blocksWithHooks.add(block.id);
           }
         }
       }
     }
+  }
+
+  // Helper to find all blocks reachable within the scope's boundary
+  function getBlocksInScope(
+    blocks: Map<BlockId, BasicBlock>,
+    startBlockId: BlockId,
+    fallthroughBlockId: BlockId,
+  ): Set<BlockId> {
+    const visited = new Set<BlockId>();
+    const queue = [startBlockId];
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (currentId === fallthroughBlockId || visited.has(currentId)) {
+        continue;
+      }
+      visited.add(currentId);
+      const block = blocks.get(currentId);
+      if (block != null) {
+        for (const succId of eachTerminalSuccessor(block.terminal)) {
+          queue.push(succId);
+        }
+      }
+    }
+    return visited;
+  }
+
+  // Helper function to check if a scope contains hooks
+  function scopeContainsHook(startBlockId: BlockId, fallthroughBlockId: BlockId): boolean {
+    const scopeBlocks = getBlocksInScope(fn.body.blocks, startBlockId, fallthroughBlockId);
+    for (const blockId of scopeBlocks) {
+      if (blocksWithHooks.has(blockId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Second pass: prune only scopes that contain hooks
+  for (const [, block] of fn.body.blocks) {
+    retainWhere(activeScopes, current => current.fallthrough !== block.id);
+
     if (block.terminal.kind === 'scope') {
-      activeScopes.push({
-        block: block.id,
-        fallthrough: block.terminal.fallthrough,
-      });
+      const scopeBodyBlockId = block.terminal.block;
+      const fallthroughBlockId = block.terminal.fallthrough;
+      // Only prune scopes whose body blocks contain hooks
+      if (scopeContainsHook(scopeBodyBlockId, fallthroughBlockId)) {
+        prune.push(block.id);
+      } else {
+        // Scope doesn't contain hooks, so track it (it can be memoized)
+        activeScopes.push({
+          block: block.id,
+          fallthrough: block.terminal.fallthrough,
+        });
+      }
     }
   }
 
