@@ -862,10 +862,105 @@ function shouldSkipCompilation(
   return false;
 }
 
+function isMobxObserver(path: NodePath<any>): boolean {
+  if (path.isIdentifier()) {
+    const binding = path.scope.getBinding(path.node.name);
+    if (binding != null && binding.kind === 'module') {
+      const parent = binding.path.parentPath;
+      if (parent != null && parent.isImportDeclaration()) {
+        const source = parent.node.source.value;
+        if (source === 'mobx-react' || source === 'mobx-react-lite') {
+          return true;
+        }
+      }
+    }
+    if (path.node.name === 'observer') {
+      return true;
+    }
+  } else if (path.isMemberExpression()) {
+    const object = path.get('object');
+    const property = path.get('property');
+    if (
+      property.isIdentifier({name: 'observer'}) &&
+      object.isIdentifier()
+    ) {
+      const binding = object.scope.getBinding(object.node.name);
+      if (binding != null && binding.kind === 'module') {
+        const parent = binding.path.parentPath;
+        if (parent != null && parent.isImportDeclaration()) {
+          const source = parent.node.source.value;
+          if (source === 'mobx' || source === 'mobx-react' || source === 'mobx-react-lite') {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function isFunctionWrappedInObserver(fn: BabelFn): boolean {
+  // Case 1: Direct inline wrap: observer(() => ...) or observer(function() ...)
+  const parent = fn.parentPath;
+  if (parent != null && parent.isCallExpression()) {
+    const callee = parent.get('callee');
+    if (isMobxObserver(callee)) {
+      return true;
+    }
+  }
+
+  // Case 2: Named function declaration: function Component() {}; observer(Component);
+  if (fn.isFunctionDeclaration()) {
+    const id = fn.get('id');
+    if (id.isIdentifier()) {
+      const binding = fn.scope.parent.getBinding(id.node.name);
+      if (binding != null) {
+        for (const refPath of binding.referencePaths) {
+          const refParent = refPath.parentPath;
+          if (refParent != null && refParent.isCallExpression()) {
+            const callee = refParent.get('callee');
+            if (isMobxObserver(callee)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Case 3: Variable declarator: const Component = () => {}; observer(Component);
+  if (fn.isArrowFunctionExpression() || fn.isFunctionExpression()) {
+    const parent = fn.parentPath;
+    if (parent != null && parent.isVariableDeclarator()) {
+      const id = parent.get('id');
+      if (id.isIdentifier()) {
+        const binding = parent.scope.getBinding(id.node.name);
+        if (binding != null) {
+          for (const refPath of binding.referencePaths) {
+            const refParent = refPath.parentPath;
+            if (refParent != null && refParent.isCallExpression()) {
+              const callee = refParent.get('callee');
+              if (isMobxObserver(callee)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 function getReactFunctionType(
   fn: BabelFn,
   pass: CompilerPass,
 ): ReactFunctionType | null {
+  if (isFunctionWrappedInObserver(fn)) {
+    return null;
+  }
+
   if (fn.node.body.type === 'BlockStatement') {
     const optInDirectives = tryFindDirectiveEnablingMemoization(
       fn.node.body.directives,
