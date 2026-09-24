@@ -2639,53 +2639,69 @@ function lowerExpression(
       let expr = exprPath as NodePath<t.UpdateExpression>;
       const argument = expr.get('argument');
       if (argument.isMemberExpression()) {
-        const binaryOperator = expr.node.operator === '++' ? '+' : '-';
         const leftExpr = argument as NodePath<t.MemberExpression>;
         const {object, property, value} = lowerMemberExpression(
           builder,
           leftExpr,
         );
 
-        // Store the previous value to a temporary
-        const previousValuePlace = lowerValueToTemporary(builder, value);
-        // Store the new value to a temporary
-        const updatedValue = lowerValueToTemporary(builder, {
-          kind: 'BinaryExpression',
-          operator: binaryOperator,
-          left: {...previousValuePlace},
-          right: lowerValueToTemporary(builder, {
-            kind: 'Primitive',
-            value: 1,
-            loc: GeneratedSource,
-          }),
-          loc: leftExpr.node.loc ?? GeneratedSource,
+        const loc = leftExpr.node.loc ?? GeneratedSource;
+        const memberValue = lowerValueToTemporary(builder, value);
+        // Preserve native update coercion (including BigInt) and the expression result.
+        const updateTarget = buildTemporaryPlace(builder, loc);
+        promoteTemporary(updateTarget.identifier);
+        lowerValueToTemporary(builder, {
+          kind: 'StoreLocal',
+          lvalue: {
+            place: {...updateTarget},
+            kind: InstructionKind.Const,
+          },
+          value: {...memberValue},
+          type: null,
+          loc,
         });
 
-        // Save the result back to the property
-        let newValuePlace;
+        const updateValue = lowerValueToTemporary(builder, {
+          kind: expr.node.prefix ? 'PrefixUpdate' : 'PostfixUpdate',
+          lvalue: {...updateTarget},
+          operation: expr.node.operator,
+          value: {...updateTarget},
+          loc: exprLoc,
+        });
+        const result = buildTemporaryPlace(builder, exprLoc);
+        promoteTemporary(result.identifier);
+        lowerValueToTemporary(builder, {
+          kind: 'StoreLocal',
+          lvalue: {
+            place: {...result},
+            kind: InstructionKind.Const,
+          },
+          value: {...updateValue},
+          type: null,
+          loc: exprLoc,
+        });
+
         if (typeof property === 'string' || typeof property === 'number') {
-          newValuePlace = lowerValueToTemporary(builder, {
+          lowerValueToTemporary(builder, {
             kind: 'PropertyStore',
             object: {...object},
             property: makePropertyLiteral(property),
-            value: {...updatedValue},
-            loc: leftExpr.node.loc ?? GeneratedSource,
+            value: {...updateTarget},
+            loc,
           });
         } else {
-          newValuePlace = lowerValueToTemporary(builder, {
+          lowerValueToTemporary(builder, {
             kind: 'ComputedStore',
             object: {...object},
             property: {...property},
-            value: {...updatedValue},
-            loc: leftExpr.node.loc ?? GeneratedSource,
+            value: {...updateTarget},
+            loc,
           });
         }
 
         return {
           kind: 'LoadLocal',
-          place: expr.node.prefix
-            ? {...newValuePlace}
-            : {...previousValuePlace},
+          place: {...result},
           loc: exprLoc,
         };
       }
