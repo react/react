@@ -376,4 +376,38 @@ describe('ReactJSXRuntime', () => {
     ]);
     expect(elementWithSpreadKey.props).not.toBe(configWithKey);
   });
+
+  it('does not throw when the current dispatcher lacks DEV-only methods', () => {
+    // A production-built renderer (e.g. a precompiled react-reconciler
+    // embedded in a third-party library) installs an async dispatcher that
+    // does not implement DEV-only methods such as `getOwner` while it
+    // renders. Creating elements during such a render pass should treat the
+    // owner as unknown instead of crashing.
+    const ReactSharedInternals =
+      React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+    const previousDispatcher = ReactSharedInternals.A;
+    ReactSharedInternals.A = {
+      getCacheForType() {
+        return null;
+      },
+    };
+    try {
+      const elements = [
+        JSXRuntime.jsx('div', {}),
+        JSXRuntime.jsxs('div', {children: []}),
+        React.createElement('div', {}),
+      ];
+      if (__DEV__) {
+        elements.push(JSXDEVRuntime.jsxDEV('div', {}, undefined, false));
+      }
+      elements.forEach(element => {
+        expect(element.type).toBe('div');
+        if (__DEV__) {
+          expect(element._owner == null).toBe(true);
+        }
+      });
+    } finally {
+      ReactSharedInternals.A = previousDispatcher;
+    }
+  });
 });
