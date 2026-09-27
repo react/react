@@ -256,6 +256,37 @@ function hello() {
 }
 `;
 
+exports[`ReactFreshBabelPlugin preserves inferred names of hook-using functions in object properties (output) 1`] = `
+var _s = $RefreshSig$(),
+  _s2 = $RefreshSig$(),
+  _s3 = $RefreshSig$(),
+  _s4 = $RefreshSig$();
+const hooks = {
+  useFoo: _s(Object.defineProperty(() => {
+    _s();
+    useState();
+  }, "name", {
+    value: "useFoo",
+    configurable: true
+  }), "useState{}"),
+  useBar: _s2(Object.defineProperty(function () {
+    _s2();
+    useState();
+  }, "name", {
+    value: "useBar",
+    configurable: true
+  }), "useState{}"),
+  useNamed: _s3(function inner() {
+    _s3();
+    useState();
+  }, "useState{}"),
+  [computed]: _s4(() => {
+    _s4();
+    useState();
+  }, "useState{}")
+};
+`;
+
 exports[`ReactFreshBabelPlugin registers capitalized identifiers in HOC calls 1`] = `
 function Foo() {
   return <h1>Hi</h1>;
