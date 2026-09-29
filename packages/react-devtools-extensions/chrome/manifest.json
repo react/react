@@ -43,7 +43,8 @@
   "permissions": [
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "webNavigation"
   ],
   "optional_permissions": [
     "clipboardWrite"

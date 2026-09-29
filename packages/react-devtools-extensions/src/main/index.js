@@ -49,6 +49,7 @@ import injectBackendManager from './injectBackendManager';
 import registerEventsLogger from './registerEventsLogger';
 import getProfilingFlags from './getProfilingFlags';
 import debounce from './debounce';
+import registerNavigationListener from './registerNavigationListener';
 import {
   EXTENSION_BRIDGE_CONNECTION_DISCONNECTED,
   EXTENSION_BRIDGE_CONNECTION_READY,
@@ -751,8 +752,7 @@ function onNavigatedToOtherPage() {
   debouncedMountReactDevToolsCallback();
 }
 
-// Cleanup previous page state and remount everything
-chrome.devtools.network.onNavigated.addListener(onNavigatedToOtherPage);
+registerNavigationListener(onNavigatedToOtherPage);
 
 // Should be emitted when browser DevTools are closed
 if (__IS_FIREFOX__) {
