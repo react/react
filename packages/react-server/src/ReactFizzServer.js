@@ -5369,6 +5369,8 @@ function retryRenderTask(
   const chunkLength = segment.chunks.length;
   // Used to detect forward progress if we hit a stack overflow below.
   const startNode = task.node;
+  const startKeyPath = task.keyPath;
+  const startChildIndex = task.childIndex;
   try {
     // We call the destructive form that mutates this task. That way if something
     // suspends again, we can reuse the same task instead of spawning a new one.
@@ -5415,6 +5417,8 @@ function retryRenderTask(
       // Restore the parent instead of clearing this field because finishing
       // can reenter Fizz and abort an outer render that is still on the stack.
       request.currentTask = prevTask;
+      task.keyPath = startKeyPath;
+      task.childIndex = startChildIndex;
       abortUnwoundTask(task, request);
       return;
     }

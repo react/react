@@ -861,6 +861,70 @@ describe('ReactDOMFizzStaticBrowser', () => {
     expect(errors).toEqual(['resume abort']);
   });
 
+  it('resumes a task that was aborted while rendering from where it started', async () => {
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+    let prerendering = true;
+    const controller = new AbortController();
+
+    function Abort() {
+      if (prerendering) {
+        controller.abort();
+      }
+      return 'World';
+    }
+
+    function Content() {
+      React.use(promise);
+      return (
+        <section>
+          <span>Hello</span>
+          <Abort />
+        </section>
+      );
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Loading...">
+            <Content />
+          </Suspense>
+        </div>
+      );
+    }
+
+    let pendingResult;
+    await serverAct(() => {
+      pendingResult = ReactDOMFizzStatic.prerender(<App />, {
+        signal: controller.signal,
+        onError() {},
+      });
+    });
+    await serverAct(() => resolve());
+    const prerendered = await pendingResult;
+
+    await readIntoContainer(prerendered.prelude);
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+
+    prerendering = false;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(prerendered.postponed)),
+      ),
+    );
+
+    await readIntoContainer(resumed);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <section>
+          <span>Hello</span>World
+        </section>
+      </div>,
+    );
+  });
+
   it('can prerender a preamble', async () => {
     const errors = [];
 
