@@ -3185,6 +3185,43 @@ function updateDehydratedSuspenseComponent(
       // but the normal suspense pass doesn't.
       workInProgress.flags |= DidCapture;
       return null;
+    } else if (
+      isSuspenseInstanceFallback(suspenseInstance) &&
+      current.memoizedProps === nextProps &&
+      getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+        REACT_RECOVERABLE_DIGEST
+    ) {
+      // The server rendered the fallback because the content is browser-only
+      // and we tried to client render the content, but that suspended.
+      // Committing would replace the server fallback with an identical client
+      // fallback, which recreates the DOM and restarts animations etc. Since
+      // the props didn't change, the server fallback is still up to date, so
+      // stay in dehydrated mode and keep it in place until we can render the
+      // content. Unlike delaying the whole commit, this only affects this
+      // boundary.
+      // TODO: Do the same for boundaries that errored on the server. That
+      // requires not reporting the server error again on every retry.
+      pushFallbackTreeSuspenseHandler(workInProgress);
+
+      // Undo the deletion of the dehydrated fragment that the client render
+      // attempt scheduled.
+      const dehydratedFragment = current.child;
+      const deletions = workInProgress.deletions;
+      if (deletions !== null) {
+        const index = deletions.indexOf(dehydratedFragment as any);
+        if (index !== -1) {
+          deletions.splice(index, 1);
+        }
+        if (deletions.length === 0) {
+          workInProgress.deletions = null;
+          workInProgress.flags &= ~ChildDeletion;
+        }
+      }
+      workInProgress.child = dehydratedFragment;
+      workInProgress.memoizedState = suspenseState;
+      // The dehydrated completion pass expects this flag to be there.
+      workInProgress.flags |= DidCapture;
+      return null;
     } else {
       // Suspended but we should no longer be in dehydrated mode.
       // Therefore we now have to render the fallback.
