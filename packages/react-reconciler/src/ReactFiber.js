@@ -570,7 +570,6 @@ export function createFiberFromTypeAndProps(
       fiberTag = ClassComponent;
     }
   } else if (typeof resolvedType === 'string') {
-    // $FlowFixMe[constant-condition]
     if (supportsResources && supportsSingletons) {
       const hostContext = getHostContext();
       fiberTag = isHostHoistableType(type, pendingProps, hostContext)
@@ -578,13 +577,11 @@ export function createFiberFromTypeAndProps(
         : isHostSingletonType(type)
           ? HostSingleton
           : HostComponent;
-      // $FlowFixMe[constant-condition]
     } else if (supportsResources) {
       const hostContext = getHostContext();
       fiberTag = isHostHoistableType(type, pendingProps, hostContext)
         ? HostHoistable
         : HostComponent;
-      // $FlowFixMe[constant-condition]
     } else if (supportsSingletons) {
       fiberTag = isHostSingletonType(type) ? HostSingleton : HostComponent;
     } else {

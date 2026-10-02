@@ -867,7 +867,7 @@ export function getInstanceFromScope(
 // -------------------
 //     Microtasks
 // -------------------
-export const supportsMicrotasks = true;
+export const supportsMicrotasks: boolean = true;
 export const scheduleMicrotask: any =
   typeof queueMicrotask === 'function'
     ? queueMicrotask
@@ -886,7 +886,7 @@ function handleErrorInNextTick(error: any) {
 //     Mutation
 // -------------------
 
-export const supportsMutation = true;
+export const supportsMutation: boolean = true;
 
 export function commitMount(
   domElement: Instance,
@@ -4073,7 +4073,7 @@ export function bindInstance(
 //     Hydration
 // -------------------
 
-export const supportsHydration = true;
+export const supportsHydration: boolean = true;
 
 export function canHydrateInstance(
   instance: HydratableInstance,
@@ -4770,7 +4770,7 @@ export function shouldDeleteUnhydratedTailInstances(
 //     Test Selectors
 // -------------------
 
-export const supportsTestSelectors = true;
+export const supportsTestSelectors: boolean = true;
 
 export function findFiberRoot(node: Instance): null | FiberRoot {
   const stack = [node];
@@ -4937,7 +4937,7 @@ export function requestPostPaintCallback(callback: (time: number) => void) {
 //     Singletons
 // -------------------
 
-export const supportsSingletons = true;
+export const supportsSingletons: boolean = true;
 
 export function isHostSingletonType(type: string): boolean {
   return type === 'html' || type === 'head' || type === 'body';
@@ -5097,7 +5097,7 @@ function clearSingletonPreambleContribution(instance: Instance): void {
 //     Resources
 // -------------------
 
-export const supportsResources = true;
+export const supportsResources: boolean = true;
 
 type HoistableTagType = 'link' | 'meta' | 'title';
 type TResource<
