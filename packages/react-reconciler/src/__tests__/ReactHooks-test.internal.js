@@ -2092,4 +2092,47 @@ describe('ReactHooks', () => {
     await act(() => setShouldThrow(true));
     expect(root).toMatchRenderedOutput('Error!');
   });
+
+  // Regression test for https://github.com/facebook/react/issues/37655
+  it('does not warn on hook order mismatch when a component suspends multiple times via use()', async () => {
+    const {createContext, useContext, useState, useEffect, use, Suspense} =
+      React;
+
+    const userPromise = Promise.resolve('user');
+    const companyPromise = Promise.resolve('company');
+
+    const A = createContext('a');
+    const B = createContext('b');
+    const C = createContext('c');
+    const D = createContext('d');
+    const E = createContext('e');
+
+    let setN;
+    function Page() {
+      useContext(A);
+      useContext(B);
+      useContext(C);
+      use(userPromise);
+      useContext(D);
+      use(companyPromise);
+      useContext(E);
+      const [n, _setN] = useState(0);
+      setN = _setN;
+      useEffect(() => {
+        setN(1);
+      }, []);
+      return 'rendered ' + n;
+    }
+
+    let root;
+    await act(() => {
+      root = ReactTestRenderer.create(
+        <Suspense fallback="loading">
+          <Page />
+        </Suspense>,
+        {unstable_isConcurrent: true},
+      );
+    });
+    expect(root).toMatchRenderedOutput('rendered 1');
+  });
 });
