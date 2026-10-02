@@ -1884,7 +1884,7 @@ describe('ReactUpdates', () => {
 
   // TODO: Replace this branch with @gate pragmas
   if (__DEV__) {
-    it('warns about a deferred infinite update loop with useEffect', async () => {
+    it('throws on deferred infinite update loop with useEffect and includes owner stack', async () => {
       function NonTerminating() {
         const [step, setStep] = React.useState(0);
         React.useEffect(function myEffect() {
@@ -1897,29 +1897,23 @@ describe('ReactUpdates', () => {
         return <NonTerminating />;
       }
 
-      let error = null;
+      let caughtError = null;
       let ownerStack = null;
-      let debugStack = null;
-      const originalConsoleError = console.error;
-      console.error = e => {
-        error = e;
-        ownerStack = React.captureOwnerStack();
-        debugStack = new Error().stack;
-        Scheduler.log('stop');
-      };
-      try {
-        const container = document.createElement('div');
-        const root = ReactDOMClient.createRoot(container);
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container, {
+        onUncaughtError: (error, errorInfo) => {
+          caughtError = error;
+          ownerStack = errorInfo.componentStack;
+        },
+      });
+      await act(async () => {
         root.render(<App />);
-        await waitFor(['stop']);
-      } finally {
-        console.error = originalConsoleError;
-      }
+      });
 
-      expect(error).toContain('Maximum update depth exceeded');
-      // The currently executing effect should be on the native stack
-      expect(debugStack).toContain('at myEffect');
-      expect(ownerStack).toContain('at App');
+      expect(caughtError).not.toBeNull();
+      expect(caughtError.message).toContain('Maximum update depth exceeded');
+      // Owner stack should include the component that scheduled the looping effect
+      expect(ownerStack).toContain('NonTerminating');
     });
 
     it('can have nested updates if they do not cross the limit', async () => {
@@ -1974,6 +1968,34 @@ describe('ReactUpdates', () => {
       expect(container.textContent).toBe('1000');
     });
   }
+
+  it('throws on deferred infinite update loop with useEffect in production', async () => {
+    function NonTerminating() {
+      const [step, setStep] = React.useState(0);
+      React.useEffect(function myEffect() {
+        setStep(x => x + 1);
+      });
+      return step;
+    }
+
+    const container = document.createElement('div');
+    const errors = [];
+    const root = ReactDOMClient.createRoot(container, {
+      onUncaughtError: (error, errorInfo) => {
+        errors.push(error.message);
+      },
+    });
+    await act(async () => {
+      root.render(<NonTerminating />);
+    });
+
+    expect(errors).toEqual([
+      'Maximum update depth exceeded. This can happen when a component ' +
+        "calls setState inside useEffect, but useEffect either doesn't " +
+        'have a dependency array, or one of the dependencies changes on ' +
+        'every render.',
+    ]);
+  });
 
   it('prevents infinite update loop triggered by synchronous updates in useEffect', async () => {
     // Ignore flushSync warning
