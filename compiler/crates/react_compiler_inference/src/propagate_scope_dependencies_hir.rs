@@ -39,6 +39,7 @@ pub fn propagate_scope_dependencies_hir(func: &mut HirFunction, env: &mut Enviro
         temporaries_read_in_optional,
         processed_instrs_in_optional,
         hoistable_objects,
+        unused_optional_chains,
     } = collect_optional_chain_sidemap(func, env);
 
     let hoistable_property_loads = {
@@ -77,6 +78,7 @@ pub fn propagate_scope_dependencies_hir(func: &mut HirFunction, env: &mut Enviro
         &used_outside_declaring_scope,
         &merged_temporaries,
         &processed_instrs_in_optional,
+        &unused_optional_chains,
     );
 
     // Derive the minimal set of hoistable dependencies for each scope.
@@ -409,6 +411,10 @@ struct OptionalChainSidemap {
     temporaries_read_in_optional: FxHashMap<IdentifierId, ReactiveScopeDependency>,
     processed_instrs_in_optional: FxHashSet<ProcessedInstr>,
     hoistable_objects: FxHashMap<BlockId, ReactiveScopeDependency>,
+    /// Outermost optional chains whose value is never consumed (no phi at the
+    /// fallthrough references the result), keyed by the optional block id.
+    /// Corresponds to TS `OptionalChainSidemap.unusedOptionalChains`.
+    unused_optional_chains: FxHashMap<BlockId, ReactiveScopeDependency>,
 }
 
 /// We track processed instructions/terminals by their lvalue IdentifierId + block id.
@@ -428,6 +434,7 @@ fn collect_optional_chain_sidemap(func: &HirFunction, env: &Environment) -> Opti
         processed_instrs_in_optional: FxHashSet::default(),
         temporaries_read_in_optional: FxHashMap::default(),
         hoistable_objects: FxHashMap::default(),
+        unused_optional_chains: FxHashMap::default(),
     };
 
     traverse_function_optional(func, env, &mut ctx);
@@ -436,6 +443,7 @@ fn collect_optional_chain_sidemap(func: &HirFunction, env: &Environment) -> Opti
         temporaries_read_in_optional: ctx.temporaries_read_in_optional,
         processed_instrs_in_optional: ctx.processed_instrs_in_optional,
         hoistable_objects: ctx.hoistable_objects,
+        unused_optional_chains: ctx.unused_optional_chains,
     }
 }
 
@@ -444,6 +452,7 @@ struct OptionalTraversalContext {
     processed_instrs_in_optional: FxHashSet<ProcessedInstr>,
     temporaries_read_in_optional: FxHashMap<IdentifierId, ReactiveScopeDependency>,
     hoistable_objects: FxHashMap<BlockId, ReactiveScopeDependency>,
+    unused_optional_chains: FxHashMap<BlockId, ReactiveScopeDependency>,
 }
 
 fn traverse_function_optional(
@@ -465,9 +474,40 @@ fn traverse_function_optional(
         }
         if let Terminal::Optional { .. } = &block.terminal {
             if !ctx.seen_optionals.contains(&block.id) {
-                traverse_optional_block(block, func, env, ctx, None);
+                if let Some(result_id) = traverse_optional_block(block, func, env, ctx, None) {
+                    record_unused_optional_chain(block, result_id, func, ctx);
+                }
             }
         }
+    }
+}
+
+/// Records an outermost optional chain in `unused_optional_chains` if its value
+/// is never consumed, i.e. no phi in the chain's fallthrough block references
+/// the result of the chain's consequent block.
+/// Corresponds to TS `recordUnusedOptionalChain`.
+fn record_unused_optional_chain(
+    optional_block: &BasicBlock,
+    result_id: IdentifierId,
+    func: &HirFunction,
+    ctx: &mut OptionalTraversalContext,
+) {
+    let Terminal::Optional { fallthrough, .. } = &optional_block.terminal else {
+        return;
+    };
+    let Some(fallthrough_block) = func.body.blocks.get(fallthrough) else {
+        return;
+    };
+    let is_used = fallthrough_block.phis.iter().any(|phi| {
+        phi.operands
+            .values()
+            .any(|operand| operand.identifier == result_id)
+    });
+    if is_used {
+        return;
+    }
+    if let Some(load) = ctx.temporaries_read_in_optional.get(&result_id).cloned() {
+        ctx.unused_optional_chains.insert(optional_block.id, load);
     }
 }
 
@@ -1827,6 +1867,7 @@ struct DependencyCollectionContext<'a> {
     #[allow(dead_code)]
     temporaries_used_outside_scope: &'a FxHashSet<DeclarationId>,
     processed_instrs_in_optional: &'a FxHashSet<ProcessedInstr>,
+    unused_optional_chains: &'a FxHashMap<BlockId, ReactiveScopeDependency>,
     inner_fn_context: Option<EvaluationOrder>,
 }
 
@@ -1835,6 +1876,7 @@ impl<'a> DependencyCollectionContext<'a> {
         temporaries_used_outside_scope: &'a FxHashSet<DeclarationId>,
         temporaries: &'a FxHashMap<IdentifierId, ReactiveScopeDependency>,
         processed_instrs_in_optional: &'a FxHashSet<ProcessedInstr>,
+        unused_optional_chains: &'a FxHashMap<BlockId, ReactiveScopeDependency>,
     ) -> Self {
         Self {
             declarations: FxHashMap::default(),
@@ -1845,6 +1887,7 @@ impl<'a> DependencyCollectionContext<'a> {
             temporaries,
             temporaries_used_outside_scope,
             processed_instrs_in_optional,
+            unused_optional_chains,
             inner_fn_context: None,
         }
     }
@@ -2234,11 +2277,13 @@ fn collect_dependencies(
     used_outside_declaring_scope: &FxHashSet<DeclarationId>,
     temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
     processed_instrs_in_optional: &FxHashSet<ProcessedInstr>,
+    unused_optional_chains: &FxHashMap<BlockId, ReactiveScopeDependency>,
 ) -> IndexMap<ScopeId, Vec<ReactiveScopeDependency>, FxBuildHasher> {
     let mut ctx = DependencyCollectionContext::new(
         used_outside_declaring_scope,
         temporaries,
         processed_instrs_in_optional,
+        unused_optional_chains,
     );
 
     // Declare params
@@ -2333,6 +2378,14 @@ fn handle_function_deps(
                 _ => {
                     handle_instruction(instr, ctx, env);
                 }
+            }
+        }
+
+        // Unused chains have no consuming phi, so record them here.
+        // See `OptionalChainSidemap::unused_optional_chains`.
+        if let Terminal::Optional { .. } = &block.terminal {
+            if let Some(dep) = ctx.unused_optional_chains.get(block_id).cloned() {
+                ctx.visit_dependency(dep, env);
             }
         }
 
