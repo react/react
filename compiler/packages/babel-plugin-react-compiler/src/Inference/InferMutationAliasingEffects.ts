@@ -40,6 +40,7 @@ import {
   ValueReason,
 } from '../HIR';
 import {
+  eachInstructionLValue,
   eachInstructionValueOperand,
   eachPatternItem,
   eachTerminalOperand,
@@ -118,6 +119,27 @@ export function inferMutationAliasingEffects(
       reason: new Set([ValueReason.Other]),
     });
     initialState.define(ref, value);
+  }
+
+  /**
+   * A named function expression may recursively reference its own name from
+   * within its body (`const f = function foo() { foo() }`). That self-reference
+   * is bound in the function's own scope, so it is neither a parameter nor a
+   * captured context variable and is never seeded above. Seed any such
+   * self-reference as a context value so that reads of the function's own name
+   * resolve, rather than tripping the "value kind not initialized" invariant.
+   */
+  for (const selfReference of findRecursiveSelfReferences(fn)) {
+    const value: InstructionValue = {
+      kind: 'ObjectExpression',
+      properties: [],
+      loc: selfReference.loc,
+    };
+    initialState.initialize(value, {
+      kind: ValueKind.Context,
+      reason: new Set([ValueReason.Other]),
+    });
+    initialState.define(selfReference, value);
   }
 
   const paramKind: AbstractValue = isFunctionExpression
@@ -221,6 +243,59 @@ export function inferMutationAliasingEffects(
     }
   }
   return;
+}
+
+/**
+ * Finds references to a named function expression's own name that are never
+ * otherwise defined within the function (i.e. recursive self-references). These
+ * are bound in the function's own scope, so they are neither parameters nor
+ * captured context variables. Returns one representative Place per such
+ * identifier so that it can be seeded in the inference state.
+ */
+function findRecursiveSelfReferences(fn: HIRFunction): Array<Place> {
+  if (fn.id === null) {
+    return [];
+  }
+  // Every identifier that is defined (written) somewhere within the function.
+  const defined = new Set<IdentifierId>();
+  for (const param of fn.params) {
+    const place = param.kind === 'Identifier' ? param : param.place;
+    defined.add(place.identifier.id);
+  }
+  for (const ref of fn.context) {
+    defined.add(ref.identifier.id);
+  }
+  for (const block of fn.body.blocks.values()) {
+    for (const instr of block.instructions) {
+      for (const lvalue of eachInstructionLValue(instr)) {
+        defined.add(lvalue.identifier.id);
+      }
+    }
+  }
+  const selfReferences = new Map<IdentifierId, Place>();
+  const visit = (place: Place): void => {
+    const {identifier} = place;
+    if (
+      identifier.name !== null &&
+      identifier.name.kind === 'named' &&
+      identifier.name.value === fn.id &&
+      !defined.has(identifier.id) &&
+      !selfReferences.has(identifier.id)
+    ) {
+      selfReferences.set(identifier.id, place);
+    }
+  };
+  for (const block of fn.body.blocks.values()) {
+    for (const instr of block.instructions) {
+      for (const operand of eachInstructionValueOperand(instr.value)) {
+        visit(operand);
+      }
+    }
+    for (const operand of eachTerminalOperand(block.terminal)) {
+      visit(operand);
+    }
+  }
+  return Array.from(selfReferences.values());
 }
 
 function findHoistedContextDeclarations(
