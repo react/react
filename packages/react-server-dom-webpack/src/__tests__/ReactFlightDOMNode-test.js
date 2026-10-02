@@ -2768,4 +2768,400 @@ describe('ReactFlightDOMNode', () => {
     expect(onError).not.toHaveBeenCalled();
     expect(debugChannel.locked).toBe(true);
   });
+
+  // Each pair has the same contents but different identities.
+  describe.each([
+    ['object', {label: 'value'}, {label: 'value'}],
+    ['array', ['value'], ['value']],
+    ['Map', new Map([['key', 'value']]), new Map([['key', 'value']])],
+    ['Set', new Set(['value']), new Set(['value'])],
+    [
+      'ArrayBuffer',
+      new Uint8Array([1, 2, 3, 4]).buffer,
+      new Uint8Array([1, 2, 3, 4]).buffer,
+    ],
+    ['Int8Array', new Int8Array([-123, 45]), new Int8Array([-123, 45])],
+    ['Uint8Array', new Uint8Array([123, 245]), new Uint8Array([123, 245])],
+    [
+      'Uint8ClampedArray',
+      new Uint8ClampedArray([123, 245]),
+      new Uint8ClampedArray([123, 245]),
+    ],
+    ['Int16Array', new Int16Array([-123, 456]), new Int16Array([-123, 456])],
+    ['Uint16Array', new Uint16Array([123, 456]), new Uint16Array([123, 456])],
+    ['Int32Array', new Int32Array([-123, 456]), new Int32Array([-123, 456])],
+    ['Uint32Array', new Uint32Array([123, 456]), new Uint32Array([123, 456])],
+    [
+      'Float32Array',
+      new Float32Array([1.25, -2.5]),
+      new Float32Array([1.25, -2.5]),
+    ],
+    [
+      'Float64Array',
+      new Float64Array([1.25, -2.5]),
+      new Float64Array([1.25, -2.5]),
+    ],
+    [
+      'BigInt64Array',
+      new BigInt64Array([-123n, 456n]),
+      new BigInt64Array([-123n, 456n]),
+    ],
+    [
+      'BigUint64Array',
+      new BigUint64Array([123n, 456n]),
+      new BigUint64Array([123n, 456n]),
+    ],
+    [
+      'DataView',
+      new DataView(new Uint8Array([1, 2, 3, 4]).buffer),
+      new DataView(new Uint8Array([1, 2, 3, 4]).buffer),
+    ],
+  ])('%s promise results', (type, value, otherValue) => {
+    describe.each(['before', 'after'])(
+      'subscribing %s delivery',
+      subscription => {
+        async function readPromiseResults(firstValue, secondValue) {
+          let resolveFirst;
+          const first = new Promise(resolve => {
+            resolveFirst = resolve;
+          });
+          let resolveSecond;
+          const second = new Promise(resolve => {
+            resolveSecond = resolve;
+          });
+          const readable = new Stream.PassThrough(streamOptions);
+          const response = ReactServerDOMClient.createFromNodeStream(readable, {
+            moduleMap: {},
+            moduleLoading: webpackModuleLoading,
+          });
+          await serverAct(() => {
+            ReactServerDOMServer.renderToPipeableStream([first, second]).pipe(
+              readable,
+            );
+          });
+          const promises = await response;
+          let results;
+          function subscribe() {
+            results = Promise.all(promises);
+          }
+          if (subscription === 'before') {
+            await serverAct(subscribe);
+          }
+          await serverAct(() => resolveFirst(firstValue));
+          await serverAct(() => resolveSecond(secondValue));
+          if (subscription === 'after') {
+            await serverAct(subscribe);
+          }
+          return results;
+        }
+
+        it('should preserve identity when two promises resolve to the same object', async () => {
+          const [first, second] = await readPromiseResults(value, value);
+          expect(first).toEqual(value);
+          expect(second).toBe(first);
+        });
+
+        it('should keep distinct promise results separate even if their contents are equal', async () => {
+          const [first, second] = await readPromiseResults(value, otherValue);
+          expect(first).toEqual(second);
+          expect(first).not.toBe(second);
+        });
+
+        it('should allow an earlier promise result to be used as a Map key', async () => {
+          const [receivedKey, receivedMap] = await readPromiseResults(
+            value,
+            new Map([[value, 'hello']]),
+          );
+          expect(receivedMap.get(receivedKey)).toBe('hello');
+        });
+
+        it('should reuse a Set entry when a later promise resolves to it', async () => {
+          const [receivedSet, receivedValue] = await readPromiseResults(
+            new Set([value]),
+            value,
+          );
+          expect(receivedSet.has(receivedValue)).toBe(true);
+        });
+      },
+    );
+  });
+
+  it('should keep a keyed fragment separate from its shared children', async () => {
+    let resolveChildren;
+    const children = new Promise(resolve => {
+      resolveChildren = resolve;
+    });
+    let resolveData;
+    const data = new Promise(resolve => {
+      resolveData = resolve;
+    });
+    const shared = ['hello'];
+    function Component() {
+      return <>{children}</>;
+    }
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({
+        html: <Component key="outer" />,
+        data,
+      }),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const response = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+    const result = await response;
+    await serverAct(() => resolveChildren(shared));
+    await serverAct(() => resolveData(shared));
+    const html = await result.html;
+    const receivedChildren = await result.data;
+    expect(html).toEqual(<React.Fragment key="outer">{shared}</React.Fragment>);
+    expect(receivedChildren).toEqual(['hello']);
+    expect(html.props.children).toBe(receivedChildren);
+  });
+
+  it('should keep an implicit wrapper separate from its shared element', async () => {
+    let resolveChildren;
+    const children = new Promise(resolve => {
+      resolveChildren = resolve;
+    });
+    let resolveData;
+    const data = new Promise(resolve => {
+      resolveData = resolve;
+    });
+    const shared = <span key="inner">hello</span>;
+    function Component() {
+      return <>{children}</>;
+    }
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({
+        html: <Component />,
+        data,
+      }),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const response = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+    const result = await response;
+    await serverAct(() => resolveChildren(shared));
+    await serverAct(() => resolveData({element: shared}));
+    expect(await result.html).toEqual([shared]);
+    expect(await result.data).toEqual({element: shared});
+  });
+
+  // Arrays need different assertions because keyed components wrap them in a
+  // Fragment; the shared-children test above covers that case.
+  describe.each([
+    ['object', {label: 'value'}],
+    ['Map', new Map([['key', 'value']])],
+    ['Set', new Set(['value'])],
+    ['ArrayBuffer', new Uint8Array([1, 2, 3, 4]).buffer],
+    ['Int8Array', new Int8Array([-123, 45])],
+    ['Uint8Array', new Uint8Array([123, 245])],
+    ['Uint8ClampedArray', new Uint8ClampedArray([123, 245])],
+    ['Int16Array', new Int16Array([-123, 456])],
+    ['Uint16Array', new Uint16Array([123, 456])],
+    ['Int32Array', new Int32Array([-123, 456])],
+    ['Uint32Array', new Uint32Array([123, 456])],
+    ['Float32Array', new Float32Array([1.25, -2.5])],
+    ['Float64Array', new Float64Array([1.25, -2.5])],
+    ['BigInt64Array', new BigInt64Array([-123n, 456n])],
+    ['BigUint64Array', new BigUint64Array([123n, 456n])],
+    ['DataView', new DataView(new Uint8Array([1, 2, 3, 4]).buffer)],
+  ])('%s promise children', (type, value) => {
+    async function readPromiseChild(key, dataValue) {
+      let resolveChildren;
+      const children = new Promise(resolve => {
+        resolveChildren = resolve;
+      });
+      let resolveData;
+      const data = new Promise(resolve => {
+        resolveData = resolve;
+      });
+      function Component() {
+        return <>{children}</>;
+      }
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream({
+          html: <Component key={key} />,
+          data,
+        }),
+      );
+      const readable = new Stream.PassThrough(streamOptions);
+      const response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: webpackModuleLoading,
+      });
+      stream.pipe(readable);
+      const result = await response;
+      await serverAct(() => resolveChildren(value));
+      await serverAct(() => resolveData(dataValue));
+      return [await result.html, await result.data];
+    }
+
+    it('should preserve identity under a keyed Server Component', async () => {
+      const [receivedValue, receivedMap] = await readPromiseChild(
+        'outer',
+        new Map([[value, 'hello']]),
+      );
+      expect(receivedValue).toEqual(value);
+      expect(receivedMap.get(receivedValue)).toBe('hello');
+    });
+
+    it('should preserve identity under an unkeyed Server Component', async () => {
+      const [receivedValue, receivedMap] = await readPromiseChild(
+        null,
+        new Map([[value, 'hello']]),
+      );
+      expect(receivedValue).toEqual(value);
+      expect(receivedMap.get(receivedValue)).toBe('hello');
+    });
+  });
+
+  describe('promise result references', () => {
+    async function readPromiseResults(
+      firstValue,
+      secondValue,
+      renderFirst = promise => promise,
+    ) {
+      let resolveFirst;
+      const first = new Promise(resolve => {
+        resolveFirst = resolve;
+      });
+      let resolveSecond;
+      const second = new Promise(resolve => {
+        resolveSecond = resolve;
+      });
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream({
+          first: renderFirst(first),
+          second,
+        }),
+      );
+      const readable = new Stream.PassThrough(streamOptions);
+      const response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: webpackModuleLoading,
+      });
+      stream.pipe(readable);
+      const result = await response;
+      await serverAct(() => resolveFirst(firstValue));
+      await serverAct(() => resolveSecond(secondValue));
+      return [await result.first, await result.second];
+    }
+
+    it('should preserve a FormData result used as a Map key', async () => {
+      const formData = new FormData();
+      formData.append('name', 'hello');
+      const [received, map] = await readPromiseResults(
+        formData,
+        new Map([[formData, 'found']]),
+      );
+      expect(Array.from(received)).toEqual([['name', 'hello']]);
+      expect(map.get(received)).toBe('found');
+    });
+
+    it('should preserve a Blob result used as a Map key', async () => {
+      const blob = new Blob(['hello'], {type: 'text/plain'});
+      const [received, map] = await readPromiseResults(
+        blob,
+        new Map([[blob, 'found']]),
+      );
+      expect(received.type).toBe('text/plain');
+      expect(await received.text()).toBe('hello');
+      expect(map.get(received)).toBe('found');
+    });
+
+    it('should preserve an Error result used as a Map key', async () => {
+      const error = new Error('hello');
+      const [received, map] = await readPromiseResults(
+        error,
+        new Map([[error, 'found']]),
+      );
+      expect(received).toBeInstanceOf(Error);
+      expect(map.get(received)).toBe('found');
+    });
+
+    it('should reuse a Date when two promises resolve to it', async () => {
+      const date = new Date('2026-01-02T03:04:05.000Z');
+      const [first, second] = await readPromiseResults(date, date);
+      expect(first).toEqual(date);
+      expect(second).toBe(first);
+    });
+
+    it('should reuse an element returned by an earlier promise', async () => {
+      const element = <span>hello</span>;
+      const [first, second] = await readPromiseResults(element, {element});
+      expect(first).toEqual(<span>hello</span>);
+      expect(second.element).toBe(first);
+    });
+
+    it('should preserve a re-encoded array result used as a Map key', async () => {
+      const [array] = await readPromiseResults(['hello'], null);
+      const [received, map] = await readPromiseResults(
+        array,
+        new Map([[array, 'found']]),
+      );
+      expect(received).toEqual(['hello']);
+      expect(map.get(received)).toBe('found');
+    });
+
+    it('should preserve an iterable result used as a Map key', async () => {
+      const iterable = {
+        *[Symbol.iterator]() {
+          yield 'hello';
+          yield 'world';
+        },
+      };
+      const [received, map] = await readPromiseResults(
+        iterable,
+        new Map([[iterable, 'found']]),
+      );
+      expect(received).toEqual(['hello', 'world']);
+      expect(map.get(received)).toBe('found');
+    });
+
+    it('should preserve an async iterable returned by a promise child', async () => {
+      const iterable = {
+        async *[Symbol.asyncIterator]() {
+          yield 'hello';
+          yield 'world';
+        },
+      };
+      const [received, map] = await readPromiseResults(
+        iterable,
+        new Map([[iterable, 'found']]),
+        promise => <>{promise}</>,
+      );
+      const iterator = received[Symbol.asyncIterator]();
+      expect(await iterator.next()).toEqual({value: 'hello', done: false});
+      expect(await iterator.next()).toEqual({value: 'world', done: false});
+      expect(await iterator.next()).toEqual({value: undefined, done: true});
+      expect(map.get(received)).toBe('found');
+    });
+
+    it('should preserve a ReadableStream returned by a promise child', async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue('hello');
+          controller.enqueue('world');
+          controller.close();
+        },
+      });
+      const [received, map] = await readPromiseResults(
+        stream,
+        new Map([[stream, 'found']]),
+        promise => <>{promise}</>,
+      );
+      const reader = received.getReader();
+      expect(await reader.read()).toEqual({value: 'hello', done: false});
+      expect(await reader.read()).toEqual({value: 'world', done: false});
+      expect(await reader.read()).toEqual({value: undefined, done: true});
+      expect(map.get(received)).toBe('found');
+    });
+  });
 });
