@@ -260,7 +260,7 @@ function updateTree(
           }
 
           const parentNode = getClonedNode(parentID);
-          parentNode.children = parentNode.children.concat(id);
+          parentNode.children = (parentNode.children || []).concat(id);
 
           const {formattedDisplayName, hocDisplayNames, compiledWithForget} =
             parseElementDisplayNameFromBackend(displayName, type);
@@ -311,7 +311,7 @@ function updateTree(
               debug('Remove', `fiber ${id} from parent ${parentID}`);
             }
 
-            parentNode.children = parentNode.children.filter(
+            parentNode.children = (parentNode.children || []).filter(
               childID => childID !== id,
             );
           }
