@@ -3792,4 +3792,40 @@ describe('ReactFlightDOMBrowser', () => {
     );
     expect(xError).toBe(fooError);
   });
+
+  it('should resolve client components when __webpack_get_script_filename__ is undefined', async () => {
+    const origGetScriptFilename = global.__webpack_get_script_filename__;
+    try {
+      delete global.__webpack_get_script_filename__;
+
+      const ClientComponent = clientExports(
+        function ClientComponent() {
+          return <span>Hello from client</span>;
+        },
+        'chunk-without-get-script-filename',
+        '/chunk.js',
+        Promise.resolve(),
+      );
+
+      const Server = () => <ClientComponent />;
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(<Server />, webpackMap),
+      );
+
+      const ClientRoot = ({response}) => use(response);
+
+      const response = ReactServerDOMClient.createFromReadableStream(stream);
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(<ClientRoot response={response} />);
+      });
+
+      expect(container.innerHTML).toBe('<span>Hello from client</span>');
+    } finally {
+      global.__webpack_get_script_filename__ = origGetScriptFilename;
+    }
+  });
 });
