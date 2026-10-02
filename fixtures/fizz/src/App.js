@@ -8,12 +8,28 @@
 
 import Html from './Html';
 import BigComponent from './BigComponent';
+import React, {
+  Fragment,
+  Suspense,
+  unstable_SuspenseList as SuspenseList,
+} from 'react';
 
-export default function App({assets, title}) {
+function Use({usable}) {
+  usable && React.use(usable);
+  return null;
+}
+
+export default function App({assets, title, delay}) {
   const components = [];
 
   for (let i = 0; i <= 250; i++) {
-    components.push(<BigComponent key={i} />);
+    components.push(
+      // Replace Suspense with Fragment to push rel=expect to bottom and degrade FCP
+      <Fragment key={i}>
+        <BigComponent />
+        <Use usable={delay} />
+      </Fragment>
+    );
   }
 
   return (
