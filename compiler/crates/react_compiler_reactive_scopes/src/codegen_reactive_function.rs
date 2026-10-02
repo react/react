@@ -925,7 +925,13 @@ fn codegen_reactive_scope(
     let scope_decls = cx.env.scopes[scope_id.0 as usize].declarations.clone();
     let scope_reassignments = cx.env.scopes[scope_id.0 as usize].reassignments.clone();
 
+    let reassigned_declarations: FxHashSet<_> = scope_reassignments
+        .iter()
+        .map(|id| cx.env.identifiers[id.0 as usize].declaration_id)
+        .collect();
+
     let mut cache_store_stmts: Vec<Statement> = Vec::new();
+    let mut reassigned_dep_store_stmts: Vec<Statement> = Vec::new();
     let mut cache_load_stmts: Vec<Statement> = Vec::new();
     let mut cache_loads: Vec<(AstIdentifier, u32, Expression)> = Vec::new();
     let mut change_exprs: Vec<Expression> = Vec::new();
@@ -956,7 +962,15 @@ fn codegen_reactive_scope(
 
         // Store dependency value into cache
         let dep_value = codegen_dependency(cx, dep)?;
-        cache_store_stmts.push(Statement::ExpressionStatement(ExpressionStatement {
+        // The scope overwrites this dependency as it runs, so cache it beforehand
+        let stores = if reassigned_declarations
+            .contains(&cx.env.identifiers[dep.identifier.0 as usize].declaration_id)
+        {
+            &mut reassigned_dep_store_stmts
+        } else {
+            &mut cache_store_stmts
+        };
+        stores.push(Statement::ExpressionStatement(ExpressionStatement {
             base: BaseNode::typed("ExpressionStatement"),
             expression: Box::new(Expression::AssignmentExpression(
                 ast_expr::AssignmentExpression {
@@ -1107,6 +1121,9 @@ fn codegen_reactive_scope(
         }));
     }
 
+    computation_block
+        .body
+        .splice(0..0, reassigned_dep_store_stmts);
     computation_block.body.extend(cache_store_stmts);
 
     let memo_stmt = Statement::IfStatement(IfStatement {
