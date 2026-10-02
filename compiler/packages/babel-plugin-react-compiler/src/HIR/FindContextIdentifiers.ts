@@ -181,7 +181,7 @@ function handleAssignment(
       for (const property of path.get('properties')) {
         if (property.isObjectProperty()) {
           const valuePath = property.get('value');
-          CompilerError.invariant(valuePath.isLVal(), {
+          CompilerError.invariant(valuePath.isLVal() || valuePath.isPatternLike(), {
             reason: `[FindContextIdentifiers] Expected object property value to be an LVal, got: ${valuePath.type}`,
             loc: valuePath.node.loc ?? GeneratedSource,
           });
