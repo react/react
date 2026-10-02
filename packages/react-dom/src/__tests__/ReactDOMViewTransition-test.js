@@ -248,6 +248,20 @@ describe('ReactDOMViewTransition', () => {
       }
     });
 
+    function mockSkippedViewTransition(message) {
+      const startViewTransitionSpy = jest.fn(function ({update}) {
+        const updateCallbackDone = Promise.resolve().then(update);
+        return {
+          ready: Promise.reject(new DOMException(message, 'InvalidStateError')),
+          finished: updateCallbackDone,
+          updateCallbackDone,
+          skipTransition() {},
+        };
+      });
+      document.startViewTransition = startViewTransitionSpy;
+      return startViewTransitionSpy;
+    }
+
     // @gate enableViewTransition
     it('fires onEnter when a ViewTransition mounts', async () => {
       const onEnter = jest.fn();
@@ -1347,6 +1361,74 @@ describe('ReactDOMViewTransition', () => {
       });
 
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
+    });
+
+    // @gate enableViewTransition
+    it('does not report a generic skip with an appended reason as a recoverable error', async () => {
+      const onRecoverableError = jest.fn();
+      const startViewTransitionSpy = mockSkippedViewTransition(
+        'Transition was aborted because of invalid state. Document hidden',
+      );
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition>
+            <div>Hello</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container, {onRecoverableError});
+
+      await act(() => {
+        root.render(<App show={false} />);
+      });
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      expect(startViewTransitionSpy).toHaveBeenCalled();
+      expect(onRecoverableError).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition
+    it('does not report a hidden document skip as a recoverable error', async () => {
+      const onRecoverableError = jest.fn();
+      const startViewTransitionSpy = mockSkippedViewTransition(
+        'Skipped ViewTransition due to document being hidden',
+      );
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition>
+            <div>Hello</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container, {onRecoverableError});
+
+      await act(() => {
+        root.render(<App show={false} />);
+      });
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      expect(startViewTransitionSpy).toHaveBeenCalled();
+      expect(onRecoverableError).not.toHaveBeenCalled();
     });
   });
 });
