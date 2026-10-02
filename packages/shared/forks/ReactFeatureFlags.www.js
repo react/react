@@ -31,7 +31,6 @@ export const {
   enableSuspenseyImages,
   enableViewTransition,
   enableScrollEndPolyfill,
-  enableFragmentRefsTextNodes,
   enableInternalInstanceMap,
   enableParallelTransitions,
   enableViewTransitionParentEnterExit,
@@ -113,8 +112,6 @@ export const enableHydrationChangeEvent: boolean = false;
 export const enableDefaultTransitionIndicator: boolean = true;
 
 export const ownerStackLimit = 1e4;
-
-export const enableFragmentRefsInstanceHandles: boolean = true;
 
 export const enableOptimisticKey: boolean = false;
 

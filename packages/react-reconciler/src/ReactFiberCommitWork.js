@@ -59,7 +59,6 @@ import {
   enableComponentPerformanceTrack,
   enableViewTransition,
   enableDefaultTransitionIndicator,
-  enableFragmentRefsTextNodes,
 } from 'shared/ReactFeatureFlags';
 import {
   FunctionComponent,
@@ -1569,11 +1568,8 @@ function commitDeletionEffectsOnFiber(
       // Intentional fallthrough to next branch
     }
     case HostText: {
-      if (
-        enableFragmentRefsTextNodes &&
-        // HostComponent falls through into this case.
-        deletedFiber.tag === HostText
-      ) {
+      // HostComponent falls through into this case.
+      if (deletedFiber.tag === HostText) {
         commitFragmentInstanceDeletionEffects(deletedFiber);
       }
       // We only need to remove the nearest host child. Set the host parent
@@ -3162,9 +3158,7 @@ function disappearLayoutEffects(
       break;
     }
     case HostText: {
-      if (enableFragmentRefsTextNodes) {
-        commitFragmentInstanceDeletionEffects(finishedWork);
-      }
+      commitFragmentInstanceDeletionEffects(finishedWork);
       break;
     }
     case HostHoistable: {
@@ -3388,9 +3382,7 @@ function reappearLayoutEffects(
       break;
     }
     case HostText: {
-      if (enableFragmentRefsTextNodes) {
-        commitFragmentInstanceInsertionEffects(finishedWork);
-      }
+      commitFragmentInstanceInsertionEffects(finishedWork);
       break;
     }
     case HostHoistable: {

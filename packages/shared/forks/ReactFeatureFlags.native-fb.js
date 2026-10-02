@@ -22,8 +22,6 @@ export const {
   alwaysThrottleRetries,
   enableObjectFiber,
   passChildrenWhenCloningPersistedNodes,
-  enableFragmentRefsInstanceHandles,
-  enableFragmentRefsTextNodes,
   enableViewTransitionForPersistenceMode,
   enableConditionalUseWarning,
 } = dynamicFlags;
