@@ -1348,5 +1348,59 @@ describe('ReactDOMViewTransition', () => {
 
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
+
+    // @gate enableViewTransition
+    it('suppresses InvalidStateError when ViewTransition is skipped due to hidden document or resize across browsers', async () => {
+      function App({count}) {
+        return (
+          <ViewTransition>
+            <div>Count: {count}</div>
+          </ViewTransition>
+        );
+      }
+
+      const messages = [
+        'Transition was aborted because of invalid state',
+        'Transition was aborted because of invalid state. Document hidden',
+        'Transition was aborted because of invalid state. Viewport size changed',
+        'Skipped ViewTransition due to document being hidden',
+        'View transition was skipped because document visibility state is hidden.',
+        'Skipping view transition because document visibility state has become hidden.',
+        'Skipping view transition because viewport size changed.',
+      ];
+
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        const onRecoverableError = jest.fn();
+        const domError = new Error(msg);
+        domError.name = 'InvalidStateError';
+        document.startViewTransition = function ({update}) {
+          update();
+          return {
+            ready: Promise.reject(domError),
+            finished: Promise.resolve(),
+            skipTransition() {},
+            types: new Set(),
+          };
+        };
+
+        const testContainer = document.createElement('div');
+        const root = ReactDOMClient.createRoot(testContainer, {
+          onRecoverableError,
+        });
+
+        await act(() => {
+          root.render(<App count={0} />);
+        });
+
+        await act(() => {
+          startTransition(() => {
+            root.render(<App count={1} />);
+          });
+        });
+
+        expect(onRecoverableError).not.toHaveBeenCalled();
+      }
+    });
   });
 });
