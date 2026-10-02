@@ -230,6 +230,27 @@ describe('DOMPropertyOperations', () => {
       expect(container.firstChild.hasAttribute('hidden')).toBe(false);
     });
 
+    it('should set string values properly for overloaded boolean properties like hidden', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<div hidden="until-found" />);
+      });
+      expect(container.firstChild.getAttribute('hidden')).toBe('until-found');
+      await act(() => {
+        root.render(<div hidden={true} />);
+      });
+      expect(container.firstChild.getAttribute('hidden')).toBe('');
+      await act(() => {
+        root.render(<div hidden="until-found" />);
+      });
+      expect(container.firstChild.getAttribute('hidden')).toBe('until-found');
+      await act(() => {
+        root.render(<div hidden={false} />);
+      });
+      expect(container.firstChild.hasAttribute('hidden')).toBe(false);
+    });
+
     it('should always assign the value attribute for non-inputs', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
