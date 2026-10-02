@@ -374,6 +374,7 @@ dependencies = [
  "react_compiler_lowering",
  "react_compiler_ssa",
  "rustc-hash",
+ "unicode-ident",
 ]
 
 [[package]]
