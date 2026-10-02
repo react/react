@@ -83,6 +83,7 @@ import {
   Throw,
   ViewTransitionComponent,
   ActivityComponent,
+  DehydratedFragment,
 } from './ReactWorkTags';
 import {
   NoFlags,
@@ -827,7 +828,13 @@ function bailoutOffscreenComponent(
     workInProgress.stateNode = primaryChildInstance;
   }
 
-  return workInProgress.sibling;
+  const sibling = workInProgress.sibling;
+  if (sibling !== null && sibling.tag === DehydratedFragment) {
+    // A dehydrated fragment represents server-rendered content that remains
+    // in place. It has no children to process.
+    return null;
+  }
+  return sibling;
 }
 
 function deferHiddenOffscreenComponent(
@@ -2850,10 +2857,18 @@ function updateSuspenseFallbackChildren(
   }
   let fallbackChildFragment;
   if (currentFallbackChildFragment !== null) {
-    fallbackChildFragment = createWorkInProgress(
-      currentFallbackChildFragment,
-      fallbackChildren,
-    );
+    if (currentFallbackChildFragment.tag === DehydratedFragment) {
+      // Keep a preserved server fallback as-is. It has no children to render.
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        null,
+      );
+    } else {
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        fallbackChildren,
+      );
+    }
   } else {
     fallbackChildFragment = createFiberFromFragment(
       fallbackChildren,
@@ -3189,6 +3204,56 @@ function updateDehydratedSuspenseComponent(
       // Suspended but we should no longer be in dehydrated mode.
       // Therefore we now have to render the fallback.
       pushFallbackTreeSuspenseHandler(workInProgress);
+
+      const dehydratedFragment = current.child;
+      if (
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        current.memoizedProps === nextProps &&
+        // This is unreachable in renderers that do not support hydration.
+        // $FlowFixMe[invalid-compare]
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST &&
+        dehydratedFragment !== null &&
+        dehydratedFragment.tag === DehydratedFragment
+      ) {
+        // The server rendered this permanent fallback. If the primary tree
+        // suspends again during the client retry, preserve the existing DOM
+        // instead of deleting it and mounting an identical fallback.
+        const deletions = workInProgress.deletions;
+        if (deletions !== null) {
+          for (let i = deletions.length - 1; i >= 0; i--) {
+            if (deletions[i] === dehydratedFragment) {
+              deletions.splice(i, 1);
+            }
+          }
+          if (deletions.length === 0) {
+            workInProgress.deletions = null;
+            workInProgress.flags &= ~ChildDeletion;
+          }
+        }
+
+        const primaryChildFragment: Fiber = mountWorkInProgressOffscreenFiber(
+          {
+            mode: 'hidden',
+            children: nextProps.children,
+          },
+          workInProgress.mode,
+          NoLanes,
+        );
+        primaryChildFragment.memoizedState =
+          mountSuspenseOffscreenState(renderLanes);
+        primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
+          current,
+          didPrimaryChildrenDefer,
+          renderLanes,
+        );
+        primaryChildFragment.return = workInProgress;
+        primaryChildFragment.sibling = dehydratedFragment;
+        workInProgress.child = primaryChildFragment;
+        workInProgress.memoizedState = SUSPENDED_MARKER;
+        bailoutOffscreenComponent(null, primaryChildFragment);
+        return null;
+      }
 
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
