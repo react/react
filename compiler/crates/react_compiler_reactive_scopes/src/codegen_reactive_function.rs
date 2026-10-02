@@ -219,10 +219,10 @@ pub fn codegen_function(
     // enableEmitHookGuards: wrap entire function body in try/finally with
     // $dispatcherGuard(PushHookGuard=0) / $dispatcherGuard(PopHookGuard=1).
     // Per-hook-call wrapping is done inline during codegen (CallExpression/MethodCall).
-    if cx.env.hook_guard_name.is_some()
+    if let Some(hook_guard_name) = &cx.env.hook_guard_name
         && cx.env.output_mode == react_compiler_hir::environment::OutputMode::Client
     {
-        let guard_name = cx.env.hook_guard_name.as_ref().unwrap().clone();
+        let guard_name = hook_guard_name.clone();
         let body_stmts = std::mem::replace(&mut compiled.body.body, Vec::new());
         compiled.body.body = vec![create_function_body_hook_guard(
             &guard_name,
