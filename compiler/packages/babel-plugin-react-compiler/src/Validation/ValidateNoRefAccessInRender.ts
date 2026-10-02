@@ -753,6 +753,14 @@ function validateNoRefAccessInRenderImpl(
 
             if (refId !== null && nullish) {
               env.set(instr.lvalue.identifier.id, {kind: 'Guard', refId});
+            } else if (
+              instr.value.operator === '===' ||
+              instr.value.operator === '!=='
+            ) {
+              // Strict equality check does not call or coerce operands
+              for (const operand of eachInstructionValueOperand(instr.value)) {
+                validateNoDirectRefValueAccess(errors, operand, env);
+              }
             } else {
               for (const operand of eachInstructionValueOperand(instr.value)) {
                 validateNoRefValueAccess(errors, env, operand);
