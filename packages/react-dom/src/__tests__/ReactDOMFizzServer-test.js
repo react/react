@@ -536,6 +536,14 @@ describe('ReactDOMFizzServer', () => {
     const serverFallback = container.getElementsByTagName('p')[0];
     expect(serverFallback.textContent).toBe('Loading...');
 
+    const removedNodes = [];
+    const observer = new window.MutationObserver(records => {
+      records.forEach(record => {
+        record.removedNodes.forEach(node => removedNodes.push(node));
+      });
+    });
+    observer.observe(container, {childList: true, subtree: true});
+
     const recoverableErrors = [];
     ReactDOMClient.hydrateRoot(container, <App />, {
       onRecoverableError(error) {
@@ -543,7 +551,6 @@ describe('ReactDOMFizzServer', () => {
       },
     });
     await waitForAll([]);
-    jest.runAllTimers();
 
     // The client render suspended on a promise created on the client. The
     // fallback that was rendered by the server should stay in place instead
@@ -555,6 +562,11 @@ describe('ReactDOMFizzServer', () => {
       </div>,
     );
     expect(container.getElementsByTagName('p')[0]).toBe(serverFallback);
+    observer.takeRecords().forEach(record => {
+      record.removedNodes.forEach(node => removedNodes.push(node));
+    });
+    observer.disconnect();
+    expect(removedNodes).not.toContain(serverFallback);
 
     await clientAct(() => {
       resolveClientText('Loaded');
@@ -612,7 +624,6 @@ describe('ReactDOMFizzServer', () => {
       <App fallbackText="Loading..." />,
     );
     await waitForAll([]);
-    jest.runAllTimers();
     expect(container.getElementsByTagName('p')[0]).toBe(serverFallback);
 
     // The fallback changed, so the server fallback is no longer up to date.
@@ -633,6 +644,347 @@ describe('ReactDOMFizzServer', () => {
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>Loaded</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('updates the server fallback if a context it reads changes while browser-only content is suspended', async () => {
+    let resolveClientText;
+    const clientPromise = new Promise(resolve => {
+      resolveClientText = resolve;
+    });
+    const browserOnly = ReactDOM.browser();
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const text = use(clientPromise);
+      Scheduler.log(text);
+      return <span>{text}</span>;
+    }
+
+    let setTheme;
+    function createApp(ThemeContext) {
+      function ThemeProvider({children}) {
+        const [theme, _setTheme] = React.useState('light');
+        setTheme = _setTheme;
+        return <ThemeContext value={theme}>{children}</ThemeContext>;
+      }
+      function Fallback() {
+        const theme = React.useContext(ThemeContext);
+        return <p className={theme}>Loading...</p>;
+      }
+      return function App() {
+        return (
+          <div>
+            <ThemeProvider>
+              <Suspense fallback={<Fallback />}>
+                <BrowserOnly />
+              </Suspense>
+            </ThemeProvider>
+          </div>
+        );
+      };
+    }
+    // Use separate contexts for the server and the client renderer.
+    const ServerApp = createApp(React.createContext('light'));
+    const ClientApp = createApp(React.createContext('light'));
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<ServerApp />);
+      pipe(writable);
+    });
+    const serverFallback = container.getElementsByTagName('p')[0];
+
+    ReactDOMClient.hydrateRoot(container, <ClientApp />);
+    await waitForAll([]);
+    expect(container.getElementsByTagName('p')[0]).toBe(serverFallback);
+
+    // The server fallback reads the context, so it's no longer up to date.
+    await clientAct(() => {
+      setTheme('dark');
+    });
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p class="dark">Loading...</p>
+      </div>,
+    );
+    expect(serverFallback.isConnected).toBe(false);
+
+    await clientAct(() => {
+      resolveClientText('Loaded');
+    });
+    assertLog(['Loaded']);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loaded</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('renders browser-only content if a context change unblocks it while the server fallback is kept', async () => {
+    const neverResolves = new Promise(() => {});
+    const resolved = Promise.resolve('Loaded');
+    const browserOnly = ReactDOM.browser();
+
+    let setSource;
+    function createApp(SourceContext) {
+      function SourceProvider({children}) {
+        const [source, _setSource] = React.useState('slow');
+        setSource = _setSource;
+        return <SourceContext value={source}>{children}</SourceContext>;
+      }
+      function BrowserOnly() {
+        use(browserOnly);
+        const source = React.useContext(SourceContext);
+        const text = use(source === 'slow' ? neverResolves : resolved);
+        Scheduler.log(text);
+        return <span>{text}</span>;
+      }
+      return function App() {
+        return (
+          <div>
+            <SourceProvider>
+              <Suspense fallback={<p>Loading...</p>}>
+                <BrowserOnly />
+              </Suspense>
+            </SourceProvider>
+          </div>
+        );
+      };
+    }
+    const ServerApp = createApp(React.createContext('slow'));
+    const ClientApp = createApp(React.createContext('slow'));
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<ServerApp />);
+      pipe(writable);
+    });
+    const serverFallback = container.getElementsByTagName('p')[0];
+
+    ReactDOMClient.hydrateRoot(container, <ClientApp />);
+    await waitForAll([]);
+    expect(container.getElementsByTagName('p')[0]).toBe(serverFallback);
+
+    await clientAct(() => {
+      setSource('fast');
+    });
+    assertLog(['Loaded']);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loaded</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('reveals browser-only content without waiting on an unrelated suspended transition', async () => {
+    let resolveClientText;
+    const clientPromise = new Promise(resolve => {
+      resolveClientText = resolve;
+    });
+    let resolveSlowTab;
+    const slowTab = new Promise(resolve => {
+      resolveSlowTab = resolve;
+    });
+    const browserOnly = ReactDOM.browser();
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const text = use(clientPromise);
+      return <span>{text}</span>;
+    }
+
+    let setTab;
+    function Tab() {
+      const [tab, _setTab] = React.useState('a');
+      setTab = _setTab;
+      if (tab === 'b') {
+        use(slowTab);
+      }
+      return <b>{tab}</b>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Tab />
+          <Suspense fallback={<p>Loading...</p>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    const serverFallback = container.getElementsByTagName('p')[0];
+
+    ReactDOMClient.hydrateRoot(container, <App />);
+    await waitForAll([]);
+    expect(container.getElementsByTagName('p')[0]).toBe(serverFallback);
+
+    await clientAct(() => {
+      React.startTransition(() => setTab('b'));
+    });
+    expect(container.textContent).toBe('aLoading...');
+
+    // The content should not wait for the suspended transition.
+    await clientAct(() => {
+      resolveClientText('Loaded');
+    });
+    expect(container.textContent).toBe('aLoaded');
+
+    await clientAct(() => {
+      resolveSlowTab();
+    });
+    expect(container.textContent).toBe('bLoaded');
+  });
+
+  // @gate enableBrowserAPI
+  it('prerenders siblings of browser-only content while keeping the server fallback', async () => {
+    const browserOnly = ReactDOM.browser();
+    const cache = new Map();
+    function getData(key) {
+      let entry = cache.get(key);
+      if (entry === undefined) {
+        Scheduler.log('Fetch ' + key);
+        entry = {};
+        entry.promise = new Promise(resolve => {
+          entry.resolve = resolve;
+        });
+        cache.set(key, entry);
+      }
+      return entry;
+    }
+
+    function A() {
+      use(browserOnly);
+      return <span>{use(getData('A').promise)}</span>;
+    }
+    function B() {
+      return <span>{use(getData('B').promise)}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<p>Loading...</p>}>
+            <A />
+            <B />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    const serverFallback = container.getElementsByTagName('p')[0];
+
+    ReactDOMClient.hydrateRoot(container, <App />);
+    // Both requests start without waiting on each other.
+    await waitForAll(['Fetch A', 'Fetch B']);
+    expect(container.getElementsByTagName('p')[0]).toBe(serverFallback);
+
+    await clientAct(() => {
+      getData('A').resolve('A');
+      getData('B').resolve('B');
+    });
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>A</span>
+        <span>B</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('reveals browser-only content that renders a stylesheet while keeping the server fallback', async () => {
+    const browserOnly = ReactDOM.browser();
+    function BrowserOnly() {
+      use(browserOnly);
+      return (
+        <>
+          <link rel="stylesheet" href="client.css" precedence="default" />
+          <span>Loaded</span>
+        </>
+      );
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<p>Loading...</p>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+
+    ReactDOMClient.hydrateRoot(container, <App />);
+    await waitForAll([]);
+
+    // The stylesheet blocks the commit until it loads.
+    await clientAct(() => {
+      document
+        .querySelectorAll('link[href="client.css"]')
+        .forEach(link => link.dispatchEvent(new window.Event('load')));
+    });
+    await clientAct(() => {
+      document
+        .querySelectorAll('link[href="client.css"]')
+        .forEach(link => link.dispatchEvent(new window.Event('load')));
+    });
+    expect(container.getElementsByTagName('span')[0].textContent).toBe(
+      'Loaded',
+    );
+    expect(container.getElementsByTagName('p').length).toBe(0);
+  });
+
+  // @gate enableBrowserAPI
+  it('reveals browser-only content that only suspends on its deferred initial value', async () => {
+    const browserOnly = ReactDOM.browser();
+    const neverResolves = new Promise(() => {});
+    function BrowserOnly() {
+      use(browserOnly);
+      const value = React.useDeferredValue('Final', 'Initial');
+      if (value === 'Initial') {
+        use(neverResolves);
+      }
+      Scheduler.log(value);
+      return <span>{value}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<p>Loading...</p>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+
+    ReactDOMClient.hydrateRoot(container, <App />);
+    await waitForAll(['Final']);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Final</span>
       </div>,
     );
   });
