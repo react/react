@@ -61,6 +61,7 @@ export const enableRetryLaneExpiration: boolean = false;
 export const enableSchedulingProfiler: boolean = __PROFILE__;
 export const enableScopeAPI: boolean = false;
 export const enableSuspenseAvoidThisFallback: boolean = false;
+export const enableServerErrorBoundary: boolean = false;
 export const enableSuspenseCallback: boolean = true;
 export const enableTaint: boolean = true;
 export const enableTransitionTracing: boolean = false;

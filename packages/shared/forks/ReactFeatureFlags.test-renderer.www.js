@@ -34,6 +34,7 @@ export const disableLegacyContextForFunctionComponents: boolean = false;
 export const enableTrustedTypesIntegration: boolean = true;
 export const disableTextareaChildren: boolean = false;
 export const enableSuspenseAvoidThisFallback: boolean = true;
+export const enableServerErrorBoundary: boolean = false;
 export const enableCPUSuspense: boolean = false;
 export const enableNoCloningMemoCache: boolean = false;
 export const enableLegacyFBSupport: boolean = false;
