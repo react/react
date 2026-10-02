@@ -9,6 +9,8 @@
 
 import {
   REACT_ELEMENT_TYPE,
+  REACT_LEDGER_TOTAL_TYPE,
+  REACT_LEDGER_DATA_TYPE,
   REACT_FORWARD_REF_TYPE,
   REACT_LAZY_TYPE,
   REACT_MEMO_TYPE,
@@ -114,6 +116,12 @@ export function describeValueForErrorMessage(value: mixed): string {
       }
       if (value !== null && value.$$typeof === CLIENT_REFERENCE_TAG) {
         return describeClientReference(value);
+      }
+      if (value !== null && value.$$typeof === REACT_LEDGER_DATA_TYPE) {
+        return 'LedgerData';
+      }
+      if (value !== null && value.$$typeof === REACT_LEDGER_TOTAL_TYPE) {
+        return 'LedgerTotal';
       }
       const name = objectName(value);
       if (name === 'Object') {
@@ -244,6 +252,11 @@ export function describeObjectForErrorMessage(
       str = '<' + describeElementType(objectOrArray.type) + '/>';
     } else if (objectOrArray.$$typeof === CLIENT_REFERENCE_TAG) {
       return describeClientReference(objectOrArray);
+    } else if (objectOrArray.$$typeof === REACT_LEDGER_DATA_TYPE) {
+      // Avoid traversing the request held by ledger wrappers.
+      return 'LedgerData';
+    } else if (objectOrArray.$$typeof === REACT_LEDGER_TOTAL_TYPE) {
+      return 'LedgerTotal';
     } else if (__DEV__ && jsxPropsParents.has(objectOrArray)) {
       // Print JSX
       const type = jsxPropsParents.get(objectOrArray);

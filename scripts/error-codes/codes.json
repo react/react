@@ -596,5 +596,7 @@
   "608": "A client reference was blocked on a row that has not been received yet. This is a bug in React.",
   "609": "Cannot access %s on the client. You cannot read a Server Reference to an object on the client. You can only pass it back to the server.",
   "610": "Cannot assign to a Server Reference to an object on the client.",
-  "611": "Expected a Server Reference to an object to resolve to an object."
+  "611": "Expected a Server Reference to an object to resolve to an object.",
+  "666": "Cannot render captured ledgers because this Server Components renderer has no async context. Use a Node or Edge Server Components entry point.",
+  "669": "A ledger total cannot be read in a Server Components environment. Pass it to the client, where it resolves after the response has finished streaming."
 }
