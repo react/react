@@ -867,10 +867,11 @@ function resetHydrationState(): void {
 }
 
 // Restore the hydration cursor when unwinding a HostComponent that already
-// claimed a DOM node. This is a fork of popHydrationState that does all the
-// same validity checks but restores the cursor to this fiber's DOM node
-// instead of advancing past it. It also does NOT clear unhydrated tail nodes
-// or throw on mismatches since we're unwinding, not completing.
+// claimed a DOM node, or a HostSingleton that already entered its scope. This
+// is a fork of popHydrationState that does all the same validity checks but
+// restores the cursor instead of advancing past it. It also does NOT clear
+// unhydrated tail nodes or throw on mismatches since we're unwinding, not
+// completing.
 //
 // This is needed when replaySuspendedUnitOfWork calls unwindInterruptedWork
 // before re-running beginWork on the same fiber, or when throwAndUnwindWorkLoop
@@ -901,6 +902,17 @@ function popHydrationStateOnInterruptedWork(fiber: Fiber): void {
   popToNextHostParent(fiber);
   if (fiber.tag === HostComponent && fiber.stateNode != null) {
     nextHydratableInstance = fiber.stateNode;
+    // $FlowFixMe[constant-condition]
+  } else if (supportsSingletons && fiber.tag === HostSingleton) {
+    // Leave the singleton scope, exactly as popHydrationState would. For a
+    // scoped singleton (<head>) this restores the cursor that was saved on
+    // entry and clears the saved slot, so that when beginWork re-claims the
+    // singleton it saves the correct outer cursor again instead of
+    // overwriting it with a cursor from inside the scope.
+    nextHydratableInstance = getNextHydratableSiblingAfterSingleton(
+      fiber.type,
+      nextHydratableInstance,
+    );
   }
 }
 
