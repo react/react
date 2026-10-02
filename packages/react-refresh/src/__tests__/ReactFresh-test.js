@@ -4566,6 +4566,48 @@ describe('ReactFresh', () => {
     };
   }
 
+  it('exposes renderers injected into the synthetic DevTools hook', () => {
+    if (__DEV__) {
+      delete global.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      jest.resetModules();
+      const firstRuntime = require('react-refresh/runtime');
+      firstRuntime.injectIntoGlobalHook(global);
+
+      const hook = global.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      const renderer = {
+        scheduleRefresh: jest.fn(),
+        scheduleRoot: jest.fn(),
+        setRefreshHandler: jest.fn(),
+      };
+      const rendererID = hook.inject(renderer);
+
+      expect(hook.renderers.get(rendererID)).toBe(renderer);
+
+      jest.resetModules();
+      const secondRuntime = require('react-refresh/runtime');
+      secondRuntime.injectIntoGlobalHook(global);
+
+      const fakeRoot = {
+        current: {
+          alternate: null,
+          memoizedState: {element: 'mounted'},
+        },
+      };
+      hook.onCommitFiberRoot(rendererID, fakeRoot, null, false);
+
+      const ComponentV1 = () => {};
+      const ComponentV2 = () => {};
+      secondRuntime.register(ComponentV1, 'Component');
+      secondRuntime.register(ComponentV2, 'Component');
+      secondRuntime.performReactRefresh();
+
+      expect(renderer.scheduleRefresh).toHaveBeenCalledWith(
+        fakeRoot,
+        expect.any(Object),
+      );
+    }
+  });
+
   // This simulates the scenario in https://github.com/facebook/react/issues/17626
   it('can inject the runtime after the renderer executes', async () => {
     if (__DEV__) {
