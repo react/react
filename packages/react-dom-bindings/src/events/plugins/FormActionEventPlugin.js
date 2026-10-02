@@ -71,11 +71,15 @@ function extractEvents(
   let action = coerceFormActionProp(
     (getFiberCurrentPropsFromNode(form) as any).action,
   );
+  let method = form.method;
   let submitter: null | void | HTMLInputElement | HTMLButtonElement = (
     nativeEvent as any
   ).submitter;
   let submitterAction;
   if (submitter) {
+    // The submitter overrides the form method.
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-fs-formmethod
+    method = submitter.formMethod || method;
     const submitterProps = getFiberCurrentPropsFromNode(submitter);
     submitterAction = submitterProps
       ? coerceFormActionProp((submitterProps as any).formAction)
@@ -110,7 +114,7 @@ function extractEvents(
         const pendingState: FormStatus = {
           pending: true,
           data: formData,
-          method: form.method,
+          method: method,
           action: action,
         };
         if (__DEV__) {
@@ -139,7 +143,7 @@ function extractEvents(
       const pendingState: FormStatus = {
         pending: true,
         data: formData,
-        method: form.method,
+        method: method,
         action: action,
       };
       if (__DEV__) {
