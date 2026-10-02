@@ -4582,7 +4582,7 @@ function serializeDebugErrorValue(
     }
     const id = outlineDebugModel(
       request,
-      {objectLimit: stack.length * 2 + 1},
+      {objectLimit: stack.length * 2 + 2},
       errorInfo,
     );
     return '$Z' + id.toString(16);

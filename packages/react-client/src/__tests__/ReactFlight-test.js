@@ -3786,6 +3786,53 @@ describe('ReactFlight', () => {
   });
 
   // @gate __DEV__
+  it('replays logs with errors that have no stack frames', async () => {
+    const error = new Error('inner');
+    error.stack = 'Error: inner';
+
+    function ServerComponent() {
+      console.log('hi', new AggregateError([error], 'aggregate'));
+      return null;
+    }
+
+    function App() {
+      return ReactServer.createElement(ServerComponent);
+    }
+
+    // These tests are specifically testing console.log.
+    // Assign to `mockConsoleLog` so we can still inspect it when `console.log`
+    // is overridden by the test modules. The original function will be restored
+    // after this test finishes by `jest.restoreAllMocks()`.
+    const mockConsoleLog = spyOnDevAndProd(console, 'log').mockImplementation(
+      () => {},
+    );
+
+    // Reset the modules so that we get a new overridden console on top of the
+    // one installed by expect. This ensures that we still emit console.error
+    // calls.
+    jest.resetModules();
+    jest.mock('react', () => require('react/react.react-server'));
+    ReactServer = require('react');
+    ReactNoopFlightServer = require('react-noop-renderer/flight-server');
+    const transport = ReactNoopFlightServer.render({
+      root: ReactServer.createElement(App),
+    });
+
+    expect(mockConsoleLog).toHaveBeenCalledTimes(1);
+    mockConsoleLog.mockClear();
+
+    await ReactNoopFlightClient.read(transport);
+
+    expect(mockConsoleLog).toHaveBeenCalledTimes(1);
+    expect(mockConsoleLog.mock.calls[0][0]).toBe('hi');
+    const aggregateError = mockConsoleLog.mock.calls[0][1];
+    expect(aggregateError).toBeInstanceOf(AggregateError);
+    expect(aggregateError.message).toBe('aggregate');
+    expect(aggregateError.errors).toHaveLength(1);
+    expect(aggregateError.errors[0].message).toBe('inner');
+  });
+
+  // @gate __DEV__
   it('replays logs with large strings replaced by a placeholder', async () => {
     // This string exceeds the threshold for debug string length. Reconstructing
     // a multi-megabyte string on the client when replaying the log would block
