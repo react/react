@@ -29,6 +29,7 @@ import {
   SyntheticPointerEvent,
   SyntheticSubmitEvent,
   SyntheticToggleEvent,
+  SyntheticCommandEvent,
 } from '../../events/SyntheticEvent';
 
 import {
@@ -168,6 +169,9 @@ function extractEvents(
     case 'submit':
       SyntheticEventCtor = SyntheticSubmitEvent;
       break;
+    case 'command':
+      SyntheticEventCtor = SyntheticCommandEvent;
+      break;
     case 'toggle':
     case 'beforetoggle':
       // MDN claims <details> should not receive ToggleEvent contradicting the spec: https://html.spec.whatwg.org/multipage/indices.html#event-toggle
@@ -215,7 +219,8 @@ function extractEvents(
       (domEventName === 'scroll' ||
         domEventName === 'scrollend' ||
         domEventName === 'toggle' ||
-        domEventName === 'beforetoggle');
+        domEventName === 'beforetoggle' ||
+        domEventName === 'command');
 
     const listeners = accumulateSinglePhaseListeners(
       targetInst,
