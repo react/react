@@ -81,4 +81,48 @@ describe('ErrorBoundaryReconciliation', () => {
 
   it('getDerivedStateFromError can recover by rendering an element of a different type', () =>
     sharedTest(GetDerivedErrorBoundary, 'div'));
+
+  it('pass-through error boundaries do not cause infinite loops if error was triggered in state update from an Effect', async () => {
+    let renders = 0;
+    class ErrorBoundary extends React.Component {
+      state = {error: null};
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+      render() {
+        // Not valid React code. This is just for this test to ensure we don't render infinitely.
+        if (renders > 1000) {
+          return null;
+        }
+        renders++;
+
+        // In product code, this error boundary may just handle specific errors and "rethrow" unexpected errors.
+        return this.props.children;
+      }
+    }
+
+    function DeferredThrower() {
+      const [shouldThrow, setShouldThrow] = React.useState(false);
+      React.useEffect(() => {
+        setShouldThrow(true);
+      }, []);
+
+      if (shouldThrow) {
+        throw new Error('Boom!');
+      }
+
+      return null;
+    }
+
+    await act(() => {
+      ReactTestRenderer.create(
+        <ErrorBoundary>
+          <DeferredThrower />
+        </ErrorBoundary>,
+        {unstable_isConcurrent: true},
+      );
+    });
+
+    expect(renders).toBeLessThan(1000);
+  });
 });
