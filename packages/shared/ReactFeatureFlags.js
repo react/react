@@ -168,9 +168,6 @@ export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 
 export const enableConditionalUseWarning: boolean = true;
 
-export const enableFragmentRefsInstanceHandles: boolean = true;
-export const enableFragmentRefsTextNodes: boolean = true;
-
 export const enableInternalInstanceMap: boolean = false;
 
 // -----------------------------------------------------------------------------

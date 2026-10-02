@@ -22,7 +22,6 @@ import {
   commitNewChildToFragmentInstance,
   deleteChildFromFragmentInstance,
 } from './ReactFiberConfig';
-import {enableFragmentRefsTextNodes} from 'shared/ReactFeatureFlags';
 
 export function commitNewChildToFragmentInstances(
   fiber: Fiber,
@@ -31,7 +30,7 @@ export function commitNewChildToFragmentInstances(
   if (
     (fiber.tag !== HostComponent &&
       fiber.tag !== HostSingleton &&
-      !(enableFragmentRefsTextNodes && fiber.tag === HostText)) ||
+      fiber.tag !== HostText) ||
     // Only run fragment insertion effects for initial insertions
     fiber.alternate !== null ||
     parentFragmentInstances === null

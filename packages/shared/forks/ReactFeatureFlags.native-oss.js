@@ -74,9 +74,6 @@ export const enableHydrationChangeEvent: boolean = false;
 export const enableDefaultTransitionIndicator: boolean = false;
 export const ownerStackLimit = 1e4;
 
-export const enableFragmentRefsInstanceHandles: boolean = true;
-export const enableFragmentRefsTextNodes: boolean = true;
-
 export const enableInternalInstanceMap: boolean = false;
 
 export const enableOptimisticKey: boolean = false;

@@ -41,10 +41,6 @@ import {
   type PublicTextInstance,
   type PublicRootInstance,
 } from 'react-native/react-private-interface';
-import {
-  enableFragmentRefsInstanceHandles,
-  enableFragmentRefsTextNodes,
-} from 'shared/ReactFeatureFlags';
 
 const {
   createNode,
@@ -860,13 +856,11 @@ function addFragmentHandleToFiber(
   child: Fiber,
   fragmentInstance: FragmentInstanceType,
 ): boolean {
-  if (enableFragmentRefsInstanceHandles) {
-    const instance = getPublicInstanceFromHostFiber(
-      child,
-    ) as any as PublicInstanceWithFragmentHandles;
-    if (instance != null) {
-      addFragmentHandleToInstance(instance, fragmentInstance);
-    }
+  const instance = getPublicInstanceFromHostFiber(
+    child,
+  ) as any as PublicInstanceWithFragmentHandles;
+  if (instance != null) {
+    addFragmentHandleToInstance(instance, fragmentInstance);
   }
   return false;
 }
@@ -875,25 +869,21 @@ function addFragmentHandleToInstance(
   instance: PublicInstanceWithFragmentHandles,
   fragmentInstance: FragmentInstanceType,
 ): void {
-  if (enableFragmentRefsInstanceHandles) {
-    if (instance.reactFragments == null) {
-      instance.reactFragments = new Set();
-    }
-    instance.reactFragments.add(fragmentInstance);
+  if (instance.reactFragments == null) {
+    instance.reactFragments = new Set();
   }
+  instance.reactFragments.add(fragmentInstance);
 }
 
 export function createFragmentInstance(
   fragmentFiber: Fiber,
 ): FragmentInstanceType {
   const fragmentInstance = new (FragmentInstance as any)(fragmentFiber);
-  if (enableFragmentRefsInstanceHandles) {
-    traverseFragmentInstancesAndTextInstances(
-      fragmentFiber,
-      addFragmentHandleToFiber,
-      fragmentInstance,
-    );
-  }
+  traverseFragmentInstancesAndTextInstances(
+    fragmentFiber,
+    addFragmentHandleToFiber,
+    fragmentInstance,
+  );
   return fragmentInstance;
 }
 
@@ -909,7 +899,7 @@ export function commitNewChildToFragmentInstance(
   fragmentInstance: FragmentInstanceType,
 ): void {
   // Text nodes are not observable
-  if (enableFragmentRefsTextNodes && childInstance.canonical == null) {
+  if (childInstance.canonical == null) {
     return;
   }
   const instance: Instance = childInstance as any;
@@ -924,12 +914,10 @@ export function commitNewChildToFragmentInstance(
       observer.observe(publicInstance);
     });
   }
-  if (enableFragmentRefsInstanceHandles) {
-    addFragmentHandleToInstance(
-      publicInstance as any as PublicInstanceWithFragmentHandles,
-      fragmentInstance,
-    );
-  }
+  addFragmentHandleToInstance(
+    publicInstance as any as PublicInstanceWithFragmentHandles,
+    fragmentInstance,
+  );
 }
 
 export function deleteChildFromFragmentInstance(
@@ -937,17 +925,15 @@ export function deleteChildFromFragmentInstance(
   fragmentInstance: FragmentInstanceType,
 ): void {
   // Text nodes are not observable
-  if (enableFragmentRefsTextNodes && childInstance.canonical == null) {
+  if (childInstance.canonical == null) {
     return;
   }
   const instance: Instance = childInstance as any;
   const publicInstance = getPublicInstance(
     instance,
   ) as any as PublicInstanceWithFragmentHandles;
-  if (enableFragmentRefsInstanceHandles) {
-    if (publicInstance.reactFragments != null) {
-      publicInstance.reactFragments.delete(fragmentInstance);
-    }
+  if (publicInstance.reactFragments != null) {
+    publicInstance.reactFragments.delete(fragmentInstance);
   }
 }
 
