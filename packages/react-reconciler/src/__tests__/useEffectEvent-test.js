@@ -1326,4 +1326,38 @@ describe('useEffectEvent', () => {
         : ['insertion destroy: 2', 'insertion create: 2', 'layout create: 2']),
     ]);
   });
+
+  it('can still call useEffectEvent after a fatal render error escapes the work loop', async () => {
+    let onEvent;
+    function Probe() {
+      onEvent = useEffectEvent(() => {
+        Scheduler.log('effect event');
+      });
+      return <Text text="Probe" />;
+    }
+
+    function Poisoned() {
+      throw {
+        get then() {
+          throw new Error('poisoned thenable getter');
+        },
+      };
+    }
+
+    function App({crash}) {
+      return crash ? <Poisoned /> : <Probe />;
+    }
+
+    ReactNoop.render(<App crash={false} />);
+    await waitForAll(['Probe']);
+    expect(() => onEvent()).not.toThrow();
+    assertLog(['effect event']);
+
+    await expect(act(() => {
+      ReactNoop.render(<App crash={true} />);
+    })).rejects.toThrow('poisoned thenable getter');
+
+    expect(() => onEvent()).not.toThrow();
+    assertLog(['effect event']);
+  });
 });
