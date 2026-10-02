@@ -338,19 +338,20 @@ impl<'a> MergeTransform<'a> {
             return Ok(());
         }
 
-        let mut next_instructions: Vec<ReactiveStatement> = Vec::new();
-        let mut index = 0;
         let all_stmts: Vec<ReactiveStatement> = std::mem::take(block);
+        let mut next_instructions: Vec<ReactiveStatement> = Vec::with_capacity(all_stmts.len());
+        let mut stmts = all_stmts.into_iter();
+        let mut index = 0;
 
         for entry in &merged {
             // Push everything before the merge range
             while index < entry.from {
-                next_instructions.push(all_stmts[index].clone());
+                next_instructions.push(stmts.next().unwrap());
                 index += 1;
             }
             // The first item in the merge range must be a scope
-            let mut merged_scope = match &all_stmts[entry.from] {
-                ReactiveStatement::Scope(s) => s.clone(),
+            let mut merged_scope = match stmts.next().unwrap() {
+                ReactiveStatement::Scope(scope) => scope,
                 _ => {
                     return Err(react_compiler_diagnostics::CompilerDiagnostic::new(
                         react_compiler_diagnostics::ErrorCategory::Invariant,
@@ -362,29 +363,25 @@ impl<'a> MergeTransform<'a> {
             };
             index += 1;
             while index < entry.to {
-                let stmt = &all_stmts[index];
+                let stmt = stmts.next().unwrap();
                 index += 1;
                 match stmt {
                     ReactiveStatement::Scope(inner_scope) => {
-                        merged_scope
-                            .instructions
-                            .extend(inner_scope.instructions.clone());
+                        let inner_scope_id = inner_scope.scope;
+                        merged_scope.instructions.extend(inner_scope.instructions);
                         self.env.scopes[merged_scope.scope.0 as usize]
                             .merged
-                            .push(inner_scope.scope);
+                            .push(inner_scope_id);
                     }
-                    _ => {
-                        merged_scope.instructions.push(stmt.clone());
+                    stmt => {
+                        merged_scope.instructions.push(stmt);
                     }
                 }
             }
             next_instructions.push(ReactiveStatement::Scope(merged_scope));
         }
         // Push remaining
-        while index < all_stmts.len() {
-            next_instructions.push(all_stmts[index].clone());
-            index += 1;
-        }
+        next_instructions.extend(stmts);
 
         *block = next_instructions;
         Ok(())
