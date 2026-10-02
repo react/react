@@ -135,6 +135,12 @@ interface ExtensionAPI {
   storage: $FlowFixMe;
   /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabs} */
   tabs: ExtensionTabs;
+  /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/webNavigation} */
+  webNavigation: {
+    onCommitted: ExtensionEvent<
+      (details: {tabId: number, frameId: number}) => void,
+    >,
+  };
 }
 
 declare const chrome: ExtensionAPI;
