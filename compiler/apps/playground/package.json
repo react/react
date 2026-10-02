@@ -54,7 +54,7 @@
     "eslint": "^8.28.0",
     "eslint-config-next": "15.5.2",
     "monaco-editor-webpack-plugin": "^7.1.0",
-    "postcss": "^8.4.31",
+    "postcss": "^8.5.23",
     "tailwindcss": "^3.2.4",
     "wait-on": "^7.2.0"
   },
