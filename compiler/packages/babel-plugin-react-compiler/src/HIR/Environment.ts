@@ -507,6 +507,16 @@ export const EnvironmentConfigSchema = z.object({
    * 3. Force update / external sync - should use useSyncExternalStore
    */
   enableVerboseNoSetStateInEffect: z.boolean().default(false),
+
+  /**
+   * When enabled, the compiler emits `!Object.is(a, b)` instead of `a !== b`
+   * for dependency comparisons in memoized scopes. This matches the comparison
+   * semantics used by React's own hooks (useState, useMemo, etc.), which use
+   * Object.is. The main difference is in handling of NaN: `NaN !== NaN` is
+   * always true (causing memos to never be reused), while
+   * `Object.is(NaN, NaN)` is true (correctly treating NaN as unchanged).
+   */
+  enableObjectIsComparison: z.boolean().default(false),
 });
 
 export type EnvironmentConfig = z.infer<typeof EnvironmentConfigSchema>;
