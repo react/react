@@ -1,0 +1,82 @@
+name: (Shared) Close empty issues
+
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: close-empty-issues
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/github-script@v8
+        env:
+          DRY_RUN: 'true' # Change to 'false' after reviewing candidate logs.
+        with:
+          script: |
+            const repo = context.repo;
+            const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+
+            const normalize = text => (text ?? '')
+              .replace(/<!--[\s\S]*?-->/g, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+
+            // Match the untouched Markdown bug template, not incomplete reports.
+            const emptyTemplate = normalize(`
+              React version:
+              ## Steps To Reproduce
+              1.
+              2.
+              Link to code example:
+              ## The current behavior
+              ## The expected behavior
+            `);
+
+            function eligible(issue) {
+              const body = normalize(issue.body);
+              return !issue.pull_request &&
+                issue.state === 'open' &&
+                /^bug:\s*$/i.test(issue.title.trim()) &&
+                (body === '' || body === emptyTemplate) &&
+                issue.comments === 0 &&
+                issue.assignees.length === 0 &&
+                !issue.milestone &&
+                issue.labels.every(label =>
+                  label.name === 'Status: Unconfirmed'
+                ) &&
+                Date.parse(issue.updated_at) < cutoff;
+            }
+
+            const candidates = [];
+            for await (const page of github.paginate.iterator(
+              github.rest.issues.listForRepo,
+              {...repo, state: 'open', per_page: 100}
+            )) {
+              candidates.push(...page.data.filter(eligible));
+            }
+
+            for (const candidate of candidates.slice(0, 50)) {
+              // Recheck in case someone supplied details during this run.
+              const {data: issue} = await github.rest.issues.get({
+                ...repo, issue_number: candidate.number
+              });
+              if (!eligible(issue)) continue;
+
+              core.info(`Empty issue: ${issue.html_url}`);
+              if (process.env.DRY_RUN !== 'false') continue;
+
+              await github.rest.issues.update({
+                ...repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+            }
