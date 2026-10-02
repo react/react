@@ -410,6 +410,11 @@ function* generateInstructionTypes(
       break;
     }
 
+    case 'NonNullExpression': {
+      yield equation(left, value.value.identifier.type);
+      break;
+    }
+
     case 'TypeCastExpression': {
       yield equation(left, value.value.identifier.type);
       break;

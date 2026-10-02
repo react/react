@@ -2762,8 +2762,16 @@ function lowerExpression(
         loc: expr.node.loc ?? GeneratedSource,
       };
     }
-    case 'TSInstantiationExpression':
     case 'TSNonNullExpression': {
+      let expr = exprPath as NodePath<t.TSNonNullExpression>;
+      const value = lowerExpressionToTemporary(builder, expr.get('expression'));
+      return {
+        kind: 'NonNullExpression',
+        value,
+        loc: exprLoc,
+      };
+    }
+    case 'TSInstantiationExpression': {
       let expr = exprPath as NodePath<t.TSNonNullExpression>;
       return lowerExpression(builder, expr.get('expression'));
     }

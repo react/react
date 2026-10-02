@@ -363,6 +363,15 @@ export class DebugPrinter {
         this.line('}');
         break;
       }
+      case 'NonNullExpression': {
+        this.line('NonNullExpression {');
+        this.indent();
+        this.formatPlaceField('value', instrValue.value);
+        this.line(`loc: ${this.formatLoc(instrValue.loc)}`);
+        this.dedent();
+        this.line('}');
+        break;
+      }
       case 'JsxExpression': {
         this.line('JsxExpression {');
         this.indent();

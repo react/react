@@ -2259,6 +2259,7 @@ function computeSignatureForInstruction(
       effects.push({kind: 'Assign', from: value.value, into: lvalue});
       break;
     }
+    case 'NonNullExpression':
     case 'TypeCastExpression': {
       effects.push({kind: 'Assign', from: value.value, into: lvalue});
       break;
