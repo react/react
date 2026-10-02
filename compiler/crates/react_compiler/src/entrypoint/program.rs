@@ -1191,6 +1191,8 @@ fn convert_loc(loc: &react_compiler_ast::common::SourceLocation) -> SourceLocati
             column: loc.end.column,
             index: loc.end.index,
         },
+        start_offset: None,
+        end_offset: None,
     }
 }
 
