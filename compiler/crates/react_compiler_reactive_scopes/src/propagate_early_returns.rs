@@ -249,6 +249,7 @@ fn apply_early_return_to_scope(
                     loc: None, // GeneratedSource
                 },
                 property: PropertyLiteral::String("for".to_string()),
+                computed: false,
                 loc,
             }),
             effects: None,

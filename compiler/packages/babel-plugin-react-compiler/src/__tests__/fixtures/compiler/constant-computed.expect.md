@@ -27,8 +27,8 @@ function Component(props) {
   let x;
   if ($[0] !== props.foo) {
     x = {};
-    x.foo = x.foo + x.bar;
-    x.foo(props.foo);
+    x["foo"] = x["foo"] + x["bar"];
+    x["foo"](props.foo);
     $[0] = props.foo;
     $[1] = x;
   } else {
