@@ -200,7 +200,14 @@ export default class HIRBuilder {
     path: NodePath<t.Identifier | t.JSXIdentifier>,
   ): Binding | null {
     const originalName = path.node.name;
-    const binding = path.scope.getBinding(originalName);
+    /*
+     * A function declaration's id is bound in its parent scope. Its own scope
+     * may contain a parameter or local that shadows the declaration name.
+     */
+    const binding =
+      path.parentPath?.isFunctionDeclaration() && path.key === 'id'
+        ? path.scope.parent?.getBinding(originalName)
+        : path.scope.getBinding(originalName);
     if (binding == null) {
       return null;
     }
