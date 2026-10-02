@@ -3136,7 +3136,7 @@ describe('InspectedElement', () => {
         expect(store.getElementIDAtIndex(1)).toBe(null);
       });
 
-      // Inpsect <ErrorBoundary /> to toggle off the error state
+      // Inspect <ErrorBoundary /> to toggle off the error state
       inspectedElement = await inspect(0);
       expect(inspectedElement.canToggleError).toBe(true);
       expect(inspectedElement.isErrored).toBe(true);

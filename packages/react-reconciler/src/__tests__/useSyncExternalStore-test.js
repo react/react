@@ -162,7 +162,7 @@ describe('useSyncExternalStore', () => {
         const refC = useRef(null);
         useLayoutEffect(() => {
           // This layout effect reads children that depend on an external store.
-          // This demostrates whether the children are consistent when the
+          // This demonstrates whether the children are consistent when the
           // layout phase runs.
           const aText = refA.current;
           const bText = refB.current;

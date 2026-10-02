@@ -91,7 +91,7 @@ function validateNoSetStateInRenderImpl(
                 isSetStateType(operand.identifier) ||
                 unconditionalSetStateFunctions.has(operand.identifier.id),
             ) &&
-            // if yes, does it unconditonally call it?
+            // if yes, does it unconditionally call it?
             validateNoSetStateInRenderImpl(
               instr.value.loweredFunc.func,
               unconditionalSetStateFunctions,
