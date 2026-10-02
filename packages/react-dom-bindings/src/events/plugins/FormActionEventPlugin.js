@@ -67,13 +67,16 @@ function extractEvents(
     return;
   }
   const formInst = maybeTargetInst;
+  
+  // Combined the React main branch typing (`as any`) with your custom autoReset property
   const form: HTMLFormElement = nativeEventTarget as any;
-  let action = coerceFormActionProp(
-    (getFiberCurrentPropsFromNode(form) as any).action,
-  );
+  const formProps = getFiberCurrentPropsFromNode(form) as any;
+  let action = coerceFormActionProp(formProps.action);
+  const autoReset: boolean = formProps.autoReset !== false;
   let submitter: null | void | HTMLInputElement | HTMLButtonElement = (
     nativeEvent as any
   ).submitter;
+
   let submitterAction;
   if (submitter) {
     const submitterProps = getFiberCurrentPropsFromNode(submitter);
@@ -125,6 +128,7 @@ function extractEvents(
           // the action.
           null,
           formData,
+          autoReset,
         );
       } else {
         // No earlier event scheduled a transition. Exit without setting a
@@ -145,7 +149,7 @@ function extractEvents(
       if (__DEV__) {
         Object.freeze(pendingState);
       }
-      startHostTransition(formInst, pendingState, action, formData);
+      startHostTransition(formInst, pendingState, action, formData, autoReset);
     } else {
       // No earlier event prevented the default submission, and no action was
       // provided. Exit without setting a pending form status.
@@ -181,5 +185,7 @@ export function dispatchReplayedFormAction(
   if (__DEV__) {
     Object.freeze(pendingState);
   }
-  startHostTransition(formInst, pendingState, action, formData);
+  const autoReset: boolean =
+    (getFiberCurrentPropsFromNode(form): any).autoReset !== false;
+  startHostTransition(formInst, pendingState, action, formData, autoReset);
 }
