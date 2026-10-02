@@ -255,6 +255,47 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(errors).toEqual(['This operation was aborted']);
   });
 
+  it('does not lose a sibling task slot when replaying a suspended call site during abort', async () => {
+    const promise = new Promise(() => {});
+    const controller = new AbortController();
+    let shouldSuspend = true;
+
+    function ConditionalSuspend() {
+      if (shouldSuspend) {
+        React.use(promise);
+      }
+      return <div>resolved</div>;
+    }
+
+    // Keep a second task suspended at child index 1.
+    const LazyPending = React.lazy(() => promise);
+
+    const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(
+      <div>
+        <Suspense fallback={<div>Loading</div>}>
+          <ConditionalSuspend />
+          <LazyPending />
+        </Suspense>
+      </div>,
+      {
+        signal: controller.signal,
+        onError() {},
+      },
+    );
+
+    await jest.runAllTimers();
+
+    // The DEV abort replay can now complete the task at child index 0.
+    shouldSuspend = false;
+    controller.abort();
+    await jest.runAllTimers();
+
+    const {prelude} = await resultPromise;
+    const content = await readContent(prelude);
+    expect(content).toContain('Loading');
+    expect(content).not.toContain('resolved');
+  });
+
   it('should resolve an empty shell if aborting before the shell is complete', async () => {
     const errors = [];
     const controller = new AbortController();
