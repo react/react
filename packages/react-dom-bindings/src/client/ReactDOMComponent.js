@@ -82,6 +82,7 @@ import {
 
 let didWarnControlledToUncontrolled = false;
 let didWarnUncontrolledToControlled = false;
+let didWarnTextareaUncontrolledToControlled = false;
 let didWarnFormActionType = false;
 let didWarnFormActionName = false;
 let didWarnFormActionTarget = false;
@@ -1849,6 +1850,22 @@ export function updateProperties(
                 );
             }
           }
+        }
+      }
+      if (__DEV__) {
+        if (
+          lastProps.value == null &&
+          nextProps.value != null &&
+          !didWarnTextareaUncontrolledToControlled
+        ) {
+          console.error(
+            'A component is changing an uncontrolled textarea to be controlled. ' +
+              'This is likely caused by the value changing from undefined to ' +
+              'a defined value, which should not happen. ' +
+              'Decide between using a controlled or uncontrolled textarea ' +
+              'element for the lifetime of the component. More info: https://react.dev/link/controlled-components',
+          );
+          didWarnTextareaUncontrolledToControlled = true;
         }
       }
       updateTextarea(domElement, value, defaultValue);
