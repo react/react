@@ -21,39 +21,43 @@ function Component({foo}) {
 ## Error
 
 ```
-Found 3 errors:
+Found 2 errors:
 
-Todo: Support destructuring of context variables
+Error: Cannot reassign variable after render completes
 
-error.todo-reassign-const.ts:3:20
-  1 | import {Stringify} from 'shared-runtime';
-  2 |
-> 3 | function Component({foo}) {
-    |                     ^^^
-  4 |   let bar = foo.bar;
-  5 |   return (
-  6 |     <Stringify
-
-Todo: Support destructuring of context variables
-
-error.todo-reassign-const.ts:3:20
-  1 | import {Stringify} from 'shared-runtime';
-  2 |
-> 3 | function Component({foo}) {
-    |                     ^^^
-  4 |   let bar = foo.bar;
-  5 |   return (
-  6 |     <Stringify
-
-Error: This value cannot be modified
-
-Modifying component props or hook arguments is not allowed. Consider using a local variable instead.
+Reassigning `foo` after render has completed can cause inconsistent behavior on subsequent renders. Consider using state instead.
 
 error.todo-reassign-const.ts:8:8
    6 |     <Stringify
    7 |       handler={() => {
 >  8 |         foo = true;
-     |         ^^^ `foo` cannot be modified
+     |         ^^^ Cannot reassign `foo` after render completes
+   9 |       }}
+  10 |     />
+  11 |   );
+
+Error: Cannot modify local variables after render completes
+
+This argument is a function which may reassign or mutate `foo` after render, which can cause inconsistent behavior on subsequent renders. Consider using state instead.
+
+error.todo-reassign-const.ts:7:15
+   5 |   return (
+   6 |     <Stringify
+>  7 |       handler={() => {
+     |                ^^^^^^^
+>  8 |         foo = true;
+     | ^^^^^^^^^^^^^^^^^^^
+>  9 |       }}
+     | ^^^^^^^^ This function may (indirectly) reassign or modify `foo` after render
+  10 |     />
+  11 |   );
+  12 | }
+
+error.todo-reassign-const.ts:8:8
+   6 |     <Stringify
+   7 |       handler={() => {
+>  8 |         foo = true;
+     |         ^^^ This modifies `foo`
    9 |       }}
   10 |     />
   11 |   );
