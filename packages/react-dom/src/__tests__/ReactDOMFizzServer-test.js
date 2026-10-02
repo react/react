@@ -498,6 +498,146 @@ describe('ReactDOMFizzServer', () => {
   });
 
   // @gate enableBrowserAPI
+  it('keeps the server fallback if browser-only content suspends on the client', async () => {
+    let clientPromise = null;
+    let resolveClientText;
+    function getClientText() {
+      if (clientPromise === null) {
+        clientPromise = new Promise(resolve => {
+          resolveClientText = resolve;
+        });
+      }
+      return clientPromise;
+    }
+    const browserOnly = ReactDOM.browser();
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const text = use(getClientText());
+      Scheduler.log(text);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<p>Loading...</p>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    expect(clientPromise).toBe(null);
+    const serverFallback = container.getElementsByTagName('p')[0];
+    expect(serverFallback.textContent).toBe('Loading...');
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+    jest.runAllTimers();
+
+    // The client render suspended on a promise created on the client. The
+    // fallback that was rendered by the server should stay in place instead
+    // of being replaced by an identical client fallback.
+    expect(clientPromise).not.toBe(null);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p>Loading...</p>
+      </div>,
+    );
+    expect(container.getElementsByTagName('p')[0]).toBe(serverFallback);
+
+    await clientAct(() => {
+      resolveClientText('Loaded');
+    });
+    assertLog(['Loaded']);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(serverFallback.isConnected).toBe(false);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loaded</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('replaces the server fallback if its props change while browser-only content is suspended', async () => {
+    let clientPromise = null;
+    let resolveClientText;
+    function getClientText() {
+      if (clientPromise === null) {
+        clientPromise = new Promise(resolve => {
+          resolveClientText = resolve;
+        });
+      }
+      return clientPromise;
+    }
+    const browserOnly = ReactDOM.browser();
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const text = use(getClientText());
+      Scheduler.log(text);
+      return <span>{text}</span>;
+    }
+
+    function App({fallbackText}) {
+      return (
+        <div>
+          <Suspense fallback={<p>{fallbackText}</p>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App fallbackText="Loading..." />);
+      pipe(writable);
+    });
+    const serverFallback = container.getElementsByTagName('p')[0];
+
+    const root = ReactDOMClient.hydrateRoot(
+      container,
+      <App fallbackText="Loading..." />,
+    );
+    await waitForAll([]);
+    jest.runAllTimers();
+    expect(container.getElementsByTagName('p')[0]).toBe(serverFallback);
+
+    // The fallback changed, so the server fallback is no longer up to date.
+    await clientAct(() => {
+      root.render(<App fallbackText="More loading..." />);
+    });
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p>More loading...</p>
+      </div>,
+    );
+    expect(serverFallback.isConnected).toBe(false);
+
+    await clientAct(() => {
+      resolveClientText('Loaded');
+    });
+    assertLog(['Loaded']);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loaded</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
   it('can opt a component into browser-only rendering after streaming the fallback', async () => {
     let resolveServerReady;
     const serverReady = new Promise(resolve => {
