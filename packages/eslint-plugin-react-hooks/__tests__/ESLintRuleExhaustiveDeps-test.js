@@ -1564,8 +1564,94 @@ const tests = {
         }
       `,
     },
+    {
+      code: normalizeIndent`
+        function Foo({ Component, Components }) {
+          React.useEffect(() => {
+            console.log(<Component />, <Components.Child />, <div />);
+          }, [Component, Components]);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function Foo() {
+          React.useEffect(() => {
+            console.log(<div />);
+          }, []);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function Foo({ Component }) {
+          React.useEffect(() => {
+            const render = function Render(Component) {
+              return <Component />;
+            };
+            console.log(render(null));
+          }, []);
+        }
+      `,
+    },
   ],
   invalid: [
+    {
+      code: normalizeIndent`
+        function Foo({ Component }) {
+          React.useEffect(() => {
+            console.log(<Component />);
+          }, []);
+        };
+      `,
+      errors: [
+        {
+          message:
+            "React Hook React.useEffect has a missing dependency: 'Component'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [Component]',
+              output: normalizeIndent`
+              function Foo({ Component }) {
+                React.useEffect(() => {
+                  console.log(<Component />);
+                }, [Component]);
+              };
+            `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function Foo({ Components }) {
+          React.useEffect(() => {
+            console.log(<Components.Child />);
+          }, []);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook React.useEffect has a missing dependency: 'Components'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [Components]',
+              output: normalizeIndent`
+              function Foo({ Components }) {
+                React.useEffect(() => {
+                  console.log(<Components.Child />);
+                }, [Components]);
+              }
+            `,
+            },
+          ],
+        },
+      ],
+    },
     {
       code: normalizeIndent`
         function MyComponent(props) {
@@ -8507,38 +8593,7 @@ const testsTypescript = {
 // Tests that are only valid/invalid for `@typescript-eslint/parser@4.x`
 const testsTypescriptEslintParserV4 = {
   valid: [],
-  invalid: [
-    // TODO: Should also be invalid as part of the JS test suite i.e. be invalid with babel eslint parsers.
-    // It doesn't use any explicit types but any JS is still valid TS.
-    {
-      code: normalizeIndent`
-        function Foo({ Component }) {
-          React.useEffect(() => {
-            console.log(<Component />);
-          }, []);
-        };
-      `,
-      errors: [
-        {
-          message:
-            "React Hook React.useEffect has a missing dependency: 'Component'. " +
-            'Either include it or remove the dependency array.',
-          suggestions: [
-            {
-              desc: 'Update the dependencies array to be: [Component]',
-              output: normalizeIndent`
-              function Foo({ Component }) {
-                React.useEffect(() => {
-                  console.log(<Component />);
-                }, [Component]);
-              };
-            `,
-            },
-          ],
-        },
-      ],
-    },
-  ],
+  invalid: [],
 };
 
 // For easier local testing
