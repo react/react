@@ -1696,8 +1696,16 @@ export function cancelRootViewTransitionName(rootContainer: Container): void {
     // on this one as that would apply to all running transitions. This lets animations
     // that are running to block clicks so that they don't end up incorrectly hitting
     // whatever is below the animation.
+    // We also pin it to the left edge. In a dir="rtl" document the UA positions
+    // it with `right: 0` so a zero width box would shift the whole transition
+    // over by the width of the viewport.
     documentElement.animate(
-      {width: [0, 0], height: [0, 0]},
+      {
+        width: [0, 0],
+        height: [0, 0],
+        left: ['0px', '0px'],
+        right: ['auto', 'auto'],
+      },
       // $FlowFixMe[incompatible-call]
       // $FlowFixMe[incompatible-type]
       {
