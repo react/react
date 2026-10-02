@@ -249,6 +249,43 @@ describe('ReactDOMViewTransition', () => {
     });
 
     // @gate enableViewTransition
+    it.each([
+      'Transition was aborted because of invalid state. Document hidden',
+      'Skipped ViewTransition due to document being hidden',
+    ])('does not report skipped ViewTransitions: %s', async message => {
+      const recoverableErrors = [];
+      document.startViewTransition = function ({update}) {
+        update();
+        return {
+          ready: Promise.reject(new DOMException(message, 'InvalidStateError')),
+          finished: Promise.resolve(),
+          skipTransition() {},
+        };
+      };
+
+      function App({text}) {
+        return (
+          <ViewTransition>
+            <div>{text}</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error);
+        },
+      });
+
+      await act(() => root.render(<App text="before" />));
+      await act(() => {
+        startTransition(() => root.render(<App text="after" />));
+      });
+
+      expect(recoverableErrors).toEqual([]);
+    });
+
+    // @gate enableViewTransition
     it('fires onEnter when a ViewTransition mounts', async () => {
       const onEnter = jest.fn();
       const startViewTransitionSpy = jest.fn(document.startViewTransition);
