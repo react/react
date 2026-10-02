@@ -1886,7 +1886,11 @@ function subscribeToStore<T>(
   inst: StoreInstance<T>,
   subscribe: (() => void) => () => void,
 ): any {
+  let isSubscribed = true;
   const handleStoreChange = () => {
+    if (!isSubscribed) {
+      return;
+    }
     // The store changed. Check if the snapshot changed since the last time we
     // read from the store.
     if (checkIfSnapshotChanged(inst)) {
@@ -1896,7 +1900,11 @@ function subscribeToStore<T>(
     }
   };
   // Subscribe to the store and return a clean-up function.
-  return subscribe(handleStoreChange);
+  const unsubscribe = subscribe(handleStoreChange);
+  return () => {
+    isSubscribed = false;
+    unsubscribe();
+  };
 }
 
 function checkIfSnapshotChanged<T>(inst: StoreInstance<T>): boolean {
