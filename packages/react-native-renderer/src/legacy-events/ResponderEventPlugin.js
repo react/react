@@ -702,10 +702,16 @@ const ResponderEventPlugin = {
     eventSystemFlags,
   ) {
     if (isStartish(topLevelType)) {
-      trackedTouchCount += 1;
+      // A single native event can carry several touches (Fabric coalesces
+      // them per target view), so count active touches, not events.
+      trackedTouchCount = nativeEvent.touches
+        ? nativeEvent.touches.length
+        : trackedTouchCount + 1;
     } else if (isEndish(topLevelType)) {
       if (trackedTouchCount >= 0) {
-        trackedTouchCount -= 1;
+        trackedTouchCount = nativeEvent.touches
+          ? nativeEvent.touches.length
+          : Math.max(0, trackedTouchCount - 1);
       } else {
         if (__DEV__) {
           console.warn(
