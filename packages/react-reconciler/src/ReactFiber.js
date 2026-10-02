@@ -389,22 +389,10 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   workInProgress.memoizedState = current.memoizedState;
   workInProgress.updateQueue = current.updateQueue;
 
-  // Clone the dependencies object. This is mutated during the render phase, so
-  // it cannot be shared with the current fiber.
-  const currentDependencies = current.dependencies;
-  workInProgress.dependencies =
-    currentDependencies === null
-      ? null
-      : __DEV__
-        ? {
-            lanes: currentDependencies.lanes,
-            firstContext: currentDependencies.firstContext,
-            _debugThenableState: currentDependencies._debugThenableState,
-          }
-        : {
-            lanes: currentDependencies.lanes,
-            firstContext: currentDependencies.firstContext,
-          };
+  // The dependencies object is never mutated during the render phase (a fiber
+  // that re-renders gets a fresh object in prepareToReadContext/readContext),
+  // so it can be shared with the current fiber.
+  workInProgress.dependencies = current.dependencies;
 
   // These will be overridden during the parent's reconciliation
   workInProgress.sibling = current.sibling;
@@ -498,22 +486,9 @@ export function resetWorkInProgress(
       workInProgress.key = current.key;
     }
 
-    // Clone the dependencies object. This is mutated during the render phase, so
-    // it cannot be shared with the current fiber.
-    const currentDependencies = current.dependencies;
-    workInProgress.dependencies =
-      currentDependencies === null
-        ? null
-        : __DEV__
-          ? {
-              lanes: currentDependencies.lanes,
-              firstContext: currentDependencies.firstContext,
-              _debugThenableState: currentDependencies._debugThenableState,
-            }
-          : {
-              lanes: currentDependencies.lanes,
-              firstContext: currentDependencies.firstContext,
-            };
+    // The dependencies object is never mutated during the render phase, so it
+    // can be shared with the current fiber. See createWorkInProgress.
+    workInProgress.dependencies = current.dependencies;
 
     if (enableProfilerTimer) {
       // Note: We don't reset the actualTime counts. It's useful to accumulate

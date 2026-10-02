@@ -33,6 +33,7 @@ export const {
   enableScrollEndPolyfill,
   enableFragmentRefsTextNodes,
   enableInternalInstanceMap,
+  enableMemoizedContextPropagation,
   enableParallelTransitions,
   enableViewTransitionParentEnterExit,
 } = dynamicFeatureFlags;
