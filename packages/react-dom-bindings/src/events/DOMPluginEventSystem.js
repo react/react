@@ -237,6 +237,7 @@ export const nonDelegatedEvents: Set<DOMEventName> = new Set([
   'beforetoggle',
   'cancel',
   'close',
+  'command',
   'invalid',
   'load',
   'scroll',
