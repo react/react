@@ -383,8 +383,14 @@ function lowerStatement(
       const hoistableIdentifiers: Set<t.Identifier> = new Set();
 
       for (const [, binding] of Object.entries(stmt.scope.bindings)) {
-        // refs to params are always valid / never need to be hoisted
-        if (binding.kind !== 'param') {
+        /**
+         * Refs to params are always valid / never need to be hoisted. This
+         * includes catch clause params (`catch (e) {...}`): Babel registers
+         * them as `let` bindings on the CatchClause scope, which is also the
+         * scope of the catch body block, but like function params they are
+         * initialized before the block body executes.
+         */
+        if (binding.kind !== 'param' && !binding.path.isCatchClause()) {
           hoistableIdentifiers.add(binding.identifier);
         }
       }
