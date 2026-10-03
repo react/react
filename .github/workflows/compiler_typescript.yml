@@ -2,17 +2,17 @@ name: (Compiler) TypeScript
 
 on:
   push:
-    branches: [main]
+    branches: [main, assigned ,labeled]
   pull_request:
     paths:
       - compiler/**
-      - .github/workflows/compiler_typescript.yml
+      
 
 permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
@@ -26,11 +26,11 @@ defaults:
 jobs:
   discover_yarn_workspaces:
     name: Discover yarn workspaces
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: set-matrix
         run: echo "matrix=$(find packages -mindepth 1 -maxdepth 1 -type d | sed 's!packages/!!g' | tr '\n' ',' | sed s/.$// | jq -Rsc '. / "," - [""]')" >> $GITHUB_OUTPUT
 
@@ -39,14 +39,14 @@ jobs:
     name: Lint babel-plugin-react-compiler
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: '.nvmrc'
           cache: yarn
           cache-dependency-path: compiler/yarn.lock
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: node_modules
         with:
           path: |
@@ -59,14 +59,14 @@ jobs:
   # Hardcoded to improve parallelism
   jest:
     name: Jest babel-plugin-react-compiler
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: '.nvmrc'
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: node_modules
         with:
           path: |
@@ -79,23 +79,23 @@ jobs:
   test:
     name: Test ${{ matrix.workspace_name }}
     needs: discover_yarn_workspaces
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         workspace_name: ${{ fromJSON(needs.discover_yarn_workspaces.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: '.nvmrc'
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: node_modules
         with:
           path: |
             **/node_modules
-          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/yarn.lock') }}
+          key: compiler-node_modules-v7-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - run: xvfb-run -a yarn workspace ${{ matrix.workspace_name }} test
