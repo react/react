@@ -495,6 +495,48 @@ describe('FragmentRefs', () => {
         expect(document.activeElement.id).toEqual('street');
         document.activeElement.blur();
       });
+
+      it('keeps focus on the same child when called twice inside a ShadowRoot', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        container.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(shadowRoot);
+
+        function Test() {
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                <a id="child-a" href="/">
+                  A
+                </a>
+                <a id="child-b" href="/">
+                  B
+                </a>
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        // Document.activeElement is retargeted to the host element, so the
+        // ShadowRoot is the only place the focused child is observable.
+        expect(shadowRoot.activeElement.id).toEqual('child-a');
+
+        // child-a is already focused, so focusing the Fragment again should
+        // leave focus where it is.
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        expect(shadowRoot.activeElement.id).toEqual('child-a');
+        shadowRoot.activeElement.blur();
+      });
     });
 
     describe('focusLast()', () => {
@@ -560,6 +602,46 @@ describe('FragmentRefs', () => {
           fragmentRef.current.focusLast();
         });
         expect(document.activeElement.id).toEqual('grandchild-b');
+      });
+
+      it('keeps focus on the same child when called twice inside a ShadowRoot', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        container.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(shadowRoot);
+
+        function Test() {
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                <a id="child-a" href="/">
+                  A
+                </a>
+                <a id="child-b" href="/">
+                  B
+                </a>
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          fragmentRef.current.focusLast();
+        });
+        expect(shadowRoot.activeElement.id).toEqual('child-b');
+
+        // child-b is already focused, so calling focusLast() again should
+        // leave focus where it is.
+        await act(() => {
+          fragmentRef.current.focusLast();
+        });
+        expect(shadowRoot.activeElement.id).toEqual('child-b');
+        shadowRoot.activeElement.blur();
       });
     });
 

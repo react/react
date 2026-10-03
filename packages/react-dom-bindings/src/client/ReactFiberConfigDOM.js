@@ -4842,8 +4842,16 @@ export function setFocusIfFocusable(
 
   // If this element is already the active element, it's focusable and already
   // focused. Calling .focus() on it would be a no-op (no focus event fires),
-  // so we short-circuit here.
-  if (element.ownerDocument.activeElement === element) {
+  // so we short-circuit here. Document.activeElement is retargeted to the
+  // shadow host inside a shadow tree and would never match, so compare
+  // against the root the element itself belongs to. getHoistableRoot types
+  // every DocumentFragment as a ShadowRoot, but only a real one has a host
+  // and an activeElement.
+  const root = getHoistableRoot(element);
+  if (
+    (root.nodeType === DOCUMENT_NODE || 'host' in root) &&
+    root.activeElement === element
+  ) {
     return true;
   }
 
