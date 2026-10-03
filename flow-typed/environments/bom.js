@@ -2029,7 +2029,7 @@ type TextDecoder$availableEncodings =
 declare class TextDecoder {
   constructor(
     encoding?: TextDecoder$availableEncodings,
-    options?: {fatal: boolean, ...}
+    options?: {fatal?: boolean, ignoreBOM?: boolean, ...}
   ): void;
   encoding: TextDecoder$availableEncodings;
   fatal: boolean;

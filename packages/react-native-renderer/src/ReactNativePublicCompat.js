@@ -9,14 +9,15 @@
 
 import type {Node} from './ReactNativeTypes';
 import type {ElementRef, ElementType} from 'react';
-import type {PublicInstance} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+import type {PublicInstance} from 'react-native/react-private-interface';
 
 // Modules provided by RN:
 import {
   getNodeFromPublicInstance,
   getNativeTagFromPublicInstance,
   getInternalInstanceHandleFromPublicInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+  fabricUIManager,
+} from 'react-native/react-private-interface';
 
 import {
   findHostInstance,
@@ -148,7 +149,7 @@ export function dispatchCommand(
   const node = getNodeFromPublicInstance(handle);
 
   if (node != null) {
-    nativeFabricUIManager.dispatchCommand(node, command, args);
+    fabricUIManager.dispatchCommand(node, command, args);
   } else {
     if (__DEV__) {
       console.error(
@@ -163,7 +164,7 @@ export function sendAccessibilityEvent(handle: any, eventType: string) {
   const node = getNodeFromPublicInstance(handle);
 
   if (node != null) {
-    nativeFabricUIManager.sendAccessibilityEvent(node, eventType);
+    fabricUIManager.sendAccessibilityEvent(node, eventType);
   } else {
     if (__DEV__) {
       console.error(

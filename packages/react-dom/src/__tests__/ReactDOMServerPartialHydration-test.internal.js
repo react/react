@@ -4300,4 +4300,136 @@ describe('ReactDOMServerPartialHydration', () => {
     root.unmount();
     expect(container.innerHTML).toEqual('<!--&--><!--/&-->');
   });
+
+  it('recovers when an update changes a dehydrated boundary inside a suspended parent boundary', async () => {
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+
+    function Sibling() {
+      if (suspend) {
+        throw promise;
+      }
+      return <span id="sibling">Sibling</span>;
+    }
+
+    function App({showSiblingOnMount}) {
+      const [showSibling, setShowSibling] = React.useState(false);
+      React.useEffect(() => {
+        if (showSiblingOnMount) {
+          // Not a transition: this update reaches the dehydrated inner
+          // boundary at default priority, before it has hydrated.
+          setShowSibling(true);
+        }
+      }, [showSiblingOnMount]);
+      return (
+        <div>
+          <Suspense fallback={null}>
+            {showSibling ? <Sibling /> : null}
+            <Suspense fallback={null}>
+              <span id="content">{showSibling ? 'b' : 'a'}</span>
+            </Suspense>
+          </Suspense>
+        </div>
+      );
+    }
+
+    // Don't suspend on the server.
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(
+      <App showSiblingOnMount={false} />,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    expect(container.textContent).toBe('a');
+
+    // Hydrate. The first effect mounts a suspending sibling in the outer
+    // boundary (so the outer boundary shows its fallback and its primary
+    // content is hidden), and at the same time changes the input of the
+    // inner boundary, which is still dehydrated.
+    suspend = true;
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App showSiblingOnMount={true} />);
+    });
+
+    // The sibling's data arrives.
+    suspend = false;
+    await act(async () => {
+      resolve();
+      await promise;
+    });
+
+    // The outer boundary should reveal both the sibling and the updated
+    // inner content.
+    const sibling = container.querySelector('#sibling');
+    const content = container.querySelector('#content');
+    expect(sibling).not.toBe(null);
+    expect(sibling.style.display).not.toBe('none');
+    expect(content).not.toBe(null);
+    expect(content.style.display).not.toBe('none');
+    expect(content.textContent).toBe('b');
+  });
+
+  it('recovers when a transition changes a dehydrated boundary inside a suspended parent boundary', async () => {
+    // Same as the previous test, except the update is wrapped
+    // in startTransition.
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+
+    function Sibling() {
+      if (suspend) {
+        throw promise;
+      }
+      return <span id="sibling">Sibling</span>;
+    }
+
+    function App({showSiblingOnMount}) {
+      const [showSibling, setShowSibling] = React.useState(false);
+      React.useEffect(() => {
+        if (showSiblingOnMount) {
+          React.startTransition(() => {
+            setShowSibling(true);
+          });
+        }
+      }, [showSiblingOnMount]);
+      return (
+        <div>
+          <Suspense fallback={null}>
+            {showSibling ? <Sibling /> : null}
+            <Suspense fallback={null}>
+              <span id="content">{showSibling ? 'b' : 'a'}</span>
+            </Suspense>
+          </Suspense>
+        </div>
+      );
+    }
+
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(
+      <App showSiblingOnMount={false} />,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    expect(container.textContent).toBe('a');
+
+    suspend = true;
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App showSiblingOnMount={true} />);
+    });
+
+    suspend = false;
+    await act(async () => {
+      resolve();
+      await promise;
+    });
+
+    const sibling = container.querySelector('#sibling');
+    const content = container.querySelector('#content');
+    expect(sibling).not.toBe(null);
+    expect(sibling.style.display).not.toBe('none');
+    expect(content).not.toBe(null);
+    expect(content.style.display).not.toBe('none');
+    expect(content.textContent).toBe('b');
+  });
 });

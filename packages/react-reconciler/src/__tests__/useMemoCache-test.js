@@ -124,7 +124,7 @@ describe('useMemoCache()', () => {
       root.render(<Component />);
     });
     expect(root).toMatchRenderedOutput('Count 0');
-    expect(Text).toBeCalledTimes(1);
+    expect(Text).toHaveBeenCalledTimes(1);
     const data0 = data;
 
     // Changing x should reset the data object
@@ -132,7 +132,7 @@ describe('useMemoCache()', () => {
       setX(1);
     });
     expect(root).toMatchRenderedOutput('Count 1');
-    expect(Text).toBeCalledTimes(2);
+    expect(Text).toHaveBeenCalledTimes(2);
     expect(data).not.toBe(data0);
     const data1 = data;
 
@@ -142,7 +142,7 @@ describe('useMemoCache()', () => {
       forceUpdate();
     });
     expect(root).toMatchRenderedOutput('Count 1');
-    expect(Text).toBeCalledTimes(3);
+    expect(Text).toHaveBeenCalledTimes(3);
     expect(data).toBe(data1); // confirm that the cache persisted across renders
   });
 
@@ -197,7 +197,7 @@ describe('useMemoCache()', () => {
       root.render(<Component />);
     });
     expect(root).toMatchRenderedOutput('Count 0 (n=0)');
-    expect(Text).toBeCalledTimes(1);
+    expect(Text).toHaveBeenCalledTimes(1);
     const data0 = data;
 
     // Trigger an update that will cause a setState during render. The `data` prop
@@ -206,7 +206,7 @@ describe('useMemoCache()', () => {
       setN(1);
     });
     expect(root).toMatchRenderedOutput('Count 0 (n=2)');
-    expect(Text).toBeCalledTimes(2);
+    expect(Text).toHaveBeenCalledTimes(2);
     expect(data).toBe(data0);
   });
 
@@ -268,7 +268,7 @@ describe('useMemoCache()', () => {
       );
     });
     expect(root).toMatchRenderedOutput('Count 0 (n=0)');
-    expect(Text).toBeCalledTimes(1);
+    expect(Text).toHaveBeenCalledTimes(1);
     const data0 = data;
 
     await act(() => {
@@ -280,7 +280,7 @@ describe('useMemoCache()', () => {
         '\n    in <stack>',
     ]);
     expect(root).toMatchRenderedOutput('Count 0 (n=1)');
-    expect(Text).toBeCalledTimes(2);
+    expect(Text).toHaveBeenCalledTimes(2);
     expect(data).toBe(data0);
     const data1 = data;
 
@@ -290,7 +290,7 @@ describe('useMemoCache()', () => {
       setN(2);
     });
     expect(root).toMatchRenderedOutput('Count 0 (n=2)');
-    expect(Text).toBeCalledTimes(3);
+    expect(Text).toHaveBeenCalledTimes(3);
     expect(data).toBe(data1); // confirm that the cache persisted across renders
   });
 
@@ -348,7 +348,7 @@ describe('useMemoCache()', () => {
       root.render(<Component />);
     });
     expect(root).toMatchRenderedOutput('count 0');
-    expect(Text).toBeCalledTimes(1);
+    expect(Text).toHaveBeenCalledTimes(1);
     const data0 = data;
 
     // Changing x should reset the data object
@@ -356,7 +356,7 @@ describe('useMemoCache()', () => {
       setX(1);
     });
     expect(root).toMatchRenderedOutput('count 1');
-    expect(Text).toBeCalledTimes(2);
+    expect(Text).toHaveBeenCalledTimes(2);
     expect(data).not.toBe(data0);
     const data1 = data;
 
@@ -366,7 +366,7 @@ describe('useMemoCache()', () => {
       forceUpdate();
     });
     expect(root).toMatchRenderedOutput('count 1');
-    expect(Text).toBeCalledTimes(3);
+    expect(Text).toHaveBeenCalledTimes(3);
     expect(data).toBe(data1); // confirm that the cache persisted across renders
   });
 

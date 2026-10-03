@@ -354,6 +354,30 @@ const testCases: ComparisonTestCase[] = [
     rule: 'recommended',
     expectedErrorCount: 3,
   },
+  {
+    name: '[ImpureFunctionCalls] Zero-argument Date constructor is impure',
+    code: normalizeIndent`
+      function Component() {
+        const date = new Date();
+        const time = new Date().getTime();
+        const year = new Date().getFullYear();
+        return <Foo date={date} time={time} year={year} />;
+      }
+    `,
+    rule: 'recommended',
+    expectedErrorCount: 3,
+  },
+  {
+    name: '[ImpureFunctionCalls] Date constructed from a timestamp is not flagged',
+    code: normalizeIndent`
+      function Component({ timestamp }) {
+        const date = new Date(timestamp);
+        return <Foo date={date} />;
+      }
+    `,
+    rule: 'recommended',
+    expectedErrorCount: 0,
+  },
 
   // ---- NoCapitalizedCallsRule-test.ts ----
   {

@@ -26,9 +26,12 @@ type Props = {
 function CommitRankedListItem({data, index, style}: Props) {
   const {
     chartData,
+    currentSearchMatchID,
+    matchedFiberIDs,
     onElementMouseEnter,
     onElementMouseLeave,
     scaleX,
+    searchRegExp,
     selectedFiberIndex,
     selectFiber,
     width,
@@ -66,12 +69,15 @@ function CommitRankedListItem({data, index, style}: Props) {
     <ChartNode
       color={getGradientColor(node.value / chartData.maxValue)}
       height={lineHeight}
+      isCurrentSearchMatch={node.id === currentSearchMatchID}
       isDimmed={index < selectedFiberIndex}
+      isSearchMatch={matchedFiberIDs.has(node.id)}
       key={node.id}
       label={node.label}
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      searchRegExp={searchRegExp}
       width={Math.max(minBarWidth, scaleX(node.value, width))}
       x={0}
       y={top}

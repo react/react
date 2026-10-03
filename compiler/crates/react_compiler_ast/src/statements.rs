@@ -478,6 +478,8 @@ pub enum VariableDeclarationKind {
     Let,
     Const,
     Using,
+    #[serde(rename = "await using")]
+    AwaitUsing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -666,6 +668,31 @@ mod tests {
         .unwrap();
 
         assert!(matches!(stmt, Statement::EmptyStatement(_)));
+    }
+
+    /// Babel serializes `using`/`await using` declarations as ordinary
+    /// VariableDeclarations whose `kind` is "using" / "await using" (with a
+    /// space). Both must round-trip so the NAPI boundary does not reject
+    /// files containing them.
+    #[test]
+    fn using_declaration_kinds_round_trip() {
+        for kind in ["using", "await using"] {
+            let input = json!({
+                "type": "VariableDeclaration",
+                "kind": kind,
+                "declarations": [
+                    {
+                        "type": "VariableDeclarator",
+                        "id": { "type": "Identifier", "name": "resource" },
+                        "init": { "type": "NullLiteral" }
+                    }
+                ]
+            });
+
+            let stmt: Statement = serde_json::from_value(input.clone()).unwrap();
+            assert!(matches!(stmt, Statement::VariableDeclaration(_)));
+            assert_eq!(serde_json::to_value(&stmt).unwrap()["kind"], json!(kind));
+        }
     }
 
     #[test]

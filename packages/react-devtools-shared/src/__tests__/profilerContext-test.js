@@ -590,9 +590,6 @@ describe('ProfilerContext', () => {
     const Profiler =
       require('react-devtools-shared/src/devtools/views/Profiler/Profiler').default;
     const {
-      TimelineContextController,
-    } = require('react-devtools-timeline/src/TimelineContext');
-    const {
       SettingsContextController,
     } = require('react-devtools-shared/src/devtools/views/Settings/SettingsContext');
     const {
@@ -615,9 +612,7 @@ describe('ProfilerContext', () => {
         <Contexts>
           <SettingsContextController browserTheme="light">
             <ModalDialogContextController>
-              <TimelineContextController>
-                <Profiler />
-              </TimelineContextController>
+              <Profiler />
             </ModalDialogContextController>
           </SettingsContextController>
         </Contexts>,
@@ -674,9 +669,6 @@ describe('ProfilerContext', () => {
     const Profiler =
       require('react-devtools-shared/src/devtools/views/Profiler/Profiler').default;
     const {
-      TimelineContextController,
-    } = require('react-devtools-timeline/src/TimelineContext');
-    const {
       SettingsContextController,
     } = require('react-devtools-shared/src/devtools/views/Settings/SettingsContext');
     const {
@@ -699,10 +691,8 @@ describe('ProfilerContext', () => {
         <Contexts>
           <SettingsContextController browserTheme="light">
             <ModalDialogContextController>
-              <TimelineContextController>
-                <Profiler />
-                <ContextReader />
-              </TimelineContextController>
+              <Profiler />
+              <ContextReader />
             </ModalDialogContextController>
           </SettingsContextController>
         </Contexts>,
@@ -887,9 +877,6 @@ describe('ProfilerContext', () => {
     const Profiler =
       require('react-devtools-shared/src/devtools/views/Profiler/Profiler').default;
     const {
-      TimelineContextController,
-    } = require('react-devtools-timeline/src/TimelineContext');
-    const {
       SettingsContextController,
     } = require('react-devtools-shared/src/devtools/views/Settings/SettingsContext');
     const {
@@ -912,10 +899,8 @@ describe('ProfilerContext', () => {
         <Contexts>
           <SettingsContextController browserTheme="light">
             <ModalDialogContextController>
-              <TimelineContextController>
-                <Profiler />
-                <ContextReader />
-              </TimelineContextController>
+              <Profiler />
+              <ContextReader />
             </ModalDialogContextController>
           </SettingsContextController>
         </Contexts>,

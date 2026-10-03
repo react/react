@@ -1,5 +1,7 @@
 import React, {
   ViewTransition,
+  Suspense,
+  use,
   useState,
   useOptimistic,
   startTransition,
@@ -13,6 +15,45 @@ const items = [
   {id: 2, title: 'Second Post', body: 'Hello from the second post.'},
   {id: 3, title: 'Third Post', body: 'Hello from the third post.'},
 ];
+
+let feedRevealPromise = null;
+
+export function resetFeedReveal() {
+  feedRevealPromise = null;
+}
+
+function FeedReveal() {
+  if (feedRevealPromise === null) {
+    feedRevealPromise = new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  use(feedRevealPromise);
+  return null;
+}
+
+function FeedSkeleton() {
+  return (
+    <ViewTransition exit="nested-feed-exit">
+      <div className="nested-feed">
+        {items.map(item => (
+          // Mirrors FeedItem: each skeleton row relays the exit (level 1), and
+          // its title/body placeholders relay again (level 2) so they animate
+          // out separately from the row — up and to the right. This exercises
+          // the nested parentExit relay through the SSR streaming reveal.
+          <ViewTransition key={item.id} parentExit="nested-exit-left">
+            <div className="feed-item feed-item-skeleton">
+              <ViewTransition parentExit="nested-title-exit-up">
+                <div className="feed-item-title skeleton-line skeleton-title" />
+              </ViewTransition>
+              <ViewTransition parentExit="nested-body-exit-right">
+                <div className="skeleton-line skeleton-body" />
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        ))}
+      </div>
+    </ViewTransition>
+  );
+}
 
 function logGestureParent(kind, title, _timeline, _options, _instance, types) {
   // eslint-disable-next-line no-console
@@ -159,17 +200,26 @@ export default function NestedParentExit() {
               {selected ? (
                 <Detail item={selected} onBack={goBack} />
               ) : (
-                <>
-                  {items.map((item, index) => (
-                    <FeedItem
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      activeIndex={activeIndex}
-                      onSelect={goToDetail}
-                    />
-                  ))}
-                </>
+                <Suspense fallback={<FeedSkeleton />}>
+                  {/* The entering ViewTransition is the direct child of the
+                      Suspense content, so it activates an enter scope and the
+                      feed items below relay parentEnter (emitting
+                      vt-parent-enter annotations in Fizz). */}
+                  <ViewTransition enter="nested-feed-enter">
+                    <div className="nested-feed">
+                      {items.map((item, index) => (
+                        <FeedItem
+                          key={item.id}
+                          item={item}
+                          index={index}
+                          activeIndex={activeIndex}
+                          onSelect={goToDetail}
+                        />
+                      ))}
+                      <FeedReveal />
+                    </div>
+                  </ViewTransition>
+                </Suspense>
               )}
             </div>
           </ViewTransition>

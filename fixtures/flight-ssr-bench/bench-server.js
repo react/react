@@ -18,6 +18,14 @@ const {
   renderFlightFizzEdge,
 } = require('./render-helpers');
 const {printGrid} = require('./print-helpers');
+const fs = require('fs');
+const JSON_OUT = (function () {
+  const arg = process.argv.find(function (a) {
+    return a.startsWith('--json-out=');
+  });
+  return arg ? arg.slice('--json-out='.length) : null;
+})();
+const jsonResults = [];
 
 // ---------------------------------------------------------------------------
 // Build
@@ -275,6 +283,14 @@ async function main() {
       const errors = data.errors + data.timeouts;
 
       results[label] = {reqPerSec, latencyMedian, latencyP99};
+      jsonResults.push({
+        name: label,
+        concurrency: c,
+        reqPerSec,
+        latencyMedian,
+        latencyP99,
+        errors,
+      });
 
       let line =
         '  ' +
@@ -338,6 +354,13 @@ async function main() {
       ],
       rps,
       'req/s'
+    );
+  }
+
+  if (JSON_OUT) {
+    fs.writeFileSync(
+      JSON_OUT,
+      JSON.stringify({mode: 'server', results: jsonResults})
     );
   }
 

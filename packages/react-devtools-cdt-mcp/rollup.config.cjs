@@ -9,35 +9,42 @@ if (!NODE_ENV) {
   process.exit(1);
 }
 
-module.exports = {
-  input: 'src/index.js',
-  // CommonJS bundle for the npm package (referenced by the root index.js stub).
-  output: {
-    file: 'dist/index.js',
-    format: 'cjs',
-    exports: 'named',
-  },
-  treeshake: {moduleSideEffects: false},
-  plugins: [
-    nodeResolve({
-      extensions: ['.js', '.mjs'],
-    }),
-    commonjs({
-      include: /node_modules/,
-    }),
-    babel({
-      configFile: __dirname + '/../react-devtools-shared/babel.config.js',
-      babelHelpers: 'bundled',
-    }),
-    replace({
-      preventAssignment: true,
-      values: {
-        __DEV__: String(NODE_ENV === 'development'),
-        __IS_CHROME__: 'false',
-        __IS_FIREFOX__: 'false',
-        __IS_EDGE__: 'false',
-        __IS_NATIVE__: 'false',
-      },
-    }),
-  ],
-};
+const plugins = [
+  nodeResolve({
+    extensions: ['.js', '.mjs'],
+  }),
+  commonjs({
+    include: /node_modules/,
+  }),
+  babel({
+    configFile: __dirname + '/../react-devtools-shared/babel.config.js',
+    babelHelpers: 'bundled',
+  }),
+  replace({
+    preventAssignment: true,
+    values: {
+      __DEV__: String(NODE_ENV === 'development'),
+      __IS_CHROME__: 'false',
+      __IS_FIREFOX__: 'false',
+      __IS_EDGE__: 'false',
+      __IS_NATIVE__: 'false',
+    },
+  }),
+];
+
+function createBundle(input, name) {
+  return {
+    input,
+    output: {
+      file: `dist/${name}.js`,
+      format: 'es',
+    },
+    treeshake: {moduleSideEffects: false},
+    plugins,
+  };
+}
+
+module.exports = [
+  createBundle('src/index.js', 'index'),
+  createBundle('src/register.js', 'register'),
+];

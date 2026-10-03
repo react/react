@@ -1,8 +1,9 @@
 .Root {
   user-select: none;
-  display: inline-flex;
-}
-
-.Root *:not(:first-child) {
-  margin-left: 0.25rem;
+  flex: 1 1 auto; 
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: start;
+  gap: 0.25rem;
 }

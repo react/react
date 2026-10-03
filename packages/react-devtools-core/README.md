@@ -29,7 +29,7 @@ if (process.env.NODE_ENV !== 'production') {
 |---------------------------|-------------|
 | `settings`                | Optional. If not specified, or received as null, then default settings are used. Can be plain object or a Promise that resolves with the [plain settings object](#Settings). If Promise rejects, the console will not be patched and some console features from React DevTools will not work. |
 | `shouldStartProfilingNow` | Optional. Whether to start profiling immediately after installing the hook. Defaults to `false`. |
-| `profilingSettings`       | Optional. Profiling settings used when `shouldStartProfilingNow` is `true`. Defaults to `{ recordChangeDescriptions: false, recordTimeline: false }`. |
+| `profilingSettings`       | Optional. Profiling settings used when `shouldStartProfilingNow` is `true`. Defaults to `{ recordChangeDescriptions: false }`. |
 | `componentFilters`        | Optional. Array or Promise that resolves to an array of component filters to apply before DevTools connects. Defaults to the built-in host component filter. See [Component filters](#component-filters) for the full spec. |
 
 #### `Settings`

@@ -263,8 +263,9 @@ export function getModuleDebugInfo<T>(
   const debugInfo: ReactDebugInfo = [];
   let i = 0;
   while (i < chunks.length) {
-    const chunkFilename = chunks[i++];
-    addChunkDebugInfo(debugInfo, chunkFilename);
+    const chunk = chunks[i++];
+    // A merged chunk is `[mergedChunkFilename, ...]`; use its own filename.
+    addChunkDebugInfo(debugInfo, typeof chunk === 'string' ? chunk : chunk[0]);
   }
   return debugInfo;
 }

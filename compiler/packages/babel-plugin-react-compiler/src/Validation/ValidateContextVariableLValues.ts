@@ -49,9 +49,14 @@ function validateContextVariableLValuesImpl(
           visit(identifierKinds, value.place, 'local', env);
           break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PrefixUpdateLocal': {
           visit(identifierKinds, value.lvalue, 'local', env);
+          break;
+        }
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext': {
+          visit(identifierKinds, value.lvalue, 'context', env);
           break;
         }
         case 'Destructure': {
