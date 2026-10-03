@@ -10249,6 +10249,11 @@ describe('ReactDOMFizzServer', () => {
         <body data-x="server">server</body>
       </html>,
     );
+    const link = document.createElement('link');
+    Object.defineProperty(link, 'rel', {
+      get: () => undefined,
+    });
+    document.head.appendChild(link);
 
     content = 'client';
 
