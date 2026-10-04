@@ -2625,8 +2625,9 @@ fn apply_compiled_functions(
 
     // Collect outlined functions to insert (as FunctionDeclarations).
     // For FunctionDeclarations: insert right after the parent (matching TS insertAfter behavior)
-    // For FunctionExpression/ArrowFunctionExpression: append at end of program body
-    //   (matching TS pushContainer behavior)
+    // For FunctionExpression/ArrowFunctionExpression: insert after the statement containing the
+    //   original function when it is nested in another function, else append at end of program body
+    //   (matching TS insertNewOutlinedFunctionNode behavior)
     let mut outlined_decls: Vec<(Option<u32>, OriginalFnKind, FunctionDeclaration)> = Vec::new(); // (node_id, kind, decl)
 
     // Computed before the loop below consumes `compiled_fns`.
@@ -2692,8 +2693,12 @@ fn apply_compiled_functions(
     // For FunctionDeclarations: insert right after the parent function at the same scope level.
     //   This requires recursive search since the parent may be nested inside other functions.
     //   Matches TS behavior: `originalFn.insertAfter(outlinedFn)`.
-    // For FunctionExpression/ArrowFunctionExpression: push to program body (top level).
-    //   Matches TS behavior: `program.pushContainer('body', [fn])`.
+    // For FunctionExpression/ArrowFunctionExpression: if the original function is nested within
+    //   another function (e.g. a component returned from a factory function), insert right after
+    //   the statement containing it so that bindings from enclosing functions remain in scope.
+    //   Otherwise (top-level, or not within a statement of its closest enclosing function, e.g.
+    //   an expression-bodied arrow function) push to program body (top level).
+    //   Matches TS behavior in `insertNewOutlinedFunctionNode`.
 
     for (parent_node_id, original_kind, outlined_decl) in outlined_decls {
         let outlined_stmt = Statement::FunctionDeclaration(outlined_decl);
@@ -2708,7 +2713,19 @@ fn apply_compiled_functions(
                 }
             }
             OriginalFnKind::FunctionExpression | OriginalFnKind::ArrowFunctionExpression => {
-                program.body.push(outlined_stmt);
+                let is_top_level = parent_node_id.map_or(true, |nid| {
+                    program
+                        .body
+                        .iter()
+                        .any(|s| stmt_has_fn_with_node_id(s, nid))
+                });
+                let inserted_in_enclosing_fn = !is_top_level
+                    && parent_node_id.map_or(false, |nid| {
+                        insert_after_fn_recursive(&mut program.body, nid, outlined_stmt.clone())
+                    });
+                if !inserted_in_enclosing_fn {
+                    program.body.push(outlined_stmt);
+                }
             }
         }
     }
