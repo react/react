@@ -8,14 +8,11 @@
 //! Corresponds to `src/ReactiveScopes/PruneUnusedScopes.ts`.
 
 use react_compiler_hir::{
-    PrunedReactiveScopeBlock, ReactiveFunction, ReactiveStatement, ReactiveTerminal,
-    ReactiveTerminalStatement, ReactiveScopeBlock,
-    environment::Environment,
+    PrunedReactiveScopeBlock, ReactiveFunction, ReactiveScopeBlock, ReactiveStatement,
+    ReactiveTerminal, ReactiveTerminalStatement, environment::Environment,
 };
 
-use crate::visitors::{
-    ReactiveFunctionTransform, Transformed, transform_reactive_function,
-};
+use crate::visitors::{ReactiveFunctionTransform, Transformed, transform_reactive_function};
 
 struct State {
     has_return_statement: bool,
@@ -23,7 +20,10 @@ struct State {
 
 /// Converts scopes without outputs into pruned-scopes (regular blocks).
 /// TS: `pruneUnusedScopes`
-pub fn prune_unused_scopes(func: &mut ReactiveFunction, env: &Environment) -> Result<(), react_compiler_diagnostics::CompilerError> {
+pub fn prune_unused_scopes(
+    func: &mut ReactiveFunction,
+    env: &Environment,
+) -> Result<(), react_compiler_diagnostics::CompilerError> {
     let mut transform = Transform { env };
     let mut state = State {
         has_return_statement: false,
@@ -38,7 +38,9 @@ struct Transform<'a> {
 impl<'a> ReactiveFunctionTransform for Transform<'a> {
     type State = State;
 
-    fn env(&self) -> &Environment { self.env }
+    fn env(&self) -> &Environment {
+        self.env
+    }
 
     fn visit_terminal(
         &mut self,
@@ -67,8 +69,7 @@ impl<'a> ReactiveFunctionTransform for Transform<'a> {
 
         if !scope_state.has_return_statement
             && scope_data.reassignments.is_empty()
-            && (scope_data.declarations.is_empty()
-                || !has_own_declaration(scope_data, scope_id))
+            && (scope_data.declarations.is_empty() || !has_own_declaration(scope_data, scope_id))
         {
             // Replace with pruned scope
             Ok(Transformed::Replace(ReactiveStatement::PrunedScope(

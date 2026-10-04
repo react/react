@@ -243,8 +243,10 @@ function* generateInstructionTypes(
       break;
     }
 
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext':
+    case 'PrefixUpdateLocal': {
       yield equation(value.value.identifier.type, {kind: 'Primitive'});
       yield equation(value.lvalue.identifier.type, {kind: 'Primitive'});
       yield equation(left, {kind: 'Primitive'});

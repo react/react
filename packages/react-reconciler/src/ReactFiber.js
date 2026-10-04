@@ -79,11 +79,7 @@ import {
 } from './ReactWorkTags';
 import {getComponentNameFromOwner} from 'react-reconciler/src/getComponentNameFromFiber';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
-import {
-  resolveClassForHotReloading,
-  resolveFunctionForHotReloading,
-  resolveForwardRefForHotReloading,
-} from './ReactFiberHotReloading';
+import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 import {NoLanes} from './ReactFiberLane';
 import {
   NoMode,
@@ -427,13 +423,10 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     switch (workInProgress.tag) {
       case FunctionComponent:
       case SimpleMemoComponent:
-        workInProgress.type = resolveFunctionForHotReloading(current.type);
-        break;
+      case MemoComponent:
       case ClassComponent:
-        workInProgress.type = resolveClassForHotReloading(current.type);
-        break;
       case ForwardRef:
-        workInProgress.type = resolveForwardRefForHotReloading(current.type);
+        workInProgress.type = resolveTypeForHotReloading(current.type);
         break;
       default:
         break;
@@ -569,18 +562,14 @@ export function createFiberFromTypeAndProps(
   let fiberTag: WorkTag = FunctionComponent;
   // The resolved type is set if we know what the final type will be. I.e. it's not lazy.
   let resolvedType = type;
-  if (typeof type === 'function') {
-    if (shouldConstruct(type)) {
+  if (__DEV__) {
+    resolvedType = resolveTypeForHotReloading(type);
+  }
+  if (typeof resolvedType === 'function') {
+    if (shouldConstruct(resolvedType)) {
       fiberTag = ClassComponent;
-      if (__DEV__) {
-        resolvedType = resolveClassForHotReloading(resolvedType);
-      }
-    } else {
-      if (__DEV__) {
-        resolvedType = resolveFunctionForHotReloading(resolvedType);
-      }
     }
-  } else if (typeof type === 'string') {
+  } else if (typeof resolvedType === 'string') {
     // $FlowFixMe[constant-condition]
     if (supportsResources && supportsSingletons) {
       const hostContext = getHostContext();
@@ -602,7 +591,7 @@ export function createFiberFromTypeAndProps(
       fiberTag = HostComponent;
     }
   } else {
-    getTag: switch (type) {
+    getTag: switch (resolvedType) {
       // $FlowFixMe[invalid-compare]
       case REACT_ACTIVITY_TYPE:
         return createFiberFromActivity(pendingProps, mode, lanes, key);
@@ -650,8 +639,8 @@ export function createFiberFromTypeAndProps(
       // Fall through
       default: {
         // $FlowFixMe[invalid-compare]
-        if (typeof type === 'object' && type !== null) {
-          switch (type.$$typeof) {
+        if (typeof resolvedType === 'object' && resolvedType !== null) {
+          switch (resolvedType.$$typeof) {
             // $FlowFixMe[invalid-compare]
             case REACT_CONTEXT_TYPE:
               fiberTag = ContextProvider;
@@ -664,9 +653,6 @@ export function createFiberFromTypeAndProps(
             // $FlowFixMe[invalid-compare]
             case REACT_FORWARD_REF_TYPE:
               fiberTag = ForwardRef;
-              if (__DEV__) {
-                resolvedType = resolveForwardRefForHotReloading(resolvedType);
-              }
               break getTag;
             // $FlowFixMe[invalid-compare]
             case REACT_MEMO_TYPE:

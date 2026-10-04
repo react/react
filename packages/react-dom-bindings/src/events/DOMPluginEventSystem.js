@@ -491,7 +491,11 @@ function addTrappedEventListener(
 
   targetContainer =
     enableLegacyFBSupport && isDeferredListenerForLegacyFBSupport
-      ? (targetContainer as any).ownerDocument
+      ? // A Document container's ownerDocument is null, so it must be used
+        // as the deferral target itself.
+        (targetContainer as any).nodeType === DOCUMENT_NODE
+        ? targetContainer
+        : (targetContainer as any).ownerDocument
       : targetContainer;
 
   let unsubscribeListener;

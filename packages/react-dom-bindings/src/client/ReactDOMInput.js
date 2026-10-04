@@ -13,7 +13,6 @@ import {getCurrentFiberOwnerNameInDevOrNull} from 'react-reconciler/src/ReactCur
 import {getFiberCurrentPropsFromNode} from './ReactDOMComponentTree';
 import {getToStringValue, toString} from './ToStringValue';
 import {track, trackHydrated, updateValueIfChanged} from './inputValueTracking';
-import getActiveElement from './getActiveElement';
 import {
   disableInputAttributeSyncing,
   enableHydrationChangeEvent,
@@ -121,10 +120,13 @@ export function updateInput(
   if (value != null) {
     if (type === 'number') {
       if (
+        // "" == 0, so a cleared field wouldn't otherwise be restored to 0.
         // $FlowFixMe[incompatible-type]
         // $FlowFixMe[invalid-compare]
         (value === 0 && node.value === '') ||
-        // We explicitly want to coerce to number here if possible.
+        // We explicitly want to coerce to number here if possible, so that
+        // other spellings of the same number (e.g. "0.0" mid-edit) aren't
+        // clobbered while the user types.
         // eslint-disable-next-line
         node.value != (value as any)
       ) {
@@ -144,7 +146,7 @@ export function updateInput(
     // whenever the defaultValue React prop has changed. When not present,
     // React does nothing
     if (defaultValue != null) {
-      setDefaultValue(node, type, getToStringValue(defaultValue));
+      setDefaultValue(node, getToStringValue(defaultValue));
     } else if (lastDefaultValue != null) {
       node.removeAttribute('value');
     }
@@ -155,9 +157,22 @@ export function updateInput(
     //  2. The defaultValue React property
     //  3. Otherwise there should be no change
     if (value != null) {
-      setDefaultValue(node, type, getToStringValue(value));
+      if (
+        type === 'number' &&
+        // We explicitly want to coerce to number here if possible.
+        // eslint-disable-next-line
+        node.value == (value as any)
+      ) {
+        // node.value may be a different spelling of the same number (e.g.
+        // "0.0" for 0). Mirror what's displayed, like the value setter does.
+        // Not redundant with the assignment above: browsers sanitize invalid
+        // assigned values to "", in which case we sync the React value below.
+        setDefaultValue(node, getToStringValue(node.value));
+      } else {
+        setDefaultValue(node, getToStringValue(value));
+      }
     } else if (defaultValue != null) {
-      setDefaultValue(node, type, getToStringValue(defaultValue));
+      setDefaultValue(node, getToStringValue(defaultValue));
     } else if (lastDefaultValue != null) {
       node.removeAttribute('value');
     }
@@ -462,26 +477,8 @@ export function restoreControlledInputState(element: Element, props: Object) {
   }
 }
 
-// In Chrome, assigning defaultValue to certain input types triggers input validation.
-// For number inputs, the display value loses trailing decimal points. For email inputs,
-// Chrome raises "The specified value <x> is not a valid email address".
-//
-// Here we check to see if the defaultValue has actually changed, avoiding these problems
-// when the user is inputting text
-//
-// https://github.com/facebook/react/issues/7253
-export function setDefaultValue(
-  node: HTMLInputElement,
-  type: ?string,
-  value: ToStringValue,
-) {
-  if (
-    // Focused number inputs synchronize on blur. See ChangeEventPlugin.js
-    type !== 'number' ||
-    getActiveElement(node.ownerDocument) !== node
-  ) {
-    if (node.defaultValue !== toString(value)) {
-      node.defaultValue = toString(value);
-    }
+function setDefaultValue(node: HTMLInputElement, value: ToStringValue) {
+  if (node.defaultValue !== toString(value)) {
+    node.defaultValue = toString(value);
   }
 }

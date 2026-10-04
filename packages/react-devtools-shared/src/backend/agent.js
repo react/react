@@ -282,17 +282,12 @@ export default class Agent extends EventEmitter<{
   _persistedSelection: PersistedSelection | null = null;
   _persistedSelectionMatch: PathMatch | null = null;
   _traceUpdatesEnabled: boolean = false;
-  _onReloadAndProfile:
-    | ((recordChangeDescriptions: boolean, recordTimeline: boolean) => void)
-    | void;
+  _onReloadAndProfile: ((recordChangeDescriptions: boolean) => void) | void;
 
   constructor(
     bridge: BackendBridge,
     isProfiling: boolean = false,
-    onReloadAndProfile?: (
-      recordChangeDescriptions: boolean,
-      recordTimeline: boolean,
-    ) => void,
+    onReloadAndProfile?: (recordChangeDescriptions: boolean) => void,
   ) {
     super();
 
@@ -909,12 +904,11 @@ export default class Agent extends EventEmitter<{
     this._bridge.send('isReloadAndProfileSupportedByBackend', true);
   };
 
-  reloadAndProfile: ({
-    recordChangeDescriptions: boolean,
-    recordTimeline: boolean,
-  }) => void = ({recordChangeDescriptions, recordTimeline}) => {
+  reloadAndProfile: ({recordChangeDescriptions: boolean}) => void = ({
+    recordChangeDescriptions,
+  }) => {
     if (typeof this._onReloadAndProfile === 'function') {
-      this._onReloadAndProfile(recordChangeDescriptions, recordTimeline);
+      this._onReloadAndProfile(recordChangeDescriptions);
     }
 
     // This code path should only be hit if the shell has explicitly told the Store that it supports profiling.
@@ -998,16 +992,15 @@ export default class Agent extends EventEmitter<{
     this.removeAllListeners();
   };
 
-  startProfiling: ({
-    recordChangeDescriptions: boolean,
-    recordTimeline: boolean,
-  }) => void = ({recordChangeDescriptions, recordTimeline}) => {
+  startProfiling: ({recordChangeDescriptions: boolean}) => void = ({
+    recordChangeDescriptions,
+  }) => {
     this._isProfiling = true;
     for (const rendererID in this._rendererInterfaces) {
       const renderer = this._rendererInterfaces[
         rendererID as any
       ] as any as RendererInterface;
-      renderer.startProfiling(recordChangeDescriptions, recordTimeline);
+      renderer.startProfiling(recordChangeDescriptions);
     }
     this._bridge.send('profilingStatus', this._isProfiling);
   };

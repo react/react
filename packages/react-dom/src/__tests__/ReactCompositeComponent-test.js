@@ -1159,11 +1159,11 @@ describe('ReactCompositeComponent', () => {
     });
 
     expect(instance).toBeDefined();
-    expect(mockFn).not.toBeCalled();
+    expect(mockFn).not.toHaveBeenCalled();
 
     await act(() => {
       instance.setState({hasUpdatedState: true}, () => {
-        expect(mockFn).toBeCalled();
+        expect(mockFn).toHaveBeenCalled();
         expect(instance.state.hasUpdatedState).toBe(true);
         Scheduler.log('setState callback called');
       });

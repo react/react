@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -20,7 +20,7 @@ pub struct ScopeData {
     pub kind: ScopeKind,
     /// Bindings declared directly in this scope, keyed by name.
     /// Maps to BindingId for lookup in the binding table.
-    pub bindings: HashMap<String, BindingId>,
+    pub bindings: FxHashMap<String, BindingId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,18 +113,18 @@ pub struct ScopeInfo {
     /// **NOT for identity lookups** — use `node_id_to_scope` (via `resolve_scope_for_node`)
     /// instead. Retained only for position-range containment queries
     /// (e.g., "is reference R inside function scope S?").
-    pub node_to_scope: HashMap<u32, ScopeId>,
+    pub node_to_scope: FxHashMap<u32, ScopeId>,
 
     /// Maps an AST node's start offset to the node's end offset.
     /// Parallel to `node_to_scope` — used for position-range containment checks.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub node_to_scope_end: HashMap<u32, u32>,
+    #[serde(default, skip_serializing_if = "FxHashMap::is_empty")]
+    pub node_to_scope_end: FxHashMap<u32, u32>,
 
     /// **DEPRECATED** — retained only for Babel bridge JSON deserialization.
     /// All backends pass empty maps; only the Babel bridge populates this.
     /// Use `ref_node_id_to_binding` for all lookups and iteration.
     #[serde(default)]
-    pub reference_to_binding: IndexMap<u32, BindingId>,
+    pub reference_to_binding: IndexMap<u32, BindingId, FxBuildHasher>,
 
     /// Maps an identifier reference's node-ID to the binding it resolves to.
     /// Only present for identifiers that resolve to a binding (not globals).
@@ -134,15 +134,15 @@ pub struct ScopeInfo {
         skip_serializing_if = "IndexMap::is_empty",
         rename = "refNodeIdToBinding"
     )]
-    pub ref_node_id_to_binding: IndexMap<u32, BindingId>,
+    pub ref_node_id_to_binding: IndexMap<u32, BindingId, FxBuildHasher>,
 
     /// Maps a scope-creating AST node's node-ID to the scope it creates.
     #[serde(
         default,
-        skip_serializing_if = "HashMap::is_empty",
+        skip_serializing_if = "FxHashMap::is_empty",
         rename = "nodeIdToScope"
     )]
-    pub node_id_to_scope: HashMap<u32, ScopeId>,
+    pub node_id_to_scope: FxHashMap<u32, ScopeId>,
 
     /// The program-level (module) scope. Always scopes[0].
     pub program_scope: ScopeId,
@@ -207,7 +207,7 @@ impl ScopeInfo {
         name: &str,
         ancestor: ScopeId,
     ) -> Option<&BindingData> {
-        let mut descendants = std::collections::HashSet::new();
+        let mut descendants = rustc_hash::FxHashSet::default();
         descendants.insert(ancestor);
         let mut changed = true;
         while changed {
@@ -238,7 +238,7 @@ impl ScopeInfo {
         name: &str,
         ancestor: ScopeId,
     ) -> Option<(BindingId, &BindingData)> {
-        let mut descendants = std::collections::HashSet::new();
+        let mut descendants = rustc_hash::FxHashSet::default();
         descendants.insert(ancestor);
         let mut changed = true;
         while changed {
@@ -306,7 +306,7 @@ impl ScopeInfo {
         ancestor: ScopeId,
         is_claimed: impl Fn(ScopeId) -> bool,
     ) -> Option<ScopeId> {
-        let mut descendants = std::collections::HashSet::new();
+        let mut descendants = rustc_hash::FxHashSet::default();
         descendants.insert(ancestor);
         let mut changed = true;
         while changed {

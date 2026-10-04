@@ -11,7 +11,7 @@
 //!
 //! Conditional on `env.config.enable_function_outlining`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
@@ -25,7 +25,7 @@ use react_compiler_ssa::enter_ssa::placeholder_function;
 pub fn outline_functions(
     func: &mut HirFunction,
     env: &mut Environment,
-    fbt_operands: &HashSet<IdentifierId>,
+    fbt_operands: &FxHashSet<IdentifierId>,
 ) {
     // Collect per-instruction actions to maintain depth-first name allocation order.
     // Each entry: (instr index, function_id to recurse into, should_outline)
@@ -47,9 +47,7 @@ pub fn outline_functions(
             let lvalue_id = instr.lvalue.identifier;
 
             match &instr.value {
-                InstructionValue::FunctionExpression {
-                    lowered_func, ..
-                } => {
+                InstructionValue::FunctionExpression { lowered_func, .. } => {
                     let inner_func = &env.functions[lowered_func.func.0 as usize];
 
                     // Check outlining conditions (TS only checks func.id === null, not name):
@@ -107,8 +105,7 @@ pub fn outline_functions(
                     .id
                     .clone()
                     .or_else(|| env.functions[function_id.0 as usize].name_hint.clone());
-                let generated_name =
-                    env.generate_globally_unique_identifier_name(hint.as_deref());
+                let generated_name = env.generate_globally_unique_identifier_name(hint.as_deref());
 
                 // Set the id on the inner function
                 env.functions[function_id.0 as usize].id = Some(generated_name.clone());

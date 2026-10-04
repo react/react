@@ -31,7 +31,7 @@ import {runEventsInBatch} from './legacy-events/EventBatching';
 import {
   RawEventEmitter,
   dispatchNativeEvent,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+} from 'react-native/react-private-interface';
 import {getPublicInstance} from './ReactFiberConfigFabric';
 import {enableNativeEventTargetEventDispatching} from './ReactNativeFeatureFlags';
 

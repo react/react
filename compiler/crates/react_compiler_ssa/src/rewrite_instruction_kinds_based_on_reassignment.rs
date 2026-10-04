@@ -15,17 +15,15 @@
 //! may be converted to a `const` if the reassignment is not used and was removed
 //! by dead code elimination.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{
-    CompilerDiagnostic, CompilerDiagnosticDetail,
-    CompilerError, ErrorCategory, SourceLocation,
-};
-use react_compiler_hir::{
-    BlockKind, DeclarationId, HirFunction, InstructionKind, InstructionValue, ParamPattern,
-    Place,
+    CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory, SourceLocation,
 };
 use react_compiler_hir::visitors::each_pattern_operand;
+use react_compiler_hir::{
+    BlockKind, DeclarationId, HirFunction, InstructionKind, InstructionValue, ParamPattern, Place,
+};
 
 use react_compiler_hir::environment::Environment;
 
@@ -36,17 +34,18 @@ fn invariant_error(reason: &str, description: Option<String>) -> CompilerError {
     invariant_error_with_loc(reason, description, None)
 }
 
-fn invariant_error_with_loc(reason: &str, description: Option<String>, loc: Option<SourceLocation>) -> CompilerError {
+fn invariant_error_with_loc(
+    reason: &str,
+    description: Option<String>,
+    loc: Option<SourceLocation>,
+) -> CompilerError {
     let mut err = CompilerError::new();
-    let diagnostic = CompilerDiagnostic::new(
-        ErrorCategory::Invariant,
-        reason,
-        description,
-    ).with_detail(CompilerDiagnosticDetail::Error {
-        loc,
-        message: Some(reason.to_string()),
-        identifier_name: None,
-    });
+    let diagnostic = CompilerDiagnostic::new(ErrorCategory::Invariant, reason, description)
+        .with_detail(CompilerDiagnosticDetail::Error {
+            loc,
+            message: Some(reason.to_string()),
+            identifier_name: None,
+        });
     err.push_diagnostic(diagnostic);
     err
 }
@@ -78,7 +77,10 @@ fn format_place(place: &Place, env: &Environment) -> String {
         None => String::new(),
     };
     let mutable_range = if ident.mutable_range.end.0 > ident.mutable_range.start.0 + 1 {
-        format!("[{}:{}]", ident.mutable_range.start.0, ident.mutable_range.end.0)
+        format!(
+            "[{}:{}]",
+            ident.mutable_range.start.0, ident.mutable_range.end.0
+        )
     } else {
         String::new()
     };
@@ -113,7 +115,7 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
     //
     // Track: for each DeclarationId, the location of its first declaration,
     // and whether it needs to be changed to Let (because of reassignment).
-    let mut declarations: HashMap<DeclarationId, DeclarationLoc> = HashMap::new();
+    let mut declarations: FxHashMap<DeclarationId, DeclarationLoc> = FxHashMap::default();
     // Track which (block_index, instr_local_index) should have their lvalue.kind set to Reassign
     let mut reassign_locs: Vec<(usize, usize)> = Vec::new();
     // Track which declaration locations need to be set to Let
@@ -152,7 +154,8 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
             let instr = &func.instructions[instr_id.0 as usize];
             match &instr.value {
                 InstructionValue::DeclareLocal { lvalue, .. } => {
-                    let decl_id = env.identifiers[lvalue.place.identifier.0 as usize].declaration_id;
+                    let decl_id =
+                        env.identifiers[lvalue.place.identifier.0 as usize].declaration_id;
                     if declarations.contains_key(&decl_id) {
                         return Err(invariant_error_with_loc(
                             "Expected variable not to be defined prior to declaration",
@@ -288,23 +291,18 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
                             }
                         }
                     }
-                    let kind = kind.ok_or_else(|| invariant_error(
-                        "Expected at least one operand",
-                        None,
-                    ))?;
+                    let kind =
+                        kind.ok_or_else(|| invariant_error("Expected at least one operand", None))?;
                     destructure_kind_locs.push((block_index, local_idx, kind));
                 }
-                InstructionValue::PostfixUpdate { lvalue, .. }
-                | InstructionValue::PrefixUpdate { lvalue, .. } => {
+                InstructionValue::PostfixUpdateLocal { lvalue, .. }
+                | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
                     let ident = &env.identifiers[lvalue.identifier.0 as usize];
                     let decl_id = ident.declaration_id;
                     let Some(existing) = declarations.get(&decl_id) else {
                         return Err(invariant_error_with_loc(
                             "Expected variable to have been defined",
-                            Some(format!(
-                                "No declaration for {}",
-                                format_place(lvalue, env),
-                            )),
+                            Some(format!("No declaration for {}", format_place(lvalue, env),)),
                             lvalue.loc,
                         ));
                     };
@@ -317,6 +315,23 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
                         }
                         DeclarationLoc::ParamOrContext => {
                             // Already Let
+                        }
+                    }
+                }
+                InstructionValue::PostfixUpdateContext { lvalue, .. }
+                | InstructionValue::PrefixUpdateContext { lvalue, .. } => {
+                    let ident = &env.identifiers[lvalue.identifier.0 as usize];
+                    if let Some(existing) = declarations.get(&ident.declaration_id) {
+                        match existing {
+                            DeclarationLoc::Instruction {
+                                block_index: bi,
+                                instr_local_index: ili,
+                            } => {
+                                let_locs.push((*bi, *ili));
+                            }
+                            DeclarationLoc::ParamOrContext => {
+                                // Already Let
+                            }
                         }
                     }
                 }
@@ -389,4 +404,3 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
 
     Ok(())
 }
-

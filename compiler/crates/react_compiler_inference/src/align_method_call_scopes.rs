@@ -9,7 +9,7 @@
 //!
 //! Ported from TypeScript `src/ReactiveScopes/AlignMethodCallScopes.ts`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{EvaluationOrder, HirFunction, IdentifierId, InstructionValue, ScopeId};
@@ -25,7 +25,7 @@ use react_compiler_utils::DisjointSet;
 /// Corresponds to TS `alignMethodCallScopes(fn: HIRFunction): void`.
 pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     // Maps an identifier to the scope it should be assigned to (or None to remove scope)
-    let mut scope_mapping: HashMap<IdentifierId, Option<ScopeId>> = HashMap::new();
+    let mut scope_mapping: FxHashMap<IdentifierId, Option<ScopeId>> = FxHashMap::default();
     let mut merged_scopes = DisjointSet::<ScopeId>::new();
 
     // Phase 1: Walk instructions and collect scope relationships
@@ -34,10 +34,8 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
             let instr = &func.instructions[instr_id.0 as usize];
             match &instr.value {
                 InstructionValue::MethodCall { property, .. } => {
-                    let lvalue_scope =
-                        env.identifiers[instr.lvalue.identifier.0 as usize].scope;
-                    let property_scope =
-                        env.identifiers[property.identifier.0 as usize].scope;
+                    let lvalue_scope = env.identifiers[instr.lvalue.identifier.0 as usize].scope;
+                    let property_scope = env.identifiers[property.identifier.0 as usize].scope;
 
                     match (lvalue_scope, property_scope) {
                         (Some(lvalue_sid), Some(property_sid)) => {
@@ -47,8 +45,7 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
                         (Some(lvalue_sid), None) => {
                             // Call has a scope but not the property:
                             // record that this property should be in this scope
-                            scope_mapping
-                                .insert(property.identifier, Some(lvalue_sid));
+                            scope_mapping.insert(property.identifier, Some(lvalue_sid));
                         }
                         (None, Some(_)) => {
                             // Property has a scope but call doesn't:
@@ -77,9 +74,10 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     }
 
     // Phase 2: Merge scope ranges for unioned scopes.
-    // Use a HashMap to accumulate min/max across all scopes mapping to the same root,
+    // Use a FxHashMap to accumulate min/max across all scopes mapping to the same root,
     // matching TS behavior where root.range is updated in-place during iteration.
-    let mut range_updates: HashMap<ScopeId, (EvaluationOrder, EvaluationOrder)> = HashMap::new();
+    let mut range_updates: FxHashMap<ScopeId, (EvaluationOrder, EvaluationOrder)> =
+        FxHashMap::default();
 
     merged_scopes.for_each(|scope_id, root_id| {
         if scope_id == root_id {
@@ -91,12 +89,12 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
         let entry = range_updates
             .entry(root_id)
             .or_insert_with(|| (root_range.start, root_range.end));
-        entry.0 = EvaluationOrder(std::cmp::min(entry.0 .0, scope_range.start.0));
-        entry.1 = EvaluationOrder(std::cmp::max(entry.1 .0, scope_range.end.0));
+        entry.0 = EvaluationOrder(std::cmp::min(entry.0.0, scope_range.start.0));
+        entry.1 = EvaluationOrder(std::cmp::max(entry.1.0, scope_range.end.0));
     });
 
     // Save original scope range IDs before updating
-    let original_range_ids: HashMap<ScopeId, react_compiler_hir::MutableRangeId> = range_updates
+    let original_range_ids: FxHashMap<ScopeId, react_compiler_hir::MutableRangeId> = range_updates
         .keys()
         .map(|&root_id| {
             let range_id = env.scopes[root_id.0 as usize].range.id;
@@ -130,9 +128,7 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
 
             if let Some(mapped_scope) = scope_mapping.get(&lvalue_id) {
                 env.identifiers[lvalue_id.0 as usize].scope = *mapped_scope;
-            } else if let Some(current_scope) =
-                env.identifiers[lvalue_id.0 as usize].scope
-            {
+            } else if let Some(current_scope) = env.identifiers[lvalue_id.0 as usize].scope {
                 // TS: mergedScopes.find() returns null if not in the set
                 if let Some(merged) = merged_scopes.find_opt(current_scope) {
                     env.identifiers[lvalue_id.0 as usize].scope = Some(merged);

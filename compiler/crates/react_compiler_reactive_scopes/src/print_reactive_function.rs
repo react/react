@@ -56,7 +56,8 @@ impl<'a> DebugPrinter<'a> {
         ));
         self.fmt.line(&format!("generator: {}", func.generator));
         self.fmt.line(&format!("is_async: {}", func.is_async));
-        self.fmt.line(&format!("loc: {}", print::format_loc(&func.loc)));
+        self.fmt
+            .line(&format!("loc: {}", print::format_loc(&func.loc)));
 
         // params
         self.fmt.line("params:");
@@ -166,13 +167,15 @@ impl<'a> DebugPrinter<'a> {
                 self.fmt.line("effects:");
                 self.fmt.indent();
                 for (i, eff) in effects.iter().enumerate() {
-                    self.fmt.line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
+                    self.fmt
+                        .line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
                 }
                 self.fmt.dedent();
             }
             None => self.fmt.line("effects: null"),
         }
-        self.fmt.line(&format!("loc: {}", print::format_loc(&instr.loc)));
+        self.fmt
+            .line(&format!("loc: {}", print::format_loc(&instr.loc)));
     }
 
     // =========================================================================
@@ -188,7 +191,8 @@ impl<'a> DebugPrinter<'a> {
                     hir_formatter.map(|hf| {
                         Box::new(move |fmt: &mut PrintFormatter, func: &HirFunction| {
                             hf(fmt, func);
-                        }) as Box<dyn Fn(&mut PrintFormatter, &HirFunction) + '_>
+                        })
+                            as Box<dyn Fn(&mut PrintFormatter, &HirFunction) + '_>
                     });
                 self.fmt.format_instruction_value(
                     iv,

@@ -10,11 +10,11 @@
 //!
 //! Corresponds to `src/ReactiveScopes/CodegenReactiveFunction.ts` in the TS compiler.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::common::BaseNode;
 use react_compiler_ast::common::Position as AstPosition;
+use react_compiler_ast::common::RawNode;
 use react_compiler_ast::common::SourceLocation as AstSourceLocation;
 use react_compiler_ast::expressions::ArrowFunctionBody;
 use react_compiler_ast::expressions::Expression;
@@ -180,11 +180,22 @@ pub struct OutlinedFunction {
 }
 
 /// Top-level entry point: generates code for a reactive function.
+/// Computes the Fast Refresh source hash used to bust the memo cache when the
+/// source file changes. Matches the TS compiler's
+/// `createHmac('sha256', code).digest('hex')`: an HMAC-SHA256 keyed by the
+/// source code, hashing empty data.
+fn source_file_hash(code: &str) -> String {
+    hmac_sha256::HMAC::mac(b"", code.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 pub fn codegen_function(
     func: &ReactiveFunction,
     env: &mut Environment,
-    unique_identifiers: HashSet<String>,
-    fbt_operands: HashSet<IdentifierId>,
+    unique_identifiers: FxHashSet<String>,
+    fbt_operands: FxHashSet<IdentifierId>,
 ) -> Result<CodegenFunction, CompilerError> {
     let fn_name = func.id.as_deref().unwrap_or("[[ anonymous ]]");
     let mut cx = Context::new(env, fn_name.to_string(), unique_identifiers, fbt_operands);
@@ -193,15 +204,7 @@ pub fn codegen_function(
     let fast_refresh_state: Option<(u32, String)> =
         if cx.env.config.enable_reset_cache_on_source_file_changes == Some(true) {
             if let Some(ref code) = cx.env.code {
-                use hmac::Hmac;
-                use hmac::Mac;
-                use sha2::Sha256;
-                type HmacSha256 = Hmac<Sha256>;
-                // Match TS: createHmac('sha256', code).digest('hex')
-                // Node's createHmac uses the code as the HMAC key and hashes empty data.
-                let mac = HmacSha256::new_from_slice(code.as_bytes())
-                    .expect("HMAC can take key of any size");
-                let hash = format!("{:x}", mac.finalize().into_bytes());
+                let hash = source_file_hash(code);
                 let cache_index = cx.alloc_cache_index(); // Reserve slot 0 for the hash check
                 Some((cache_index, hash))
             } else {
@@ -281,7 +284,7 @@ pub fn codegen_function(
                     })),
                     right: Box::new(Expression::StringLiteral(StringLiteral {
                         base: BaseNode::typed("StringLiteral"),
-                        value: hash.clone(),
+                        value: hash.clone().into(),
                     })),
                 })),
                 consequent: Box::new(Statement::BlockStatement(BlockStatement {
@@ -381,7 +384,9 @@ pub fn codegen_function(
                                                     arguments: vec![Expression::StringLiteral(
                                                         StringLiteral {
                                                             base: BaseNode::typed("StringLiteral"),
-                                                            value: MEMO_CACHE_SENTINEL.to_string(),
+                                                            value: MEMO_CACHE_SENTINEL
+                                                                .to_string()
+                                                                .into(),
                                                         },
                                                     )],
                                                     type_parameters: None,
@@ -420,7 +425,7 @@ pub fn codegen_function(
                                     )),
                                     right: Box::new(Expression::StringLiteral(StringLiteral {
                                         base: BaseNode::typed("StringLiteral"),
-                                        value: hash.clone(),
+                                        value: hash.clone().into(),
                                     })),
                                 },
                             )),
@@ -492,11 +497,11 @@ pub fn codegen_function(
                         arguments: vec![
                             Expression::StringLiteral(StringLiteral {
                                 base: BaseNode::typed("StringLiteral"),
-                                value: fn_name_str.to_string(),
+                                value: fn_name_str.to_string().into(),
                             }),
                             Expression::StringLiteral(StringLiteral {
                                 base: BaseNode::typed("StringLiteral"),
-                                value: filename_str.to_string(),
+                                value: filename_str.to_string().into(),
                             }),
                         ],
                         type_parameters: None,
@@ -550,12 +555,119 @@ pub fn codegen_function(
 // Context
 // =============================================================================
 
-type Temporaries = HashMap<DeclarationId, Option<ExpressionOrJsxText>>;
-
 #[derive(Clone)]
 enum ExpressionOrJsxText {
     Expression(Expression),
     JsxText(JSXText),
+}
+
+/// The entry a write to [`Temporaries`] displaced, kept so the write can be
+/// undone.
+///
+/// The expression is boxed because `ExpressionOrJsxText` is ~900 bytes (it
+/// inlines an `Expression`). Unboxed, the undo log would be a `Vec` of
+/// ~900-byte slots that are almost always `Absent`, costing more peak heap than
+/// the copy it replaces on shallow functions. Boxed, an entry is 16 bytes and
+/// only allocates when a write actually displaces a buffered expression.
+enum Displaced {
+    /// The key was not present before the write.
+    Absent,
+    /// The key was present as a declared temporary with no buffered value.
+    Empty,
+    /// The key was present with this buffered value.
+    Value(Box<ExpressionOrJsxText>),
+}
+
+/// A position in a [`Temporaries`] undo log, produced by [`Temporaries::mark`].
+#[derive(Clone, Copy)]
+struct TempMark(usize);
+
+/// Expressions buffered for temporaries that have not been emitted yet, plus an
+/// undo log allowing a nested block or scope to be codegen'd and its additions
+/// discarded.
+///
+/// The TypeScript implementation snapshots this with `new Map(cx.temp)`, which
+/// is a *shallow* copy: it duplicates references, not the AST nodes behind them.
+/// The equivalent Rust `.clone()` deep-copies every buffered `Expression` tree,
+/// which made codegen quadratic in component size and dominated both allocation
+/// volume and peak heap.
+///
+/// `TS CodegenReactiveFunction.codegenBlock` asserts that pre-existing entries
+/// are never mutated ("Expected temporary value to be unchanged"), so a
+/// snapshot's only job is to discard entries added by the nested block. Because
+/// entries are only ever inserted (never removed, nor mutated in place),
+/// rewinding an insert log restores the map exactly, with no copying.
+///
+/// All writes go through [`Temporaries::set`] so the log cannot drift out of
+/// sync with the map.
+#[derive(Default)]
+struct Temporaries {
+    values: FxHashMap<DeclarationId, Option<ExpressionOrJsxText>>,
+    journal: Vec<(DeclarationId, Displaced)>,
+}
+
+impl Temporaries {
+    fn get(&self, declaration_id: DeclarationId) -> Option<&Option<ExpressionOrJsxText>> {
+        self.values.get(&declaration_id)
+    }
+
+    fn contains_key(&self, declaration_id: DeclarationId) -> bool {
+        self.values.contains_key(&declaration_id)
+    }
+
+    /// Buffers `value` for `declaration_id`, journaling the displaced entry.
+    /// `HashMap::insert` returns that entry by move, so journaling costs no
+    /// clones.
+    fn set(&mut self, declaration_id: DeclarationId, value: Option<ExpressionOrJsxText>) {
+        let displaced = match self.values.insert(declaration_id, value) {
+            None => Displaced::Absent,
+            Some(None) => Displaced::Empty,
+            Some(Some(previous)) => Displaced::Value(Box::new(previous)),
+        };
+        self.journal.push((declaration_id, displaced));
+    }
+
+    /// Marks the current state, for a later [`Temporaries::rewind`].
+    fn mark(&self) -> TempMark {
+        TempMark(self.journal.len())
+    }
+
+    /// Restores the state captured by `mark`, discarding every write since.
+    fn rewind(&mut self, mark: TempMark) {
+        while self.journal.len() > mark.0 {
+            let (declaration_id, displaced) = self.journal.pop().unwrap();
+            match displaced {
+                Displaced::Absent => {
+                    self.values.remove(&declaration_id);
+                }
+                Displaced::Empty => {
+                    self.values.insert(declaration_id, None);
+                }
+                Displaced::Value(previous) => {
+                    self.values.insert(declaration_id, Some(*previous));
+                }
+            }
+        }
+    }
+
+    /// Hands the buffered expressions to a nested function's context, which may
+    /// read them but must not leak its own additions back out.
+    ///
+    /// The borrower gets a fresh log, so [`Temporaries::reclaim`] can undo
+    /// exactly the borrower's writes rather than the lender's whole history.
+    fn lend(&mut self) -> Temporaries {
+        Temporaries {
+            values: std::mem::take(&mut self.values),
+            journal: Vec::new(),
+        }
+    }
+
+    /// Takes back expressions handed out by [`Temporaries::lend`], discarding
+    /// every write the borrower made.
+    fn reclaim(&mut self, mut lent: Temporaries) {
+        lent.rewind(TempMark(0));
+        self.values = lent.values;
+    }
 }
 
 struct Context<'env> {
@@ -563,37 +675,37 @@ struct Context<'env> {
     #[allow(dead_code)]
     fn_name: String,
     next_cache_index: u32,
-    declarations: HashSet<DeclarationId>,
+    declarations: FxHashSet<DeclarationId>,
     temp: Temporaries,
-    object_methods: HashMap<
+    object_methods: FxHashMap<
         IdentifierId,
         (
             InstructionValue,
             Option<react_compiler_diagnostics::SourceLocation>,
         ),
     >,
-    unique_identifiers: HashSet<String>,
-    fbt_operands: HashSet<IdentifierId>,
-    synthesized_names: HashMap<String, String>,
+    unique_identifiers: FxHashSet<String>,
+    fbt_operands: FxHashSet<IdentifierId>,
+    synthesized_names: FxHashMap<String, String>,
 }
 
 impl<'env> Context<'env> {
     fn new(
         env: &'env mut Environment,
         fn_name: String,
-        unique_identifiers: HashSet<String>,
-        fbt_operands: HashSet<IdentifierId>,
+        unique_identifiers: FxHashSet<String>,
+        fbt_operands: FxHashSet<IdentifierId>,
     ) -> Self {
         Context {
             env,
             fn_name,
             next_cache_index: 0,
-            declarations: HashSet::new(),
-            temp: HashMap::new(),
-            object_methods: HashMap::new(),
+            declarations: FxHashSet::default(),
+            temp: Temporaries::default(),
+            object_methods: FxHashMap::default(),
             unique_identifiers,
             fbt_operands,
-            synthesized_names: HashMap::new(),
+            synthesized_names: FxHashMap::default(),
         }
     }
 
@@ -648,8 +760,8 @@ fn codegen_reactive_function(
             ParamPattern::Place(p) => p,
             ParamPattern::Spread(sp) => &sp.place,
         };
-        let ident = &cx.env.identifiers[place.identifier.0 as usize];
-        cx.temp.insert(ident.declaration_id, None);
+        let declaration_id = cx.env.identifiers[place.identifier.0 as usize].declaration_id;
+        cx.temp.set(declaration_id, None);
         cx.declare(place.identifier);
     }
 
@@ -727,9 +839,9 @@ fn convert_parameter(
 // =============================================================================
 
 fn codegen_block(cx: &mut Context, block: &ReactiveBlock) -> Result<BlockStatement, CompilerError> {
-    let temp_snapshot: Temporaries = cx.temp.clone();
+    let mark = cx.temp.mark();
     let result = codegen_block_no_reset(cx, block)?;
-    cx.temp = temp_snapshot;
+    cx.temp.rewind(mark);
     Ok(result)
 }
 
@@ -753,9 +865,9 @@ fn codegen_block_no_reset(
                 scope,
                 instructions,
             }) => {
-                let temp_snapshot = cx.temp.clone();
+                let mark = cx.temp.mark();
                 codegen_reactive_scope(cx, &mut statements, *scope, instructions)?;
-                cx.temp = temp_snapshot;
+                cx.temp.rewind(mark);
             }
             ReactiveStatement::Terminal(term_stmt) => {
                 let stmt = codegen_terminal(cx, &term_stmt.terminal)?;
@@ -1253,8 +1365,9 @@ fn codegen_terminal(
         } => {
             let catch_param = match handler_binding.as_ref() {
                 Some(binding) => {
-                    let ident = &cx.env.identifiers[binding.identifier.0 as usize];
-                    cx.temp.insert(ident.declaration_id, None);
+                    let declaration_id =
+                        cx.env.identifiers[binding.identifier.0 as usize].declaration_id;
+                    cx.temp.set(declaration_id, None);
                     Some(PatternLike::Identifier(convert_identifier(
                         binding.identifier,
                         cx.env,
@@ -1593,7 +1706,7 @@ fn codegen_unsupported_original_node(
     {
         return Ok(UnsupportedOriginalNode::ExpressionCodegen);
     }
-    let unknown = UnknownStatement::from_raw(node.clone()).map_err(|e| {
+    let unknown = UnknownStatement::from_raw(RawNode::from_value(node)).map_err(|e| {
         invariant_err(
             &format!("Failed to read unsupported original AST node: {}", e),
             None,
@@ -1719,8 +1832,10 @@ fn codegen_store_or_declare(
             // Register temporaries for unnamed pattern operands
             for place in react_compiler_hir::visitors::each_pattern_operand(&lvalue.pattern) {
                 let ident = &cx.env.identifiers[place.identifier.0 as usize];
-                if kind != InstructionKind::Reassign && ident.name.is_none() {
-                    cx.temp.insert(ident.declaration_id, None);
+                let declaration_id = ident.declaration_id;
+                let is_unnamed = ident.name.is_none();
+                if kind != InstructionKind::Reassign && is_unnamed {
+                    cx.temp.set(declaration_id, None);
                 }
             }
             let rhs = codegen_place_to_expression(cx, val)?;
@@ -1833,11 +1948,10 @@ fn emit_store(
                     ReactiveValue::Instruction(InstructionValue::StoreContext { .. })
                 );
                 if !is_store_context {
-                    let ident = &cx.env.identifiers[lvalue_place.identifier.0 as usize];
-                    cx.temp.insert(
-                        ident.declaration_id,
-                        Some(ExpressionOrJsxText::Expression(expr)),
-                    );
+                    let declaration_id =
+                        cx.env.identifiers[lvalue_place.identifier.0 as usize].declaration_id;
+                    cx.temp
+                        .set(declaration_id, Some(ExpressionOrJsxText::Expression(expr)));
                     return Ok(None);
                 } else {
                     let stmt =
@@ -1881,9 +1995,10 @@ fn codegen_instruction(
         }));
     };
     let ident = &cx.env.identifiers[lvalue.identifier.0 as usize];
+    let declaration_id = ident.declaration_id;
     if ident.name.is_none() {
         // temporary
-        cx.temp.insert(ident.declaration_id, Some(value));
+        cx.temp.set(declaration_id, Some(value));
         return Ok(Statement::EmptyStatement(EmptyStatement {
             base: BaseNode::typed("EmptyStatement"),
         }));
@@ -2009,7 +2124,7 @@ fn codegen_instruction_value(
                         })?;
                         expressions.push(Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: format!("TODO handle declaration"),
+                            value: format!("TODO handle declaration").into(),
                         }));
                     }
                     _ => {
@@ -2024,7 +2139,7 @@ fn codegen_instruction_value(
                         })?;
                         expressions.push(Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: format!("TODO handle statement"),
+                            value: format!("TODO handle statement").into(),
                         }));
                     }
                 }
@@ -2402,7 +2517,10 @@ fn codegen_base_instruction_value(
             let expr = codegen_place_to_expression(cx, value)?;
             Ok(ExpressionOrJsxText::Expression(expr))
         }
-        InstructionValue::PostfixUpdate {
+        InstructionValue::PostfixUpdateLocal {
+            operation, lvalue, ..
+        }
+        | InstructionValue::PostfixUpdateContext {
             operation, lvalue, ..
         } => {
             let arg = codegen_place_to_expression(cx, lvalue)?;
@@ -2415,7 +2533,10 @@ fn codegen_base_instruction_value(
                 }),
             ))
         }
-        InstructionValue::PrefixUpdate {
+        InstructionValue::PrefixUpdateLocal {
+            operation, lvalue, ..
+        }
+        | InstructionValue::PrefixUpdateContext {
             operation, lvalue, ..
         } => {
             let arg = codegen_place_to_expression(cx, lvalue)?;
@@ -2526,7 +2647,7 @@ fn codegen_base_instruction_value(
                     Expression::TSSatisfiesExpression(ast_expr::TSSatisfiesExpression {
                         base: BaseNode::typed("TSSatisfiesExpression"),
                         expression: Box::new(expr),
-                        type_annotation: ta,
+                        type_annotation: RawNode::from_value(&ta),
                     })
                 }
                 (Some("as"), Some(ta)) => {
@@ -2535,7 +2656,7 @@ fn codegen_base_instruction_value(
                     Expression::TSAsExpression(ast_expr::TSAsExpression {
                         base: BaseNode::typed("TSAsExpression"),
                         expression: Box::new(expr),
-                        type_annotation: ta,
+                        type_annotation: RawNode::from_value(&ta),
                     })
                 }
                 (Some("cast"), Some(ta)) => {
@@ -2544,7 +2665,7 @@ fn codegen_base_instruction_value(
                     Expression::TypeCastExpression(ast_expr::TypeCastExpression {
                         base: BaseNode::typed("TypeCastExpression"),
                         expression: Box::new(expr),
-                        type_annotation: ta,
+                        type_annotation: RawNode::from_value(&ta),
                     })
                 }
                 _ => expr,
@@ -2658,9 +2779,16 @@ fn codegen_function_expression(
         cx.unique_identifiers.clone(),
         cx.fbt_operands.clone(),
     );
-    inner_cx.temp = cx.temp.clone();
+    // The inner function reads the enclosing temporaries but must not leak its
+    // own back out. Lend the map to `inner_cx` and rewind its writes on the way
+    // out, rather than deep-cloning every buffered expression tree. The map is
+    // restored on the error path too, so `cx` is never left empty.
+    inner_cx.temp = cx.temp.lend();
 
-    let fn_result = codegen_reactive_function(&mut inner_cx, &reactive_fn_mut)?;
+    let fn_result = codegen_reactive_function(&mut inner_cx, &reactive_fn_mut);
+
+    cx.temp.reclaim(std::mem::take(&mut inner_cx.temp));
+    let fn_result = fn_result?;
 
     let value = match expr_type {
         FunctionExpressionType::ArrowFunctionExpression => {
@@ -2713,7 +2841,7 @@ fn codegen_function_expression(
                         base: BaseNode::typed("ObjectProperty"),
                         key: Box::new(Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: hint.clone(),
+                            value: hint.clone().into(),
                         })),
                         value: Box::new(value),
                         computed: false,
@@ -2725,7 +2853,7 @@ fn codegen_function_expression(
             })),
             property: Box::new(Expression::StringLiteral(StringLiteral {
                 base: BaseNode::typed("StringLiteral"),
-                value: hint.clone(),
+                value: hint.clone().into(),
             })),
             computed: true,
         });
@@ -2751,7 +2879,10 @@ fn codegen_object_expression(
                 match obj_prop.property_type {
                     ObjectPropertyType::Property => {
                         let value = codegen_place_to_expression(cx, &obj_prop.place)?;
-                        let is_shorthand = matches!(&key, Expression::Identifier(k_id)
+                        let is_shorthand = matches!(
+                            obj_prop.key,
+                            ObjectPropertyKey::Identifier { .. }
+                        ) && matches!(&key, Expression::Identifier(k_id)
                             if matches!(&value, Expression::Identifier(v_id) if v_id.name == k_id.name));
                         ast_properties.push(ast_expr::ObjectExpressionProperty::ObjectProperty(
                             ast_expr::ObjectProperty {
@@ -2793,9 +2924,12 @@ fn codegen_object_expression(
                             cx.unique_identifiers.clone(),
                             cx.fbt_operands.clone(),
                         );
-                        inner_cx.temp = cx.temp.clone();
+                        inner_cx.temp = cx.temp.lend();
 
-                        let fn_result = codegen_reactive_function(&mut inner_cx, &reactive_fn_mut)?;
+                        let fn_result = codegen_reactive_function(&mut inner_cx, &reactive_fn_mut);
+
+                        cx.temp.reclaim(std::mem::take(&mut inner_cx.temp));
+                        let fn_result = fn_result?;
 
                         ast_properties.push(ast_expr::ObjectExpressionProperty::ObjectMethod(
                             ast_expr::ObjectMethod {
@@ -2847,7 +2981,7 @@ fn codegen_object_property_key(
     match key {
         ObjectPropertyKey::String { name } => Ok(Expression::StringLiteral(StringLiteral {
             base: BaseNode::typed("StringLiteral"),
-            value: name.clone(),
+            value: name.clone().into(),
         })),
         ObjectPropertyKey::Identifier { name } => Ok(Expression::Identifier(make_identifier(name))),
         ObjectPropertyKey::Computed { name } => {
@@ -2891,7 +3025,7 @@ fn codegen_jsx_expression(
         JsxTag::Builtin(builtin) => (
             Expression::StringLiteral(StringLiteral {
                 base: BaseNode::typed("StringLiteral"),
-                value: builtin.name.clone(),
+                value: builtin.name.clone().into(),
             }),
             None,
         ),
@@ -2900,7 +3034,9 @@ fn codegen_jsx_expression(
     let jsx_tag = expression_to_jsx_tag(&tag_value, jsx_tag_loc(tag))?;
 
     let is_fbt_tag = if let Expression::StringLiteral(ref s) = tag_value {
-        SINGLE_CHILD_FBT_TAGS.contains(&s.value.as_str())
+        s.value
+            .as_str()
+            .is_some_and(|v| SINGLE_CHILD_FBT_TAGS.contains(&v))
     } else {
         false
     };
@@ -3001,7 +3137,7 @@ fn codegen_jsx_attribute(
             let inner_value = codegen_place_to_expression(cx, place)?;
             let attr_value = match &inner_value {
                 Expression::StringLiteral(s) => {
-                    if string_requires_expr_container(&s.value)
+                    if string_requires_expr_container(&s.value.to_marker_string())
                         && !cx.fbt_operands.contains(&place.identifier)
                     {
                         Some(JSXAttributeValue::JSXExpressionContainer(
@@ -3064,7 +3200,7 @@ fn codegen_jsx_element(cx: &mut Context, place: &Place) -> Result<JSXChild, Comp
                     expression: JSXExpressionContainerExpr::Expression(Box::new(
                         Expression::StringLiteral(StringLiteral {
                             base: base_node_with_loc("StringLiteral", loc),
-                            value: text.value.clone(),
+                            value: text.value.clone().into(),
                         }),
                     )),
                 }))
@@ -3120,8 +3256,11 @@ fn expression_to_jsx_tag(
             convert_member_expression_to_jsx(me)?,
         )),
         Expression::StringLiteral(s) => {
-            if s.value.contains(':') {
-                let parts: Vec<&str> = s.value.splitn(2, ':').collect();
+            // JSX tag names are identifier-shaped; the marker form preserves
+            // the pre-JsString behavior for pathological values.
+            let tag_text = s.value.to_marker_string();
+            if tag_text.contains(':') {
+                let parts: Vec<&str> = tag_text.splitn(2, ':').collect();
                 Ok(JSXElementName::JSXNamespacedName(JSXNamespacedName {
                     base: base_node_with_loc("JSXNamespacedName", loc),
                     namespace: JSXIdentifier {
@@ -3136,7 +3275,7 @@ fn expression_to_jsx_tag(
             } else {
                 Ok(JSXElementName::JSXIdentifier(JSXIdentifier {
                     base: base_node_with_loc("JSXIdentifier", loc),
-                    name: s.value.clone(),
+                    name: tag_text,
                 }))
             }
         }
@@ -3252,8 +3391,9 @@ fn codegen_object_pattern(
             ObjectPropertyOrSpread::Property(obj_prop) => {
                 let key = codegen_object_property_key(cx, &obj_prop.key)?;
                 let value = codegen_lvalue(cx, &LvalueRef::Place(&obj_prop.place))?;
-                let is_shorthand = matches!(&key, Expression::Identifier(k_id)
-                    if matches!(&value, PatternLike::Identifier(v_id) if v_id.name == k_id.name));
+                let is_shorthand = matches!(obj_prop.key, ObjectPropertyKey::Identifier { .. })
+                    && matches!(&key, Expression::Identifier(k_id)
+                        if matches!(&value, PatternLike::Identifier(v_id) if v_id.name == k_id.name));
                 Ok(ObjectPatternProperty::ObjectProperty(ObjectPatternProp {
                     base: BaseNode::typed("ObjectProperty"),
                     key: Box::new(key),
@@ -3299,14 +3439,14 @@ fn codegen_place_to_expression(
 
 fn codegen_place(cx: &mut Context, place: &Place) -> Result<ExpressionOrJsxText, CompilerError> {
     let ident = &cx.env.identifiers[place.identifier.0 as usize];
-    if let Some(tmp) = cx.temp.get(&ident.declaration_id) {
+    if let Some(tmp) = cx.temp.get(ident.declaration_id) {
         if let Some(val) = tmp {
             return Ok(val.clone());
         }
         // tmp is None — means declared but no temp value, fall through
     }
     // Check if it's an unnamed identifier without a temp
-    if ident.name.is_none() && !cx.temp.contains_key(&ident.declaration_id) {
+    if ident.name.is_none() && !cx.temp.contains_key(ident.declaration_id) {
         return Err(invariant_err(
             &format!(
                 "[Codegen] No value found for temporary, identifier id={}",
@@ -3745,7 +3885,7 @@ fn symbol_for(name: &str) -> Expression {
         })),
         arguments: vec![Expression::StringLiteral(StringLiteral {
             base: BaseNode::typed("StringLiteral"),
-            value: name.to_string(),
+            value: name.to_string().into(),
         })],
         type_parameters: None,
         type_arguments: None,
@@ -3823,7 +3963,7 @@ fn convert_value_to_expression(value: ExpressionOrJsxText) -> Expression {
         ExpressionOrJsxText::Expression(e) => e,
         ExpressionOrJsxText::JsxText(text) => Expression::StringLiteral(StringLiteral {
             base: BaseNode::typed("StringLiteral"),
-            value: text.value,
+            value: text.value.into(),
         }),
     }
 }
@@ -4152,7 +4292,7 @@ fn create_function_body_hook_guard(
 fn apply_renames_to_json(
     value: &mut serde_json::Value,
     renames: &[react_compiler_hir::environment::BindingRename],
-    reference_node_ids: &std::collections::HashSet<u32>,
+    reference_node_ids: &rustc_hash::FxHashSet<u32>,
 ) {
     apply_renames_to_json_inner(value, renames, reference_node_ids, false);
 }
@@ -4160,7 +4300,7 @@ fn apply_renames_to_json(
 fn apply_renames_to_json_inner(
     value: &mut serde_json::Value,
     renames: &[react_compiler_hir::environment::BindingRename],
-    reference_node_ids: &std::collections::HashSet<u32>,
+    reference_node_ids: &rustc_hash::FxHashSet<u32>,
     is_property_key: bool,
 ) {
     if renames.is_empty() {
@@ -4233,6 +4373,27 @@ mod tests {
 
     use super::{UnsupportedOriginalNode, codegen_unsupported_original_node};
 
+    /// The Fast Refresh source hash must match Node's
+    /// `createHmac('sha256', code).digest('hex')` byte-for-byte, or hot-reload
+    /// cache invalidation would diverge from the TS compiler. Reference values
+    /// were computed with Node's `crypto` module.
+    #[test]
+    fn source_file_hash_matches_node_create_hmac() {
+        use super::source_file_hash;
+        assert_eq!(
+            source_file_hash("hello world"),
+            "0de8bee5d7f9c5d209f8c6fabed0ea84cb3fca1244e8ed38079a61b599a84c47"
+        );
+        assert_eq!(
+            source_file_hash(""),
+            "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"
+        );
+        assert_eq!(
+            source_file_hash("function App(){}"),
+            "d637acb4985c789d6622c70197db2b62dda282f16f3276aa810b598d6e6cab7b"
+        );
+    }
+
     /// A modeled statement tag parses typed and is emitted directly.
     #[test]
     fn unsupported_original_node_modeled_statement_tag_emits_statement() {
@@ -4297,7 +4458,7 @@ mod tests {
         match codegen_unsupported_original_node(&node).unwrap() {
             UnsupportedOriginalNode::Statement(Statement::Unknown(unknown)) => {
                 assert_eq!(unknown.node_type(), "TSImportEqualsDeclaration");
-                assert_eq!(unknown.raw(), &node);
+                assert_eq!(unknown.raw().parse_value(), node);
             }
             UnsupportedOriginalNode::Statement(other) => {
                 panic!("expected Statement::Unknown, got {other:?}")

@@ -23,10 +23,20 @@ import type {UnknownSuspendersReason} from '../constants';
 
 export type BrowserTheme = 'dark' | 'light';
 
+export type WallMessage = {
+  event: string,
+  payload?: mixed,
+};
+
 export type Wall = {
-  // `listen` returns the "unlisten" function.
-  listen: (fn: Function) => Function,
-  send: (event: string, payload: any, transferable?: Array<any>) => void,
+  // A Wall may share its transport with unrelated or legacy messages, so the
+  // Bridge must refine incoming values at the boundary.
+  listen: (fn: (message: mixed) => void) => () => void,
+  send: (
+    event: string,
+    payload: mixed,
+    transferable?: $ReadOnlyArray<mixed>,
+  ) => void,
 };
 
 // WARNING

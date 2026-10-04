@@ -24,33 +24,33 @@ import * as React from 'react';
 
 export type AttributeType<T, V> =
   | true
-  | $ReadOnly<{
+  | Readonly<{
       diff?: (arg1: T, arg2: T) => boolean,
       process?: (arg1: V) => T,
     }>;
 
-// We either force that `diff` and `process` always use mixed,
+// We either force that `diff` and `process` always use unknown,
 // or we allow them to define specific types and use this hack
 export type AnyAttributeType = AttributeType<$FlowFixMe, $FlowFixMe>;
 
-export type AttributeConfiguration = $ReadOnly<{
+export type AttributeConfiguration = Readonly<{
   [propName: string]: AnyAttributeType | void,
-  style?: $ReadOnly<{
+  style?: Readonly<{
     [propName: string]: AnyAttributeType,
     ...
   }>,
   ...
 }>;
 
-export type ViewConfig = $ReadOnly<{
-  Commands?: $ReadOnly<{[commandName: string]: number, ...}>,
-  Constants?: $ReadOnly<{[name: string]: mixed, ...}>,
+export type ViewConfig = Readonly<{
+  Commands?: Readonly<{[commandName: string]: number, ...}>,
+  Constants?: Readonly<{[name: string]: unknown, ...}>,
   Manager?: string,
-  NativeProps?: $ReadOnly<{[propName: string]: string, ...}>,
+  NativeProps?: Readonly<{[propName: string]: string, ...}>,
   baseModuleName?: ?string,
-  bubblingEventTypes?: $ReadOnly<{
-    [eventName: string]: $ReadOnly<{
-      phasedRegistrationNames: $ReadOnly<{
+  bubblingEventTypes?: Readonly<{
+    [eventName: string]: Readonly<{
+      phasedRegistrationNames: Readonly<{
         captured: string,
         bubbled: string,
         skipBubbling?: ?boolean,
@@ -58,8 +58,8 @@ export type ViewConfig = $ReadOnly<{
     }>,
     ...
   }>,
-  directEventTypes?: $ReadOnly<{
-    [eventName: string]: $ReadOnly<{
+  directEventTypes?: Readonly<{
+    [eventName: string]: Readonly<{
       registrationName: string,
     }>,
     ...
@@ -69,7 +69,7 @@ export type ViewConfig = $ReadOnly<{
   validAttributes: AttributeConfiguration,
 }>;
 
-export type PartialViewConfig = $ReadOnly<{
+export type PartialViewConfig = Readonly<{
   bubblingEventTypes?: ViewConfig['bubblingEventTypes'],
   directEventTypes?: ViewConfig['directEventTypes'],
   supportsRawText?: boolean,
@@ -77,22 +77,22 @@ export type PartialViewConfig = $ReadOnly<{
   validAttributes?: AttributeConfiguration,
 }>;
 
-type InspectorDataProps = $ReadOnly<{
+type InspectorDataProps = Readonly<{
   [propName: string]: string,
   ...
 }>;
 
 type InspectorDataGetter = (
-  <TElementType: React.ElementType>(
+  <TElementType extends React.ElementType>(
     componentOrHandle: React.ElementRef<TElementType> | number,
   ) => ?number,
-) => $ReadOnly<{
+) => Readonly<{
   measure: (callback: MeasureOnSuccessCallback) => void,
   props: InspectorDataProps,
 }>;
 
-export type InspectorData = $ReadOnly<{
-  closestInstance?: mixed,
+export type InspectorData = Readonly<{
+  closestInstance?: unknown,
   hierarchy: Array<{
     name: ?string,
     getInspectorData: InspectorDataGetter,
@@ -102,11 +102,11 @@ export type InspectorData = $ReadOnly<{
   componentStack: string,
 }>;
 
-export type TouchedViewDataAtPoint = $ReadOnly<
+export type TouchedViewDataAtPoint = Readonly<
   {
     pointerY: number,
     touchedViewTag?: number,
-    frame: $ReadOnly<{
+    frame: Readonly<{
       top: number,
       left: number,
       width: number,
@@ -118,39 +118,39 @@ export type TouchedViewDataAtPoint = $ReadOnly<
 
 export type RenderRootOptions = {
   onUncaughtError?: (
-    error: mixed,
-    errorInfo: {+componentStack?: ?string},
+    error: unknown,
+    errorInfo: {readonly componentStack?: ?string},
   ) => void,
   onCaughtError?: (
-    error: mixed,
+    error: unknown,
     errorInfo: {
-      +componentStack?: ?string,
+      readonly componentStack?: ?string,
       // $FlowFixMe[unclear-type] unknown props and state.
       // $FlowFixMe[value-as-type] Component in react repo is any-typed, but it will be well typed externally.
-      +errorBoundary?: ?React.Component<any, any>,
+      readonly errorBoundary?: ?React.Component<any, any>,
     },
   ) => void,
   onRecoverableError?: (
-    error: mixed,
-    errorInfo: {+componentStack?: ?string},
+    error: unknown,
+    errorInfo: {readonly componentStack?: ?string},
   ) => void,
   onDefaultTransitionIndicator?: () => void | (() => void),
 };
 
-export opaque type Node = mixed;
-export opaque type InternalInstanceHandle = mixed;
+export opaque type Node = unknown;
+export opaque type InternalInstanceHandle = unknown;
 
 export type ReactFabricType = {
-  findHostInstance_DEPRECATED<TElementType: React.ElementType>(
+  findHostInstance_DEPRECATED<TElementType extends React.ElementType>(
     componentOrHandle: ?(React.ElementRef<TElementType> | number),
   ): ?PublicInstance,
-  findNodeHandle<TElementType: React.ElementType>(
+  findNodeHandle<TElementType extends React.ElementType>(
     componentOrHandle: ?(React.ElementRef<TElementType> | number),
   ): ?number,
   dispatchCommand(
     handle: PublicInstance,
     command: string,
-    args: Array<mixed>,
+    args: Array<unknown>,
   ): void,
   isChildPublicInstance(parent: PublicInstance, child: PublicInstance): boolean,
   sendAccessibilityEvent(handle: PublicInstance, eventType: string): void,
@@ -210,7 +210,7 @@ export type LayoutAnimationProperty =
   | 'scaleY'
   | 'scaleXY';
 
-export type LayoutAnimationAnimationConfig = $ReadOnly<{
+export type LayoutAnimationAnimationConfig = Readonly<{
   duration?: number,
   delay?: number,
   springDamping?: number,
@@ -219,7 +219,7 @@ export type LayoutAnimationAnimationConfig = $ReadOnly<{
   property?: LayoutAnimationProperty,
 }>;
 
-export type LayoutAnimationConfig = $ReadOnly<{
+export type LayoutAnimationConfig = Readonly<{
   duration: number,
   create?: LayoutAnimationAnimationConfig,
   update?: LayoutAnimationAnimationConfig,

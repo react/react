@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::common::BaseNode;
+use crate::common::RawNode;
 use crate::expressions::Expression;
 use crate::expressions::Identifier;
 use crate::literals::StringLiteral;
@@ -197,20 +198,20 @@ pub struct ExportAllDeclaration {
     pub attributes: Option<Vec<ImportAttribute>>,
 }
 
-// TypeScript declarations (pass-through via serde_json::Value for bodies)
+// TypeScript declarations (pass-through via RawNode for bodies)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TSTypeAliasDeclaration {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
     #[serde(rename = "typeAnnotation")]
-    pub type_annotation: Box<serde_json::Value>,
+    pub type_annotation: RawNode,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declare: Option<bool>,
 }
@@ -220,15 +221,15 @@ pub struct TSInterfaceDeclaration {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
-    pub body: Box<serde_json::Value>,
+    pub body: RawNode,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extends: Option<Vec<serde_json::Value>>,
+    pub extends: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declare: Option<bool>,
 }
@@ -238,7 +239,7 @@ pub struct TSEnumDeclaration {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
-    pub members: Vec<serde_json::Value>,
+    pub members: Vec<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declare: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "const")]
@@ -249,8 +250,8 @@ pub struct TSEnumDeclaration {
 pub struct TSModuleDeclaration {
     #[serde(flatten)]
     pub base: BaseNode,
-    pub id: Box<serde_json::Value>,
-    pub body: Box<serde_json::Value>,
+    pub id: RawNode,
+    pub body: RawNode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declare: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -262,7 +263,7 @@ pub struct TSDeclareFunction {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Option<Identifier>,
-    pub params: Vec<serde_json::Value>,
+    pub params: Vec<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "async")]
     pub is_async: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -274,13 +275,13 @@ pub struct TSDeclareFunction {
         skip_serializing_if = "Option::is_none",
         rename = "returnType"
     )]
-    pub return_type: Option<Box<serde_json::Value>>,
+    pub return_type: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
 }
 
 // Flow declarations (pass-through)
@@ -289,9 +290,9 @@ pub struct TypeAlias {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
-    pub right: Box<serde_json::Value>,
+    pub right: RawNode,
     #[serde(default, rename = "typeParameters")]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -300,14 +301,14 @@ pub struct OpaqueType {
     pub base: BaseNode,
     pub id: Identifier,
     #[serde(rename = "supertype")]
-    pub supertype: Option<Box<serde_json::Value>>,
-    pub impltype: Box<serde_json::Value>,
+    pub supertype: Option<RawNode>,
+    pub impltype: RawNode,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,19 +316,19 @@ pub struct InterfaceDeclaration {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
-    pub body: Box<serde_json::Value>,
+    pub body: RawNode,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extends: Option<Vec<serde_json::Value>>,
+    pub extends: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mixins: Option<Vec<serde_json::Value>>,
+    pub mixins: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub implements: Option<Vec<serde_json::Value>>,
+    pub implements: Option<Vec<RawNode>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -347,7 +348,7 @@ pub struct DeclareFunction {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::common::nullable_value"
     )]
-    pub predicate: Option<Box<serde_json::Value>>,
+    pub predicate: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -355,27 +356,27 @@ pub struct DeclareClass {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
-    pub body: Box<serde_json::Value>,
+    pub body: RawNode,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extends: Option<Vec<serde_json::Value>>,
+    pub extends: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mixins: Option<Vec<serde_json::Value>>,
+    pub mixins: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub implements: Option<Vec<serde_json::Value>>,
+    pub implements: Option<Vec<RawNode>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeclareModule {
     #[serde(flatten)]
     pub base: BaseNode,
-    pub id: Box<serde_json::Value>,
-    pub body: Box<serde_json::Value>,
+    pub id: RawNode,
+    pub body: RawNode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
 }
@@ -385,7 +386,7 @@ pub struct DeclareModuleExports {
     #[serde(flatten)]
     pub base: BaseNode,
     #[serde(rename = "typeAnnotation")]
-    pub type_annotation: Box<serde_json::Value>,
+    pub type_annotation: RawNode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -393,9 +394,9 @@ pub struct DeclareExportDeclaration {
     #[serde(flatten)]
     pub base: BaseNode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub declaration: Option<Box<serde_json::Value>>,
+    pub declaration: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub specifiers: Option<Vec<serde_json::Value>>,
+    pub specifiers: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<StringLiteral>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -414,19 +415,19 @@ pub struct DeclareInterface {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
-    pub body: Box<serde_json::Value>,
+    pub body: RawNode,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extends: Option<Vec<serde_json::Value>>,
+    pub extends: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mixins: Option<Vec<serde_json::Value>>,
+    pub mixins: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub implements: Option<Vec<serde_json::Value>>,
+    pub implements: Option<Vec<RawNode>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -434,13 +435,13 @@ pub struct DeclareTypeAlias {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
-    pub right: Box<serde_json::Value>,
+    pub right: RawNode,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -449,15 +450,15 @@ pub struct DeclareOpaqueType {
     pub base: BaseNode,
     pub id: Identifier,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supertype: Option<Box<serde_json::Value>>,
+    pub supertype: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub impltype: Option<Box<serde_json::Value>>,
+    pub impltype: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -465,5 +466,5 @@ pub struct EnumDeclaration {
     #[serde(flatten)]
     pub base: BaseNode,
     pub id: Identifier,
-    pub body: Box<serde_json::Value>,
+    pub body: RawNode,
 }

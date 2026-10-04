@@ -1,8 +1,8 @@
-function Component(props) {
+function Component(props, ...args) {
   return () => {
     let str;
-    if (arguments.length) {
-      str = arguments[0];
+    if (args.length) {
+      str = args[0];
     } else {
       str = props.str;
     }

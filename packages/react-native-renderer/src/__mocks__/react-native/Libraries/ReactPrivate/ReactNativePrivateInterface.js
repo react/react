@@ -8,8 +8,14 @@
  */
 
 module.exports = {
+  get fabricUIManager() {
+    return global.nativeFabricUIManager;
+  },
   get ReactFiberErrorDialog() {
     return require('./ReactFiberErrorDialog');
+  },
+  get ReactNativeFeatureFlags() {
+    return require('./ReactNativeFeatureFlags');
   },
   get ReactNativeViewConfigRegistry() {
     return require('./ReactNativeViewConfigRegistry');

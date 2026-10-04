@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::common::BaseNode;
+use crate::common::RawNode;
 use crate::jsx::JSXElement;
 use crate::jsx::JSXFragment;
 use crate::literals::*;
@@ -20,11 +21,11 @@ pub struct Identifier {
         skip_serializing_if = "Option::is_none",
         rename = "typeAnnotation"
     )]
-    pub type_annotation: Option<Box<serde_json::Value>>,
+    pub type_annotation: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub optional: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,13 +92,13 @@ pub struct CallExpression {
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeArguments"
     )]
-    pub type_arguments: Option<Box<serde_json::Value>>,
+    pub type_arguments: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub optional: Option<bool>,
 }
@@ -123,13 +124,13 @@ pub struct OptionalCallExpression {
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeArguments"
     )]
-    pub type_arguments: Option<Box<serde_json::Value>>,
+    pub type_arguments: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,20 +223,20 @@ pub struct ArrowFunctionExpression {
         skip_serializing_if = "Option::is_none",
         rename = "returnType"
     )]
-    pub return_type: Option<Box<serde_json::Value>>,
+    pub return_type: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "predicate",
         deserialize_with = "crate::common::nullable_value"
     )]
-    pub predicate: Option<Box<serde_json::Value>>,
+    pub predicate: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,20 +264,20 @@ pub struct FunctionExpression {
         skip_serializing_if = "Option::is_none",
         rename = "returnType"
     )]
-    pub return_type: Option<Box<serde_json::Value>>,
+    pub return_type: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "predicate",
         deserialize_with = "crate::common::nullable_value"
     )]
-    pub predicate: Option<Box<serde_json::Value>>,
+    pub predicate: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -303,7 +304,7 @@ pub struct ObjectProperty {
     pub computed: bool,
     pub shorthand: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub method: Option<bool>,
 }
@@ -325,26 +326,26 @@ pub struct ObjectMethod {
     #[serde(default, rename = "async")]
     pub is_async: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "returnType"
     )]
-    pub return_type: Option<Box<serde_json::Value>>,
+    pub return_type: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "predicate",
         deserialize_with = "crate::common::nullable_value"
     )]
-    pub predicate: Option<Box<serde_json::Value>>,
+    pub predicate: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -373,14 +374,14 @@ pub struct NewExpression {
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::common::nullable_value",
         rename = "typeArguments"
     )]
-    pub type_arguments: Option<Box<serde_json::Value>>,
+    pub type_arguments: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -402,7 +403,7 @@ pub struct TaggedTemplateExpression {
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -446,32 +447,32 @@ pub struct ClassExpression {
     pub super_class: Option<Box<Expression>>,
     pub body: ClassBody,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "implements"
     )]
-    pub implements: Option<Vec<serde_json::Value>>,
+    pub implements: Option<Vec<RawNode>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "superTypeParameters"
     )]
-    pub super_type_parameters: Option<Box<serde_json::Value>>,
+    pub super_type_parameters: Option<RawNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         rename = "typeParameters"
     )]
-    pub type_parameters: Option<Box<serde_json::Value>>,
+    pub type_parameters: Option<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClassBody {
     #[serde(flatten)]
     pub base: BaseNode,
-    pub body: Vec<serde_json::Value>,
+    pub body: Vec<RawNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -506,14 +507,14 @@ pub struct ParenthesizedExpression {
     pub expression: Box<Expression>,
 }
 
-// TypeScript expression nodes (pass-through with serde_json::Value for type args)
+// TypeScript expression nodes (pass-through with RawNode for type args)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TSAsExpression {
     #[serde(flatten)]
     pub base: BaseNode,
     pub expression: Box<Expression>,
     #[serde(rename = "typeAnnotation")]
-    pub type_annotation: Box<serde_json::Value>,
+    pub type_annotation: RawNode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -522,7 +523,7 @@ pub struct TSSatisfiesExpression {
     pub base: BaseNode,
     pub expression: Box<Expression>,
     #[serde(rename = "typeAnnotation")]
-    pub type_annotation: Box<serde_json::Value>,
+    pub type_annotation: RawNode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -538,7 +539,7 @@ pub struct TSTypeAssertion {
     pub base: BaseNode,
     pub expression: Box<Expression>,
     #[serde(rename = "typeAnnotation")]
-    pub type_annotation: Box<serde_json::Value>,
+    pub type_annotation: RawNode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -547,7 +548,7 @@ pub struct TSInstantiationExpression {
     pub base: BaseNode,
     pub expression: Box<Expression>,
     #[serde(rename = "typeParameters")]
-    pub type_parameters: Box<serde_json::Value>,
+    pub type_parameters: RawNode,
 }
 
 // Flow expression nodes
@@ -557,5 +558,5 @@ pub struct TypeCastExpression {
     pub base: BaseNode,
     pub expression: Box<Expression>,
     #[serde(rename = "typeAnnotation")]
-    pub type_annotation: Box<serde_json::Value>,
+    pub type_annotation: RawNode,
 }

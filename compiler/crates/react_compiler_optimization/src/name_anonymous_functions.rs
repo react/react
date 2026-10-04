@@ -11,13 +11,13 @@
 //!
 //! Conditional on `env.config.enable_name_anonymous_functions`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::object_shape::HookKind;
 use react_compiler_hir::{
-    FunctionId, HirFunction, IdentifierId, IdentifierName, InstructionValue, JsxAttribute, JsxTag,
-    PlaceOrSpread, Instruction,
+    FunctionId, HirFunction, IdentifierId, IdentifierName, Instruction, InstructionValue,
+    JsxAttribute, JsxTag, PlaceOrSpread,
 };
 
 /// Assign generated names to anonymous function expressions.
@@ -31,11 +31,7 @@ pub fn name_anonymous_functions(func: &mut HirFunction, env: &mut Environment) {
 
     let nodes = name_anonymous_functions_impl(func, env);
 
-    fn visit(
-        node: &Node,
-        prefix: &str,
-        updates: &mut Vec<(FunctionId, String)>,
-    ) {
+    fn visit(node: &Node, prefix: &str, updates: &mut Vec<(FunctionId, String)>) {
         if node.generated_name.is_some() && node.existing_name_hint.is_none() {
             // Only add the prefix to anonymous functions regardless of nesting depth
             let name = format!("{}{}]", prefix, node.generated_name.as_ref().unwrap());
@@ -67,7 +63,7 @@ pub fn name_anonymous_functions(func: &mut HirFunction, env: &mut Environment) {
     if updates.is_empty() {
         return;
     }
-    let update_map: HashMap<FunctionId, &String> =
+    let update_map: FxHashMap<FunctionId, &String> =
         updates.iter().map(|(fid, name)| (*fid, name)).collect();
 
     // Apply name updates to the inner HirFunction in the arena
@@ -90,7 +86,7 @@ pub fn name_anonymous_functions(func: &mut HirFunction, env: &mut Environment) {
 /// Apply name hints to FunctionExpression instruction values.
 fn apply_name_hints_to_instructions(
     instructions: &mut [Instruction],
-    update_map: &HashMap<FunctionId, &String>,
+    update_map: &FxHashMap<FunctionId, &String>,
 ) {
     for instr in instructions.iter_mut() {
         if let InstructionValue::FunctionExpression {
@@ -121,9 +117,9 @@ struct Node {
 
 fn name_anonymous_functions_impl(func: &HirFunction, env: &Environment) -> Vec<Node> {
     // Functions that we track to generate names for
-    let mut functions: HashMap<IdentifierId, usize> = HashMap::new();
+    let mut functions: FxHashMap<IdentifierId, usize> = FxHashMap::default();
     // Tracks temporaries that read from variables/globals/properties
-    let mut names: HashMap<IdentifierId, String> = HashMap::new();
+    let mut names: FxHashMap<IdentifierId, String> = FxHashMap::default();
     // Tracks all function nodes
     let mut nodes: Vec<Node> = Vec::new();
 
@@ -150,16 +146,11 @@ fn name_anonymous_functions_impl(func: &HirFunction, env: &Environment) -> Vec<N
                     object, property, ..
                 } => {
                     if let Some(object_name) = names.get(&object.identifier) {
-                        names.insert(
-                            lvalue_id,
-                            format!("{}.{}", object_name, property),
-                        );
+                        names.insert(lvalue_id, format!("{}.{}", object_name, property));
                     }
                 }
                 InstructionValue::FunctionExpression {
-                    name,
-                    lowered_func,
-                    ..
+                    name, lowered_func, ..
                 } => {
                     let inner_func = &env.functions[lowered_func.func.0 as usize];
                     let inner = name_anonymous_functions_impl(inner_func, env);
@@ -177,8 +168,16 @@ fn name_anonymous_functions_impl(func: &HirFunction, env: &Environment) -> Vec<N
                         functions.insert(lvalue_id, idx);
                     }
                 }
-                InstructionValue::StoreContext { lvalue: store_lvalue, value, .. }
-                | InstructionValue::StoreLocal { lvalue: store_lvalue, value, .. } => {
+                InstructionValue::StoreContext {
+                    lvalue: store_lvalue,
+                    value,
+                    ..
+                }
+                | InstructionValue::StoreLocal {
+                    lvalue: store_lvalue,
+                    value,
+                    ..
+                } => {
                     if let Some(&node_idx) = functions.get(&value.identifier) {
                         let node = &mut nodes[node_idx];
                         let var_ident = &env.identifiers[store_lvalue.place.identifier.0 as usize];
@@ -201,9 +200,7 @@ fn name_anonymous_functions_impl(func: &HirFunction, env: &Environment) -> Vec<N
                         &mut nodes,
                     );
                 }
-                InstructionValue::MethodCall {
-                    property, args, ..
-                } => {
+                InstructionValue::MethodCall { property, args, .. } => {
                     handle_call(
                         env,
                         func,
@@ -218,14 +215,15 @@ fn name_anonymous_functions_impl(func: &HirFunction, env: &Environment) -> Vec<N
                     for attr in props {
                         match attr {
                             JsxAttribute::SpreadAttribute { .. } => continue,
-                            JsxAttribute::Attribute { name: attr_name, place } => {
+                            JsxAttribute::Attribute {
+                                name: attr_name,
+                                place,
+                            } => {
                                 if let Some(&node_idx) = functions.get(&place.identifier) {
                                     let node = &mut nodes[node_idx];
                                     if node.generated_name.is_none() {
                                         let element_name = match tag {
-                                            JsxTag::Builtin(builtin) => {
-                                                Some(builtin.name.clone())
-                                            }
+                                            JsxTag::Builtin(builtin) => Some(builtin.name.clone()),
                                             JsxTag::Place(tag_place) => {
                                                 names.get(&tag_place.identifier).cloned()
                                             }
@@ -258,8 +256,8 @@ fn handle_call(
     _func: &HirFunction,
     callee_id: IdentifierId,
     args: &[PlaceOrSpread],
-    functions: &mut HashMap<IdentifierId, usize>,
-    names: &HashMap<IdentifierId, String>,
+    functions: &mut FxHashMap<IdentifierId, usize>,
+    names: &FxHashMap<IdentifierId, String>,
     nodes: &mut Vec<Node>,
 ) {
     let callee_ident = &env.identifiers[callee_id.0 as usize];
@@ -270,10 +268,16 @@ fn handle_call(
         if *hk != HookKind::Custom {
             hk.to_string()
         } else {
-            names.get(&callee_id).cloned().unwrap_or_else(|| "(anonymous)".to_string())
+            names
+                .get(&callee_id)
+                .cloned()
+                .unwrap_or_else(|| "(anonymous)".to_string())
         }
     } else {
-        names.get(&callee_id).cloned().unwrap_or_else(|| "(anonymous)".to_string())
+        names
+            .get(&callee_id)
+            .cloned()
+            .unwrap_or_else(|| "(anonymous)".to_string())
     };
 
     // Count how many args are tracked functions

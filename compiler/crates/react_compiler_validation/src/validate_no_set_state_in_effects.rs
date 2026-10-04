@@ -12,18 +12,19 @@
 //!
 //! Port of ValidateNoSetStateInEffects.ts.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::source_offsets::slice_by_utf16_range;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory,
 };
 use react_compiler_hir::dominator::{compute_post_dominator_tree, post_dominator_frontier};
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
-    is_ref_value_type, is_set_state_type, is_use_effect_event_type, is_use_effect_hook_type,
-    is_use_insertion_effect_hook_type, is_use_layout_effect_hook_type, is_use_ref_type,
-    BlockId, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue, PlaceOrSpread,
-    PropertyLiteral, SourceLocation, Terminal, Type, visitors,
+    BlockId, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue,
+    PlaceOrSpread, PropertyLiteral, SourceLocation, Terminal, Type, is_ref_value_type,
+    is_set_state_type, is_use_effect_event_type, is_use_effect_hook_type,
+    is_use_insertion_effect_hook_type, is_use_layout_effect_hook_type, is_use_ref_type, visitors,
 };
 
 pub fn validate_no_set_state_in_effects(
@@ -37,7 +38,7 @@ pub fn validate_no_set_state_in_effects(
     let enable_allow_set_state_from_refs = env.config.enable_allow_set_state_from_refs_in_effects;
 
     // Map from IdentifierId to the Place where the setState originated
-    let mut set_state_functions: HashMap<IdentifierId, SetStateInfo> = HashMap::new();
+    let mut set_state_functions: FxHashMap<IdentifierId, SetStateInfo> = FxHashMap::default();
     let mut errors = CompilerError::new();
 
     for (_block_id, block) in &func.body.blocks {
@@ -81,10 +82,9 @@ pub fn validate_no_set_state_in_effects(
                         }
                     }
                 }
-                InstructionValue::MethodCall {
-                    property, args, ..
-                } => {
-                    let prop_type = &types[identifiers[property.identifier.0 as usize].type_.0 as usize];
+                InstructionValue::MethodCall { property, args, .. } => {
+                    let prop_type =
+                        &types[identifiers[property.identifier.0 as usize].type_.0 as usize];
                     if is_use_effect_event_type(prop_type) {
                         if let Some(first_arg) = args.first() {
                             if let PlaceOrSpread::Place(arg_place) = first_arg {
@@ -100,9 +100,7 @@ pub fn validate_no_set_state_in_effects(
                     {
                         if let Some(first_arg) = args.first() {
                             if let PlaceOrSpread::Place(arg_place) = first_arg {
-                                if let Some(info) =
-                                    set_state_functions.get(&arg_place.identifier)
-                                {
+                                if let Some(info) = set_state_functions.get(&arg_place.identifier) {
                                     push_error(&mut errors, info, enable_verbose);
                                 }
                             }
@@ -110,7 +108,8 @@ pub fn validate_no_set_state_in_effects(
                     }
                 }
                 InstructionValue::CallExpression { callee, args, .. } => {
-                    let callee_type = &types[identifiers[callee.identifier.0 as usize].type_.0 as usize];
+                    let callee_type =
+                        &types[identifiers[callee.identifier.0 as usize].type_.0 as usize];
                     if is_use_effect_event_type(callee_type) {
                         if let Some(first_arg) = args.first() {
                             if let PlaceOrSpread::Place(arg_place) = first_arg {
@@ -126,9 +125,7 @@ pub fn validate_no_set_state_in_effects(
                     {
                         if let Some(first_arg) = args.first() {
                             if let PlaceOrSpread::Place(arg_place) = first_arg {
-                                if let Some(info) =
-                                    set_state_functions.get(&arg_place.identifier)
-                                {
+                                if let Some(info) = set_state_functions.get(&arg_place.identifier) {
                                     push_error(&mut errors, info, enable_verbose);
                                 }
                             }
@@ -164,13 +161,18 @@ fn get_identifier_name_with_loc(
     if let Some(IdentifierName::Named(name)) = &ident.name {
         return Some(name.clone());
     }
-    // Fall back to extracting from source code
+    // Fall back to extracting from source code. Babel/JS positions are UTF-16
+    // code unit offsets, but Rust strings are UTF-8, so they must be converted
+    // before slicing.
     if let (Some(loc), Some(code)) = (loc, source_code) {
-        let start_idx = loc.start.index? as usize;
-        let end_idx = loc.end.index? as usize;
-        if start_idx < code.len() && end_idx <= code.len() && start_idx < end_idx {
-            let slice = &code[start_idx..end_idx];
-            if !slice.is_empty() && slice.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$') {
+        let start_utf16 = loc.start.index? as usize;
+        let end_utf16 = loc.end.index? as usize;
+        if let Some(slice) = slice_by_utf16_range(code, start_utf16, end_utf16) {
+            if !slice.is_empty()
+                && slice
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            {
                 return Some(slice.to_string());
             }
         }
@@ -246,7 +248,7 @@ fn push_error(errors: &mut CompilerError, info: &SetStateInfo, enable_verbose: b
 /// Recursively collect all Place identifiers from a destructure pattern.
 fn collect_destructure_places(
     pattern: &react_compiler_hir::Pattern,
-    ref_derived_values: &mut HashSet<IdentifierId>,
+    ref_derived_values: &mut FxHashSet<IdentifierId>,
 ) {
     match pattern {
         react_compiler_hir::Pattern::Array(arr) => {
@@ -279,7 +281,7 @@ fn collect_destructure_places(
 
 fn is_derived_from_ref(
     id: IdentifierId,
-    ref_derived_values: &HashSet<IdentifierId>,
+    ref_derived_values: &FxHashSet<IdentifierId>,
     identifiers: &[Identifier],
     types: &[Type],
 ) -> bool {
@@ -306,12 +308,12 @@ fn collect_operands(value: &InstructionValue, functions: &[HirFunction]) -> Vec<
 fn create_ref_controlled_block_checker(
     func: &HirFunction,
     next_block_id_counter: u32,
-    ref_derived_values: &HashSet<IdentifierId>,
+    ref_derived_values: &FxHashSet<IdentifierId>,
     identifiers: &[Identifier],
     types: &[Type],
-) -> Result<HashMap<BlockId, bool>, CompilerDiagnostic> {
+) -> Result<FxHashMap<BlockId, bool>, CompilerDiagnostic> {
     let post_dominators = compute_post_dominator_tree(func, next_block_id_counter, false)?;
-    let mut cache: HashMap<BlockId, bool> = HashMap::new();
+    let mut cache: FxHashMap<BlockId, bool> = FxHashMap::default();
 
     for (block_id, _block) in &func.body.blocks {
         let frontier = post_dominator_frontier(func, &post_dominators, *block_id);
@@ -321,23 +323,15 @@ fn create_ref_controlled_block_checker(
             let control_block = &func.body.blocks[frontier_block_id];
             match &control_block.terminal {
                 Terminal::If { test, .. } | Terminal::Branch { test, .. } => {
-                    if is_derived_from_ref(
-                        test.identifier,
-                        ref_derived_values,
-                        identifiers,
-                        types,
-                    ) {
+                    if is_derived_from_ref(test.identifier, ref_derived_values, identifiers, types)
+                    {
                         is_controlled = true;
                         break;
                     }
                 }
                 Terminal::Switch { test, cases, .. } => {
-                    if is_derived_from_ref(
-                        test.identifier,
-                        ref_derived_values,
-                        identifiers,
-                        types,
-                    ) {
+                    if is_derived_from_ref(test.identifier, ref_derived_values, identifiers, types)
+                    {
                         is_controlled = true;
                         break;
                     }
@@ -373,7 +367,7 @@ fn create_ref_controlled_block_checker(
 /// Tracks ref-derived values to allow setState when the value being set comes from a ref.
 fn get_set_state_call(
     func: &HirFunction,
-    set_state_functions: &mut HashMap<IdentifierId, SetStateInfo>,
+    set_state_functions: &mut FxHashMap<IdentifierId, SetStateInfo>,
     identifiers: &[Identifier],
     types: &[Type],
     functions: &[HirFunction],
@@ -381,7 +375,12 @@ fn get_set_state_call(
     next_block_id_counter: u32,
     source_code: Option<&str>,
 ) -> Result<Option<SetStateInfo>, CompilerDiagnostic> {
-    let mut ref_derived_values: HashSet<IdentifierId> = HashSet::new();
+    let mut ref_derived_values: FxHashSet<IdentifierId> = FxHashSet::default();
+    let blocks_after_await: Option<FxHashSet<BlockId>> = if func.is_async {
+        Some(compute_blocks_starting_after_await(func))
+    } else {
+        None
+    };
 
     // First pass: collect ref-derived values (needed before building control dominator checker)
     // We do a pre-pass to seed ref_derived_values so the control dominator checker has them.
@@ -389,12 +388,7 @@ fn get_set_state_call(
         for (_block_id, block) in &func.body.blocks {
             for phi in &block.phis {
                 let is_phi_derived = phi.operands.values().any(|operand| {
-                    is_derived_from_ref(
-                        operand.identifier,
-                        &ref_derived_values,
-                        identifiers,
-                        types,
-                    )
+                    is_derived_from_ref(operand.identifier, &ref_derived_values, identifiers, types)
                 });
                 if is_phi_derived {
                     ref_derived_values.insert(phi.place.identifier);
@@ -445,11 +439,14 @@ fn get_set_state_call(
             types,
         )?
     } else {
-        HashMap::new()
+        FxHashMap::default()
     };
 
     let is_ref_controlled_block = |block_id: BlockId| -> bool {
-        ref_controlled_blocks.get(&block_id).copied().unwrap_or(false)
+        ref_controlled_blocks
+            .get(&block_id)
+            .copied()
+            .unwrap_or(false)
     };
 
     // Reset and redo: second pass with control dominator info available
@@ -468,12 +465,7 @@ fn get_set_state_call(
                     continue;
                 }
                 let is_phi_derived = phi.operands.values().any(|operand| {
-                    is_derived_from_ref(
-                        operand.identifier,
-                        &ref_derived_values,
-                        identifiers,
-                        types,
-                    )
+                    is_derived_from_ref(operand.identifier, &ref_derived_values, identifiers, types)
                 });
                 if is_phi_derived {
                     ref_derived_values.insert(phi.place.identifier);
@@ -494,6 +486,9 @@ fn get_set_state_call(
             }
         }
 
+        let mut is_after_await = blocks_after_await
+            .as_ref()
+            .is_some_and(|blocks| blocks.contains(&block.id));
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
 
@@ -532,6 +527,9 @@ fn get_set_state_call(
             }
 
             match &instr.value {
+                InstructionValue::Await { .. } => {
+                    is_after_await = true;
+                }
                 InstructionValue::LoadLocal { place, .. } => {
                     if set_state_functions.contains_key(&place.identifier) {
                         let info = set_state_functions[&place.identifier].clone();
@@ -549,6 +547,12 @@ fn get_set_state_call(
                     if is_set_state_type_by_id(callee.identifier, identifiers, types)
                         || set_state_functions.contains_key(&callee.identifier)
                     {
+                        if is_after_await {
+                            // Code that is only reachable after an await resumes in a
+                            // microtask after the effect body has returned, so calling
+                            // setState there cannot synchronously cascade a re-render.
+                            continue;
+                        }
                         if enable_allow_set_state_from_refs {
                             // Check if the first argument is ref-derived
                             if let Some(first_arg) = args.first() {
@@ -573,9 +577,15 @@ fn get_set_state_call(
                         // loc.identifierName behavior. Uses declaration_id to find
                         // the original named identifier when SSA creates unnamed copies.
                         let callee_name = get_identifier_name_with_loc(
-                            callee.identifier, identifiers, &callee.loc, source_code,
+                            callee.identifier,
+                            identifiers,
+                            &callee.loc,
+                            source_code,
                         );
-                        return Ok(Some(SetStateInfo { loc: callee.loc, identifier_name: callee_name }));
+                        return Ok(Some(SetStateInfo {
+                            loc: callee.loc,
+                            identifier_name: callee_name,
+                        }));
                     }
                 }
                 _ => {}
@@ -583,4 +593,63 @@ fn get_set_state_call(
         }
     }
     Ok(None)
+}
+
+/// Computes the set of blocks which begin after an `await` has executed on
+/// *every* control flow path from the function entry. Instructions in such
+/// blocks (and instructions following an Await within any block) are
+/// guaranteed to run asynchronously, in a microtask after the synchronous
+/// portion of the function has returned.
+///
+/// This is a forward must-dataflow: a block starts after an await iff all of
+/// its predecessors end after an await. Suppression based on this analysis is
+/// sound in the presence of try/catch because HirBuilder::push terminates the
+/// current block after every instruction within a try region: a MaybeThrow
+/// block can therefore only throw from its single instruction, and when that
+/// instruction is an Await the rejection also resumes in a microtask.
+///
+/// Port of computeBlocksStartingAfterAwait in ValidateNoSetStateInEffects.ts.
+fn compute_blocks_starting_after_await(func: &HirFunction) -> FxHashSet<BlockId> {
+    let mut blocks_with_await: FxHashSet<BlockId> = FxHashSet::default();
+    for (block_id, block) in &func.body.blocks {
+        let has_await = block.instructions.iter().any(|&instr_id| {
+            matches!(
+                func.instructions[instr_id.0 as usize].value,
+                InstructionValue::Await { .. }
+            )
+        });
+        if has_await {
+            blocks_with_await.insert(*block_id);
+        }
+    }
+    // Initialize non-entry blocks optimistically so that loop back-edges do
+    // not pessimize the meet; the fixpoint then lowers any block reachable
+    // without passing an await.
+    let mut starts_after_await: FxHashMap<BlockId, bool> = FxHashMap::default();
+    for (block_id, _block) in &func.body.blocks {
+        starts_after_await.insert(*block_id, *block_id != func.body.entry);
+    }
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (block_id, block) in &func.body.blocks {
+            if *block_id == func.body.entry {
+                continue;
+            }
+            let start_after_await = !block.preds.is_empty()
+                && block.preds.iter().all(|pred| {
+                    starts_after_await.get(pred).copied().unwrap_or(false)
+                        || blocks_with_await.contains(pred)
+                });
+            if starts_after_await.get(block_id) != Some(&start_after_await) {
+                starts_after_await.insert(*block_id, start_after_await);
+                changed = true;
+            }
+        }
+    }
+    starts_after_await
+        .into_iter()
+        .filter(|&(_, after_await)| after_await)
+        .map(|(block_id, _)| block_id)
+        .collect()
 }

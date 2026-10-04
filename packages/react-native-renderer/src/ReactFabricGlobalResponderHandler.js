@@ -7,11 +7,14 @@
  * @flow
  */
 
+// Modules provided by RN:
+import {fabricUIManager} from 'react-native/react-private-interface';
+
 const ReactFabricGlobalResponderHandler = {
   onChange: function (from: any, to: any, blockNativeResponder: boolean) {
     if (from && from.stateNode) {
       // equivalent to clearJSResponder
-      nativeFabricUIManager.setIsJSResponder(
+      fabricUIManager.setIsJSResponder(
         from.stateNode.node,
         false,
         blockNativeResponder || false,
@@ -20,7 +23,7 @@ const ReactFabricGlobalResponderHandler = {
 
     if (to && to.stateNode) {
       // equivalent to setJSResponder
-      nativeFabricUIManager.setIsJSResponder(
+      fabricUIManager.setIsJSResponder(
         to.stateNode.node,
         true,
         blockNativeResponder || false,

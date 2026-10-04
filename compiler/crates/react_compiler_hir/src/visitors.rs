@@ -4,15 +4,13 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::environment::Environment;
 use crate::{
     ArrayElement, ArrayPatternElement, BasicBlock, BlockId, HirFunction, IdentifierId, Instruction,
-    InstructionKind, InstructionValue, JsxAttribute, JsxTag,
-    ManualMemoDependencyRoot, ObjectPropertyKey, ObjectPropertyOrSpread, Pattern, Place,
-    PlaceOrSpread, ScopeId, Terminal,
+    InstructionKind, InstructionValue, JsxAttribute, JsxTag, ManualMemoDependencyRoot,
+    ObjectPropertyKey, ObjectPropertyOrSpread, Pattern, Place, PlaceOrSpread, ScopeId, Terminal,
 };
 
 // =============================================================================
@@ -28,7 +26,7 @@ pub fn each_instruction_lvalue(instr: &Instruction) -> Vec<Place> {
     result
 }
 
-/// Yields lvalues from DeclareLocal/StoreLocal/DeclareContext/StoreContext/Destructure/PostfixUpdate/PrefixUpdate.
+/// Yields lvalues from declarations, stores, destructuring, and update expressions.
 /// Equivalent to TS `eachInstructionValueLValue`.
 pub fn each_instruction_value_lvalue(value: &InstructionValue) -> Vec<Place> {
     let mut result = Vec::new();
@@ -42,8 +40,10 @@ pub fn each_instruction_value_lvalue(value: &InstructionValue) -> Vec<Place> {
         InstructionValue::Destructure { lvalue, .. } => {
             result.extend(each_pattern_operand(&lvalue.pattern));
         }
-        InstructionValue::PostfixUpdate { lvalue, .. }
-        | InstructionValue::PrefixUpdate { lvalue, .. } => {
+        InstructionValue::PostfixUpdateLocal { lvalue, .. }
+        | InstructionValue::PostfixUpdateContext { lvalue, .. }
+        | InstructionValue::PrefixUpdateContext { lvalue, .. }
+        | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
             result.push(lvalue.clone());
         }
         // All other variants have no lvalues
@@ -106,8 +106,10 @@ pub fn each_instruction_lvalue_with_kind(
                 result.push((place, kind));
             }
         }
-        InstructionValue::PostfixUpdate { lvalue, .. }
-        | InstructionValue::PrefixUpdate { lvalue, .. } => {
+        InstructionValue::PostfixUpdateLocal { lvalue, .. }
+        | InstructionValue::PostfixUpdateContext { lvalue, .. }
+        | InstructionValue::PrefixUpdateContext { lvalue, .. }
+        | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
             result.push((lvalue.clone(), InstructionKind::Reassign));
         }
         // All other variants have no lvalues with kind
@@ -168,10 +170,7 @@ pub fn each_instruction_operand_with_functions(
 
 /// Yields operand places from an InstructionValue.
 /// Equivalent to TS `eachInstructionValueOperand`.
-pub fn each_instruction_value_operand(
-    value: &InstructionValue,
-    env: &Environment,
-) -> Vec<Place> {
+pub fn each_instruction_value_operand(value: &InstructionValue, env: &Environment) -> Vec<Place> {
     each_instruction_value_operand_with_functions(value, &env.functions)
 }
 
@@ -205,8 +204,7 @@ pub fn each_instruction_value_operand_with_functions(
         InstructionValue::DeclareContext { .. } | InstructionValue::DeclareLocal { .. } => {
             // no operands
         }
-        InstructionValue::LoadLocal { place, .. }
-        | InstructionValue::LoadContext { place, .. } => {
+        InstructionValue::LoadLocal { place, .. } | InstructionValue::LoadContext { place, .. } => {
             result.push(place.clone());
         }
         InstructionValue::StoreLocal { value: val, .. } => {
@@ -231,9 +229,7 @@ pub fn each_instruction_value_operand_with_functions(
             result.push(object.clone());
         }
         InstructionValue::PropertyStore {
-            object,
-            value: val,
-            ..
+            object, value: val, ..
         } => {
             result.push(object.clone());
             result.push(val.clone());
@@ -356,8 +352,10 @@ pub fn each_instruction_value_operand_with_functions(
         InstructionValue::NextPropertyOf { value: val, .. } => {
             result.push(val.clone());
         }
-        InstructionValue::PostfixUpdate { value: val, .. }
-        | InstructionValue::PrefixUpdate { value: val, .. } => {
+        InstructionValue::PostfixUpdateLocal { value: val, .. }
+        | InstructionValue::PostfixUpdateContext { value: val, .. }
+        | InstructionValue::PrefixUpdateContext { value: val, .. }
+        | InstructionValue::PrefixUpdateLocal { value: val, .. } => {
             result.push(val.clone());
         }
         InstructionValue::StartMemoize { deps, .. } => {
@@ -604,8 +602,8 @@ pub fn map_instruction_lvalues(instr: &mut Instruction, f: &mut impl FnMut(Place
         InstructionValue::Destructure { lvalue, .. } => {
             map_pattern_operands(&mut lvalue.pattern, f);
         }
-        InstructionValue::PostfixUpdate { lvalue, .. }
-        | InstructionValue::PrefixUpdate { lvalue, .. } => {
+        InstructionValue::PostfixUpdateLocal { lvalue, .. }
+        | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
             *lvalue = f(lvalue.clone());
         }
         _ => {}
@@ -631,9 +629,7 @@ pub fn map_instruction_value_operands(
     f: &mut impl FnMut(Place) -> Place,
 ) {
     match value {
-        InstructionValue::BinaryExpression {
-            left, right, ..
-        } => {
+        InstructionValue::BinaryExpression { left, right, .. } => {
             *left = f(left.clone());
             *right = f(right.clone());
         }
@@ -644,9 +640,7 @@ pub fn map_instruction_value_operands(
             *object = f(object.clone());
         }
         InstructionValue::PropertyStore {
-            object,
-            value: val,
-            ..
+            object, value: val, ..
         } => {
             *object = f(object.clone());
             *val = f(val.clone());
@@ -676,8 +670,7 @@ pub fn map_instruction_value_operands(
         InstructionValue::DeclareContext { .. } | InstructionValue::DeclareLocal { .. } => {
             // no operands
         }
-        InstructionValue::LoadLocal { place, .. }
-        | InstructionValue::LoadContext { place, .. } => {
+        InstructionValue::LoadLocal { place, .. } | InstructionValue::LoadContext { place, .. } => {
             *place = f(place.clone());
         }
         InstructionValue::StoreLocal { value: val, .. } => {
@@ -799,8 +792,10 @@ pub fn map_instruction_value_operands(
         InstructionValue::NextPropertyOf { value: val, .. } => {
             *val = f(val.clone());
         }
-        InstructionValue::PostfixUpdate { value: val, .. }
-        | InstructionValue::PrefixUpdate { value: val, .. } => {
+        InstructionValue::PostfixUpdateLocal { value: val, .. }
+        | InstructionValue::PostfixUpdateContext { value: val, .. }
+        | InstructionValue::PrefixUpdateContext { value: val, .. }
+        | InstructionValue::PrefixUpdateLocal { value: val, .. } => {
             *val = f(val.clone());
         }
         InstructionValue::StartMemoize { deps, .. } => {
@@ -906,9 +901,7 @@ pub fn map_terminal_successors(terminal: &mut Terminal, f: &mut impl FnMut(Block
             *fallthrough = f(*fallthrough);
         }
         Terminal::Switch {
-            cases,
-            fallthrough,
-            ..
+            cases, fallthrough, ..
         } => {
             for case in cases.iter_mut() {
                 case.block = f(case.block);
@@ -994,17 +987,13 @@ pub fn map_terminal_successors(terminal: &mut Terminal, f: &mut impl FnMut(Block
             *fallthrough = f(*fallthrough);
         }
         Terminal::Label {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             *block = f(*block);
             *fallthrough = f(*fallthrough);
         }
         Terminal::Sequence {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             *block = f(*block);
             *fallthrough = f(*fallthrough);
@@ -1030,14 +1019,10 @@ pub fn map_terminal_successors(terminal: &mut Terminal, f: &mut impl FnMut(Block
             *fallthrough = f(*fallthrough);
         }
         Terminal::Scope {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         }
         | Terminal::PrunedScope {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             *block = f(*block);
             *fallthrough = f(*fallthrough);
@@ -1125,9 +1110,7 @@ pub fn each_terminal_all_successors(terminal: &Terminal) -> Vec<BlockId> {
             result.push(*fallthrough);
         }
         Terminal::Switch {
-            cases,
-            fallthrough,
-            ..
+            cases, fallthrough, ..
         } => {
             for case in cases {
                 result.push(case.block);
@@ -1206,14 +1189,10 @@ pub fn each_terminal_all_successors(terminal: &Terminal) -> Vec<BlockId> {
             result.push(*fallthrough);
         }
         Terminal::Label {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         }
         | Terminal::Sequence {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             result.push(*block);
             result.push(*fallthrough);
@@ -1239,14 +1218,10 @@ pub fn each_terminal_all_successors(terminal: &Terminal) -> Vec<BlockId> {
             result.push(*fallthrough);
         }
         Terminal::Scope {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         }
         | Terminal::PrunedScope {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             result.push(*block);
             result.push(*fallthrough);
@@ -1322,14 +1297,14 @@ pub struct ScopeBlockTraversal {
     /// Live stack of active scopes
     active_scopes: Vec<ScopeId>,
     /// Map from block ID to scope block info
-    pub block_infos: HashMap<BlockId, ScopeBlockInfo>,
+    pub block_infos: FxHashMap<BlockId, ScopeBlockInfo>,
 }
 
 impl ScopeBlockTraversal {
     pub fn new() -> Self {
         ScopeBlockTraversal {
             active_scopes: Vec::new(),
-            block_infos: HashMap::new(),
+            block_infos: FxHashMap::default(),
         }
     }
 
@@ -1454,7 +1429,10 @@ pub fn each_instruction_operand_ids(instr: &Instruction, env: &Environment) -> V
 
 /// Collect all operand IdentifierIds from an instruction value.
 /// Convenience wrapper around `each_instruction_value_operand` that maps to ids.
-pub fn each_instruction_value_operand_ids(value: &InstructionValue, env: &Environment) -> Vec<IdentifierId> {
+pub fn each_instruction_value_operand_ids(
+    value: &InstructionValue,
+    env: &Environment,
+) -> Vec<IdentifierId> {
     each_instruction_value_operand(value, env)
         .into_iter()
         .map(|p| p.identifier)
@@ -1513,9 +1491,7 @@ pub fn for_each_instruction_value_operand_mut(
             f(object);
         }
         InstructionValue::PropertyStore {
-            object,
-            value: val,
-            ..
+            object, value: val, ..
         } => {
             f(object);
             f(val);
@@ -1540,8 +1516,7 @@ pub fn for_each_instruction_value_operand_mut(
             f(val);
         }
         InstructionValue::DeclareContext { .. } | InstructionValue::DeclareLocal { .. } => {}
-        InstructionValue::LoadLocal { place, .. }
-        | InstructionValue::LoadContext { place, .. } => {
+        InstructionValue::LoadLocal { place, .. } | InstructionValue::LoadContext { place, .. } => {
             f(place);
         }
         InstructionValue::StoreLocal { value: val, .. } => {
@@ -1627,8 +1602,7 @@ pub fn for_each_instruction_value_operand_mut(
                 f(child);
             }
         }
-        InstructionValue::FunctionExpression { .. }
-        | InstructionValue::ObjectMethod { .. } => {
+        InstructionValue::FunctionExpression { .. } | InstructionValue::ObjectMethod { .. } => {
             // Context places require env access — callers handle separately.
         }
         InstructionValue::TaggedTemplateExpression { tag, .. } => {
@@ -1659,8 +1633,10 @@ pub fn for_each_instruction_value_operand_mut(
         InstructionValue::NextPropertyOf { value: val, .. } => {
             f(val);
         }
-        InstructionValue::PostfixUpdate { value: val, .. }
-        | InstructionValue::PrefixUpdate { value: val, .. } => {
+        InstructionValue::PostfixUpdateLocal { value: val, .. }
+        | InstructionValue::PostfixUpdateContext { value: val, .. }
+        | InstructionValue::PrefixUpdateContext { value: val, .. }
+        | InstructionValue::PrefixUpdateLocal { value: val, .. } => {
             f(val);
         }
         InstructionValue::StartMemoize { deps, .. } => {
@@ -1696,7 +1672,7 @@ pub fn for_each_call_argument_mut(args: &mut [PlaceOrSpread], f: &mut impl FnMut
 }
 
 /// In-place mutation of an InstructionValue's lvalues (DeclareLocal, StoreLocal, DeclareContext,
-/// StoreContext, Destructure, PostfixUpdate, PrefixUpdate). Does NOT include the instruction's
+/// StoreContext, Destructure, and update expressions). Does NOT include the instruction's
 /// top-level lvalue — use `for_each_instruction_lvalue_mut` for that.
 pub fn for_each_instruction_value_lvalue_mut(
     value: &mut InstructionValue,
@@ -1712,8 +1688,10 @@ pub fn for_each_instruction_value_lvalue_mut(
         InstructionValue::Destructure { lvalue, .. } => {
             for_each_pattern_operand_mut(&mut lvalue.pattern, f);
         }
-        InstructionValue::PostfixUpdate { lvalue, .. }
-        | InstructionValue::PrefixUpdate { lvalue, .. } => {
+        InstructionValue::PostfixUpdateLocal { lvalue, .. }
+        | InstructionValue::PostfixUpdateContext { lvalue, .. }
+        | InstructionValue::PrefixUpdateContext { lvalue, .. }
+        | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
             f(lvalue);
         }
         _ => {}
@@ -1731,8 +1709,8 @@ pub fn for_each_instruction_lvalue_mut(instr: &mut Instruction, f: &mut impl FnM
         InstructionValue::Destructure { lvalue, .. } => {
             for_each_pattern_operand_mut(&mut lvalue.pattern, f);
         }
-        InstructionValue::PostfixUpdate { lvalue, .. }
-        | InstructionValue::PrefixUpdate { lvalue, .. } => {
+        InstructionValue::PostfixUpdateLocal { lvalue, .. }
+        | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
             f(lvalue);
         }
         _ => {}

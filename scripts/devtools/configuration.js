@@ -6,7 +6,6 @@ const PACKAGE_PATHS = [
   'packages/react-devtools/package.json',
   'packages/react-devtools-core/package.json',
   'packages/react-devtools-inline/package.json',
-  'packages/react-devtools-timeline/package.json',
 ];
 
 const MANIFEST_PATHS = [

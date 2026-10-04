@@ -12,8 +12,7 @@
 //!
 //! Analogous to TS `Inference/DropManualMemoization.ts`.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::CompilerDiagnostic;
 use react_compiler_diagnostics::CompilerDiagnosticDetail;
@@ -58,17 +57,17 @@ struct ManualMemoCallee {
 
 struct IdentifierSidemap {
     /// Maps identifier id -> InstructionId of FunctionExpression instructions
-    functions: HashSet<IdentifierId>,
+    functions: FxHashSet<IdentifierId>,
     /// Maps identifier id -> ManualMemoCallee for useMemo/useCallback callees
-    manual_memos: HashMap<IdentifierId, ManualMemoCallee>,
+    manual_memos: FxHashMap<IdentifierId, ManualMemoCallee>,
     /// Set of identifier ids that loaded 'React' global
-    react: HashSet<IdentifierId>,
+    react: FxHashSet<IdentifierId>,
     /// Maps identifier id -> deps list info for array expressions
-    maybe_deps_lists: HashMap<IdentifierId, MaybeDepsListInfo>,
+    maybe_deps_lists: FxHashMap<IdentifierId, MaybeDepsListInfo>,
     /// Maps identifier id -> ManualMemoDependency for dependency tracking
-    maybe_deps: HashMap<IdentifierId, ManualMemoDependency>,
+    maybe_deps: FxHashMap<IdentifierId, ManualMemoDependency>,
     /// Set of identifier ids that are results of optional chains
-    optionals: HashSet<IdentifierId>,
+    optionals: FxHashSet<IdentifierId>,
 }
 
 #[derive(Debug, Clone)]
@@ -99,11 +98,11 @@ pub fn drop_manual_memoization(
 
     let optionals = find_optional_places(func)?;
     let mut sidemap = IdentifierSidemap {
-        functions: HashSet::new(),
-        manual_memos: HashMap::new(),
-        react: HashSet::new(),
-        maybe_deps: HashMap::new(),
-        maybe_deps_lists: HashMap::new(),
+        functions: FxHashSet::default(),
+        manual_memos: FxHashMap::default(),
+        react: FxHashSet::default(),
+        maybe_deps: FxHashMap::default(),
+        maybe_deps_lists: FxHashMap::default(),
         optionals,
     };
     let mut next_manual_memo_id: u32 = 0;
@@ -113,7 +112,7 @@ pub fn drop_manual_memoization(
     // - (if validation is enabled) collect manual memoization markers
     //
     // queued_inserts maps InstructionId -> new Instruction to insert after that instruction
-    let mut queued_inserts: HashMap<InstructionId, Instruction> = HashMap::new();
+    let mut queued_inserts: FxHashMap<InstructionId, Instruction> = FxHashMap::default();
 
     // Collect all block instruction lists up front to avoid borrowing func immutably
     // while needing to mutate it
@@ -202,7 +201,7 @@ fn process_manual_memo_call(
     sidemap: &mut IdentifierSidemap,
     is_validation_enabled: bool,
     next_manual_memo_id: &mut u32,
-    queued_inserts: &mut HashMap<InstructionId, Instruction>,
+    queued_inserts: &mut FxHashMap<InstructionId, Instruction>,
 ) {
     let instr = &func.instructions[instr_id.0 as usize];
 
@@ -386,7 +385,7 @@ fn collect_temporaries(
 /// Returns the variable + property reads represented by the instruction value.
 pub fn collect_maybe_memo_dependencies(
     value: &InstructionValue,
-    maybe_deps: &HashMap<IdentifierId, ManualMemoDependency>,
+    maybe_deps: &FxHashMap<IdentifierId, ManualMemoDependency>,
     optional: bool,
     env: &Environment,
 ) -> Option<ManualMemoDependency> {
@@ -649,10 +648,10 @@ fn extract_manual_memoization_args(
 // findOptionalPlaces
 // =============================================================================
 
-fn find_optional_places(func: &HirFunction) -> Result<HashSet<IdentifierId>, CompilerDiagnostic> {
+fn find_optional_places(func: &HirFunction) -> Result<FxHashSet<IdentifierId>, CompilerDiagnostic> {
     use react_compiler_hir::Terminal;
 
-    let mut optionals = HashSet::new();
+    let mut optionals = FxHashSet::default();
     for block in func.body.blocks.values() {
         if let Terminal::Optional {
             optional: true,

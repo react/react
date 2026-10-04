@@ -143,3 +143,8 @@
   padding-left: 1.25rem;
   margin-top: 0.25rem;
 }
+
+.SuspendedBySkeleton {
+  padding: 0.25rem;
+  padding-left: 1.25rem;
+}

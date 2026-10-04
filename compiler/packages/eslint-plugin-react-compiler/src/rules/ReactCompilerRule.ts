@@ -16,6 +16,7 @@ import {
   ErrorSeverity,
   LintRulePreset,
   LintRules,
+  printCodeFrame,
   type LintRule,
 } from 'babel-plugin-react-compiler/src/CompilerError';
 
@@ -43,10 +44,46 @@ function primaryLocation(
  * Format an error message from a CompileErrorDetail, matching the old
  * CompilerErrorDetail.printErrorMessage() / CompilerDiagnostic.printErrorMessage() behavior.
  */
-function printErrorMessage(detail: CompileErrorDetail): string {
-  const buffer = [`[ReactCompilerError] ${detail.reason}`];
-  if (detail.description != null) {
-    buffer.push(`\n\n${detail.description}.`);
+function printErrorMessage(source: string, error: CompileErrorDetail): string {
+  const buffer = [`[ReactCompilerError] ${error.reason}`];
+  if (error.description != null) {
+    buffer.push(`\n\n${error.description}.`);
+  }
+  /*
+   * A CompileError's source location(s) may be provided either as a `details`
+   * array (CompilerDiagnostic and the Rust compiler) or as a single flat `loc`
+   * (legacy CompilerErrorDetail). Normalize to a list so both shapes render
+   * code frames identically.
+   */
+  const details =
+    error.details ??
+    (error.loc != null
+      ? [{kind: 'error' as const, loc: error.loc, message: error.reason}]
+      : []);
+  for (const detail of details) {
+    if (detail.kind === 'error') {
+      const loc = detail.loc;
+      if (loc == null || typeof loc === 'symbol') {
+        continue;
+      }
+      let codeFrame: string;
+      try {
+        codeFrame = printCodeFrame(source, loc, detail.message ?? '');
+      } catch {
+        codeFrame = detail.message ?? '';
+      }
+      buffer.push('\n\n');
+      if (loc.filename != null) {
+        // ESLint uses 1-indexed columns
+        buffer.push(
+          `${loc.filename}:${loc.start.line}:${loc.start.column + 1}\n`,
+        );
+      }
+      buffer.push(codeFrame);
+    } else if (detail.kind === 'hint') {
+      buffer.push('\n\n');
+      buffer.push(detail.message ?? '');
+    }
   }
   return buffer.join('');
 }
@@ -161,7 +198,7 @@ function makeRule(rule: LintRule): Rule.RuleModule {
            * we should deduplicate them with a "reported" set
            */
           context.report({
-            message: printErrorMessage(detail),
+            message: printErrorMessage(result.sourceCode, detail),
             loc,
             suggest: makeSuggestions(detail),
           });

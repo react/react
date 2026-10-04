@@ -34,7 +34,10 @@ use react_compiler_hir::{BlockId, HirFunction, InstructionValue, Terminal, Type}
 ///
 /// Hooks and `use` must be called unconditionally, so any reactive scope containing
 /// such a call must be flattened to avoid making the call conditional.
-pub fn flatten_scopes_with_hooks_or_use_hir(func: &mut HirFunction, env: &Environment) -> Result<(), CompilerDiagnostic> {
+pub fn flatten_scopes_with_hooks_or_use_hir(
+    func: &mut HirFunction,
+    env: &Environment,
+) -> Result<(), CompilerDiagnostic> {
     let mut active_scopes: Vec<ActiveScope> = Vec::new();
     let mut prune: Vec<BlockId> = Vec::new();
 
@@ -52,8 +55,8 @@ pub fn flatten_scopes_with_hooks_or_use_hir(func: &mut HirFunction, env: &Enviro
             let instr = &func.instructions[instr_id.0 as usize];
             match &instr.value {
                 InstructionValue::CallExpression { callee, .. } => {
-                    let callee_ty = &env.types
-                        [env.identifiers[callee.identifier.0 as usize].type_.0 as usize];
+                    let callee_ty =
+                        &env.types[env.identifiers[callee.identifier.0 as usize].type_.0 as usize];
                     if is_hook_or_use(env, callee_ty)? {
                         // All active scopes must be pruned
                         prune.extend(active_scopes.iter().map(|s| s.block));
@@ -73,10 +76,7 @@ pub fn flatten_scopes_with_hooks_or_use_hir(func: &mut HirFunction, env: &Enviro
         }
 
         // Track scope terminals
-        if let Terminal::Scope {
-            fallthrough, ..
-        } = &block.terminal
-        {
+        if let Terminal::Scope { fallthrough, .. } = &block.terminal {
             active_scopes.push(ActiveScope {
                 block: *block_id,
                 fallthrough: *fallthrough,

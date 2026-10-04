@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::common::BaseNode;
 use react_compiler_ast::declarations::{
@@ -12,13 +12,17 @@ use react_compiler_ast::declarations::{
 };
 use react_compiler_ast::expressions::{CallExpression, Expression, Identifier};
 use react_compiler_ast::literals::StringLiteral;
-use react_compiler_ast::patterns::{ObjectPattern, ObjectPatternProp, ObjectPatternProperty, PatternLike};
+use react_compiler_ast::patterns::{
+    ObjectPattern, ObjectPatternProp, ObjectPatternProperty, PatternLike,
+};
 use react_compiler_ast::scope::ScopeInfo;
 use react_compiler_ast::statements::{
     Statement, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
 };
 use react_compiler_ast::{Program, SourceType};
-use react_compiler_diagnostics::{CompilerError, CompilerErrorDetail, ErrorCategory, Position, SourceLocation};
+use react_compiler_diagnostics::{
+    CompilerError, CompilerErrorDetail, ErrorCategory, Position, SourceLocation,
+};
 
 use super::compile_result::{DebugLogEntry, LoggerEvent, OrderedLogItem};
 use super::plugin_options::{CompilerTarget, PluginOptions};
@@ -68,9 +72,9 @@ pub struct ProgramContext {
     pub debug_enabled: bool,
 
     // Internal state
-    already_compiled: HashSet<u32>,
-    known_referenced_names: HashSet<String>,
-    imports: HashMap<String, HashMap<String, NonLocalImportSpecifier>>,
+    already_compiled: FxHashSet<u32>,
+    known_referenced_names: FxHashSet<String>,
+    imports: FxHashMap<String, FxHashMap<String, NonLocalImportSpecifier>>,
 }
 
 impl ProgramContext {
@@ -100,9 +104,9 @@ impl ProgramContext {
             renames: Vec::new(),
             timing: TimingData::new(profiling),
             debug_enabled,
-            already_compiled: HashSet::new(),
-            known_referenced_names: HashSet::new(),
-            imports: HashMap::new(),
+            already_compiled: FxHashSet::default(),
+            known_referenced_names: FxHashSet::default(),
+            imports: FxHashMap::default(),
         }
     }
 
@@ -226,19 +230,21 @@ impl ProgramContext {
     }
 
     /// Get the set of known referenced names for seeding per-function Environment UID generation.
-    pub fn known_referenced_names(&self) -> &HashSet<String> {
+    pub fn known_referenced_names(&self) -> &FxHashSet<String> {
         &self.known_referenced_names
     }
 
     /// Merge UID names generated during a function compilation back into the program context,
     /// so subsequent function compilations avoid collisions.
-    pub fn merge_uid_known_names(&mut self, names: &HashSet<String>) {
+    pub fn merge_uid_known_names(&mut self, names: &FxHashSet<String>) {
         self.known_referenced_names.extend(names.iter().cloned());
     }
 
     /// Log a compilation event.
     pub fn log_event(&mut self, event: LoggerEvent) {
-        self.ordered_log.push(OrderedLogItem::Event { event: event.clone() });
+        self.ordered_log.push(OrderedLogItem::Event {
+            event: event.clone(),
+        });
         self.events.push(event);
     }
 
@@ -253,7 +259,7 @@ impl ProgramContext {
     }
 
     /// Get an immutable view of the generated imports.
-    pub fn imports(&self) -> &HashMap<String, HashMap<String, NonLocalImportSpecifier>> {
+    pub fn imports(&self) -> &FxHashMap<String, FxHashMap<String, NonLocalImportSpecifier>> {
         &self.imports
     }
 }
@@ -268,20 +274,33 @@ pub fn validate_restricted_imports(
         Some(b) if !b.is_empty() => b,
         _ => return None,
     };
-    let restricted: HashSet<&str> = blocklisted.iter().map(|s| s.as_str()).collect();
+    let restricted: FxHashSet<&str> = blocklisted.iter().map(|s| s.as_str()).collect();
     let mut error = CompilerError::new();
 
     for stmt in &program.body {
         if let Statement::ImportDeclaration(import) = stmt {
-            if restricted.contains(import.source.value.as_str()) {
+            if import
+                .source
+                .value
+                .as_str()
+                .is_some_and(|v| restricted.contains(v))
+            {
                 let mut detail = CompilerErrorDetail::new(
                     ErrorCategory::Todo,
                     "Bailing out due to blocklisted import",
                 )
                 .with_description(format!("Import from module {}", import.source.value));
                 detail.loc = import.base.loc.as_ref().map(|loc| SourceLocation {
-                    start: Position { line: loc.start.line, column: loc.start.column, index: loc.start.index },
-                    end: Position { line: loc.end.line, column: loc.end.column, index: loc.end.index },
+                    start: Position {
+                        line: loc.start.line,
+                        column: loc.start.column,
+                        index: loc.start.index,
+                    },
+                    end: Position {
+                        line: loc.end.line,
+                        column: loc.end.column,
+                        index: loc.end.index,
+                    },
                 });
                 error.push_error_detail(detail);
             }
@@ -307,14 +326,14 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
     }
 
     // Collect existing non-namespaced imports by module name
-    let existing_import_indices: HashMap<String, usize> = program
+    let existing_import_indices: FxHashMap<String, usize> = program
         .body
         .iter()
         .enumerate()
         .filter_map(|(idx, stmt)| {
             if let Statement::ImportDeclaration(import) = stmt {
                 if is_non_namespaced_import(import) {
-                    return Some((import.source.value.clone(), idx));
+                    return Some((import.source.value.to_marker_string(), idx));
                 }
             }
             None
@@ -349,7 +368,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
                 specifiers: import_specifiers,
                 source: StringLiteral {
                     base: BaseNode::typed("StringLiteral"),
-                    value: module_name.clone(),
+                    value: module_name.clone().into(),
                 },
                 import_kind: None,
                 assertions: None,
@@ -406,7 +425,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
                         })),
                         arguments: vec![Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: module_name.clone(),
+                            value: module_name.clone().into(),
                         })],
                         type_parameters: None,
                         type_arguments: None,

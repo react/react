@@ -6,7 +6,7 @@
   ],
   "version": "19.3.0",
   "homepage": "https://react.dev/",
-  "bugs": "https://github.com/facebook/react/issues",
+  "bugs": "https://github.com/react/react/issues",
   "license": "MIT",
   "files": [
     "LICENSE",
@@ -43,7 +43,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react"
   },
   "engines": {

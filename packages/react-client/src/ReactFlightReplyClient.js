@@ -37,7 +37,15 @@ import {writeTemporaryReference} from './ReactFlightTemporaryReferences';
 import isArray from 'shared/isArray';
 import getPrototypeOf from 'shared/getPrototypeOf';
 
+import {enableFlightObjectReferences} from 'shared/ReactFeatureFlags';
+
 const ObjectPrototype = Object.prototype;
+
+// Passed to replyLifetimeController.abort(). Nothing reads the reason, but a
+// call to abort() without one constructs an AbortError DOMException. Capturing
+// the stack trace dominates that cost, and the cost grows with the depth of the
+// stack.
+const REPLY_ENDED = 'The reply ended.';
 
 import {
   usedWithSSR,
@@ -70,6 +78,12 @@ type ServerReferenceClosure = {
 };
 
 const knownServerReferences: WeakMap<Function, ServerReferenceClosure> =
+  new WeakMap();
+
+// Server References to objects are tracked separately from function
+// references. They have no bound arguments and are never callable, so a
+// reference of one kind must not be usable where the other is expected.
+const knownServerObjectReferences: WeakMap<Object, ServerReferenceId> =
   new WeakMap();
 
 // Serializable values
@@ -110,6 +124,10 @@ function serializePromiseID(id: number): string {
 
 function serializeServerReferenceID(id: number): string {
   return '$h' + id.toString(16);
+}
+
+function serializeServerObjectReferenceID(id: number): string {
+  return '$H' + id.toString(16);
 }
 
 function serializeTemporaryReferenceMarker(): string {
@@ -184,14 +202,58 @@ export function processReply(
   root: ReactServerValue,
   formFieldPrefix: string,
   temporaryReferences: void | TemporaryReferenceSet,
-  resolve: (string | FormData) => void,
-  reject: (error: mixed) => void,
-): (reason: mixed) => void {
+  onResolve: (string | FormData) => void,
+  onReject: (error: mixed) => void,
+  signal: void | AbortSignal,
+): void {
   let nextPartId = 1;
   let pendingParts = 0;
   let formData: null | FormData = null;
   const writtenObjects: WeakMap<Reference, string> = new WeakMap();
   let modelRoot: null | ReactServerValue = root;
+  let settled = false;
+  // Bounds the abort listener that attachAbortSignal attaches to the caller's
+  // signal. Null until a signal is attached, so a reply that gets no signal
+  // never creates a controller.
+  let replyLifetimeController: null | AbortController = null;
+
+  // Ending the lifetime makes the runtime remove the caller's abort listener.
+  // Without that, the listener keeps everything this reply serialized reachable
+  // for as long as the caller's signal lives, and a composite signal from
+  // AbortSignal.any() is itself retained by the runtime while it has any abort
+  // listener attached.
+  function endReplyLifetime(): void {
+    if (replyLifetimeController !== null) {
+      replyLifetimeController.abort(REPLY_ENDED);
+    }
+  }
+
+  function resolve(value: string | FormData): void {
+    settled = true;
+    endReplyLifetime();
+    onResolve(value);
+  }
+
+  function reject(error: mixed): void {
+    settled = true;
+    endReplyLifetime();
+    onReject(error);
+  }
+
+  function attachAbortSignal(abortSignal: AbortSignal): void {
+    if (abortSignal.aborted) {
+      abort(abortSignal.reason);
+      return;
+    }
+    replyLifetimeController = new AbortController();
+    abortSignal.addEventListener(
+      'abort',
+      () => {
+        abort(abortSignal.reason);
+      },
+      {signal: replyLifetimeController.signal},
+    );
+  }
 
   if (__DEV__) {
     // We use eval to create fake function stacks which includes Component stacks.
@@ -415,6 +477,40 @@ export function processReply(
     }
 
     if (typeof value === 'object') {
+      if (enableFlightObjectReferences) {
+        // Check before traversing the object or falling back to a temporary
+        // reference. A Server Reference must always be encoded by id.
+        const objectReferenceId = knownServerObjectReferences.get(value);
+        if (objectReferenceId !== undefined) {
+          const existingReference = writtenObjects.get(value);
+          if (existingReference !== undefined) {
+            if (modelRoot === value) {
+              // serializeModel registered this root before we recognized it
+              // as a Server Reference. Encode its metadata on this first visit.
+              modelRoot = null;
+            } else {
+              return existingReference;
+            }
+          }
+          const referenceJSON = JSON.stringify(
+            {id: objectReferenceId},
+            resolveToJSON,
+          );
+          if (formData === null) {
+            // Upgrade to use FormData to allow us to stream this value.
+            formData = new FormData();
+          }
+          // The reference to this object came from the same client so we can
+          // pass it back to the server where it resolves to the object.
+          const refId = nextPartId++;
+          formData.set(formFieldPrefix + refId, referenceJSON);
+          const serverObjectReferenceId =
+            serializeServerObjectReferenceID(refId);
+          // Store the reference ID for deduplication.
+          writtenObjects.set(value, serverObjectReferenceId);
+          return serverObjectReferenceId;
+        }
+      }
       switch ((value as any).$$typeof) {
         case REACT_ELEMENT_TYPE: {
           if (temporaryReferences !== undefined && key.indexOf(':') === -1) {
@@ -894,6 +990,9 @@ export function processReply(
   }
 
   function abort(reason: mixed): void {
+    // Nothing can make the reply pending again from here, so the caller's
+    // signal has no further effect on it.
+    endReplyLifetime();
     if (pendingParts > 0) {
       pendingParts = 0; // Don't resolve again later.
       // Resolve with what we have so far, which may have holes at this point.
@@ -920,7 +1019,17 @@ export function processReply(
     }
   }
 
-  return abort;
+  // Wired up after serializing: abort() reads `json` and resolves with the
+  // parts that finished, so it must not be reachable before then. A reply that
+  // already settled gets no listener, since aborting it would be a no-op and
+  // the lifetime that removes the listener has already ended.
+  //
+  // TODO: Skip serializing when the signal is already aborted, the way the
+  // server entry points abort before rendering starts. Needs a decision on what
+  // to resolve with, since abort() resolves with the parts that finished.
+  if (signal !== undefined && !settled) {
+    attachAbortSignal(signal);
+  }
 }
 
 const boundCache: WeakMap<
@@ -1235,6 +1344,65 @@ export function registerServerReference<T: Function>(
   encodeFormAction?: EncodeFormActionCallback,
 ): ServerReference<T> {
   registerBoundServerReference(reference, id, null, encodeFormAction);
+  return reference;
+}
+
+const serverObjectReferenceProxyHandlers: Proxy$traps<mixed> = {
+  get: function (target: Object, name: string | symbol) {
+    switch (name) {
+      // These names are read by the Flight runtime if you end up passing this
+      // reference along.
+      case '$$typeof':
+        return target.$$typeof;
+      case 'name':
+        return undefined;
+      case 'displayName':
+        return undefined;
+      // We need to special case this because createElement reads it if we pass this
+      // reference.
+      case 'defaultProps':
+        return undefined;
+      // React looks for debugInfo on thenables.
+      case '_debugInfo':
+        return undefined;
+      // React also probes streamed objects for async iterator debug info.
+      case ASYNC_ITERATOR:
+        return undefined;
+      // Avoid this attempting to be serialized.
+      case 'toJSON':
+        return undefined;
+      case Symbol.toPrimitive:
+        // $FlowFixMe[prop-missing]
+        return Object.prototype[Symbol.toPrimitive];
+      case Symbol.toStringTag:
+        // $FlowFixMe[prop-missing]
+        return Object.prototype[Symbol.toStringTag];
+      case 'then':
+        // Even if the referenced object is a Promise, it must not appear
+        // thenable on the client or it would be awaited instead of passed
+        // along by reference.
+        return undefined;
+    }
+    throw new Error(
+      // eslint-disable-next-line react-internal/safe-string-coercion
+      `Cannot access ${String(name)} on the client. ` +
+        'You cannot read a Server Reference to an object on the client. ' +
+        'You can only pass it back to the server.',
+    );
+  },
+  set: function () {
+    throw new Error(
+      'Cannot assign to a Server Reference to an object on the client.',
+    );
+  },
+};
+
+export function createServerObjectReference(id: ServerReferenceId): Object {
+  const reference = new Proxy({}, serverObjectReferenceProxyHandlers);
+  // Register the reference so that passing it back to the server encodes it
+  // by id. Object references are tracked separately from function references
+  // so that one kind can never be encoded as the other.
+  knownServerObjectReferences.set(reference, id);
   return reference;
 }
 

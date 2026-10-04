@@ -9,6 +9,8 @@
 
 import {preinitScriptForSSR} from 'react-client/src/ReactFlightClientConfig';
 
+import type {Chunk} from '../shared/ReactFlightImportMetadata';
+
 export type ModuleLoading = null | {
   prefix: string,
   crossOrigin?: 'use-credentials' | '',
@@ -16,14 +18,15 @@ export type ModuleLoading = null | {
 
 export function prepareDestinationWithChunks(
   moduleLoading: ModuleLoading,
-  // Chunks are single-indexed filenames
-  chunks: Array<string>,
+  chunks: Array<Chunk>,
   nonce: ?string,
 ) {
   if (moduleLoading !== null) {
     for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      // A merged chunk is `[mergedChunkFilename, ...]`; preinit its own URL.
       preinitScriptForSSR(
-        moduleLoading.prefix + chunks[i],
+        moduleLoading.prefix + (typeof chunk === 'string' ? chunk : chunk[0]),
         nonce,
         moduleLoading.crossOrigin,
       );

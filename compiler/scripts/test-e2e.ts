@@ -6,20 +6,22 @@
  */
 
 /**
- * End-to-end test script comparing compiler output across all frontends.
+ * End-to-end test script comparing the Rust compiler against the TS reference.
  *
  * Runs fixtures through:
- *   - TS baseline (Babel plugin, in-process)
- *   - babel variant: Rust via Babel plugin (in-process via NAPI)
- *   - swc variant: Rust via SWC frontend (CLI binary)
- *   - oxc variant: Rust via OXC frontend (CLI binary)
+ *   - TS baseline (Babel plugin, in-process) — the reference output
+ *   - babel variant: Rust via Babel plugin (in-process via NAPI) — the
+ *     production path
  *
- * Usage: npx tsx compiler/scripts/test-e2e.ts [fixtures-path] [--variant babel|swc|oxc] [--limit N] [--no-color]
+ * This complements `yarn snap --rust` by independently comparing the NAPI
+ * bridge's code output AND its logged events against the TS plugin.
+ *
+ * Usage: npx tsx compiler/scripts/test-e2e.ts [fixtures-path] [--variant babel] [--limit N] [--no-color]
  */
 
 import * as babel from '@babel/core';
 import generate from '@babel/generator';
-import {execSync, spawnSync} from 'child_process';
+import {execSync} from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import prettier from 'prettier';
@@ -33,7 +35,7 @@ const rawArgs = process.argv.slice(2);
 const noColor = rawArgs.includes('--no-color') || !!process.env.NO_COLOR;
 const variantIdx = rawArgs.indexOf('--variant');
 const variantArg =
-  variantIdx >= 0 ? (rawArgs[variantIdx + 1] as 'babel' | 'swc' | 'oxc') : null;
+  variantIdx >= 0 ? (rawArgs[variantIdx + 1] as 'babel') : null;
 const limitIdx = rawArgs.indexOf('--limit');
 const limitArg = limitIdx >= 0 ? parseInt(rawArgs[limitIdx + 1], 10) : 50;
 
@@ -97,16 +99,13 @@ function discoverFixtures(rootPath: string): string[] {
 }
 
 // --- Build ---
-console.log('Building Rust native module and e2e CLI...');
+console.log('Building Rust native module...');
 try {
-  execSync(
-    '~/.cargo/bin/cargo build -p react_compiler_napi -p react_compiler_e2e_cli',
-    {
-      cwd: path.join(REPO_ROOT, 'compiler/crates'),
-      stdio: ['inherit', 'pipe', 'pipe'],
-      shell: true,
-    },
-  );
+  execSync('~/.cargo/bin/cargo build -p react_compiler_napi', {
+    cwd: path.join(REPO_ROOT, 'compiler/crates'),
+    stdio: ['inherit', 'pipe', 'pipe'],
+    shell: true,
+  });
 } catch (e: any) {
   // Show stderr on build failure (includes errors + warnings)
   if (e.stderr) {
@@ -137,8 +136,6 @@ if (!fs.existsSync(dylib)) {
 }
 fs.copyFileSync(dylib, NATIVE_NODE_PATH);
 
-const CLI_BINARY = path.join(TARGET_DIR, 'react-compiler-e2e');
-
 // --- Load plugins ---
 const tsPlugin = require('../packages/babel-plugin-react-compiler/src').default;
 const rustPlugin =
@@ -151,7 +148,7 @@ async function formatCode(code: string, isFlow: boolean): Promise<string> {
   try {
     const parserPlugins: string[] = isFlow
       ? ['flow', 'jsx']
-      : ['typescript', 'jsx'];
+      : ['typescript', 'jsx', 'explicitResourceManagement'];
     const ast = babel.parseSync(code, {
       sourceType: 'module',
       parserOpts: {plugins: parserPlugins},
@@ -186,7 +183,7 @@ function compileBabel(
   const isScript = firstLine.includes('@script');
   const parserPlugins: string[] = isFlow
     ? ['flow', 'jsx']
-    : ['typescript', 'jsx'];
+    : ['typescript', 'jsx', 'explicitResourceManagement'];
 
   const pragmaOpts = parseConfigPragmaForTests(firstLine, {
     compilationMode: 'all',
@@ -224,75 +221,12 @@ function compileBabel(
   }
 }
 
-// --- Compile via CLI binary ---
-function compileCli(
-  frontend: 'swc' | 'oxc',
-  fixturePath: string,
-  source: string,
-  firstLine: string,
-): CompileResult {
-  const pragmaOpts = parseConfigPragmaForTests(firstLine, {
-    compilationMode: 'all',
-  });
-
-  const options = {
-    shouldCompile: true,
-    enableReanimated: false,
-    isDev: false,
-    ...pragmaOpts,
-    compilationMode: 'all',
-    panicThreshold: 'all_errors',
-    __sourceCode: source,
-  };
-
-  const result = spawnSync(
-    CLI_BINARY,
-    [
-      '--frontend',
-      frontend,
-      '--filename',
-      fixturePath,
-      '--options',
-      JSON.stringify(options),
-      '--json',
-    ],
-    {
-      input: source,
-      encoding: 'utf-8',
-      timeout: 30000,
-    },
-  );
-
-  // In JSON mode, the CLI always exits 0 and puts everything in the envelope.
-  // Non-zero exit means a crash (parse failure, panic), not a compilation error.
-  if (result.stdout) {
-    try {
-      const envelope = JSON.parse(result.stdout);
-      return {
-        code: envelope.code ?? null,
-        error: envelope.error ?? null,
-        events: envelope.events ?? [],
-      };
-    } catch {
-      // JSON parse failed — fall through to legacy handling
-    }
-  }
-
-  // Fallback for crashes or missing stdout
-  return {
-    code: null,
-    error: result.stderr || `Process exited with code ${result.status}`,
-    events: [],
-  };
-}
-
 // --- Event normalization ---
 // Strip identifierName (Babel-specific SourceLocation property), sort
-// keys for stable comparison, then JSON.stringify.
-// SWC uses 1-based columns/indices (from BytePos); adjust to match
-// Babel's 0-based convention.  OXC is natively 0-based, no adjustment needed.
+// keys for stable comparison, then JSON.stringify. Both the TS plugin and
+// the Rust NAPI bridge emit 0-based columns/indices, so no positional
+// adjustment is needed.
 const STRIP_KEYS = new Set(['identifierName', 'fnLoc']);
-let oneBasedColumns = false;
 
 function sortAndStrip(obj: unknown): unknown {
   if (obj === null || typeof obj !== 'object') return obj;
@@ -303,62 +237,6 @@ function sortAndStrip(obj: unknown): unknown {
     sorted[key] = sortAndStrip((obj as Record<string, unknown>)[key]);
   }
   return sorted;
-}
-
-function adjustLoc(loc: Record<string, unknown>): Record<string, unknown> {
-  const adjusted: Record<string, unknown> = {};
-  for (const key of Object.keys(loc)) {
-    const val = loc[key];
-    if ((key === 'column' || key === 'index') && typeof val === 'number') {
-      adjusted[key] = val - 1;
-    } else {
-      adjusted[key] = val;
-    }
-  }
-  return adjusted;
-}
-
-function adjustDetailLocs(
-  events: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  if (!oneBasedColumns) return events;
-  return events.map(event => {
-    if (event.kind !== 'CompileError') return event;
-    const detail = event.detail as Record<string, unknown> | undefined;
-    if (!detail) return event;
-    const newDetail = {...detail};
-    // Adjust loc on legacy CompilerErrorDetail
-    if (newDetail.loc && typeof newDetail.loc === 'object') {
-      const loc = newDetail.loc as Record<string, unknown>;
-      newDetail.loc = {
-        start: loc.start
-          ? adjustLoc(loc.start as Record<string, unknown>)
-          : loc.start,
-        end: loc.end ? adjustLoc(loc.end as Record<string, unknown>) : loc.end,
-      };
-    }
-    // Adjust locs inside details array (CompilerDiagnostic)
-    if (Array.isArray(newDetail.details)) {
-      newDetail.details = (
-        newDetail.details as Array<Record<string, unknown>>
-      ).map(d => {
-        if (!d.loc || typeof d.loc !== 'object') return d;
-        const loc = d.loc as Record<string, unknown>;
-        return {
-          ...d,
-          loc: {
-            start: loc.start
-              ? adjustLoc(loc.start as Record<string, unknown>)
-              : loc.start,
-            end: loc.end
-              ? adjustLoc(loc.end as Record<string, unknown>)
-              : loc.end,
-          },
-        };
-      });
-    }
-    return {...event, detail: newDetail};
-  });
 }
 
 function stripPipelineErrorStack(
@@ -375,11 +253,7 @@ function stripPipelineErrorStack(
 }
 
 function normalizeEvents(events: Array<Record<string, unknown>>): string {
-  return JSON.stringify(
-    sortAndStrip(adjustDetailLocs(stripPipelineErrorStack(events))),
-    null,
-    2,
-  );
+  return JSON.stringify(sortAndStrip(stripPipelineErrorStack(events)), null, 2);
 }
 
 // --- Simple unified diff ---
@@ -418,8 +292,8 @@ function unifiedDiff(
 }
 
 // --- Main ---
-type Variant = 'babel' | 'swc' | 'oxc';
-const ALL_VARIANTS: Variant[] = ['babel', 'swc', 'oxc'];
+type Variant = 'babel';
+const ALL_VARIANTS: Variant[] = ['babel'];
 const variants: Variant[] = variantArg ? [variantArg] : ALL_VARIANTS;
 
 const fixtures = discoverFixtures(fixturesPath);
@@ -484,29 +358,20 @@ async function runVariant(
   for (let i = 0; i < fixtureInfos.length; i++) {
     const {fixturePath, relPath, source, firstLine, isFlow} = fixtureInfos[i];
     const tsCode = tsBaselines.get(fixturePath)!;
-    // All variants emit 0-based columns/indices.
-    oneBasedColumns = false;
     const tsEvents = normalizeEvents(tsRawEvents.get(fixturePath)!);
 
     writeProgress(
-      `  ${variant}: ${i + 1}/${fixtureInfos.length} (${s.passed} passed, ${s.failed} failed)`,
+      `  ${variant}: ${i + 1}/${fixtureInfos.length} (${s.passed} passed, ${
+        s.failed
+      } failed)`,
     );
 
-    // Skip Flow files for SWC/OXC variants — SWC doesn't have a native
-    // Flow parser, so Flow type cast syntax (e.g., `(x: Type)`) fails.
-    if (variant !== 'babel' && isFlow) {
-      s.passed++;
-      s.codePassed++;
-      s.eventsPassed++;
-      continue;
-    }
-
-    let variantResult: CompileResult;
-    if (variant === 'babel') {
-      variantResult = compileBabel(rustPlugin, fixturePath, source, firstLine);
-    } else {
-      variantResult = compileCli(variant, fixturePath, source, firstLine);
-    }
+    const variantResult = compileBabel(
+      rustPlugin,
+      fixturePath,
+      source,
+      firstLine,
+    );
 
     const variantCode = await formatCode(variantResult.code ?? '', isFlow);
     const variantEvents = normalizeEvents(variantResult.events);

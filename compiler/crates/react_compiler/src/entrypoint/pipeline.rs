@@ -8,6 +8,7 @@
 //! Analogous to TS `Pipeline.ts` (`compileFn` → `run` → `runWithEnvironment`).
 //! Currently runs BuildHIR (lowering) and PruneMaybeThrows.
 
+use indexmap::IndexMap;
 use react_compiler_ast::scope::ScopeInfo;
 use react_compiler_diagnostics::CompilerError;
 use react_compiler_hir::ReactFunctionType;
@@ -15,6 +16,7 @@ use react_compiler_hir::environment::Environment;
 use react_compiler_hir::environment::OutputMode;
 use react_compiler_hir::environment_config::EnvironmentConfig;
 use react_compiler_lowering::FunctionNode;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use super::compile_result::CodegenFunction;
 use super::compile_result::CompilerErrorDetailInfo;
@@ -1229,25 +1231,23 @@ pub fn compile_outlined_fn(
 fn build_outlined_scope_info(
     func: &mut react_compiler_ast::statements::FunctionDeclaration,
 ) -> react_compiler_ast::scope::ScopeInfo {
-    use std::collections::HashMap;
-
     use react_compiler_ast::scope::*;
 
     let mut pos: u32 = 1; // reserve 0 for the function itself
     func.base.start = Some(0);
 
-    let mut fn_bindings: HashMap<String, BindingId> = HashMap::new();
+    let mut fn_bindings: FxHashMap<String, BindingId> = FxHashMap::default();
     let mut bindings_list: Vec<BindingData> = Vec::new();
-    let mut ref_to_binding: indexmap::IndexMap<u32, BindingId> = indexmap::IndexMap::new();
+    let mut ref_to_binding: IndexMap<u32, BindingId, FxBuildHasher> = IndexMap::default();
 
     // Helper to add a binding
     let _add_binding =
         |name: &str,
          kind: BindingKind,
          p: u32,
-         fn_bindings: &mut HashMap<String, BindingId>,
+         fn_bindings: &mut FxHashMap<String, BindingId>,
          bindings_list: &mut Vec<BindingData>,
-         ref_to_binding: &mut indexmap::IndexMap<u32, BindingId>| {
+         ref_to_binding: &mut IndexMap<u32, BindingId, FxBuildHasher>| {
             if fn_bindings.contains_key(name) {
                 // Already exists, just add reference
                 let bid = fn_bindings[name];
@@ -1296,7 +1296,7 @@ fn build_outlined_scope_info(
         id: ScopeId(0),
         parent: None,
         kind: ScopeKind::Program,
-        bindings: HashMap::new(),
+        bindings: FxHashMap::default(),
     };
     let fn_scope = ScopeData {
         id: ScopeId(1),
@@ -1305,21 +1305,21 @@ fn build_outlined_scope_info(
         bindings: fn_bindings,
     };
 
-    let mut node_to_scope: HashMap<u32, ScopeId> = HashMap::new();
+    let mut node_to_scope: FxHashMap<u32, ScopeId> = FxHashMap::default();
     node_to_scope.insert(0, ScopeId(1));
 
     // Mirror position maps into node-ID maps for outlined functions
-    let mut node_id_to_scope: HashMap<u32, ScopeId> = HashMap::new();
+    let mut node_id_to_scope: FxHashMap<u32, ScopeId> = FxHashMap::default();
     node_id_to_scope.insert(0, ScopeId(1));
-    let ref_node_id_to_binding: indexmap::IndexMap<u32, BindingId> =
+    let ref_node_id_to_binding: IndexMap<u32, BindingId, FxBuildHasher> =
         ref_to_binding.iter().map(|(&k, &v)| (k, v)).collect();
 
     ScopeInfo {
         scopes: vec![program_scope, fn_scope],
         bindings: bindings_list,
         node_to_scope,
-        node_to_scope_end: HashMap::new(),
-        reference_to_binding: indexmap::IndexMap::new(),
+        node_to_scope_end: FxHashMap::default(),
+        reference_to_binding: IndexMap::default(),
         ref_node_id_to_binding,
         node_id_to_scope,
         program_scope: ScopeId(0),
@@ -1331,9 +1331,9 @@ fn outlined_assign_pattern_positions(
     pattern: &mut react_compiler_ast::patterns::PatternLike,
     pos: &mut u32,
     kind: react_compiler_ast::scope::BindingKind,
-    fn_bindings: &mut std::collections::HashMap<String, react_compiler_ast::scope::BindingId>,
+    fn_bindings: &mut rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
     bindings_list: &mut Vec<react_compiler_ast::scope::BindingData>,
-    ref_to_binding: &mut indexmap::IndexMap<u32, react_compiler_ast::scope::BindingId>,
+    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     use react_compiler_ast::patterns::PatternLike;
     use react_compiler_ast::scope::*;
@@ -1432,9 +1432,9 @@ fn outlined_assign_pattern_positions(
 fn outlined_assign_stmt_positions(
     stmt: &mut react_compiler_ast::statements::Statement,
     pos: &mut u32,
-    fn_bindings: &mut std::collections::HashMap<String, react_compiler_ast::scope::BindingId>,
+    fn_bindings: &mut rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
     bindings_list: &mut Vec<react_compiler_ast::scope::BindingData>,
-    ref_to_binding: &mut indexmap::IndexMap<u32, react_compiler_ast::scope::BindingId>,
+    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     use react_compiler_ast::statements::Statement;
 
@@ -1477,8 +1477,8 @@ fn outlined_assign_stmt_positions(
 fn outlined_assign_expr_positions(
     expr: &mut react_compiler_ast::expressions::Expression,
     pos: &mut u32,
-    fn_bindings: &std::collections::HashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut indexmap::IndexMap<u32, react_compiler_ast::scope::BindingId>,
+    fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
+    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     use react_compiler_ast::expressions::*;
 
@@ -1538,8 +1538,8 @@ fn outlined_assign_expr_positions(
 fn outlined_assign_jsx_name_positions(
     name: &mut react_compiler_ast::jsx::JSXElementName,
     pos: &mut u32,
-    fn_bindings: &std::collections::HashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut indexmap::IndexMap<u32, react_compiler_ast::scope::BindingId>,
+    fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
+    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     match name {
         react_compiler_ast::jsx::JSXElementName::JSXIdentifier(id) => {
@@ -1561,8 +1561,8 @@ fn outlined_assign_jsx_name_positions(
 fn outlined_assign_jsx_member_positions(
     member: &mut react_compiler_ast::jsx::JSXMemberExpression,
     pos: &mut u32,
-    fn_bindings: &std::collections::HashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut indexmap::IndexMap<u32, react_compiler_ast::scope::BindingId>,
+    fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
+    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     match &mut *member.object {
         react_compiler_ast::jsx::JSXMemberExprObject::JSXIdentifier(id) => {
@@ -1583,8 +1583,8 @@ fn outlined_assign_jsx_member_positions(
 fn outlined_assign_jsx_val_positions(
     val: &mut react_compiler_ast::jsx::JSXAttributeValue,
     pos: &mut u32,
-    fn_bindings: &std::collections::HashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut indexmap::IndexMap<u32, react_compiler_ast::scope::BindingId>,
+    fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
+    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     match val {
         react_compiler_ast::jsx::JSXAttributeValue::JSXExpressionContainer(c) => {
@@ -1608,8 +1608,8 @@ fn outlined_assign_jsx_val_positions(
 fn outlined_assign_jsx_child_positions(
     child: &mut react_compiler_ast::jsx::JSXChild,
     pos: &mut u32,
-    fn_bindings: &std::collections::HashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut indexmap::IndexMap<u32, react_compiler_ast::scope::BindingId>,
+    fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
+    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     match child {
         react_compiler_ast::jsx::JSXChild::JSXExpressionContainer(c) => {

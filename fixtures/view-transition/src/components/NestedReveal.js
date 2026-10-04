@@ -12,6 +12,11 @@ function Use({useable}) {
 let delay1;
 let delay2;
 
+export function resetNestedReveal() {
+  delay1 = undefined;
+  delay2 = undefined;
+}
+
 export default function NestedReveal({}) {
   if (!delay1) {
     delay1 = sleep(100);

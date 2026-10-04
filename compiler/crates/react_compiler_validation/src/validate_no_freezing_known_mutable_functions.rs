@@ -5,17 +5,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation,
 };
 use react_compiler_hir::environment::Environment;
+use react_compiler_hir::visitors::{each_instruction_value_operand, each_terminal_operand};
 use react_compiler_hir::{
     AliasingEffect, Effect, HirFunction, Identifier, IdentifierId, IdentifierName,
     InstructionValue, Place, Type,
 };
-use react_compiler_hir::visitors::{each_instruction_value_operand, each_terminal_operand};
 
 /// Information about a known mutation effect: which identifier is mutated, and
 /// the source location of the mutation.
@@ -53,7 +53,7 @@ fn check_no_freezing_known_mutable_functions(
     env: &Environment,
 ) -> Vec<CompilerDiagnostic> {
     // Maps an identifier to the mutation effect that makes it "known mutable"
-    let mut context_mutation_effects: HashMap<IdentifierId, MutationInfo> = HashMap::new();
+    let mut context_mutation_effects: FxHashMap<IdentifierId, MutationInfo> = FxHashMap::default();
     let mut diagnostics: Vec<CompilerDiagnostic> = Vec::new();
 
     for (_block_id, block) in &func.body.blocks {
@@ -76,15 +76,14 @@ fn check_no_freezing_known_mutable_functions(
                         let mutation_info = mutation_info.clone();
                         context_mutation_effects
                             .insert(instr.lvalue.identifier, mutation_info.clone());
-                        context_mutation_effects
-                            .insert(lvalue.place.identifier, mutation_info);
+                        context_mutation_effects.insert(lvalue.place.identifier, mutation_info);
                     }
                 }
 
                 InstructionValue::FunctionExpression { lowered_func, .. } => {
                     let inner_function = &functions[lowered_func.func.0 as usize];
                     if let Some(ref aliasing_effects) = inner_function.aliasing_effects {
-                        let context_ids: HashSet<IdentifierId> = inner_function
+                        let context_ids: FxHashSet<IdentifierId> = inner_function
                             .context
                             .iter()
                             .map(|place| place.identifier)
@@ -122,9 +121,7 @@ fn check_no_freezing_known_mutable_functions(
                                 }
 
                                 AliasingEffect::MutateConditionally { value, .. }
-                                | AliasingEffect::MutateTransitiveConditionally {
-                                    value, ..
-                                } => {
+                                | AliasingEffect::MutateTransitiveConditionally { value, .. } => {
                                     // Only propagate existing known mutations for conditional effects
                                     if let Some(known_mutation) =
                                         context_mutation_effects.get(&value.identifier)
@@ -173,7 +170,7 @@ fn check_no_freezing_known_mutable_functions(
 /// If an operand with Effect::Freeze is a known-mutable function, emit a diagnostic.
 fn check_operand_for_freeze_violation(
     operand: &Place,
-    context_mutation_effects: &HashMap<IdentifierId, MutationInfo>,
+    context_mutation_effects: &FxHashMap<IdentifierId, MutationInfo>,
     identifiers: &[Identifier],
     diagnostics: &mut Vec<CompilerDiagnostic>,
 ) {

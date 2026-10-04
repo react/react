@@ -22,8 +22,7 @@
 //! instructions in each scope, the scopes must be aligned to block-scope
 //! boundaries — we can't memoize half of a loop!
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_hir::BlockId;
 use react_compiler_hir::BlockKind;
@@ -99,9 +98,9 @@ pub fn align_reactive_scopes_to_block_scopes_hir(func: &mut HirFunction, env: &m
         env.scopes.iter().map(|s| s.range.clone()).collect();
 
     let mut active_block_fallthrough_ranges: Vec<BlockFallthroughRange> = Vec::new();
-    let mut active_scopes: HashSet<ScopeId> = HashSet::new();
-    let mut seen: HashSet<ScopeId> = HashSet::new();
-    let mut value_block_nodes: HashMap<BlockId, ValueBlockNode> = HashMap::new();
+    let mut active_scopes: FxHashSet<ScopeId> = FxHashSet::default();
+    let mut seen: FxHashSet<ScopeId> = FxHashSet::default();
+    let mut value_block_nodes: FxHashMap<BlockId, ValueBlockNode> = FxHashMap::default();
 
     let block_ids: Vec<BlockId> = func.body.blocks.keys().copied().collect();
 
@@ -301,8 +300,8 @@ fn record_place_id(
     identifier_id: IdentifierId,
     node: &Option<ValueBlockNode>,
     env: &mut Environment,
-    active_scopes: &mut HashSet<ScopeId>,
-    seen: &mut HashSet<ScopeId>,
+    active_scopes: &mut FxHashSet<ScopeId>,
+    seen: &mut FxHashSet<ScopeId>,
 ) {
     // Get the scope for this identifier, if active at this instruction
     let scope_id = match env.identifiers[identifier_id.0 as usize].scope {

@@ -9,8 +9,10 @@
 
 export type StringDecoder = TextDecoder;
 
-export function createStringDecoder(): StringDecoder {
-  return new TextDecoder();
+export function createStringDecoder(
+  preserveByteOrderMark: boolean = false,
+): StringDecoder {
+  return new TextDecoder('utf-8', {ignoreBOM: preserveByteOrderMark});
 }
 
 const decoderOptions = {stream: true};

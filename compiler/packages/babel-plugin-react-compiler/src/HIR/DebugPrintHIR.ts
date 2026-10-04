@@ -700,8 +700,9 @@ export class DebugPrinter {
         this.line(`Debugger { loc: ${this.formatLoc(instrValue.loc)} }`);
         break;
       }
-      case 'PostfixUpdate': {
-        this.line('PostfixUpdate {');
+      case 'PostfixUpdateLocal':
+      case 'PostfixUpdateContext': {
+        this.line(`${instrValue.kind} {`);
         this.indent();
         this.formatPlaceField('lvalue', instrValue.lvalue);
         this.line(`operation: "${instrValue.operation}"`);
@@ -711,8 +712,9 @@ export class DebugPrinter {
         this.line('}');
         break;
       }
-      case 'PrefixUpdate': {
-        this.line('PrefixUpdate {');
+      case 'PrefixUpdateLocal':
+      case 'PrefixUpdateContext': {
+        this.line(`${instrValue.kind} {`);
         this.indent();
         this.formatPlaceField('lvalue', instrValue.lvalue);
         this.line(`operation: "${instrValue.operation}"`);

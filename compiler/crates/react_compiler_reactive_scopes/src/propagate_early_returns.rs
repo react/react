@@ -13,10 +13,9 @@
 use react_compiler_hir::{
     BlockId, Effect, EvaluationOrder, IdentifierId, IdentifierName, InstructionKind,
     InstructionValue, LValue, NonLocalBinding, Place, PlaceOrSpread, PrimitiveValue,
-    PropertyLiteral, ReactiveFunction, ReactiveInstruction, ReactiveLabel,
-    ReactiveStatement, ReactiveTerminal, ReactiveTerminalStatement, ReactiveTerminalTargetKind,
-    ReactiveValue, ReactiveScopeBlock, ReactiveScopeDeclaration, ReactiveScopeEarlyReturn,
-    environment::Environment,
+    PropertyLiteral, ReactiveFunction, ReactiveInstruction, ReactiveLabel, ReactiveScopeBlock,
+    ReactiveScopeDeclaration, ReactiveScopeEarlyReturn, ReactiveStatement, ReactiveTerminal,
+    ReactiveTerminalStatement, ReactiveTerminalTargetKind, ReactiveValue, environment::Environment,
 };
 
 use crate::visitors::{ReactiveFunctionTransform, Transformed, transform_reactive_function};
@@ -198,12 +197,13 @@ fn apply_early_return_to_scope(
     });
 
     // Add the early return identifier as a scope declaration
-    env.scopes[scope_id.0 as usize]
-        .declarations
-        .push((early_return.value, ReactiveScopeDeclaration {
+    env.scopes[scope_id.0 as usize].declarations.push((
+        early_return.value,
+        ReactiveScopeDeclaration {
             identifier: early_return.value,
             scope: scope_id,
-        }));
+        },
+    ));
 
     // Create temporary places for the sentinel initialization
     let sentinel_temp = create_temporary_place_id(env, loc);
@@ -264,7 +264,7 @@ fn apply_early_return_to_scope(
                 loc: None, // GeneratedSource
             }),
             value: ReactiveValue::Instruction(InstructionValue::Primitive {
-                value: PrimitiveValue::String(EARLY_RETURN_SENTINEL.to_string()),
+                value: PrimitiveValue::String(EARLY_RETURN_SENTINEL.into()),
                 loc,
             }),
             effects: None,

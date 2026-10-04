@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/facebook/react.git"
+    "url": "git+https://github.com/react/react.git"
   },
   "scripts": {
     "copyright": "node scripts/copyright.js",

@@ -1,12 +1,12 @@
 {
   "name": "react-devtools-core",
-  "version": "7.0.1",
+  "version": "8.0.0",
   "description": "Use react-devtools outside of the browser",
   "license": "MIT",
   "main": "./dist/backend.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-devtools-core"
   },
   "files": [

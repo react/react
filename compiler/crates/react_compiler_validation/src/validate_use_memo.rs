@@ -1,15 +1,15 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory, SourceLocation,
 };
-use react_compiler_hir::{
-    FunctionId, HirFunction, IdentifierId, InstructionValue,
-    ParamPattern, PlaceOrSpread, Place, ReturnVariant, Terminal,
-};
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::visitors::{
     each_instruction_value_operand_with_functions, each_terminal_operand,
+};
+use react_compiler_hir::{
+    FunctionId, HirFunction, IdentifierId, InstructionValue, ParamPattern, Place, PlaceOrSpread,
+    ReturnVariant, Terminal,
 };
 
 /// Validates useMemo() usage patterns.
@@ -17,7 +17,12 @@ use react_compiler_hir::visitors::{
 /// Port of ValidateUseMemo.ts.
 /// Returns VoidUseMemo errors separately (for logging via logErrors, not as compile errors).
 pub fn validate_use_memo(func: &HirFunction, env: &mut Environment) -> CompilerError {
-    validate_use_memo_impl(func, &env.functions, &mut env.errors, env.config.validate_no_void_use_memo)
+    validate_use_memo_impl(
+        func,
+        &env.functions,
+        &mut env.errors,
+        env.config.validate_no_void_use_memo,
+    )
 }
 
 /// Information about a FunctionExpression needed for validation.
@@ -33,10 +38,11 @@ fn validate_use_memo_impl(
     validate_no_void_use_memo: bool,
 ) -> CompilerError {
     let mut void_memo_errors = CompilerError::new();
-    let mut use_memos: HashSet<IdentifierId> = HashSet::new();
-    let mut react: HashSet<IdentifierId> = HashSet::new();
-    let mut func_exprs: HashMap<IdentifierId, FuncExprInfo> = HashMap::new();
-    let mut unused_use_memos: HashMap<IdentifierId, (SourceLocation, Option<String>)> = HashMap::new();
+    let mut use_memos: FxHashSet<IdentifierId> = FxHashSet::default();
+    let mut react: FxHashSet<IdentifierId> = FxHashSet::default();
+    let mut func_exprs: FxHashMap<IdentifierId, FuncExprInfo> = FxHashMap::default();
+    let mut unused_use_memos: FxHashMap<IdentifierId, (SourceLocation, Option<String>)> =
+        FxHashMap::default();
 
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
@@ -71,7 +77,9 @@ fn validate_use_memo_impl(
                         }
                     }
                 }
-                InstructionValue::FunctionExpression { lowered_func, loc, .. } => {
+                InstructionValue::FunctionExpression {
+                    lowered_func, loc, ..
+                } => {
                     func_exprs.insert(
                         lvalue.identifier,
                         FuncExprInfo {
@@ -94,9 +102,7 @@ fn validate_use_memo_impl(
                         validate_no_void_use_memo,
                     );
                 }
-                InstructionValue::MethodCall {
-                    property, args, ..
-                } => {
+                InstructionValue::MethodCall { property, args, .. } => {
                     handle_possible_use_memo_call(
                         functions,
                         errors,
@@ -151,9 +157,9 @@ fn handle_possible_use_memo_call(
     functions: &[HirFunction],
     errors: &mut CompilerError,
     void_memo_errors: &mut CompilerError,
-    use_memos: &HashSet<IdentifierId>,
-    func_exprs: &HashMap<IdentifierId, FuncExprInfo>,
-    unused_use_memos: &mut HashMap<IdentifierId, (SourceLocation, Option<String>)>,
+    use_memos: &FxHashSet<IdentifierId>,
+    func_exprs: &FxHashMap<IdentifierId, FuncExprInfo>,
+    unused_use_memos: &mut FxHashMap<IdentifierId, (SourceLocation, Option<String>)>,
     callee: &Place,
     args: &[PlaceOrSpread],
     lvalue: &Place,
@@ -247,11 +253,8 @@ fn handle_possible_use_memo_call(
     }
 }
 
-fn validate_no_context_variable_assignment(
-    func: &HirFunction,
-    errors: &mut CompilerError,
-) {
-    let context: HashSet<IdentifierId> =
+fn validate_no_context_variable_assignment(func: &HirFunction, errors: &mut CompilerError) {
+    let context: FxHashSet<IdentifierId> =
         func.context.iter().map(|place| place.identifier).collect();
 
     for (_block_id, block) in &func.body.blocks {
@@ -283,7 +286,10 @@ fn validate_no_context_variable_assignment(
 fn has_non_void_return(func: &HirFunction) -> bool {
     for (_block_id, block) in &func.body.blocks {
         if let Terminal::Return { return_variant, .. } = &block.terminal {
-            if matches!(return_variant, ReturnVariant::Explicit | ReturnVariant::Implicit) {
+            if matches!(
+                return_variant,
+                ReturnVariant::Explicit | ReturnVariant::Implicit
+            ) {
                 return true;
             }
         }

@@ -21,6 +21,7 @@ import {
   startWork as startFlightWork,
   startFlowing as startFlightFlowing,
   abort as abortFlight,
+  attachAbortSignal as attachFlightAbortSignal,
 } from 'react-server/src/ReactFlightServer';
 
 import {
@@ -36,6 +37,7 @@ import {
   startWork as startFizzWork,
   startFlowing as startFizzFlowing,
   abort as abortFizz,
+  attachAbortSignal as attachFizzAbortSignal,
 } from 'react-server/src/ReactFizzServer';
 
 import {
@@ -215,20 +217,12 @@ export function experimental_renderToHTML(
       undefined,
       undefined,
       undefined,
+      undefined,
     );
-    if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abortFlight(flightRequest, (signal as any).reason);
-        abortFizz(fizzRequest, (signal as any).reason);
-      } else {
-        const listener = () => {
-          abortFlight(flightRequest, (signal as any).reason);
-          abortFizz(fizzRequest, (signal as any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+    const signal = options ? options.signal : undefined;
+    if (signal) {
+      attachFlightAbortSignal(flightRequest, signal);
+      attachFizzAbortSignal(fizzRequest, signal);
     }
     startFlightWork(flightRequest);
     startFlightFlowing(flightRequest, flightDestination);

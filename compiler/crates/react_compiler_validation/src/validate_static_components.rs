@@ -9,7 +9,7 @@
 //!
 //! Port of ValidateStaticComponents.ts.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory, SourceLocation,
@@ -22,8 +22,8 @@ use react_compiler_hir::{HirFunction, IdentifierId, InstructionValue, JsxTag};
 /// Called via `env.logErrors()` pattern in Pipeline.ts.
 pub fn validate_static_components(func: &HirFunction) -> CompilerError {
     let mut error = CompilerError::new();
-    let mut known_dynamic_components: HashMap<IdentifierId, Option<SourceLocation>> =
-        HashMap::new();
+    let mut known_dynamic_components: FxHashMap<IdentifierId, Option<SourceLocation>> =
+        FxHashMap::default();
 
     for (_block_id, block) in &func.body.blocks {
         // Process phis: propagate dynamic component knowledge through phi nodes
@@ -65,8 +65,7 @@ pub fn validate_static_components(func: &HirFunction) -> CompilerError {
                 }
                 InstructionValue::JsxExpression { tag, .. } => {
                     if let JsxTag::Place(tag_place) = tag {
-                        if let Some(location) =
-                            known_dynamic_components.get(&tag_place.identifier)
+                        if let Some(location) = known_dynamic_components.get(&tag_place.identifier)
                         {
                             let location = *location;
                             let diagnostic = CompilerDiagnostic::new(

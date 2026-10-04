@@ -4,8 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-
-use crate::{CompilerDiagnosticDetail, CompilerErrorOrDiagnostic, CompilerError};
+use crate::{CompilerDiagnosticDetail, CompilerError, CompilerErrorOrDiagnostic};
 
 const CODEFRAME_LINES_ABOVE: u32 = 2;
 const CODEFRAME_LINES_BELOW: u32 = 3;
@@ -36,7 +35,9 @@ fn split_lines(source: &str) -> Vec<&str> {
         } else {
             // Check for Unicode line separators U+2028 and U+2029
             // These are encoded as E2 80 A8 and E2 80 A9 in UTF-8
-            if ch == 0xE2 && i + 2 < len && bytes[i + 1] == 0x80
+            if ch == 0xE2
+                && i + 2 < len
+                && bytes[i + 1] == 0x80
                 && (bytes[i + 2] == 0xA8 || bytes[i + 2] == 0xA9)
             {
                 lines.push(&source[start..i]);
@@ -157,7 +158,8 @@ pub fn code_frame_columns(
     let number_max_width = format!("{}", end).len();
 
     // Build a lookup map for marker lines
-    let mut marker_map: std::collections::HashMap<usize, MarkerEntry> = std::collections::HashMap::new();
+    let mut marker_map: rustc_hash::FxHashMap<usize, MarkerEntry> =
+        rustc_hash::FxHashMap::default();
     let line_diff = end_line as usize - start_line as usize;
     for (line_number, entry) in marker_lines_raw {
         // Resolve placeholder lengths using actual source lines
@@ -243,10 +245,8 @@ pub fn code_frame_columns(
                     let number_of_markers = if *len == 0 { 1 } else { *len };
                     let carets = "^".repeat(number_of_markers);
                     let gutter_spaces = gutter.replace(|c: char| c.is_ascii_digit(), " ");
-                    let mut marker_str = format!(
-                        "\n {} {}{}",
-                        gutter_spaces, marker_spacing, carets
-                    );
+                    let mut marker_str =
+                        format!("\n {} {}{}", gutter_spaces, marker_spacing, carets);
                     if last_marker_line && !message.is_empty() {
                         marker_str.push(' ');
                         marker_str.push_str(message);
@@ -272,12 +272,7 @@ pub fn code_frame_columns(
 
     // If message is set but no columns, prepend the message
     if !message.is_empty() && !has_columns {
-        frame = format!(
-            "{}{}\n{}",
-            " ".repeat(number_max_width + 1),
-            message,
-            frame
-        );
+        frame = format!("{}{}\n{}", " ".repeat(number_max_width + 1), message, frame);
     }
 
     frame
@@ -331,11 +326,7 @@ use crate::format_category_heading;
 /// The source parameter is the full source code of the file being compiled.
 /// The filename parameter is the source filename (e.g., "foo.ts") used in
 /// location displays.
-pub fn format_compiler_error(
-    err: &CompilerError,
-    source: &str,
-    filename: Option<&str>,
-) -> String {
+pub fn format_compiler_error(err: &CompilerError, source: &str, filename: Option<&str>) -> String {
     let detail_messages: Vec<String> = err
         .details
         .iter()
@@ -346,7 +337,10 @@ pub fn format_compiler_error(
     let plural = if count == 1 { "" } else { "s" };
     let header = format!("Found {} error{}:\n\n", count, plural);
 
-    let trimmed: Vec<String> = detail_messages.iter().map(|m| m.trim().to_string()).collect();
+    let trimmed: Vec<String> = detail_messages
+        .iter()
+        .map(|m| m.trim().to_string())
+        .collect();
     format!("{}{}", header, trimmed.join("\n\n"))
 }
 

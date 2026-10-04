@@ -32,6 +32,7 @@ import {
 } from '../../events/SyntheticEvent';
 
 import {
+  ANIMATION_CANCEL,
   ANIMATION_END,
   ANIMATION_ITERATION,
   ANIMATION_START,
@@ -133,6 +134,7 @@ function extractEvents(
     case 'touchstart':
       SyntheticEventCtor = SyntheticTouchEvent;
       break;
+    case ANIMATION_CANCEL:
     case ANIMATION_END:
     case ANIMATION_ITERATION:
     case ANIMATION_START:
@@ -210,7 +212,10 @@ function extractEvents(
       // nonDelegatedEvents list in DOMPluginEventSystem.
       // Then we can remove this special list.
       // This is a breaking change that can wait until React 18.
-      (domEventName === 'scroll' || domEventName === 'scrollend');
+      (domEventName === 'scroll' ||
+        domEventName === 'scrollend' ||
+        domEventName === 'toggle' ||
+        domEventName === 'beforetoggle');
 
     const listeners = accumulateSinglePhaseListeners(
       targetInst,

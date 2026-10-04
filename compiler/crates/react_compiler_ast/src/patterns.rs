@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::common::BaseNode;
+use crate::common::RawNode;
 use crate::expressions::{Expression, Identifier};
 
 /// Covers assignment targets and patterns.
@@ -34,9 +35,9 @@ pub struct ObjectPattern {
         skip_serializing_if = "Option::is_none",
         rename = "typeAnnotation"
     )]
-    pub type_annotation: Option<Box<serde_json::Value>>,
+    pub type_annotation: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,7 +56,7 @@ pub struct ObjectPatternProp {
     pub computed: bool,
     pub shorthand: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub method: Option<bool>,
 }
@@ -70,9 +71,9 @@ pub struct ArrayPattern {
         skip_serializing_if = "Option::is_none",
         rename = "typeAnnotation"
     )]
-    pub type_annotation: Option<Box<serde_json::Value>>,
+    pub type_annotation: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,9 +87,9 @@ pub struct AssignmentPattern {
         skip_serializing_if = "Option::is_none",
         rename = "typeAnnotation"
     )]
-    pub type_annotation: Option<Box<serde_json::Value>>,
+    pub type_annotation: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +102,7 @@ pub struct RestElement {
         skip_serializing_if = "Option::is_none",
         rename = "typeAnnotation"
     )]
-    pub type_annotation: Option<Box<serde_json::Value>>,
+    pub type_annotation: Option<RawNode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decorators: Option<Vec<serde_json::Value>>,
+    pub decorators: Option<Vec<RawNode>>,
 }

@@ -8,15 +8,12 @@
 //!
 //! Corresponds to `src/ReactiveScopes/ExtractScopeDeclarationsFromDestructuring.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::{
-    DeclarationId, IdentifierId, IdentifierName,
-    InstructionKind, InstructionValue, LValue, ParamPattern,
-    Place, ReactiveFunction, ReactiveInstruction, ReactiveStatement,
-    ReactiveValue, ReactiveScopeBlock,
-    environment::Environment,
-    visitors,
+    DeclarationId, IdentifierId, IdentifierName, InstructionKind, InstructionValue, LValue,
+    ParamPattern, Place, ReactiveFunction, ReactiveInstruction, ReactiveScopeBlock,
+    ReactiveStatement, ReactiveValue, environment::Environment, visitors,
 };
 
 use crate::visitors::{ReactiveFunctionTransform, Transformed, transform_reactive_function};
@@ -32,7 +29,7 @@ pub fn extract_scope_declarations_from_destructuring(
     func: &mut ReactiveFunction,
     env: &mut Environment,
 ) -> Result<(), react_compiler_diagnostics::CompilerError> {
-    let mut declared: HashSet<DeclarationId> = HashSet::new();
+    let mut declared: FxHashSet<DeclarationId> = FxHashSet::default();
     for param in &func.params {
         let place = match param {
             ParamPattern::Place(p) => p,
@@ -47,7 +44,7 @@ pub fn extract_scope_declarations_from_destructuring(
 }
 
 struct ExtractState {
-    declared: HashSet<DeclarationId>,
+    declared: FxHashSet<DeclarationId>,
 }
 
 struct Transform<'a> {
@@ -57,9 +54,15 @@ struct Transform<'a> {
 impl<'a> ReactiveFunctionTransform for Transform<'a> {
     type State = ExtractState;
 
-    fn env(&self) -> &Environment { self.env }
+    fn env(&self) -> &Environment {
+        self.env
+    }
 
-    fn visit_scope(&mut self, scope: &mut ReactiveScopeBlock, state: &mut ExtractState) -> Result<(), react_compiler_diagnostics::CompilerError> {
+    fn visit_scope(
+        &mut self,
+        scope: &mut ReactiveScopeBlock,
+        state: &mut ExtractState,
+    ) -> Result<(), react_compiler_diagnostics::CompilerError> {
         let scope_data = &self.env.scopes[scope.scope.0 as usize];
         let decl_ids: Vec<DeclarationId> = scope_data
             .declarations
@@ -91,7 +94,7 @@ impl<'a> ReactiveFunctionTransform for Transform<'a> {
         }) = &mut instruction.value
         {
             // Check if this is a mixed destructuring (some declared, some not)
-            let mut reassigned: HashSet<IdentifierId> = HashSet::new();
+            let mut reassigned: FxHashSet<IdentifierId> = FxHashSet::default();
             let mut has_declaration = false;
 
             for place in visitors::each_pattern_operand(&lvalue.pattern) {
@@ -119,8 +122,7 @@ impl<'a> ReactiveFunctionTransform for Transform<'a> {
                     }
                     // Create a temporary place (matches TS clonePlaceToTemporary)
                     let temp_id = env.next_identifier_id();
-                    let decl_id =
-                        env.identifiers[temp_id.0 as usize].declaration_id;
+                    let decl_id = env.identifiers[temp_id.0 as usize].declaration_id;
                     // Copy type from original identifier to temporary
                     let original_type = env.identifiers[place.identifier.0 as usize].type_;
                     env.identifiers[temp_id.0 as usize].type_ = original_type;
@@ -190,7 +192,11 @@ impl<'a> ReactiveFunctionTransform for Transform<'a> {
     }
 }
 
-fn update_declared_from_instruction(instr: &ReactiveInstruction, env: &Environment, state: &mut ExtractState) {
+fn update_declared_from_instruction(
+    instr: &ReactiveInstruction,
+    env: &Environment,
+    state: &mut ExtractState,
+) {
     if let ReactiveValue::Instruction(iv) = &instr.value {
         match iv {
             InstructionValue::DeclareContext { lvalue, .. }

@@ -15,11 +15,11 @@
 use indexmap::IndexMap;
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::Environment;
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::{
-    AliasingEffect, BlockId, Effect, EvaluationOrder, FunctionId, HirFunction, IdentifierId,
-    InstructionValue, Place, ReactFunctionType, HIR,
+    AliasingEffect, BlockId, Effect, EvaluationOrder, FunctionId, HIR, HirFunction, IdentifierId,
+    InstructionValue, Place, ReactFunctionType,
 };
 
 /// Analyse all nested function expressions and object methods in `func`.
@@ -33,7 +33,11 @@ use react_compiler_hir::{
 /// `lowerWithMutationAliasing`.
 ///
 /// Corresponds to TS `analyseFunctions(func: HIRFunction): void`.
-pub fn analyse_functions<F>(func: &mut HirFunction, env: &mut Environment, debug_logger: &mut F) -> Result<(), CompilerDiagnostic>
+pub fn analyse_functions<F>(
+    func: &mut HirFunction,
+    env: &mut Environment,
+    debug_logger: &mut F,
+) -> Result<(), CompilerDiagnostic>
 where
     F: FnMut(&HirFunction, &Environment),
 {
@@ -92,7 +96,11 @@ where
 /// Run mutation/aliasing inference on an inner function.
 ///
 /// Corresponds to TS `lowerWithMutationAliasing(fn: HIRFunction): void`.
-fn lower_with_mutation_aliasing<F>(func: &mut HirFunction, env: &mut Environment, debug_logger: &mut F) -> Result<(), CompilerDiagnostic>
+fn lower_with_mutation_aliasing<F>(
+    func: &mut HirFunction,
+    env: &mut Environment,
+    debug_logger: &mut F,
+) -> Result<(), CompilerDiagnostic>
 where
     F: FnMut(&HirFunction, &Environment),
 {
@@ -100,9 +108,7 @@ where
     analyse_functions(func, env, debug_logger)?;
 
     // inferMutationAliasingEffects on the inner function
-    crate::infer_mutation_aliasing_effects::infer_mutation_aliasing_effects(
-        func, env, true,
-    )?;
+    crate::infer_mutation_aliasing_effects::infer_mutation_aliasing_effects(func, env, true)?;
 
     // Check for invariant errors (e.g., uninitialized value kind)
     // In TS, these throw from within inferMutationAliasingEffects, aborting
@@ -115,12 +121,12 @@ where
     react_compiler_optimization::dead_code_elimination(func, env);
 
     // inferMutationAliasingRanges — returns the externally-visible function effects
-    let function_effects = crate::infer_mutation_aliasing_ranges::infer_mutation_aliasing_ranges(
-        func, env, true,
-    )?;
+    let function_effects =
+        crate::infer_mutation_aliasing_ranges::infer_mutation_aliasing_ranges(func, env, true)?;
 
     // rewriteInstructionKindsBasedOnReassignment
-    if let Err(err) = react_compiler_ssa::rewrite_instruction_kinds_based_on_reassignment(func, env) {
+    if let Err(err) = react_compiler_ssa::rewrite_instruction_kinds_based_on_reassignment(func, env)
+    {
         env.errors.merge(err);
         return Ok(());
     }
@@ -132,7 +138,7 @@ where
 
     // Phase 2: Populate the Effect of each context variable to use in inferring
     // the outer function. Corresponds to TS Phase 2 in lowerWithMutationAliasing.
-    let mut captured_or_mutated: HashSet<IdentifierId> = HashSet::new();
+    let mut captured_or_mutated: FxHashSet<IdentifierId> = FxHashSet::default();
     for effect in &function_effects {
         match effect {
             AliasingEffect::Assign { from, .. }
@@ -169,9 +175,7 @@ where
     }
 
     for operand in &mut func.context {
-        if captured_or_mutated.contains(&operand.identifier)
-            || operand.effect == Effect::Capture
-        {
+        if captured_or_mutated.contains(&operand.identifier) || operand.effect == Effect::Capture {
             operand.effect = Effect::Capture;
         } else {
             operand.effect = Effect::Read;
@@ -183,7 +187,6 @@ where
 
     Ok(())
 }
-
 
 /// Create a placeholder HirFunction for temporarily swapping an inner function
 /// out of `env.functions` via `std::mem::replace`. The placeholder is never
@@ -205,7 +208,7 @@ fn placeholder_function() -> HirFunction {
         context: Vec::new(),
         body: HIR {
             entry: BlockId(0),
-            blocks: IndexMap::new(),
+            blocks: IndexMap::default(),
         },
         instructions: Vec::new(),
         generator: false,

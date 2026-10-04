@@ -14,8 +14,7 @@
 //! 5. Processing each function through the compilation pipeline
 //! 6. Applying compiled functions back to the AST
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::File;
 use react_compiler_ast::Program;
@@ -235,9 +234,7 @@ fn find_directives_dynamic_gating<'a>(
 /// `^use memo if\(([^\)]*)\)$`: the condition may not contain `)` and the
 /// directive must end at the closing paren.
 fn parse_dynamic_gating_directive(value: &str) -> Option<&str> {
-    let condition = value
-        .strip_prefix("use memo if(")?
-        .strip_suffix(')')?;
+    let condition = value.strip_prefix("use memo if(")?.strip_suffix(')')?;
     if condition.contains(')') {
         return None;
     }
@@ -790,7 +787,7 @@ fn calls_hooks_or_creates_jsx_in_class_body(
 ) -> bool {
     body.body
         .iter()
-        .any(|member| calls_hooks_or_creates_jsx_in_json(member))
+        .any(|member| calls_hooks_or_creates_jsx_in_json(&member.parse_value()))
 }
 
 fn calls_hooks_or_creates_jsx_in_json(value: &serde_json::Value) -> bool {
@@ -930,11 +927,11 @@ fn calls_hooks_or_creates_jsx_in_pattern(pattern: &PatternLike) -> bool {
 /// Returns false for primitive type annotations that indicate this is NOT a component.
 fn is_valid_props_annotation(param: &PatternLike) -> bool {
     let type_annotation = match param {
-        PatternLike::Identifier(id) => id.type_annotation.as_deref(),
-        PatternLike::ObjectPattern(op) => op.type_annotation.as_deref(),
-        PatternLike::ArrayPattern(ap) => ap.type_annotation.as_deref(),
-        PatternLike::AssignmentPattern(ap) => ap.type_annotation.as_deref(),
-        PatternLike::RestElement(re) => re.type_annotation.as_deref(),
+        PatternLike::Identifier(id) => id.type_annotation.as_ref(),
+        PatternLike::ObjectPattern(op) => op.type_annotation.as_ref(),
+        PatternLike::ArrayPattern(ap) => ap.type_annotation.as_ref(),
+        PatternLike::AssignmentPattern(ap) => ap.type_annotation.as_ref(),
+        PatternLike::RestElement(re) => re.type_annotation.as_ref(),
         PatternLike::MemberExpression(_)
         | PatternLike::TSAsExpression(_)
         | PatternLike::TSSatisfiesExpression(_)
@@ -943,7 +940,7 @@ fn is_valid_props_annotation(param: &PatternLike) -> bool {
         | PatternLike::TypeCastExpression(_) => None,
     };
     let annot = match type_annotation {
-        Some(val) => val,
+        Some(raw) => raw.parse_value(),
         None => return true, // No annotation = valid
     };
     let annot_type = match annot.get("type").and_then(|v| v.as_str()) {
@@ -1118,8 +1115,8 @@ fn get_component_or_hook_like(
     if let Some(fn_name) = name {
         if is_component_name(fn_name) {
             // Check if it actually looks like a component
-            let is_component = calls_hooks_or_creates_jsx(params, body)
-                && is_valid_component_params(params)
+            let is_component = is_valid_component_params(params)
+                && calls_hooks_or_creates_jsx(params, body)
                 && !returns_non_node_fn(params, body);
             return if is_component {
                 Some(ReactFunctionType::Component)
@@ -1653,10 +1650,10 @@ fn has_memo_cache_function_import(program: &Program, module_name: &str) -> bool 
                 for specifier in &import.specifiers {
                     if let ImportSpecifier::ImportSpecifier(data) = specifier {
                         let imported_name = match &data.imported {
-                            ModuleExportName::Identifier(id) => &id.name,
-                            ModuleExportName::StringLiteral(s) => &s.value,
+                            ModuleExportName::Identifier(id) => Some(id.name.as_str()),
+                            ModuleExportName::StringLiteral(s) => s.value.as_str(),
                         };
-                        if imported_name == "c" {
+                        if imported_name == Some("c") {
                             return true;
                         }
                     }
@@ -2086,9 +2083,9 @@ struct CompiledFnForReplacement {
 fn get_functions_referenced_before_declaration(
     program: &Program,
     compiled_fns: &[CompiledFnForReplacement],
-) -> HashSet<u32> {
+) -> FxHashSet<u32> {
     // Collect function names and their node_ids for compiled FunctionDeclarations
-    let mut fn_names: HashMap<String, u32> = HashMap::new();
+    let mut fn_names: FxHashMap<String, u32> = FxHashMap::default();
     for compiled in compiled_fns {
         if compiled.original_kind == OriginalFnKind::FunctionDeclaration {
             if let Some(ref name) = compiled.fn_name {
@@ -2100,10 +2097,10 @@ fn get_functions_referenced_before_declaration(
     }
 
     if fn_names.is_empty() {
-        return HashSet::new();
+        return FxHashSet::default();
     }
 
-    let mut referenced_before_decl: HashSet<u32> = HashSet::new();
+    let mut referenced_before_decl: FxHashSet<u32> = FxHashSet::default();
 
     // Walk through program body in order. For each statement, check if it references
     // any of the function names before the function's declaration.
@@ -2181,7 +2178,9 @@ fn stmt_references_identifier_at_top_level(stmt: &Statement, name: &str) -> bool
         // Unmodeled statements (e.g. `export = X`) can reference top-level
         // bindings; scan the raw node for a matching Identifier so the
         // gating reference-before-declaration analysis does not miss them.
-        Statement::Unknown(unknown) => raw_node_references_identifier(unknown.raw(), name),
+        Statement::Unknown(unknown) => {
+            raw_node_references_identifier(&unknown.raw().parse_value(), name)
+        }
         _ => false,
     }
 }
@@ -2196,11 +2195,12 @@ fn raw_node_references_identifier(value: &serde_json::Value, name: &str) -> bool
             {
                 return true;
             }
-            map.values().any(|v| raw_node_references_identifier(v, name))
+            map.values()
+                .any(|v| raw_node_references_identifier(v, name))
         }
-        serde_json::Value::Array(items) => {
-            items.iter().any(|v| raw_node_references_identifier(v, name))
-        }
+        serde_json::Value::Array(items) => items
+            .iter()
+            .any(|v| raw_node_references_identifier(v, name)),
         _ => false,
     }
 }
@@ -2581,7 +2581,7 @@ fn build_compiled_expression_matching_kind(
 /// Apply compiled functions back to the AST by replacing original function nodes
 /// with their compiled versions, inserting outlined functions, and adding imports.
 fn apply_compiled_functions(
-    compiled_fns: &[CompiledFnForReplacement],
+    compiled_fns: Vec<CompiledFnForReplacement>,
     program: &mut Program,
     context: &mut ProgramContext,
 ) {
@@ -2594,9 +2594,9 @@ fn apply_compiled_functions(
 
     // If gating is enabled, determine which functions are referenced before declaration
     let referenced_before_decl = if has_gating {
-        get_functions_referenced_before_declaration(program, compiled_fns)
+        get_functions_referenced_before_declaration(program, &compiled_fns)
     } else {
-        HashSet::new()
+        FxHashSet::default()
     };
 
     // For gated functions, we need to clone the original function expressions
@@ -2629,15 +2629,23 @@ fn apply_compiled_functions(
     //   (matching TS pushContainer behavior)
     let mut outlined_decls: Vec<(Option<u32>, OriginalFnKind, FunctionDeclaration)> = Vec::new(); // (node_id, kind, decl)
 
+    // Computed before the loop below consumes `compiled_fns`.
+    let needs_memo_import = compiled_fns
+        .iter()
+        .any(|cf| cf.codegen_fn.memo_slots_used > 0);
+
     // Replace each compiled function in the AST
-    for (idx, compiled) in compiled_fns.iter().enumerate() {
+    for (idx, mut compiled) in compiled_fns.into_iter().enumerate() {
+        let fn_node_id = compiled.fn_node_id;
+        let original_kind = compiled.original_kind;
+
         // Collect outlined functions for this compiled function
-        for outlined in &compiled.codegen_fn.outlined {
+        for outlined in std::mem::take(&mut compiled.codegen_fn.outlined) {
             let outlined_decl = FunctionDeclaration {
                 base: BaseNode::typed("FunctionDeclaration"),
-                id: outlined.func.id.clone(),
-                params: outlined.func.params.clone(),
-                body: outlined.func.body.clone(),
+                id: outlined.func.id,
+                params: outlined.func.params,
+                body: outlined.func.body,
                 generator: outlined.func.generator,
                 is_async: outlined.func.is_async,
                 declare: None,
@@ -2647,23 +2655,22 @@ fn apply_compiled_functions(
                 component_declaration: false,
                 hook_declaration: false,
             };
-            outlined_decls.push((compiled.fn_node_id, compiled.original_kind, outlined_decl));
+            outlined_decls.push((fn_node_id, original_kind, outlined_decl));
         }
 
         if let Some(ref gating_config) = compiled.gating {
-            let is_ref_before_decl = compiled
-                .fn_node_id
-                .map_or(false, |nid| referenced_before_decl.contains(&nid));
+            let is_ref_before_decl =
+                fn_node_id.map_or(false, |nid| referenced_before_decl.contains(&nid));
 
-            if is_ref_before_decl && compiled.original_kind == OriginalFnKind::FunctionDeclaration {
+            if is_ref_before_decl && original_kind == OriginalFnKind::FunctionDeclaration {
                 // Use the hoisted function declaration gating pattern
-                apply_gated_function_hoisted(program, compiled, gating_config, context);
+                apply_gated_function_hoisted(program, &compiled, gating_config, context);
             } else {
                 // Use the conditional expression gating pattern
                 let original_expr = original_expressions[idx].clone();
                 apply_gated_function_conditional(
                     program,
-                    compiled,
+                    &compiled,
                     gating_config,
                     original_expr,
                     context,
@@ -2671,8 +2678,11 @@ fn apply_compiled_functions(
             }
         } else {
             // No gating: replace the function directly (original behavior)
-            if let Some(node_id) = compiled.fn_node_id {
-                let mut visitor = ReplaceFnVisitor { node_id, compiled };
+            if let Some(node_id) = fn_node_id {
+                let mut visitor = ReplaceFnVisitor {
+                    node_id,
+                    compiled: Some(compiled.codegen_fn),
+                };
                 walk_program_mut(&mut visitor, program);
             }
         }
@@ -2704,9 +2714,6 @@ fn apply_compiled_functions(
     }
 
     // Register the memo cache import and rename useMemoCache references.
-    let needs_memo_import = compiled_fns
-        .iter()
-        .any(|cf| cf.codegen_fn.memo_slots_used > 0);
     if needs_memo_import {
         let import_spec = context.add_memo_cache_import();
         let local_name = import_spec.name;
@@ -3613,20 +3620,32 @@ fn expr_has_fn_with_node_id(expr: &Expression, node_id: u32) -> bool {
 }
 
 /// Visitor that replaces a compiled function in the AST by matching `base.node_id`.
-struct ReplaceFnVisitor<'a> {
+struct ReplaceFnVisitor {
     node_id: u32,
-    compiled: &'a CompiledFnForReplacement,
+    /// Owned so the compiled body can be moved into the AST rather than deep
+    /// cloned. Exactly one arm below fires, because each returns `Stop` once it
+    /// matches `node_id`.
+    compiled: Option<CodegenFunction>,
 }
 
-impl MutVisitor for ReplaceFnVisitor<'_> {
+impl ReplaceFnVisitor {
+    fn take(&mut self) -> CodegenFunction {
+        self.compiled
+            .take()
+            .expect("ReplaceFnVisitor matched more than once; node ids must be unique")
+    }
+}
+
+impl MutVisitor for ReplaceFnVisitor {
     fn visit_statement(&mut self, stmt: &mut Statement) -> VisitResult {
         match stmt {
             Statement::FunctionDeclaration(f) if f.base.node_id == Some(self.node_id) => {
-                f.id = self.compiled.codegen_fn.id.clone();
-                f.params = self.compiled.codegen_fn.params.clone();
-                f.body = self.compiled.codegen_fn.body.clone();
-                f.generator = self.compiled.codegen_fn.generator;
-                f.is_async = self.compiled.codegen_fn.is_async;
+                let compiled = self.take();
+                f.id = compiled.id;
+                f.params = compiled.params;
+                f.body = compiled.body;
+                f.generator = compiled.generator;
+                f.is_async = compiled.is_async;
                 f.return_type = None;
                 f.type_parameters = None;
                 f.predicate = None;
@@ -3636,11 +3655,12 @@ impl MutVisitor for ReplaceFnVisitor<'_> {
             Statement::ExportDefaultDeclaration(export) => {
                 if let ExportDefaultDecl::FunctionDeclaration(f) = export.declaration.as_mut() {
                     if f.base.node_id == Some(self.node_id) {
-                        f.id = self.compiled.codegen_fn.id.clone();
-                        f.params = self.compiled.codegen_fn.params.clone();
-                        f.body = self.compiled.codegen_fn.body.clone();
-                        f.generator = self.compiled.codegen_fn.generator;
-                        f.is_async = self.compiled.codegen_fn.is_async;
+                        let compiled = self.take();
+                        f.id = compiled.id;
+                        f.params = compiled.params;
+                        f.body = compiled.body;
+                        f.generator = compiled.generator;
+                        f.is_async = compiled.is_async;
                         f.return_type = None;
                         f.type_parameters = None;
                         f.predicate = None;
@@ -3653,11 +3673,12 @@ impl MutVisitor for ReplaceFnVisitor<'_> {
                 if let Some(ref mut decl) = export.declaration {
                     if let Declaration::FunctionDeclaration(f) = decl.as_mut() {
                         if f.base.node_id == Some(self.node_id) {
-                            f.id = self.compiled.codegen_fn.id.clone();
-                            f.params = self.compiled.codegen_fn.params.clone();
-                            f.body = self.compiled.codegen_fn.body.clone();
-                            f.generator = self.compiled.codegen_fn.generator;
-                            f.is_async = self.compiled.codegen_fn.is_async;
+                            let compiled = self.take();
+                            f.id = compiled.id;
+                            f.params = compiled.params;
+                            f.body = compiled.body;
+                            f.generator = compiled.generator;
+                            f.is_async = compiled.is_async;
                             f.return_type = None;
                             f.type_parameters = None;
                             f.predicate = None;
@@ -3675,22 +3696,22 @@ impl MutVisitor for ReplaceFnVisitor<'_> {
     fn visit_expression(&mut self, expr: &mut Expression) -> VisitResult {
         match expr {
             Expression::FunctionExpression(f) if f.base.node_id == Some(self.node_id) => {
-                f.id = self.compiled.codegen_fn.id.clone();
-                f.params = self.compiled.codegen_fn.params.clone();
-                f.body = self.compiled.codegen_fn.body.clone();
-                f.generator = self.compiled.codegen_fn.generator;
-                f.is_async = self.compiled.codegen_fn.is_async;
+                let compiled = self.take();
+                f.id = compiled.id;
+                f.params = compiled.params;
+                f.body = compiled.body;
+                f.generator = compiled.generator;
+                f.is_async = compiled.is_async;
                 f.return_type = None;
                 f.type_parameters = None;
                 VisitResult::Stop
             }
             Expression::ArrowFunctionExpression(f) if f.base.node_id == Some(self.node_id) => {
-                f.params = self.compiled.codegen_fn.params.clone();
-                f.body = Box::new(ArrowFunctionBody::BlockStatement(
-                    self.compiled.codegen_fn.body.clone(),
-                ));
-                f.generator = self.compiled.codegen_fn.generator;
-                f.is_async = self.compiled.codegen_fn.is_async;
+                let compiled = self.take();
+                f.params = compiled.params;
+                f.body = Box::new(ArrowFunctionBody::BlockStatement(compiled.body));
+                f.generator = compiled.generator;
+                f.is_async = compiled.is_async;
                 f.expression = Some(false);
                 f.return_type = None;
                 f.type_parameters = None;
@@ -4018,29 +4039,14 @@ pub fn compile_program(mut file: File, scope: ScopeInfo, options: PluginOptions)
     }
 
     // Now we can mutate file.program
-    apply_compiled_functions(&replacements, &mut file.program, &mut context);
-
-    // Serialize the modified File AST directly to a JSON string and wrap as RawValue.
-    // This avoids double-serialization (File→Value→String) by going File→String directly.
-    // The RawValue is embedded verbatim when the CompileResult is serialized.
-    let ast = match serde_json::to_string(&file) {
-        Ok(s) => match serde_json::value::RawValue::from_string(s) {
-            Ok(raw) => Some(raw),
-            Err(e) => {
-                eprintln!("RUST COMPILER: Failed to create RawValue: {}", e);
-                None
-            }
-        },
-        Err(e) => {
-            eprintln!("RUST COMPILER: Failed to serialize AST: {}", e);
-            None
-        }
-    };
+    apply_compiled_functions(replacements, &mut file.program, &mut context);
 
     let timing_entries = context.timing.into_entries();
 
+    // Return the compiled File by value; in-process Rust consumers use it
+    // directly, and the napi consumer serializes the whole result as before.
     CompileResult::Success {
-        ast,
+        ast: Some(file),
         events: context.events,
         ordered_log: context.ordered_log,
         renames: convert_renames(&context.renames),

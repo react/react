@@ -444,6 +444,63 @@ describe('ReactDeferredValue', () => {
   );
 
   it(
+    'if the deferred task errors while the original task is suspended in the ' +
+      'shell, commits the error boundary (no Suspense boundary)',
+    async () => {
+      class ErrorBoundary extends React.Component {
+        state = {error: null};
+        static getDerivedStateFromError(error) {
+          return {error};
+        }
+        render() {
+          if (this.state.error !== null) {
+            return <Text text={'Caught: ' + this.state.error.message} />;
+          }
+          return this.props.children;
+        }
+      }
+
+      function Final() {
+        throw new Error('Oops');
+      }
+
+      function App() {
+        const text = useDeferredValue('Final', 'Loading...');
+        return text === 'Final' ? <Final /> : <AsyncText text={text} />;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<Text text="Previous" />));
+      assertLog(['Previous']);
+
+      // The initial value suspends in the shell, so the transition can't
+      // finish. The deferred value throws. React retries the render
+      // synchronously before committing the error boundary, and the retry
+      // suspends on the initial value again. That must not prevent the error
+      // boundary from committing.
+      await act(() =>
+        startTransition(() =>
+          root.render(
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>,
+          ),
+        ),
+      );
+      assertLog([
+        'Suspend! [Loading...]',
+        'Caught: Oops',
+        // The synchronous retry suspends on the initial value again.
+        'Suspend! [Loading...]',
+        // Error recovery is now disabled, so the next attempt commits the
+        // error boundary.
+        'Caught: Oops',
+      ]);
+      expect(root).toMatchRenderedOutput('Caught: Oops');
+    },
+  );
+
+  it(
     'if a suspended render spawns a deferred task that suspends on a sibling, ' +
       'we can finish the original task if the original sibling loads first',
     async () => {

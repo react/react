@@ -28,6 +28,7 @@ export type PreloadModuleOptions = {
   crossOrigin?: string,
   integrity?: string,
   nonce?: string,
+  fetchPriority?: FetchPriorityEnum,
 };
 export type PreinitOptions = {
   as: string,
@@ -42,6 +43,7 @@ export type PreinitModuleOptions = {
   crossOrigin?: string,
   integrity?: string,
   nonce?: string,
+  fetchPriority?: FetchPriorityEnum,
 };
 
 export type CrossOriginEnum = '' | 'use-credentials' | CrossOriginString;
@@ -63,6 +65,7 @@ export type PreloadModuleImplOptions = {
   crossOrigin?: ?CrossOriginEnum,
   integrity?: ?string,
   nonce?: ?string,
+  fetchPriority?: ?string,
 };
 export type PreinitStyleOptions = {
   crossOrigin?: ?CrossOriginEnum,
@@ -79,6 +82,7 @@ export type PreinitModuleScriptOptions = {
   crossOrigin?: ?CrossOriginEnum,
   integrity?: ?string,
   nonce?: ?string,
+  fetchPriority?: ?string,
 };
 
 export type HostDispatcher = {
@@ -89,21 +93,24 @@ export type HostDispatcher = {
   L /* preload */: (
     href: string,
     as: string,
-    options?: ?PreloadImplOptions,
+    options?: ?Required<PreloadImplOptions>,
   ) => void,
   m /* preloadModule */: (
     href: string,
-    options?: ?PreloadModuleImplOptions,
+    options?: ?Required<PreloadModuleImplOptions>,
   ) => void,
   S /* preinitStyle */: (
     href: string,
     precedence: ?string,
-    options?: ?PreinitStyleOptions,
+    options?: ?Required<PreinitStyleOptions>,
   ) => void,
-  X /* preinitScript */: (src: string, options?: ?PreinitScriptOptions) => void,
+  X /* preinitScript */: (
+    src: string,
+    options?: ?Required<PreinitScriptOptions>,
+  ) => void,
   M /* preinitModuleScript */: (
     src: string,
-    options?: ?PreinitModuleScriptOptions,
+    options?: ?Required<PreinitModuleScriptOptions>,
   ) => void,
 };
 

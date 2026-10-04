@@ -19,3 +19,44 @@
   left: 360px;
   border: 1px solid #ccc;
 }
+
+.examples {
+  display: grid;
+  /* Wide enough that the demos (the ~340px swipe-recognizer boxes) fit without
+     overflowing once card + content padding is subtracted. */
+  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+}
+
+.example-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+  background: #eee;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.example-card-title {
+  margin: 0 0 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+}
+
+.example-card-content {
+  flex: 1;
+  width: 100%;
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow: auto;
+}

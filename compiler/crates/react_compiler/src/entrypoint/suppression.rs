@@ -38,12 +38,16 @@ fn comment_data(comment: &Comment) -> &CommentData {
 /// Check if a comment value matches `eslint-disable-next-line <rule>` for any rule in `rule_names`.
 fn matches_eslint_disable_next_line(value: &str, rule_names: &[String]) -> bool {
     if let Some(rest) = value.strip_prefix("eslint-disable-next-line ") {
-        return rule_names.iter().any(|name| rest.starts_with(name.as_str()));
+        return rule_names
+            .iter()
+            .any(|name| rest.starts_with(name.as_str()));
     }
     // Also check with leading space (comment values often have leading whitespace)
     let trimmed = value.trim_start();
     if let Some(rest) = trimmed.strip_prefix("eslint-disable-next-line ") {
-        return rule_names.iter().any(|name| rest.starts_with(name.as_str()));
+        return rule_names
+            .iter()
+            .any(|name| rest.starts_with(name.as_str()));
     }
     false
 }
@@ -51,11 +55,15 @@ fn matches_eslint_disable_next_line(value: &str, rule_names: &[String]) -> bool 
 /// Check if a comment value matches `eslint-disable <rule>` for any rule in `rule_names`.
 fn matches_eslint_disable(value: &str, rule_names: &[String]) -> bool {
     if let Some(rest) = value.strip_prefix("eslint-disable ") {
-        return rule_names.iter().any(|name| rest.starts_with(name.as_str()));
+        return rule_names
+            .iter()
+            .any(|name| rest.starts_with(name.as_str()));
     }
     let trimmed = value.trim_start();
     if let Some(rest) = trimmed.strip_prefix("eslint-disable ") {
-        return rule_names.iter().any(|name| rest.starts_with(name.as_str()));
+        return rule_names
+            .iter()
+            .any(|name| rest.starts_with(name.as_str()));
     }
     false
 }
@@ -63,11 +71,15 @@ fn matches_eslint_disable(value: &str, rule_names: &[String]) -> bool {
 /// Check if a comment value matches `eslint-enable <rule>` for any rule in `rule_names`.
 fn matches_eslint_enable(value: &str, rule_names: &[String]) -> bool {
     if let Some(rest) = value.strip_prefix("eslint-enable ") {
-        return rule_names.iter().any(|name| rest.starts_with(name.as_str()));
+        return rule_names
+            .iter()
+            .any(|name| rest.starts_with(name.as_str()));
     }
     let trimmed = value.trim_start();
     if let Some(rest) = trimmed.strip_prefix("eslint-enable ") {
-        return rule_names.iter().any(|name| rest.starts_with(name.as_str()));
+        return rule_names
+            .iter()
+            .any(|name| rest.starts_with(name.as_str()));
     }
     false
 }
@@ -135,10 +147,7 @@ pub fn find_program_suppressions(
         }
 
         // Check for Flow suppression (only if not already within a block)
-        if flow_suppressions
-            && disable_comment.is_none()
-            && matches_flow_suppression(&data.value)
-        {
+        if flow_suppressions && disable_comment.is_none() && matches_flow_suppression(&data.value) {
             disable_comment = Some(data.clone());
             enable_comment = Some(data.clone());
             source = Some(SuppressionSource::Flow);

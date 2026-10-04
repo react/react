@@ -8,11 +8,11 @@
 //! Defines the shape registry used by Environment to resolve property types
 //! and function call signatures for built-in objects, hooks, and user-defined types.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
-use crate::type_config::{AliasingEffectConfig, AliasingSignatureConfig, ValueKind, ValueReason};
 use crate::Effect;
 use crate::Type;
+use crate::type_config::{AliasingEffectConfig, AliasingSignatureConfig, ValueKind, ValueReason};
 
 // =============================================================================
 // Shape ID constants (matching TS ObjectShape.ts)
@@ -108,6 +108,9 @@ pub struct FunctionSignature {
     pub no_alias: bool,
     pub mutable_only_if_operands_are_mutable: bool,
     pub impure: bool,
+    /// When true, `impure` only applies if the call/construct has no arguments.
+    /// Example: `new Date()` reads the clock and is impure, `new Date(timestamp)` is not.
+    pub impure_if_no_args: bool,
     pub known_incompatible: Option<String>,
     pub canonical_name: Option<String>,
     /// Aliasing signature in config form. Full parsing into AliasingSignature
@@ -119,21 +122,21 @@ pub struct FunctionSignature {
 /// Ported from TS `ObjectShape`.
 #[derive(Debug, Clone)]
 pub struct ObjectShape {
-    pub properties: HashMap<String, Type>,
+    pub properties: FxHashMap<String, Type>,
     pub function_type: Option<FunctionSignature>,
 }
 
 /// Registry mapping shape IDs to their ObjectShape definitions.
 ///
 /// Supports two modes:
-/// - **Builder mode** (`base=None`): wraps a single HashMap, used during
+/// - **Builder mode** (`base=None`): wraps a single FxHashMap, used during
 ///   `build_builtin_shapes` / `build_default_globals` to construct the static base.
-/// - **Overlay mode** (`base=Some`): holds a `&'static HashMap` base plus a small
-///   extras HashMap. Lookups check extras first, then base. Inserts go into extras.
+/// - **Overlay mode** (`base=Some`): holds a `&'static FxHashMap` base plus a small
+///   extras FxHashMap. Lookups check extras first, then base. Inserts go into extras.
 ///   Cloning only copies the extras map (the base pointer is shared).
 pub struct ShapeRegistry {
-    base: Option<&'static HashMap<String, ObjectShape>>,
-    entries: HashMap<String, ObjectShape>,
+    base: Option<&'static FxHashMap<String, ObjectShape>>,
+    entries: FxHashMap<String, ObjectShape>,
 }
 
 impl ShapeRegistry {
@@ -141,15 +144,15 @@ impl ShapeRegistry {
     pub fn new() -> Self {
         Self {
             base: None,
-            entries: HashMap::new(),
+            entries: FxHashMap::default(),
         }
     }
 
     /// Create an overlay-mode registry backed by a static base.
-    pub fn with_base(base: &'static HashMap<String, ObjectShape>) -> Self {
+    pub fn with_base(base: &'static FxHashMap<String, ObjectShape>) -> Self {
         Self {
             base: Some(base),
-            entries: HashMap::new(),
+            entries: FxHashMap::default(),
         }
     }
 
@@ -163,9 +166,9 @@ impl ShapeRegistry {
         self.entries.insert(key, value);
     }
 
-    /// Consume the registry and return the inner HashMap.
+    /// Consume the registry and return the inner FxHashMap.
     /// Only valid in builder mode (no base).
-    pub fn into_inner(self) -> HashMap<String, ObjectShape> {
+    pub fn into_inner(self) -> FxHashMap<String, ObjectShape> {
         debug_assert!(
             self.base.is_none(),
             "into_inner() called on overlay-mode ShapeRegistry"
@@ -226,6 +229,7 @@ pub fn add_function(
             no_alias: sig.no_alias,
             mutable_only_if_operands_are_mutable: sig.mutable_only_if_operands_are_mutable,
             impure: sig.impure,
+            impure_if_no_args: sig.impure_if_no_args,
             known_incompatible: sig.known_incompatible,
             canonical_name: sig.canonical_name,
             aliasing: sig.aliasing,
@@ -240,11 +244,7 @@ pub fn add_function(
 
 /// Add a hook to a ShapeRegistry.
 /// Returns a `Type::Function` representing the added hook.
-pub fn add_hook(
-    registry: &mut ShapeRegistry,
-    sig: HookSignatureBuilder,
-    id: Option<&str>,
-) -> Type {
+pub fn add_hook(registry: &mut ShapeRegistry, sig: HookSignatureBuilder, id: Option<&str>) -> Type {
     let shape_id = id.map(|s| s.to_string()).unwrap_or_else(next_anon_id);
     let return_type = sig.return_type.clone();
     add_shape(
@@ -262,6 +262,7 @@ pub fn add_hook(
             no_alias: sig.no_alias,
             mutable_only_if_operands_are_mutable: false,
             impure: false,
+            impure_if_no_args: false,
             known_incompatible: sig.known_incompatible,
             canonical_name: None,
             aliasing: sig.aliasing,
@@ -319,6 +320,7 @@ pub struct FunctionSignatureBuilder {
     pub no_alias: bool,
     pub mutable_only_if_operands_are_mutable: bool,
     pub impure: bool,
+    pub impure_if_no_args: bool,
     pub known_incompatible: Option<String>,
     pub canonical_name: Option<String>,
     pub aliasing: Option<AliasingSignatureConfig>,
@@ -336,6 +338,7 @@ impl Default for FunctionSignatureBuilder {
             no_alias: false,
             mutable_only_if_operands_are_mutable: false,
             impure: false,
+            impure_if_no_args: false,
             known_incompatible: None,
             canonical_name: None,
             aliasing: None,
