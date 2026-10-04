@@ -755,7 +755,13 @@ function validateNoRefAccessInRenderImpl(
               env.set(instr.lvalue.identifier.id, {kind: 'Guard', refId});
             } else {
               for (const operand of eachInstructionValueOperand(instr.value)) {
-                validateNoRefValueAccess(errors, env, operand);
+                /*
+                 * A binary operator never invokes its operands, so merely
+                 * referencing a function that would access a ref if called
+                 * (eg `fn !== prevFn`) is not a ref access. Only flag direct
+                 * reads of ref values (eg `ref.current !== 5`).
+                 */
+                validateNoDirectRefValueAccess(errors, operand, env);
               }
             }
             break;
