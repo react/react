@@ -1,12 +1,16 @@
 [package]
 name = "react_compiler_optimization"
-version = "0.1.0"
-edition = "2024"
+description = "Optimization passes for the React Compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
-react_compiler_hir = { path = "../react_compiler_hir" }
-react_compiler_lowering = { path = "../react_compiler_lowering" }
-react_compiler_ssa = { path = "../react_compiler_ssa" }
+react_compiler_diagnostics.workspace = true
+react_compiler_hir.workspace = true
+react_compiler_lowering.workspace = true
+react_compiler_ssa.workspace = true
 indexmap = "2"
 rustc-hash = "2"

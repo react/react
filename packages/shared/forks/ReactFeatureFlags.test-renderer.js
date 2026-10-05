@@ -21,6 +21,7 @@ export const enableUpdaterTracking: boolean = false;
 export const enableLegacyCache: boolean = __EXPERIMENTAL__;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
+export const enableFlightObjectReferences: boolean = false;
 export const enableTaint: boolean = true;
 export const disableCommentsAsDOMContainers: boolean = true;
 export const disableInputAttributeSyncing: boolean = false;
@@ -55,7 +56,7 @@ export const disableClientCache: boolean = true;
 
 export const enableInfiniteRenderLoopDetection: boolean = false;
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
-export const enableConditionalUseWarning: boolean = __EXPERIMENTAL__;
+export const enableConditionalUseWarning: boolean = true;
 
 export const enableEffectEventMutationPhase: boolean = true;
 
@@ -74,8 +75,6 @@ export const enableHydrationChangeEvent: boolean = false;
 export const enableDefaultTransitionIndicator: boolean = false;
 export const ownerStackLimit = 1e4;
 
-export const enableFragmentRefs: boolean = true;
-export const enableFragmentRefsScrollIntoView: boolean = true;
 export const enableFragmentRefsInstanceHandles: boolean = true;
 export const enableFragmentRefsTextNodes: boolean = true;
 
@@ -96,7 +95,7 @@ export const enableReactTestRendererWarning: boolean = true;
 export const enableObjectFiber: boolean = false;
 
 export const enableOptimisticKey: boolean = false;
-export const enableParallelTransitions: boolean = false;
+export const enableParallelTransitions: boolean = true;
 
 export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
 export const eprh_enableVerboseNoSetStateInEffectCompilerLint: boolean = false;

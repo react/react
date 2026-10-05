@@ -2699,16 +2699,6 @@ function lowerExpression(
           }),
         );
         return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
-      } else if (builder.isContextIdentifier(argument)) {
-        builder.recordError(
-          new CompilerErrorDetail({
-            reason: `(BuildHIR::lowerExpression) Handle UpdateExpression to variables captured within lambdas.`,
-            category: ErrorCategory.Todo,
-            loc: exprPath.node.loc ?? null,
-            suggestions: null,
-          }),
-        );
-        return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
       }
       const lvalue = lowerIdentifierForAssignment(
         builder,
@@ -2744,9 +2734,10 @@ function lowerExpression(
         return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
       }
       const value = lowerIdentifier(builder, argument);
+      const isContext = builder.isContextIdentifier(argument);
       if (expr.node.prefix) {
         return {
-          kind: 'PrefixUpdate',
+          kind: isContext ? 'PrefixUpdateContext' : 'PrefixUpdateLocal',
           lvalue,
           operation: expr.node.operator,
           value,
@@ -2754,7 +2745,7 @@ function lowerExpression(
         };
       } else {
         return {
-          kind: 'PostfixUpdate',
+          kind: isContext ? 'PostfixUpdateContext' : 'PostfixUpdateLocal',
           lvalue,
           operation: expr.node.operator,
           value,
@@ -3729,6 +3720,17 @@ function lowerIdentifier(
             reason: `The 'eval' function is not supported`,
             description:
               'Eval is an anti-pattern in JavaScript, and the code executed cannot be evaluated by React Compiler',
+            category: ErrorCategory.UnsupportedSyntax,
+            loc: exprPath.node.loc ?? null,
+            suggestions: null,
+          }),
+        );
+      } else if (binding.kind === 'Global' && binding.name === 'arguments') {
+        builder.recordError(
+          new CompilerErrorDetail({
+            reason: `Implicit 'arguments' is not supported`,
+            description:
+              'React Compiler does not support compiling functions that reference the implicit arguments object',
             category: ErrorCategory.UnsupportedSyntax,
             loc: exprPath.node.loc ?? null,
             suggestions: null,

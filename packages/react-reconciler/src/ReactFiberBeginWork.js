@@ -119,7 +119,6 @@ import {
   enableCPUSuspense,
   disableLegacyMode,
   enableViewTransition,
-  enableFragmentRefs,
 } from 'shared/ReactFeatureFlags';
 import shallowEqual from 'shared/shallowEqual';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
@@ -1168,6 +1167,13 @@ function updateActivityComponent(
           renderLanes,
         );
         workInProgress.lanes = laneToLanes(OffscreenLane);
+        // This tree hasn't been mounted yet so there are no baseLanes to carry over.
+        const nextState: OffscreenState = {
+          baseLanes: NoLanes,
+          cachePool: null,
+        };
+        primaryChildFragment.memoizedState = nextState;
+
         return bailoutOffscreenComponent(null, primaryChildFragment);
       } else {
         // We must push the suspense handler context *before* attempting to
@@ -1359,9 +1365,7 @@ function updateFragment(
   renderLanes: Lanes,
 ) {
   const nextChildren = workInProgress.pendingProps;
-  if (enableFragmentRefs) {
-    markRef(current, workInProgress);
-  }
+  markRef(current, workInProgress);
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   return workInProgress.child;
 }

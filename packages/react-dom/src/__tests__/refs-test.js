@@ -405,7 +405,7 @@ describe('refs return clean up function', () => {
       root.render(<div id="test-div" ref={_onRefChangeWithCleanup} />);
     });
 
-    expect(setup).toBeCalledWith('test-div');
+    expect(setup).toHaveBeenCalledWith('test-div');
     expect(setup).toHaveBeenCalledTimes(1);
     expect(cleanUp).toHaveBeenCalledTimes(0);
 
@@ -421,7 +421,7 @@ describe('refs return clean up function', () => {
     expect(cleanUp).toHaveBeenCalledTimes(1);
 
     // New ref is setup
-    expect(setup2).toBeCalledWith('test-div2');
+    expect(setup2).toHaveBeenCalledWith('test-div2');
     expect(setup2).toHaveBeenCalledTimes(1);
 
     // Now, render with the original ref again
@@ -430,7 +430,7 @@ describe('refs return clean up function', () => {
     });
 
     // Setup was not called again
-    expect(setup2).toBeCalledWith('test-div2');
+    expect(setup2).toHaveBeenCalledWith('test-div2');
     expect(setup2).toHaveBeenCalledTimes(1);
 
     // Null handler hit because no cleanup is returned

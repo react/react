@@ -22,8 +22,6 @@ export const {
   alwaysThrottleRetries,
   enableObjectFiber,
   passChildrenWhenCloningPersistedNodes,
-  enableFragmentRefs,
-  enableFragmentRefsScrollIntoView,
   enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes,
   enableViewTransitionForPersistenceMode,
@@ -42,6 +40,7 @@ export const disableTextareaChildren: boolean = false;
 export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
+export const enableFlightObjectReferences: boolean = false;
 export const enableCPUSuspense: boolean = true;
 export const enableCreateEventHandleAPI: boolean = false;
 export const enableBrowserAPI: boolean = true;
@@ -87,7 +86,7 @@ export const enablePerformanceIssueReporting: boolean =
   enableComponentPerformanceTrack;
 export const enableInternalInstanceMap: boolean = false;
 export const enableOptimisticKey: boolean = false;
-export const enableParallelTransitions: boolean = false;
+export const enableParallelTransitions: boolean = true;
 
 export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
 export const eprh_enableVerboseNoSetStateInEffectCompilerLint: boolean = false;

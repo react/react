@@ -36,6 +36,7 @@ import {
   createPublicTextInstance,
   createAttributePayload,
   diffAttributePayloads,
+  fabricUIManager,
   type PublicInstance as ReactNativePublicInstance,
   type PublicTextInstance,
   type PublicRootInstance,
@@ -61,7 +62,7 @@ const {
   unstable_IdleEventPriority: FabricIdlePriority,
   unstable_getCurrentEventPriority: fabricGetCurrentEventPriority,
   suspendOnActiveViewTransition: fabricSuspendOnActiveViewTransition,
-} = nativeFabricUIManager;
+} = fabricUIManager;
 
 import {getClosestInstanceFromNode} from './ReactFabricComponentTree';
 import {compareDocumentPositionForEmptyFragment} from 'shared/ReactDOMFragmentRefShared';

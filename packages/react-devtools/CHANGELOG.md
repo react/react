@@ -4,6 +4,70 @@
 
 ---
 
+### 8.0.0
+September 8, 2026
+
+The Suspense tab is now on by default, so you can inspect what caused a component to suspend without turning anything extra on.
+
+The Timeline profiler tab has been removed. To profile React, use your browser's Performance panel — it includes React tracks.
+
+When you inspect a DOM node in the browser Elements panel, you can now see the matching React component.
+
+#### Features
+
+* Enable Suspense tab by default ([eps1lon](https://github.com/eps1lon) in [#35768](https://github.com/facebook/react/pull/35768))
+* Remove Timeline profiler tab and dead Timeline profiler code ([hoxyq](https://github.com/hoxyq) in [#37186](https://github.com/facebook/react/pull/37186), [#37187](https://github.com/facebook/react/pull/37187))
+* Redesign the Profiler empty states around a primary action ([hoxyq](https://github.com/hoxyq) in [#37185](https://github.com/facebook/react/pull/37185))
+* Add React Element pane to browser Elements panel ([eps1lon](https://github.com/eps1lon) in [#35240](https://github.com/facebook/react/pull/35240))
+* Display subtree for Activity and dim in hidden mode ([hoxyq](https://github.com/hoxyq) in [#36094](https://github.com/facebook/react/pull/36094))
+* Show list of named Activities in Suspense tab ([eps1lon](https://github.com/eps1lon) in [#35092](https://github.com/facebook/react/pull/35092), [#35108](https://github.com/facebook/react/pull/35108), [#35164](https://github.com/facebook/react/pull/35164))
+* Make component search results directly navigable ([Biki-das](https://github.com/Biki-das) in [#36786](https://github.com/facebook/react/pull/36786))
+* Add component search to the Profiler's commit view ([Biki-das](https://github.com/Biki-das) in [#36944](https://github.com/facebook/react/pull/36944))
+* Add parent stack tool ([hoxyq](https://github.com/hoxyq) in [#36825](https://github.com/facebook/react/pull/36825))
+* Add ignore-listed stack frame disclosure ([devjiwonchoi](https://github.com/devjiwonchoi) in [#36828](https://github.com/facebook/react/pull/36828))
+* Display `React.optimisticKey` in key positions ([eps1lon](https://github.com/eps1lon) in [#35760](https://github.com/facebook/react/pull/35760))
+* Allow renaming Host Component props ([eps1lon](https://github.com/eps1lon) in [#35735](https://github.com/facebook/react/pull/35735))
+* Hotkey to start/stop profiling ([emily8rown](https://github.com/emily8rown) in [#35160](https://github.com/facebook/react/pull/35160))
+* Navigating commits performance panel hotkey ([emily8rown](https://github.com/emily8rown) in [#35238](https://github.com/facebook/react/pull/35238))
+* Enable React DevTools Client connections to a custom host/port/path ([fullstackhacker](https://github.com/fullstackhacker) in [#35886](https://github.com/facebook/react/pull/35886))
+* Enable minimal support in pages with `sandbox` Content-Security-Policy ([mochiya98](https://github.com/mochiya98) in [#35208](https://github.com/facebook/react/pull/35208))
+* Create extension panels before React detection ([hoxyq](https://github.com/hoxyq) in [#37151](https://github.com/facebook/react/pull/37151))
+* Apply component filters on initial load and update inspected element when filters change ([eps1lon](https://github.com/eps1lon) in [#35587](https://github.com/facebook/react/pull/35587), [#35599](https://github.com/facebook/react/pull/35599))
+* Synchronize scroll position between Suspense tab and the main document ([sebmarkbage](https://github.com/sebmarkbage) in [#34641](https://github.com/facebook/react/pull/34641))
+* Sort Suspense timeline by end time ([sebmarkbage](https://github.com/sebmarkbage) in [#35011](https://github.com/facebook/react/pull/35011))
+* Disable log dimming Strict Mode setting ([emily8rown](https://github.com/emily8rown) in [#35207](https://github.com/facebook/react/pull/35207))
+* Improve the detection of changed hooks ([blazejkustra](https://github.com/blazejkustra) in [#35123](https://github.com/facebook/react/pull/35123))
+
+#### Bugfixes
+
+* Fix reconciliation of content with fallback Fiber ([eps1lon](https://github.com/eps1lon) in [#37475](https://github.com/facebook/react/pull/37475))
+* Fix nested HOC name extraction in `extractHOCNames` ([Biki-das](https://github.com/Biki-das) in [#37215](https://github.com/facebook/react/pull/37215))
+* Reset extension backend on `pagehide` and buffer Bridge messages during reconnects ([hoxyq](https://github.com/hoxyq) in [#37155](https://github.com/facebook/react/pull/37155), [#37075](https://github.com/facebook/react/pull/37075), [#37076](https://github.com/facebook/react/pull/37076))
+* Don't connect or reconnect while a page is prerendering ([eps1lon](https://github.com/eps1lon) in [#35958](https://github.com/facebook/react/pull/35958), [Saransh-Jainbu](https://github.com/Saransh-Jainbu) in [#37009](https://github.com/facebook/react/pull/37009))
+* Fix WhatChanged scrolling out of view in profiler sidebar ([Kertsu](https://github.com/Kertsu) in [#36244](https://github.com/facebook/react/pull/36244))
+* Keep console specifiers literal when no argument is supplied, substitute `%i`/`%f`, and fix trailing percent signs ([anxkhn](https://github.com/anxkhn) in [#36930](https://github.com/facebook/react/pull/36930), [#36929](https://github.com/facebook/react/pull/36929), [UditDewan](https://github.com/UditDewan) in [#36852](https://github.com/facebook/react/pull/36852))
+* Avoid HTML injection in standalone errors ([fallintoplace](https://github.com/fallintoplace) in [#36839](https://github.com/facebook/react/pull/36839))
+* Preserve `-Infinity` in inspected values ([zxuhan](https://github.com/zxuhan) in [#36347](https://github.com/facebook/react/pull/36347))
+* Clear highlight when the mouse leaves the DevTools panel ([petertdinh](https://github.com/petertdinh) in [#36177](https://github.com/facebook/react/pull/36177))
+* Don't show an empty Suspended By section ([hoxyq](https://github.com/hoxyq) in [#36011](https://github.com/facebook/react/pull/36011))
+* Ignore new production renderers if a page already uses an older React ([eps1lon](https://github.com/eps1lon) in [#35994](https://github.com/facebook/react/pull/35994))
+* Fix crash when simulating an errored state on a new class component ([eps1lon](https://github.com/eps1lon) in [#35985](https://github.com/facebook/react/pull/35985))
+* Fix null ref crash in ContextMenu when the items list is empty ([fresh3nough](https://github.com/fresh3nough) in [#35929](https://github.com/facebook/react/pull/35929))
+* Fix `ReactDevToolsBackend` module for AMD ([fullstackhacker](https://github.com/fullstackhacker) in [#35891](https://github.com/facebook/react/pull/35891))
+* Fix memory leak when unmounting hoistables ([eps1lon](https://github.com/eps1lon) in [#35741](https://github.com/facebook/react/pull/35741))
+* Don't capture durations for disconnected subtrees when profiling ([hoxyq](https://github.com/hoxyq) in [#35718](https://github.com/facebook/react/pull/35718))
+* Fix crash when revealing stable, filtered `<Activity>` children ([eps1lon](https://github.com/eps1lon) in [#35734](https://github.com/facebook/react/pull/35734))
+* Fix false-positive re-render reports for filtered nodes ([hoxyq](https://github.com/hoxyq) in [#35723](https://github.com/facebook/react/pull/35723))
+* Fix broken commit tree builder for initial operations ([eps1lon](https://github.com/eps1lon) in [#35710](https://github.com/facebook/react/pull/35710))
+* Fix commit index reset when switching profiler roots ([hoxyq](https://github.com/hoxyq) in [#35672](https://github.com/facebook/react/pull/35672))
+* Fix console links not being openable ([eps1lon](https://github.com/eps1lon) in [#35229](https://github.com/facebook/react/pull/35229))
+* Feature-check `document`, stack trace methods, and `getClientRects` ([hoxyq](https://github.com/hoxyq) in [#35343](https://github.com/facebook/react/pull/35343), [#35293](https://github.com/facebook/react/pull/35293), [#35294](https://github.com/facebook/react/pull/35294))
+* Reset forced states when changing component filters ([eps1lon](https://github.com/eps1lon) in [#34929](https://github.com/facebook/react/pull/34929))
+* Fix hook indices when using `useSyncExternalStore` ([blazejkustra](https://github.com/blazejkustra) in [#34547](https://github.com/facebook/react/pull/34547))
+* Fix `printOperationsArray` decode of applied Activity slice changes ([anxkhn](https://github.com/anxkhn) in [#36935](https://github.com/facebook/react/pull/36935))
+
+---
+
 ### 7.0.1
 October 20, 2025
 

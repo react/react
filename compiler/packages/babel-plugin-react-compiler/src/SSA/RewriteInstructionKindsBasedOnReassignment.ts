@@ -150,8 +150,8 @@ export function rewriteInstructionKindsBasedOnReassignment(
           lvalue.kind = kind;
           break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PrefixUpdateLocal': {
           const lvalue = value.lvalue;
           const declaration = declarations.get(lvalue.identifier.declarationId);
           CompilerError.invariant(declaration !== undefined, {
@@ -160,6 +160,16 @@ export function rewriteInstructionKindsBasedOnReassignment(
             loc: lvalue.loc,
           });
           declaration.kind = InstructionKind.Let;
+          break;
+        }
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext': {
+          const declaration = declarations.get(
+            value.lvalue.identifier.declarationId,
+          );
+          if (declaration !== undefined) {
+            declaration.kind = InstructionKind.Let;
+          }
           break;
         }
       }

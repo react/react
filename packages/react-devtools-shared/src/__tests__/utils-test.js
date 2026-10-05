@@ -395,6 +395,19 @@ describe('utils', () => {
       ]);
     });
 
+    it('should strip the async prefix from a frame name', () => {
+      expect(
+        extractLocationFromComponentStack(
+          '    at async Comments (https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js:5:9236)',
+        ),
+      ).toEqual([
+        'Comments',
+        'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
+        5,
+        9236,
+      ]);
+    });
+
     it('should support Firefox stack', () => {
       expect(
         extractLocationFromComponentStack(

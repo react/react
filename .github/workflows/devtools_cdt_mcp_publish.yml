@@ -1,0 +1,103 @@
+# Publishes packages/react-devtools-cdt-mcp to npm.
+# Independent from the runtime React release workflow, but matches it for
+# trusted publishing: no user-supplied ref, OIDC (no NPM_TOKEN), and the
+# `npm` environment.
+name: (DevTools) Publish react-devtools-cdt-mcp
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: Dry run
+        type: boolean
+        default: false
+      tag:
+        description: npm dist-tag
+        type: choice
+        required: true
+        options:
+          - latest
+          - canary
+
+permissions: {}
+
+concurrency:
+  group: react-devtools-cdt-mcp-publish
+  cancel-in-progress: false
+
+env:
+  TZ: /usr/share/zoneinfo/America/Los_Angeles
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+
+jobs:
+  notify_starting:
+    name: Notify Discord (publish starting)
+    if: ${{ vars.DISABLE_DISCORD_NOTIFICATIONS != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tsickert/discord-webhook@86dc739f3f165f16dadc5666051c367efa1692f4
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          embed-author-name: ${{ github.event.sender.login }}
+          embed-author-url: ${{ github.event.sender.html_url }}
+          embed-author-icon-url: ${{ github.event.sender.avatar_url }}
+          embed-title: "⚠️ Publishing react-devtools-cdt-mcp from source"
+          embed-description: |
+            ```json
+            ${{ toJson(inputs) }}
+            ```
+          embed-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  publish:
+    name: Publish react-devtools-cdt-mcp
+    runs-on: ubuntu-latest
+    # Same environment as the runtime npm publish (OIDC trusted publishing).
+    environment: npm
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      # Always check out the commit the workflow file itself was loaded from.
+      # No user-supplied ref is accepted.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          # Modern Node.js ships with npm that supports trusted publishing.
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - name: Restore cached node_modules
+        uses: actions/cache/restore@v4
+        id: node_modules
+        with:
+          path: |
+            **/node_modules
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+      - run: yarn install --frozen-lockfile
+        if: steps.node_modules.outputs.cache-hit != 'true'
+      - name: Publish react-devtools-cdt-mcp
+        working-directory: packages/react-devtools-cdt-mcp
+        run: |
+          extra_args=()
+          if [ "${{ inputs.dry }}" = "true" ]; then
+            extra_args+=(--dry-run)
+          fi
+          npm publish --tag "${{ inputs.tag }}" "${extra_args[@]}"
+
+  notify:
+    name: Notify Discord on failure
+    needs: [publish]
+    if: ${{ always() && (needs.publish.result == 'failure' || needs.publish.result == 'cancelled') && vars.DISABLE_DISCORD_NOTIFICATIONS != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord Webhook Action
+        uses: tsickert/discord-webhook@86dc739f3f165f16dadc5666051c367efa1692f4
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          embed-author-name: GitHub Actions
+          embed-title: "❌ [DevTools] Publish react-devtools-cdt-mcp failed"
+          embed-description: |
+            publish: `${{ needs.publish.result }}`
+            event: `${{ github.event_name }}`
+          embed-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}

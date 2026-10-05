@@ -35,11 +35,11 @@ describe('ReactComponent', () => {
     // jQuery objects are basically arrays; people often pass them in by mistake
     expect(function () {
       ReactDOM.render(<div />, [container]);
-    }).toThrowError(/Target container is not a DOM element./);
+    }).toThrow(/Target container is not a DOM element./);
 
     expect(function () {
       ReactDOM.render(<div />, null);
-    }).toThrowError(/Target container is not a DOM element./);
+    }).toThrow(/Target container is not a DOM element./);
   });
 
   it('should throw (in dev) when children are mutated during render', async () => {
@@ -60,7 +60,7 @@ describe('ReactComponent', () => {
             </Wrapper>,
           );
         }),
-      ).rejects.toThrowError(/Cannot assign to read only property.*/);
+      ).rejects.toThrow(/Cannot assign to read only property.*/);
     } else {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -102,7 +102,7 @@ describe('ReactComponent', () => {
             </Wrapper>,
           );
         }),
-      ).rejects.toThrowError(/Cannot assign to read only property.*/);
+      ).rejects.toThrow(/Cannot assign to read only property.*/);
     } else {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -411,7 +411,7 @@ describe('ReactComponent', () => {
       await act(() => {
         root.render(XElement);
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Element type is invalid: expected a string (for built-in components) ' +
         'or a class/function (for composite components) but got: undefined.' +
         (__DEV__
@@ -426,7 +426,7 @@ describe('ReactComponent', () => {
       await act(() => {
         root.render(YElement);
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Element type is invalid: expected a string (for built-in components) ' +
         'or a class/function (for composite components) but got: null.',
     );
@@ -437,7 +437,7 @@ describe('ReactComponent', () => {
       await act(() => {
         root.render(ZElement);
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Element type is invalid: expected a string (for built-in components) ' +
         'or a class/function (for composite components) but got: boolean.',
     );
@@ -468,7 +468,7 @@ describe('ReactComponent', () => {
       await act(() => {
         root.render(<Foo />);
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Element type is invalid: expected a string (for built-in components) ' +
         'or a class/function (for composite components) but got: undefined.' +
         (__DEV__
@@ -492,7 +492,7 @@ describe('ReactComponent', () => {
       act(() => {
         root.render(element);
       }),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       'Objects are not valid as a React child (found: object with keys {x, y, z}). ' +
         'If you meant to render a collection of children, use an array instead.',
     );
@@ -514,7 +514,7 @@ describe('ReactComponent', () => {
       act(() => {
         root.render(element);
       }),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       'A React Element from an older version of React was rendered. ' +
         'This is not supported. It can happen if:\n' +
         '- Multiple copies of the "react" package is used.\n' +
@@ -540,7 +540,7 @@ describe('ReactComponent', () => {
       act(() => {
         root.render(<Foo />);
       }),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       'Objects are not valid as a React child (found: object with keys {a, b, c}).' +
         ' If you meant to render a collection of children, use an array ' +
         'instead.',
@@ -556,7 +556,7 @@ describe('ReactComponent', () => {
     const element = <div>{[children]}</div>;
     expect(() => {
       ReactDOMServer.renderToString(element);
-    }).toThrowError(
+    }).toThrow(
       'Objects are not valid as a React child (found: object with keys {x, y, z}). ' +
         'If you meant to render a collection of children, use ' +
         'an array instead.',
@@ -577,7 +577,7 @@ describe('ReactComponent', () => {
     const container = document.createElement('div');
     expect(() => {
       ReactDOMServer.renderToString(<Foo />, container);
-    }).toThrowError(
+    }).toThrow(
       'Objects are not valid as a React child (found: object with keys {a, b, c}). ' +
         'If you meant to render a collection of children, use ' +
         'an array instead.',

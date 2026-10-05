@@ -382,7 +382,14 @@ fn evaluate_instruction(
             }
             None
         }
-        InstructionValue::PostfixUpdate {
+        InstructionValue::PostfixUpdateLocal {
+            lvalue,
+            operation,
+            value,
+            loc,
+            ..
+        }
+        | InstructionValue::PostfixUpdateContext {
             lvalue,
             operation,
             value,
@@ -416,7 +423,14 @@ fn evaluate_instruction(
             }
             None
         }
-        InstructionValue::PrefixUpdate {
+        InstructionValue::PrefixUpdateLocal {
+            lvalue,
+            operation,
+            value,
+            loc,
+            ..
+        }
+        | InstructionValue::PrefixUpdateContext {
             lvalue,
             operation,
             value,
@@ -905,7 +919,7 @@ fn evaluate_binary_op(
         },
         BinaryOperator::Exponent => match (lhs, rhs) {
             (PrimitiveValue::Number(l), PrimitiveValue::Number(r)) => Some(PrimitiveValue::Number(
-                FloatValue::new(l.value().powf(r.value())),
+                FloatValue::new(js_exponentiate(l.value(), r.value())),
             )),
             _ => None,
         },
@@ -1093,19 +1107,23 @@ fn js_abstract_equal(lhs: &PrimitiveValue, rhs: &PrimitiveValue) -> bool {
 // JavaScript Number.toString() approximation
 // =============================================================================
 
+/// ECMAScript Number::exponentiate (`**`). `f64::powf` follows IEEE 754, which
+/// returns 1 for `1 ** NaN` and `(±1) ** ±Infinity`; JavaScript returns NaN.
+fn js_exponentiate(base: f64, exponent: f64) -> f64 {
+    if base.abs() == 1.0 && !exponent.is_finite() {
+        return f64::NAN;
+    }
+    base.powf(exponent)
+}
+
 /// ECMAScript ToInt32: convert f64 to i32 with modular (wrapping) semantics.
 fn js_to_int32(n: f64) -> i32 {
     if n.is_nan() || n.is_infinite() || n == 0.0 {
         return 0;
     }
-    // Truncate, then wrap to 32 bits
-    let int64 = (n.trunc() as i64) & 0xFFFFFFFF;
-    // Reinterpret as signed i32
-    if int64 >= 0x80000000 {
-        (int64 as u32) as i32
-    } else {
-        int64 as i32
-    }
+    // Rust saturates f64-to-i64 conversions, but JavaScript ToInt32 wraps modulo 2^32.
+    let wrapped = n.trunc().rem_euclid((1_u64 << 32) as f64);
+    wrapped as u32 as i32
 }
 
 /// ECMAScript ToUint32: convert f64 to u32 with modular (wrapping) semantics.

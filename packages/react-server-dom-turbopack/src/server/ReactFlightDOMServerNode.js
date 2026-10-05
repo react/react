@@ -33,6 +33,7 @@ import {
   startFlowingDebug,
   stopFlowing,
   abort,
+  attachAbortSignal,
   resolveDebugMessage,
   closeDebugChannel,
 } from 'react-server/src/ReactFlightServer';
@@ -56,6 +57,7 @@ import {
 
 export {
   registerServerReference,
+  registerServerObjectReference,
   registerClientReference,
   createClientModuleProxy,
 } from '../ReactFlightTurbopackReferences';
@@ -357,16 +359,7 @@ function renderToReadableStream(
     debugChannelReadable !== undefined,
   );
   if (options && options.signal) {
-    const signal = options.signal;
-    if (signal.aborted) {
-      abort(request, (signal as any).reason);
-    } else {
-      const listener = () => {
-        abort(request, (signal as any).reason);
-        signal.removeEventListener('abort', listener);
-      };
-      signal.addEventListener('abort', listener);
-    }
+    attachAbortSignal(request, options.signal);
   }
   if (debugChannelWritable !== undefined) {
     let debugWritable: Writable;
@@ -474,18 +467,7 @@ function prerenderToNodeStream(
       false,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        const reason = (signal as any).reason;
-        abort(request, reason);
-      } else {
-        const listener = () => {
-          const reason = (signal as any).reason;
-          abort(request, reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });
@@ -539,18 +521,7 @@ function prerender(
       false,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        const reason = (signal as any).reason;
-        abort(request, reason);
-      } else {
-        const listener = () => {
-          const reason = (signal as any).reason;
-          abort(request, reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });

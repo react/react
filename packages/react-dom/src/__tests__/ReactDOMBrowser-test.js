@@ -18,7 +18,10 @@ describe('ReactDOM.browser', () => {
   it('can create browser-only content before the browser renderer is initialized', async () => {
     const React = require('react');
     const ReactDOM = require('react-dom');
-    const browserOnly = ReactDOM.browser();
+    const initializeReason = jest.fn(
+      () => new Error('Only render this content in a browser'),
+    );
+    const browserOnly = ReactDOM.browser(initializeReason);
     const ReactDOMClient = require('react-dom/client');
     const {act} = require('internal-test-utils');
 
@@ -37,5 +40,6 @@ describe('ReactDOM.browser', () => {
       );
     });
     expect(container.innerHTML).toBe('<span>Browser</span>');
+    expect(initializeReason).not.toHaveBeenCalled();
   });
 });

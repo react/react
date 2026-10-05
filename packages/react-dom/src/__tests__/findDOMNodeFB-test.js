@@ -72,7 +72,7 @@ describe('findDOMNode', () => {
   it('findDOMNode should reject random objects', () => {
     expect(function () {
       ReactDOM.findDOMNode({foo: 'bar'});
-    }).toThrowError('Argument appears to not be a ReactComponent. Keys: foo');
+    }).toThrow('Argument appears to not be a ReactComponent. Keys: foo');
   });
 
   // @gate www && classic && !disableLegacyMode
@@ -87,7 +87,7 @@ describe('findDOMNode', () => {
     const inst = ReactDOM.render(<Foo />, container);
     ReactDOM.unmountComponentAtNode(container);
 
-    expect(() => ReactDOM.findDOMNode(inst)).toThrowError(
+    expect(() => ReactDOM.findDOMNode(inst)).toThrow(
       'Unable to find node on an unmounted component.',
     );
   });

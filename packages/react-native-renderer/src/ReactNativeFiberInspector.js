@@ -16,8 +16,11 @@ import {
 } from 'react-reconciler/src/ReactFiberTreeReflection';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import {HostComponent} from 'react-reconciler/src/ReactWorkTags';
-// Module provided by RN:
-import {getNodeFromPublicInstance} from 'react-native/react-private-interface';
+// Modules provided by RN:
+import {
+  getNodeFromPublicInstance,
+  fabricUIManager,
+} from 'react-native/react-private-interface';
 import {getNodeFromInternalInstanceHandle} from './ReactNativePublicCompat';
 import {getStackByFiberInDevAndProd} from 'react-reconciler/src/ReactFiberComponentStack';
 
@@ -43,7 +46,7 @@ if (__DEV__) {
               hostFiber.stateNode.node;
 
             if (node) {
-              nativeFabricUIManager.measure(node, callback);
+              fabricUIManager.measure(node, callback);
             }
           },
         };
@@ -142,7 +145,7 @@ function getInspectorDataForViewAtPoint(
     const fabricNode = getNodeFromPublicInstance(inspectedView);
     if (fabricNode) {
       // For Fabric we can look up the instance handle directly and measure it.
-      nativeFabricUIManager.findNodeAtPoint(
+      fabricUIManager.findNodeAtPoint(
         fabricNode,
         locationX,
         locationY,
@@ -169,20 +172,16 @@ function getInspectorDataForViewAtPoint(
           const nativeViewTag =
             internalInstanceHandle.stateNode.canonical.nativeTag;
 
-          nativeFabricUIManager.measure(
-            node,
-            (x, y, width, height, pageX, pageY) => {
-              const inspectorData =
-                getInspectorDataForInstance(closestInstance);
-              callback({
-                ...inspectorData,
-                pointerY: locationY,
-                frame: {left: pageX, top: pageY, width, height},
-                touchedViewTag: nativeViewTag,
-                closestPublicInstance,
-              });
-            },
-          );
+          fabricUIManager.measure(node, (x, y, width, height, pageX, pageY) => {
+            const inspectorData = getInspectorDataForInstance(closestInstance);
+            callback({
+              ...inspectorData,
+              pointerY: locationY,
+              frame: {left: pageX, top: pageY, width, height},
+              touchedViewTag: nativeViewTag,
+              closestPublicInstance,
+            });
+          });
         },
       );
     } else {

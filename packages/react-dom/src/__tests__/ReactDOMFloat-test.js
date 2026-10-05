@@ -9770,6 +9770,408 @@ background-color: green;
         <title data-foo="bar">another title</title>,
       );
     });
+
+    it('does not hoist title tags inside hidden Activity boundaries', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>Visible Title</title>
+            </Activity>
+            <Activity mode="hidden">
+              <title>Hidden Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Only the visible Activity's title should be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Visible Title</title>,
+      );
+    });
+
+    it('removes title tags when Activity transitions from visible to hidden', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>Activity Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Title should be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Activity Title</title>,
+      );
+
+      // Hide the Activity
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="hidden">
+              <title>Activity Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Title should be removed from document head
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+    });
+
+    it('adds title tags when Activity transitions from hidden to visible', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="hidden">
+              <title>Activity Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Title should not be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      // Show the Activity
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>Activity Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Title should now be hoisted
+      // The title retains an empty style attribute from being previously hidden
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title style="">Activity Title</title>,
+      );
+    });
+
+    it('handles multiple Activity boundaries with different visibility states', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>First Title</title>
+            </Activity>
+            <Activity mode="hidden">
+              <title>Second Title</title>
+            </Activity>
+            <Activity mode="visible">
+              <title>Third Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Only visible Activities' titles should be hoisted
+      // Both visible titles are hoisted, but the last one in tree order wins
+      expect(getMeaningfulChildren(document.head)).toEqual([
+        <title>Third Title</title>,
+        <title>First Title</title>,
+      ]);
+    });
+
+    it('handles nested Activity boundaries correctly', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>Outer Title</title>
+              <Activity mode="hidden">
+                <title>Inner Hidden Title</title>
+              </Activity>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Only the outer visible Activity's title should be hoisted
+      // The inner hidden Activity's title should not be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Outer Title</title>,
+      );
+    });
+
+    it('handles meta tags inside hidden Activity boundaries', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <meta name="visible" content="visible-content" />
+            </Activity>
+            <Activity mode="hidden">
+              <meta name="hidden" content="hidden-content" />
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Only the visible Activity's meta should be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <meta name="visible" content="visible-content" />,
+      );
+    });
+
+    it('does not hoist a hoistable nested under a HostComponent inside a hidden Activity', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <div>
+              <title>Nested Hidden Title</title>
+              <meta name="nested-hidden" content="nope" />
+            </div>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+    });
+
+    it('mounts nested hoistables when their ancestor Activity transitions to visible', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <div>
+              <title>Reveal Me</title>
+            </div>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      await act(() => {
+        root.render(
+          <Activity mode="visible">
+            <div>
+              <title>Reveal Me</title>
+            </div>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Reveal Me</title>,
+      );
+    });
+
+    it('updates a hidden title without inserting it into the head', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <title>Original Hidden</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      // Update the prop while still hidden — the head must remain empty.
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <title>Updated Hidden</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      // Now reveal — the latest text should be in the head.
+      await act(() => {
+        root.render(
+          <Activity mode="visible">
+            <title>Updated Hidden</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title style="">Updated Hidden</title>,
+      );
+    });
+
+    it('removes a previously-mounted title when its Activity is deleted while hidden', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Activity mode="visible">
+            <title>To Be Deleted</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>To Be Deleted</title>,
+      );
+
+      // Hide first — this unmounts from the head.
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <title>To Be Deleted</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      // Delete the entire Activity while it's hidden. This must not throw
+      // (the deletion path needs to tolerate already-detached instances).
+      await act(() => {
+        root.render(<div />);
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+    });
+
+    it('does not hoist hidden Activity metadata during hydration', async () => {
+      const Activity = React.Activity;
+
+      // SSR a page where the only title belongs to a VISIBLE Activity. The
+      // hidden Activity has its own <title> that must not end up in <head>.
+      await act(() => {
+        const {pipe} = renderToPipeableStream(
+          <html>
+            <body>
+              <Activity mode="visible">
+                <title>Visible Title</title>
+              </Activity>
+              <Activity mode="hidden">
+                <title>Hidden Title</title>
+              </Activity>
+            </body>
+          </html>,
+        );
+        pipe(writable);
+      });
+
+      // After SSR, only the visible title should be in the head.
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Visible Title</title>,
+      );
+
+      // Hydrate. The hidden Activity's <title> must not be inserted into the
+      // head as a side effect of hydration.
+      ReactDOMClient.hydrateRoot(
+        document,
+        <html>
+          <body>
+            <Activity mode="visible">
+              <title>Visible Title</title>
+            </Activity>
+            <Activity mode="hidden">
+              <title>Hidden Title</title>
+            </Activity>
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Visible Title</title>,
+      );
+    });
+
+    it('handles StrictMode without leaving duplicate or missing hoistables', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      // StrictMode triggers a dev-only double invoke of layout effects, which
+      // exercises our disappear/reappear hoistable handling. The final state
+      // must be a single visible title and no hidden title.
+      await act(() => {
+        root.render(
+          <React.StrictMode>
+            <div>
+              <Activity mode="visible">
+                <title>StrictMode Visible</title>
+              </Activity>
+              <Activity mode="hidden">
+                <title>StrictMode Hidden</title>
+              </Activity>
+            </div>
+          </React.StrictMode>,
+        );
+      });
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>StrictMode Visible</title>,
+      );
+
+      // Toggle visibility — double invoke must still leave a clean head
+      // with exactly one title (no duplicates, no missing).
+      await act(() => {
+        root.render(
+          <React.StrictMode>
+            <div>
+              <Activity mode="hidden">
+                <title>StrictMode Visible</title>
+              </Activity>
+              <Activity mode="visible">
+                <title>StrictMode Hidden</title>
+              </Activity>
+            </div>
+          </React.StrictMode>,
+        );
+      });
+      await waitForAll([]);
+
+      // The previously-hidden title that just became visible carries a
+      // style="" attribute from hideInstance/unhideInstance.
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title style="">StrictMode Hidden</title>,
+      );
+    });
   });
 
   it('does not outline a boundary with suspensey CSS when flushing the shell', async () => {

@@ -85,6 +85,12 @@ export const enableAsyncIterableChildren = __EXPERIMENTAL__;
 // left unfulfilled.
 export const enableFlightWeakThenables = __EXPERIMENTAL__;
 
+// Support Server References that point to objects (including Promises), not
+// just functions. On the server the reference is the real object; on the
+// client it's an opaque handle that can only be passed back to the server,
+// where it resolves via the manifest.
+export const enableFlightObjectReferences = __EXPERIMENTAL__;
+
 export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;
@@ -160,10 +166,8 @@ export const enableInfiniteRenderLoopDetection: boolean = false;
  */
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 
-export const enableConditionalUseWarning: boolean = __EXPERIMENTAL__;
+export const enableConditionalUseWarning: boolean = true;
 
-export const enableFragmentRefs: boolean = true;
-export const enableFragmentRefsScrollIntoView: boolean = true;
 export const enableFragmentRefsInstanceHandles: boolean = true;
 export const enableFragmentRefsTextNodes: boolean = true;
 
@@ -232,7 +236,7 @@ export const disableInputAttributeSyncing: boolean = false;
 export const disableTextareaChildren: boolean = false;
 
 // Disables children for <textarea> elements
-export const enableParallelTransitions: boolean = false;
+export const enableParallelTransitions: boolean = true;
 
 // -----------------------------------------------------------------------------
 // Debugging and DevTools

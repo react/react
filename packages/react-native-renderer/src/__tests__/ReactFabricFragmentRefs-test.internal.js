@@ -39,7 +39,6 @@ describe('Fabric FragmentRefs', () => {
     }));
   });
 
-  // @gate enableFragmentRefs
   it('attaches a ref to Fragment', async () => {
     const fragmentRef = React.createRef();
 
@@ -61,7 +60,6 @@ describe('Fabric FragmentRefs', () => {
     expect(fragmentRef.current).not.toBe(null);
   });
 
-  // @gate enableFragmentRefs
   it('accepts a ref callback', async () => {
     let fragmentRef;
 
@@ -82,7 +80,6 @@ describe('Fabric FragmentRefs', () => {
   });
 
   describe('observers', () => {
-    // @gate enableFragmentRefs
     it('observes children, newly added children', async () => {
       let logs = [];
       const observer = {

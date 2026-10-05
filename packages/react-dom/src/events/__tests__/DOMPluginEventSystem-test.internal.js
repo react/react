@@ -1457,7 +1457,7 @@ describe('DOMPluginEventSystem', () => {
                 target: divRef.current,
               },
             ]);
-            expect(clickEvent).toBeCalledTimes(1);
+            expect(clickEvent).toHaveBeenCalledTimes(1);
 
             // Unmounting the container and clicking should not work
             await act(() => {
@@ -1465,7 +1465,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             dispatchClickEvent(divElement);
-            expect(clickEvent).toBeCalledTimes(1);
+            expect(clickEvent).toHaveBeenCalledTimes(1);
 
             // Re-rendering the container and clicking should work
             await act(() => {
@@ -1474,7 +1474,7 @@ describe('DOMPluginEventSystem', () => {
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
-            expect(clickEvent).toBeCalledTimes(2);
+            expect(clickEvent).toHaveBeenCalledTimes(2);
 
             log = [];
 
@@ -1511,7 +1511,7 @@ describe('DOMPluginEventSystem', () => {
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
-            expect(clickEvent2).toBeCalledTimes(1);
+            expect(clickEvent2).toHaveBeenCalledTimes(1);
 
             // Reset the function we pass in, so it's different
             clickEvent2 = jest.fn();
@@ -1521,7 +1521,7 @@ describe('DOMPluginEventSystem', () => {
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
-            expect(clickEvent2).toBeCalledTimes(1);
+            expect(clickEvent2).toHaveBeenCalledTimes(1);
           });
 
           // @gate www
@@ -1555,7 +1555,7 @@ describe('DOMPluginEventSystem', () => {
 
             let divElement = divRef.current;
             dispatchClickEvent(divElement);
-            expect(clickEvent).toBeCalledTimes(1);
+            expect(clickEvent).toHaveBeenCalledTimes(1);
 
             // The listener should get unmounted
             await act(() => {
@@ -1566,7 +1566,7 @@ describe('DOMPluginEventSystem', () => {
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
-            expect(clickEvent).toBeCalledTimes(0);
+            expect(clickEvent).toHaveBeenCalledTimes(0);
           });
 
           // @gate www
@@ -1590,7 +1590,7 @@ describe('DOMPluginEventSystem', () => {
 
             const textNode = buttonRef.current.firstChild;
             dispatchClickEvent(textNode);
-            expect(clickEvent).toBeCalledTimes(1);
+            expect(clickEvent).toHaveBeenCalledTimes(1);
           });
 
           // @gate www
@@ -1780,7 +1780,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             dispatchClickEvent(divElement);
-            expect(clickEvent).toBeCalledTimes(1);
+            expect(clickEvent).toHaveBeenCalledTimes(1);
 
             // Re-rendering the container and clicking should work
             await act(() => {
@@ -1789,12 +1789,12 @@ describe('DOMPluginEventSystem', () => {
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
-            expect(clickEvent).toBeCalledTimes(2);
+            expect(clickEvent).toHaveBeenCalledTimes(2);
 
             // Clicking the button should not work
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
-            expect(clickEvent).toBeCalledTimes(2);
+            expect(clickEvent).toHaveBeenCalledTimes(2);
           });
 
           // @gate www
@@ -2151,7 +2151,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             dispatchClickEvent(document.body);
-            expect(clickEvent).toBeCalledTimes(1);
+            expect(clickEvent).toHaveBeenCalledTimes(1);
 
             // Re-rendering and clicking the body should work again
             await act(() => {
@@ -2159,7 +2159,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             dispatchClickEvent(document.body);
-            expect(clickEvent).toBeCalledTimes(2);
+            expect(clickEvent).toHaveBeenCalledTimes(2);
           });
 
           // @gate www
@@ -3208,7 +3208,7 @@ describe('DOMPluginEventSystem', () => {
               dispatchClickEvent(textNode);
               // This should not work, as the target instance will be the
               // <button>, which is actually outside the scope.
-              expect(clickEvent).toBeCalledTimes(0);
+              expect(clickEvent).toHaveBeenCalledTimes(0);
             });
 
             // @gate www
