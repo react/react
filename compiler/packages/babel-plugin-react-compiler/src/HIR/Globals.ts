@@ -638,6 +638,23 @@ const TYPED_GLOBALS: Array<[string, BuiltInType]> = [
       true,
     ),
   ],
+  [
+    'IntersectionObserver',
+    addFunction(
+      DEFAULT_SHAPES,
+      [],
+      {
+        // The callback is retained for later delivery, not invoked by construction.
+        positionalParams: [Effect.Freeze, Effect.Read],
+        restParam: null,
+        returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+      },
+      null,
+      true,
+    ),
+  ],
   // TODO: rest of Global objects
 ];
 
