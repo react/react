@@ -18,6 +18,13 @@ if (typeof File === 'undefined' || typeof FormData === 'undefined') {
   global.FormData = require('undici').FormData;
 }
 
+// The performance track supports user timing (performance.measure) only when
+// console.timeStamp exists at module load time, so define it before any React
+// module is loaded (jest's console proxy doesn't expose it by default).
+if (typeof console.timeStamp !== 'function') {
+  console.timeStamp = () => {};
+}
+
 function normalizeCodeLocInfo(str) {
   return (
     str &&
@@ -340,6 +347,51 @@ describe('ReactFlight', () => {
     });
 
     expect(ReactNoop).toMatchRenderedOutput(<span>Hello, Seb Smith</span>);
+  });
+
+  // @gate __DEV__ && enableComponentPerformanceTrack
+  it('recovers performance track debug info on a plain object root', async () => {
+    function GreetingClient(props) {
+      return <span>{props.name}</span>;
+    }
+    const Greeting = clientReference(GreetingClient);
+
+    function Hello() {
+      return <Greeting name="Hi" />;
+    }
+
+    // A plain object as the payload root, e.g. Waku's Record<slot, element>
+    // shape where one payload carries several named elements.
+    const model = {hello: <Hello />};
+
+    const timeStampNames = [];
+    const timeStampSpy = jest
+      .spyOn(console, 'timeStamp')
+      .mockImplementation(name => {
+        timeStampNames.push(name);
+      });
+
+    const transport = ReactNoopFlightServer.render(model);
+    try {
+      let rootModel;
+      await act(async () => {
+        rootModel = await ReactNoopFlightClient.read(transport);
+        // By the time the initial render performance is flushed (a short
+        // time after the last pending chunk is released), the debug info may
+        // have been moved from the root chunk onto the resolved value (see
+        // moveDebugInfoFromChunkToInnerValue). It must be recovered from
+        // there even when the root is a plain object.
+        rootModel._debugInfo = [
+          {time: 12},
+          {name: 'Slots', env: 'Server', key: null, props: {}},
+          {time: 13},
+        ];
+      });
+    } finally {
+      timeStampSpy.mockRestore();
+    }
+
+    expect(timeStampNames).toContain('\u200bSlots');
   });
 
   it('can render an iterable as an array', async () => {
