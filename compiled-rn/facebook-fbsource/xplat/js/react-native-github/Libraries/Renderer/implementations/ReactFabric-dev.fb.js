@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<4c515fb9f9ad7446d8a02a8e950a4992>>
+ * @generated SignedSource<<863ce0dad81529e489387df16c121242>>
  */
 
 "use strict";
@@ -1887,9 +1887,7 @@ __DEV__ &&
     ) {
       for (; null !== child; ) {
         if (
-          ((5 === child.tag ||
-            27 === child.tag ||
-            (enableFragmentRefsTextNodes && 6 === child.tag)) &&
+          ((5 === child.tag || 27 === child.tag || 6 === child.tag) &&
             fn(child, a, b, c)) ||
           ((22 !== child.tag || null === child.memoizedState) &&
             (searchWithinHosts || (5 !== child.tag && 27 !== child.tag)) &&
@@ -1923,11 +1921,7 @@ __DEV__ &&
     ) {
       for (; null !== child; ) {
         if (child === self) state.foundSelf = !0;
-        else if (
-          5 === child.tag ||
-          27 === child.tag ||
-          (enableFragmentRefsTextNodes && 6 === child.tag)
-        ) {
+        else if (5 === child.tag || 27 === child.tag || 6 === child.tag) {
           if (state.foundSelf) return (result[1] = child), !0;
           result[0] = child;
         } else if (
@@ -11714,15 +11708,14 @@ __DEV__ &&
           case 7:
             null === finishedWork.stateNode &&
               ((instanceToUse = new FragmentInstance(finishedWork)),
-              enableFragmentRefsInstanceHandles &&
-                traverseVisibleInstancesAndTextInstances(
-                  finishedWork.child,
-                  !1,
-                  addFragmentHandleToFiber,
-                  instanceToUse,
-                  void 0,
-                  void 0
-                ),
+              traverseVisibleInstancesAndTextInstances(
+                finishedWork.child,
+                !1,
+                addFragmentHandleToFiber,
+                instanceToUse,
+                void 0,
+                void 0
+              ),
               (finishedWork.stateNode = instanceToUse));
             instanceToUse = finishedWork.stateNode;
             break;
@@ -11851,10 +11844,9 @@ __DEV__ &&
         if (isFragmentInstanceParent(parent)) {
           var childInstance = fiber.stateNode,
             fragmentInstance = parent.stateNode;
-          (enableFragmentRefsTextNodes && null == childInstance.canonical) ||
+          null != childInstance.canonical &&
             ((childInstance = getPublicInstance(childInstance)),
-            enableFragmentRefsInstanceHandles &&
-              null != childInstance.reactFragments &&
+            null != childInstance.reactFragments &&
               childInstance.reactFragments.delete(fragmentInstance));
         }
         if (isFragmentInstanceHostBoundary(parent)) break;
@@ -11912,7 +11904,7 @@ __DEV__ &&
         if (
           (5 === finishedWork.tag ||
             27 === finishedWork.tag ||
-            (enableFragmentRefsTextNodes && 6 === finishedWork.tag)) &&
+            6 === finishedWork.tag) &&
           null === finishedWork.alternate &&
           null !== parentFragmentInstances
         )
@@ -12843,8 +12835,7 @@ __DEV__ &&
             safelyDetachRef(deletedFiber, nearestMountedAncestor),
             commitFragmentInstanceDeletionEffects(deletedFiber);
         case 6:
-          enableFragmentRefsTextNodes &&
-            6 === deletedFiber.tag &&
+          6 === deletedFiber.tag &&
             commitFragmentInstanceDeletionEffects(deletedFiber);
           recursivelyTraverseDeletionEffects(
             finishedRoot,
@@ -13508,8 +13499,7 @@ __DEV__ &&
           recursivelyTraverseDisappearLayoutEffects(finishedWork);
           break;
         case 6:
-          enableFragmentRefsTextNodes &&
-            commitFragmentInstanceDeletionEffects(finishedWork);
+          commitFragmentInstanceDeletionEffects(finishedWork);
           break;
         case 26:
           safelyDetachRef(finishedWork, finishedWork.return);
@@ -13618,8 +13608,7 @@ __DEV__ &&
           safelyAttachRef(finishedWork, finishedWork.return);
           break;
         case 6:
-          enableFragmentRefsTextNodes &&
-            commitFragmentInstanceInsertionEffects(finishedWork);
+          commitFragmentInstanceInsertionEffects(finishedWork);
           break;
         case 26:
           recursivelyTraverseReappearLayoutEffects(
@@ -18248,19 +18237,16 @@ __DEV__ &&
       return !1;
     }
     function addFragmentHandleToFiber(child, fragmentInstance) {
-      enableFragmentRefsInstanceHandles &&
-        ((child = getPublicInstanceFromHostFiber(child)),
-        null != child && addFragmentHandleToInstance(child, fragmentInstance));
+      child = getPublicInstanceFromHostFiber(child);
+      null != child && addFragmentHandleToInstance(child, fragmentInstance);
       return !1;
     }
     function addFragmentHandleToInstance(instance, fragmentInstance) {
-      enableFragmentRefsInstanceHandles &&
-        (null == instance.reactFragments &&
-          (instance.reactFragments = new Set()),
-        instance.reactFragments.add(fragmentInstance));
+      null == instance.reactFragments && (instance.reactFragments = new Set());
+      instance.reactFragments.add(fragmentInstance);
     }
     function commitNewChildToFragmentInstance(childInstance, fragmentInstance) {
-      if (!enableFragmentRefsTextNodes || null != childInstance.canonical) {
+      if (null != childInstance.canonical) {
         var publicInstance = getPublicInstance(childInstance);
         if (null !== fragmentInstance._observers) {
           if (null == publicInstance)
@@ -18271,8 +18257,7 @@ __DEV__ &&
             observer.observe(publicInstance);
           });
         }
-        enableFragmentRefsInstanceHandles &&
-          addFragmentHandleToInstance(publicInstance, fragmentInstance);
+        addFragmentHandleToInstance(publicInstance, fragmentInstance);
       }
     }
     function nativeOnUncaughtError(error, errorInfo) {
@@ -18351,10 +18336,6 @@ __DEV__ &&
       enableObjectFiber = dynamicFlagsUntyped.enableObjectFiber,
       passChildrenWhenCloningPersistedNodes =
         dynamicFlagsUntyped.passChildrenWhenCloningPersistedNodes,
-      enableFragmentRefsInstanceHandles =
-        dynamicFlagsUntyped.enableFragmentRefsInstanceHandles,
-      enableFragmentRefsTextNodes =
-        dynamicFlagsUntyped.enableFragmentRefsTextNodes,
       enableViewTransitionForPersistenceMode =
         dynamicFlagsUntyped.enableViewTransitionForPersistenceMode,
       enableConditionalUseWarning =
@@ -21399,10 +21380,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-278794d7-20261002",
+        version: "19.3.0-native-fb-d75b0697-20261006",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-278794d7-20261002"
+        reconcilerVersion: "19.3.0-native-fb-d75b0697-20261006"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<b6adf80c356e352942c3f2cd864adb41>>
+ * @generated SignedSource<<5a1fe855617b7409a071983a4bc7f9df>>
  */
 
 "use strict";
@@ -27,9 +27,6 @@ var reactPrivateInterface = require("react-native/react-private-interface"),
   enableObjectFiber = dynamicFlagsUntyped.enableObjectFiber,
   passChildrenWhenCloningPersistedNodes =
     dynamicFlagsUntyped.passChildrenWhenCloningPersistedNodes,
-  enableFragmentRefsInstanceHandles =
-    dynamicFlagsUntyped.enableFragmentRefsInstanceHandles,
-  enableFragmentRefsTextNodes = dynamicFlagsUntyped.enableFragmentRefsTextNodes,
   enableViewTransitionForPersistenceMode =
     dynamicFlagsUntyped.enableViewTransitionForPersistenceMode,
   assign = Object.assign,
@@ -1971,9 +1968,7 @@ function traverseVisibleInstancesAndTextInstances(
 ) {
   for (; null !== child; ) {
     if (
-      ((5 === child.tag ||
-        27 === child.tag ||
-        (enableFragmentRefsTextNodes && 6 === child.tag)) &&
+      ((5 === child.tag || 27 === child.tag || 6 === child.tag) &&
         fn(child, a, b, c)) ||
       ((22 !== child.tag || null === child.memoizedState) &&
         (searchWithinHosts || (5 !== child.tag && 27 !== child.tag)) &&
@@ -2006,11 +2001,7 @@ function findFragmentInstanceOrTextInstanceSiblings(
 ) {
   for (; null !== child; ) {
     if (child === self) state.foundSelf = !0;
-    else if (
-      5 === child.tag ||
-      27 === child.tag ||
-      (enableFragmentRefsTextNodes && 6 === child.tag)
-    ) {
+    else if (5 === child.tag || 27 === child.tag || 6 === child.tag) {
       if (state.foundSelf) return (result[1] = child), !0;
       result[0] = child;
     } else if (
@@ -9079,15 +9070,14 @@ function safelyAttachRef(current, nearestMountedAncestor) {
         case 7:
           if (null === current.stateNode) {
             var fragmentInstance = new FragmentInstance(current);
-            enableFragmentRefsInstanceHandles &&
-              traverseVisibleInstancesAndTextInstances(
-                current.child,
-                !1,
-                addFragmentHandleToFiber,
-                fragmentInstance,
-                void 0,
-                void 0
-              );
+            traverseVisibleInstancesAndTextInstances(
+              current.child,
+              !1,
+              addFragmentHandleToFiber,
+              fragmentInstance,
+              void 0,
+              void 0
+            );
             current.stateNode = fragmentInstance;
           }
           instanceToUse = current.stateNode;
@@ -9191,10 +9181,9 @@ function commitFragmentInstanceDeletionEffects(fiber) {
     if (isFragmentInstanceParent(parent)) {
       var fragmentInstance = parent.stateNode;
       var childInstance = fiber.stateNode;
-      (enableFragmentRefsTextNodes && null == childInstance.canonical) ||
+      null != childInstance.canonical &&
         ((childInstance = getPublicInstance(childInstance)),
-        enableFragmentRefsInstanceHandles &&
-          null != childInstance.reactFragments &&
+        null != childInstance.reactFragments &&
           childInstance.reactFragments.delete(fragmentInstance));
     }
     if (isFragmentInstanceHostBoundary(parent)) break;
@@ -9224,7 +9213,7 @@ function commitImmutablePlacementNodeToFragmentInstances(
     if (
       (5 === finishedWork.tag ||
         27 === finishedWork.tag ||
-        (enableFragmentRefsTextNodes && 6 === finishedWork.tag)) &&
+        6 === finishedWork.tag) &&
       null === finishedWork.alternate &&
       null !== parentFragmentInstances
     )
@@ -10055,8 +10044,7 @@ function commitDeletionEffectsOnFiber(
         safelyDetachRef(deletedFiber, nearestMountedAncestor),
         commitFragmentInstanceDeletionEffects(deletedFiber);
     case 6:
-      enableFragmentRefsTextNodes &&
-        6 === deletedFiber.tag &&
+      6 === deletedFiber.tag &&
         commitFragmentInstanceDeletionEffects(deletedFiber);
       recursivelyTraverseDeletionEffects(
         finishedRoot,
@@ -10676,8 +10664,7 @@ function recursivelyTraverseDisappearLayoutEffects(parentFiber) {
         recursivelyTraverseDisappearLayoutEffects(finishedWork);
         break;
       case 6:
-        enableFragmentRefsTextNodes &&
-          commitFragmentInstanceDeletionEffects(finishedWork);
+        commitFragmentInstanceDeletionEffects(finishedWork);
         break;
       case 26:
         safelyDetachRef(finishedWork, finishedWork.return);
@@ -10796,8 +10783,7 @@ function recursivelyTraverseReappearLayoutEffects(
         safelyAttachRef(finishedWork, finishedWork.return);
         break;
       case 6:
-        enableFragmentRefsTextNodes &&
-          commitFragmentInstanceInsertionEffects(finishedWork);
+        commitFragmentInstanceInsertionEffects(finishedWork);
         break;
       case 26:
         recursivelyTraverseReappearLayoutEffects(
@@ -14395,18 +14381,16 @@ function collectClientRects(child, rects) {
   return !1;
 }
 function addFragmentHandleToFiber(child, fragmentInstance) {
-  enableFragmentRefsInstanceHandles &&
-    ((child = getPublicInstanceFromHostFiber(child)),
-    null != child && addFragmentHandleToInstance(child, fragmentInstance));
+  child = getPublicInstanceFromHostFiber(child);
+  null != child && addFragmentHandleToInstance(child, fragmentInstance);
   return !1;
 }
 function addFragmentHandleToInstance(instance, fragmentInstance) {
-  enableFragmentRefsInstanceHandles &&
-    (null == instance.reactFragments && (instance.reactFragments = new Set()),
-    instance.reactFragments.add(fragmentInstance));
+  null == instance.reactFragments && (instance.reactFragments = new Set());
+  instance.reactFragments.add(fragmentInstance);
 }
 function commitNewChildToFragmentInstance(childInstance, fragmentInstance) {
-  if (!enableFragmentRefsTextNodes || null != childInstance.canonical) {
+  if (null != childInstance.canonical) {
     var publicInstance = getPublicInstance(childInstance);
     if (null !== fragmentInstance._observers) {
       if (null == publicInstance)
@@ -14415,8 +14399,7 @@ function commitNewChildToFragmentInstance(childInstance, fragmentInstance) {
         observer.observe(publicInstance);
       });
     }
-    enableFragmentRefsInstanceHandles &&
-      addFragmentHandleToInstance(publicInstance, fragmentInstance);
+    addFragmentHandleToInstance(publicInstance, fragmentInstance);
   }
 }
 var HostTransitionContext = {
@@ -14501,10 +14484,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1671 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-278794d7-20261002",
+    version: "19.3.0-native-fb-d75b0697-20261006",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-278794d7-20261002"
+    reconcilerVersion: "19.3.0-native-fb-d75b0697-20261006"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1671.rendererConfig = extraDevToolsConfig);
