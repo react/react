@@ -1727,6 +1727,8 @@ export function restoreRootViewTransitionName(rootContainer: Container): void {
     return;
   }
   if (
+    // A ShadowRoot has no style to restore.
+    containerInstance.nodeType !== DOCUMENT_FRAGMENT_NODE &&
     // $FlowFixMe[prop-missing]
     containerInstance.style.viewTransitionName === 'root'
   ) {
