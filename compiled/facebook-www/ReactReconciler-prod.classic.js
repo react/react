@@ -8032,9 +8032,7 @@ module.exports = function ($$$config) {
   }
   function commitNewChildToFragmentInstances(fiber, parentFragmentInstances) {
     if (
-      (5 === fiber.tag ||
-        27 === fiber.tag ||
-        (enableFragmentRefsTextNodes && 6 === fiber.tag)) &&
+      (5 === fiber.tag || 27 === fiber.tag || 6 === fiber.tag) &&
       null === fiber.alternate &&
       null !== parentFragmentInstances
     )
@@ -9398,8 +9396,7 @@ module.exports = function ($$$config) {
           safelyDetachRef(deletedFiber, nearestMountedAncestor),
           commitFragmentInstanceDeletionEffects(deletedFiber);
       case 6:
-        enableFragmentRefsTextNodes &&
-          6 === deletedFiber.tag &&
+        6 === deletedFiber.tag &&
           commitFragmentInstanceDeletionEffects(deletedFiber);
         if (supportsMutation) {
           if (
@@ -10326,8 +10323,7 @@ module.exports = function ($$$config) {
           );
           break;
         case 6:
-          enableFragmentRefsTextNodes &&
-            commitFragmentInstanceDeletionEffects(finishedWork);
+          commitFragmentInstanceDeletionEffects(finishedWork);
           break;
         case 26:
           safelyDetachRef(finishedWork, finishedWork.return);
@@ -10449,8 +10445,7 @@ module.exports = function ($$$config) {
           safelyAttachRef(finishedWork, finishedWork.return);
           break;
         case 6:
-          enableFragmentRefsTextNodes &&
-            commitFragmentInstanceInsertionEffects(finishedWork);
+          commitFragmentInstanceInsertionEffects(finishedWork);
           break;
         case 26:
           supportsResources &&
@@ -13493,8 +13488,6 @@ module.exports = function ($$$config) {
     transitionLaneExpirationMs = dynamicFeatureFlags.transitionLaneExpirationMs,
     enableSuspenseyImages = dynamicFeatureFlags.enableSuspenseyImages,
     enableViewTransition = dynamicFeatureFlags.enableViewTransition,
-    enableFragmentRefsTextNodes =
-      dynamicFeatureFlags.enableFragmentRefsTextNodes,
     enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions,
     enableViewTransitionParentEnterExit =
       dynamicFeatureFlags.enableViewTransitionParentEnterExit,
@@ -14734,7 +14727,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-classic-17eca7b0-20261006"
+      reconcilerVersion: "19.3.0-www-classic-d75b0697-20261006"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);

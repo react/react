@@ -283,9 +283,7 @@ __DEV__ &&
     ) {
       for (; null !== child; ) {
         if (
-          ((5 === child.tag ||
-            27 === child.tag ||
-            (enableFragmentRefsTextNodes && 6 === child.tag)) &&
+          ((5 === child.tag || 27 === child.tag || 6 === child.tag) &&
             fn(child, a, b, c)) ||
           ((22 !== child.tag || null === child.memoizedState) &&
             (searchWithinHosts || (5 !== child.tag && 27 !== child.tag)) &&
@@ -340,11 +338,7 @@ __DEV__ &&
     ) {
       for (; null !== child; ) {
         if (child === self) state.foundSelf = !0;
-        else if (
-          5 === child.tag ||
-          27 === child.tag ||
-          (enableFragmentRefsTextNodes && 6 === child.tag)
-        ) {
+        else if (5 === child.tag || 27 === child.tag || 6 === child.tag) {
           if (state.foundSelf) return (result[1] = child), !0;
           result[0] = child;
         } else if (
@@ -14524,9 +14518,7 @@ __DEV__ &&
     }
     function commitNewChildToFragmentInstances(fiber, parentFragmentInstances) {
       if (
-        (5 === fiber.tag ||
-          27 === fiber.tag ||
-          (enableFragmentRefsTextNodes && 6 === fiber.tag)) &&
+        (5 === fiber.tag || 27 === fiber.tag || 6 === fiber.tag) &&
         null === fiber.alternate &&
         null !== parentFragmentInstances
       )
@@ -16259,8 +16251,7 @@ __DEV__ &&
             safelyDetachRef(deletedFiber, nearestMountedAncestor),
             commitFragmentInstanceDeletionEffects(deletedFiber);
         case 6:
-          enableFragmentRefsTextNodes &&
-            6 === deletedFiber.tag &&
+          6 === deletedFiber.tag &&
             commitFragmentInstanceDeletionEffects(deletedFiber);
           prevHostParent = hostParent;
           prevHostParentIsContainer = hostParentIsContainer;
@@ -17388,8 +17379,7 @@ __DEV__ &&
           );
           break;
         case 6:
-          enableFragmentRefsTextNodes &&
-            commitFragmentInstanceDeletionEffects(finishedWork);
+          commitFragmentInstanceDeletionEffects(finishedWork);
           break;
         case 26:
           safelyDetachRef(finishedWork, finishedWork.return);
@@ -17529,8 +17519,7 @@ __DEV__ &&
           safelyAttachRef(finishedWork, finishedWork.return);
           break;
         case 6:
-          enableFragmentRefsTextNodes &&
-            commitFragmentInstanceInsertionEffects(finishedWork);
+          commitFragmentInstanceInsertionEffects(finishedWork);
           break;
         case 26:
           var instance = finishedWork.stateNode;
@@ -27334,7 +27323,7 @@ __DEV__ &&
       return -1;
     }
     function setFocusOnFiberIfFocusable(fiber, focusOptions) {
-      if (enableFragmentRefsTextNodes && 6 === fiber.tag) return !1;
+      if (6 === fiber.tag) return !1;
       fiber = getInstanceFromHostFiber(fiber);
       return setFocusIfFocusable(fiber, focusOptions);
     }
@@ -27343,20 +27332,20 @@ __DEV__ &&
       return !1;
     }
     function blurActiveElementWithinFragment(child, activeElement) {
-      if (enableFragmentRefsTextNodes && 6 === child.tag) return !1;
+      if (6 === child.tag) return !1;
       child = getInstanceFromHostFiber(child);
       return child === activeElement || child.contains(activeElement)
         ? (activeElement.blur(), !0)
         : !1;
     }
     function observeChild(child, observer) {
-      if (enableFragmentRefsTextNodes && 6 === child.tag) return !1;
+      if (6 === child.tag) return !1;
       child = getInstanceFromHostFiber(child);
       observer.observe(child);
       return !1;
     }
     function unobserveChild(child, observer) {
-      if (enableFragmentRefsTextNodes && 6 === child.tag) return !1;
+      if (6 === child.tag) return !1;
       child = getInstanceFromHostFiber(child);
       observer.unobserve(child);
       return !1;
@@ -27384,7 +27373,7 @@ __DEV__ &&
         }));
     }
     function collectClientRects(child, rects) {
-      if (enableFragmentRefsTextNodes && 6 === child.tag) {
+      if (6 === child.tag) {
         child = child.stateNode;
         var range = child.ownerDocument.createRange();
         range.selectNodeContents(child);
@@ -29667,8 +29656,6 @@ __DEV__ &&
       enableSuspenseyImages = dynamicFeatureFlags.enableSuspenseyImages,
       enableViewTransition = dynamicFeatureFlags.enableViewTransition,
       enableScrollEndPolyfill = dynamicFeatureFlags.enableScrollEndPolyfill,
-      enableFragmentRefsTextNodes =
-        dynamicFeatureFlags.enableFragmentRefsTextNodes,
       enableInternalInstanceMap = dynamicFeatureFlags.enableInternalInstanceMap,
       enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions,
       enableViewTransitionParentEnterExit =
@@ -33528,23 +33515,21 @@ __DEV__ &&
           ));
     };
     FragmentInstance.prototype.observeUsing = function (observer) {
-      if (enableFragmentRefsTextNodes) {
-        var hasText = !1,
-          hasElement = !1;
-        traverseFragmentInstancesAndTextInstances(
-          this._fragmentFiber,
-          function (child) {
-            if (6 === child.tag) hasText = !0;
-            else return (hasElement = !0);
-            return !1;
-          }
+      var hasText = !1,
+        hasElement = !1;
+      traverseFragmentInstancesAndTextInstances(
+        this._fragmentFiber,
+        function (child) {
+          if (6 === child.tag) hasText = !0;
+          else return (hasElement = !0);
+          return !1;
+        }
+      );
+      hasText &&
+        !hasElement &&
+        console.error(
+          "observeUsing() was called on a FragmentInstance with only text children. Observers do not work on text nodes."
         );
-        hasText &&
-          !hasElement &&
-          console.error(
-            "observeUsing() was called on a FragmentInstance with only text children. Observers do not work on text nodes."
-          );
-      }
       null === this._observers && (this._observers = new Set());
       this._observers.add(observer);
       traverseFragmentInstancesAndTextInstances(
@@ -33722,7 +33707,7 @@ __DEV__ &&
             getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
           : hostSiblings[0] || hostSiblings[1];
         if (null === hostSiblings) return;
-        if (enableFragmentRefsTextNodes && 6 === hostSiblings.tag) {
+        if (6 === hostSiblings.tag) {
           alignToTop = getInstanceFromHostFiber(hostSiblings);
           scrollTextNodeIntoView(alignToTop, resolvedAlignToTop);
           return;
@@ -33748,7 +33733,7 @@ __DEV__ &&
 
       ) {
         var child = children[hostSiblings];
-        enableFragmentRefsTextNodes && 6 === child.tag
+        6 === child.tag
           ? ((child = getInstanceFromHostFiber(child)),
             scrollTextNodeIntoView(child, resolvedAlignToTop))
           : getInstanceFromHostFiber(child).scrollIntoView(alignToTop);
@@ -34062,11 +34047,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-classic-17eca7b0-20261006" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-classic-d75b0697-20261006" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-classic-17eca7b0-20261006\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-classic-d75b0697-20261006\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -34109,10 +34094,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-classic-17eca7b0-20261006",
+          version: "19.3.0-www-classic-d75b0697-20261006",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-classic-17eca7b0-20261006"
+          reconcilerVersion: "19.3.0-www-classic-d75b0697-20261006"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -34903,5 +34888,5 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-classic-17eca7b0-20261006";
+    exports.version = "19.3.0-www-classic-d75b0697-20261006";
   })();

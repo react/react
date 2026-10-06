@@ -12714,9 +12714,7 @@ __DEV__ &&
     }
     function commitNewChildToFragmentInstances(fiber, parentFragmentInstances) {
       if (
-        (5 === fiber.tag ||
-          27 === fiber.tag ||
-          (enableFragmentRefsTextNodes && 6 === fiber.tag)) &&
+        (5 === fiber.tag || 27 === fiber.tag || 6 === fiber.tag) &&
         null === fiber.alternate &&
         null !== parentFragmentInstances
       )
@@ -14394,8 +14392,7 @@ __DEV__ &&
             safelyDetachRef(deletedFiber, nearestMountedAncestor),
             commitFragmentInstanceDeletionEffects(deletedFiber);
         case 6:
-          enableFragmentRefsTextNodes &&
-            6 === deletedFiber.tag &&
+          6 === deletedFiber.tag &&
             commitFragmentInstanceDeletionEffects(deletedFiber);
           if (supportsMutation) {
             if (
@@ -15441,8 +15438,7 @@ __DEV__ &&
           );
           break;
         case 6:
-          enableFragmentRefsTextNodes &&
-            commitFragmentInstanceDeletionEffects(finishedWork);
+          commitFragmentInstanceDeletionEffects(finishedWork);
           break;
         case 26:
           safelyDetachRef(finishedWork, finishedWork.return);
@@ -15584,8 +15580,7 @@ __DEV__ &&
           safelyAttachRef(finishedWork, finishedWork.return);
           break;
         case 6:
-          enableFragmentRefsTextNodes &&
-            commitFragmentInstanceInsertionEffects(finishedWork);
+          commitFragmentInstanceInsertionEffects(finishedWork);
           break;
         case 26:
           if (supportsResources) {
@@ -20650,8 +20645,6 @@ __DEV__ &&
         dynamicFeatureFlags.transitionLaneExpirationMs,
       enableSuspenseyImages = dynamicFeatureFlags.enableSuspenseyImages,
       enableViewTransition = dynamicFeatureFlags.enableViewTransition,
-      enableFragmentRefsTextNodes =
-        dynamicFeatureFlags.enableFragmentRefsTextNodes,
       enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions,
       enableViewTransitionParentEnterExit =
         dynamicFeatureFlags.enableViewTransitionParentEnterExit,
@@ -23440,7 +23433,7 @@ __DEV__ &&
         version: rendererVersion,
         rendererPackageName: rendererPackageName,
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-17eca7b0-20261006"
+        reconcilerVersion: "19.3.0-www-classic-d75b0697-20261006"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);
