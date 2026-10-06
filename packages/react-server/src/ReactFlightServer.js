@@ -897,7 +897,6 @@ let currentRequest: null | Request = null;
 
 export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
-  // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     const store = requestStorage.getStore();
     if (store) return store;
@@ -4439,7 +4438,6 @@ function logRecoverableError(
   try {
     const onError = request.onError;
     if (__DEV__ && task !== null) {
-      // $FlowFixMe[constant-condition]
       if (supportsRequestStorage) {
         errorDigest = requestStorage.run(
           undefined,
@@ -4452,7 +4450,6 @@ function logRecoverableError(
       } else {
         errorDigest = callWithDebugContextInDEV(request, task, onError, error);
       }
-      // $FlowFixMe[constant-condition]
     } else if (supportsRequestStorage) {
       // Exit the request context while running callbacks.
       errorDigest = requestStorage.run(undefined, onError, error);
@@ -6779,7 +6776,6 @@ function flushCompletedChunks(request: Request): void {
 
 export function startWork(request: Request): void {
   request.flushScheduled = request.destination !== null;
-  // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     scheduleMicrotask(() => {
       requestStorage.run(request, performWork, request);

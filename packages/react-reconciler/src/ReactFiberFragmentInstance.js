@@ -107,7 +107,6 @@ function isFragmentInstanceHostBoundary(fiber: Fiber): boolean {
   return (
     fiber.tag === HostComponent ||
     fiber.tag === HostRoot ||
-    // $FlowFixMe[constant-condition]
     (supportsSingletons ? fiber.tag === HostSingleton : false)
   );
 }

@@ -1865,7 +1865,6 @@ function updateHostRoot(
   // Caution: React DevTools currently depends on this property
   // being called "element".
   const nextChildren = nextState.element;
-  // $FlowFixMe[constant-condition]
   if (supportsHydration && prevState.isDehydrated) {
     // This is a hydration root whose shell has not yet hydrated. We should
     // attempt to hydrate.
@@ -2016,7 +2015,6 @@ function updateHostComponent(
     // and forms cannot be nested. If we did support nested providers, then
     // we would need to push a context value even for host fibers that
     // haven't been upgraded yet.
-    // $FlowFixMe[constant-condition]
     if (isPrimaryRenderer) {
       HostTransitionContext._currentValue = newState;
     } else {
@@ -2302,7 +2300,6 @@ function updateSuspenseOffscreenState(
   let cachePool: SpawnedCachePool | null = null;
   const prevCachePool: SpawnedCachePool | null = prevOffscreenState.cachePool;
   if (prevCachePool !== null) {
-    // $FlowFixMe[constant-condition]
     const parentCache = isPrimaryRenderer
       ? CacheContext._currentValue
       : CacheContext._currentValue2;
@@ -4354,13 +4351,11 @@ function beginWork(
     case HostRoot:
       return updateHostRoot(current, workInProgress, renderLanes);
     case HostHoistable:
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         return updateHostHoistable(current, workInProgress, renderLanes);
       }
     // Fall through
     case HostSingleton:
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         return updateHostSingleton(current, workInProgress, renderLanes);
       }
