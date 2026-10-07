@@ -184,7 +184,6 @@ import {
   disableLegacyContextForFunctionComponents,
   enableScopeAPI,
   enableAsyncIterableChildren,
-  enableViewTransition,
   enableViewTransitionParentEnterExit,
   enableFizzBlockingRender,
   enableCPUSuspense,
@@ -3118,10 +3117,8 @@ function renderElement(
     }
     // $FlowFixMe[invalid-compare]
     case REACT_VIEW_TRANSITION_TYPE: {
-      if (enableViewTransition) {
-        renderViewTransition(request, task, keyPath, props);
-        return;
-      }
+      renderViewTransition(request, task, keyPath, props);
+      return;
       // Fallthrough
     }
     // $FlowFixMe[invalid-compare]

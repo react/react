@@ -54,7 +54,6 @@ export const syncLaneExpirationMs = 250;
 export const transitionLaneExpirationMs = 5000;
 export const enableYieldingBeforePassive = false;
 export const enableThrottledScheduling = false;
-export const enableViewTransition = true;
 export const enableViewTransitionParentEnterExit = false;
 export const enableViewTransitionForPersistenceMode = false;
 export const enableGestureTransition = false;

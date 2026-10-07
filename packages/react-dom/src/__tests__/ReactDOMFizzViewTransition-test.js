@@ -95,7 +95,6 @@ describe('ReactDOMFizzViewTransition', () => {
     jest.runAllTimers();
   }
 
-  // @gate enableViewTransition
   it('emits annotations for view transitions', async () => {
     function App() {
       return (
@@ -138,7 +137,6 @@ describe('ReactDOMFizzViewTransition', () => {
     });
   });
 
-  // @gate enableViewTransition
   it('emits enter/exit annotations for view transitions inside Suspense', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
@@ -203,7 +201,6 @@ describe('ReactDOMFizzViewTransition', () => {
     });
   });
 
-  // @gate enableViewTransition
   it('can emit both enter and exit on the same node', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
@@ -270,7 +267,6 @@ describe('ReactDOMFizzViewTransition', () => {
     });
   });
 
-  // @gate enableViewTransition
   it('emits annotations for view transitions outside Suspense', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
@@ -333,7 +329,7 @@ describe('ReactDOMFizzViewTransition', () => {
     });
   });
 
-  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  // @gate enableViewTransitionParentEnterExit
   it('stops the parentExit relay when an intermediate class is "none"', async () => {
     const promise = new Promise(() => {});
     function Suspend() {
@@ -389,7 +385,7 @@ describe('ReactDOMFizzViewTransition', () => {
     );
   });
 
-  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  // @gate enableViewTransitionParentEnterExit
   it('stops the parentEnter relay when an intermediate class is "none"', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
@@ -452,7 +448,6 @@ describe('ReactDOMFizzViewTransition', () => {
     });
   });
 
-  // @gate enableViewTransition
   it('breaks the parentExit relay through a ViewTransition without parentExit', async () => {
     const promise = new Promise(() => {});
     function Suspend() {
@@ -501,7 +496,7 @@ describe('ReactDOMFizzViewTransition', () => {
     );
   });
 
-  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  // @gate enableViewTransitionParentEnterExit
   it('relays the parentExit chain through an "auto" parentExit', async () => {
     const promise = new Promise(() => {});
     function Suspend() {
@@ -550,7 +545,7 @@ describe('ReactDOMFizzViewTransition', () => {
     );
   });
 
-  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  // @gate enableViewTransitionParentEnterExit
   it('relays the parentExit chain through a handler-only ViewTransition', async () => {
     const promise = new Promise(() => {});
     function Suspend() {
@@ -600,7 +595,7 @@ describe('ReactDOMFizzViewTransition', () => {
     );
   });
 
-  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  // @gate enableViewTransitionParentEnterExit
   it('relays the parentEnter chain through a handler-only ViewTransition', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
@@ -652,7 +647,7 @@ describe('ReactDOMFizzViewTransition', () => {
     );
   });
 
-  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  // @gate enableViewTransitionParentEnterExit
   it('applies view-transition-name to nested parentEnter/parentExit on streaming reveal', async () => {
     // Capture the view transition class applied to each element at the moment
     // the reveal starts a view transition (the names are reverted once it

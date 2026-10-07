@@ -7,7 +7,6 @@
  * @flow
  */
 
-import {enableViewTransition} from 'shared/ReactFeatureFlags';
 import type {Fiber} from './ReactInternalTypes';
 import type {ReactComponentInfo} from 'shared/ReactTypes';
 
@@ -61,9 +60,7 @@ function describeFiber(fiber: Fiber, childFiber: null | Fiber): string {
     case ActivityComponent:
       return describeBuiltInComponentFrame('Activity');
     case ViewTransitionComponent:
-      if (enableViewTransition) {
-        return describeBuiltInComponentFrame('ViewTransition');
-      }
+      return describeBuiltInComponentFrame('ViewTransition');
     // Fallthrough
     default:
       return '';
@@ -146,10 +143,8 @@ export function getOwnerStackByFiberInDev(workInProgress: Fiber): string {
         info += describeBuiltInComponentFrame('Activity');
         break;
       case ViewTransitionComponent:
-        if (enableViewTransition) {
-          info += describeBuiltInComponentFrame('ViewTransition');
-          break;
-        }
+        info += describeBuiltInComponentFrame('ViewTransition');
+        break;
       // Fallthrough
       case FunctionComponent:
       case SimpleMemoComponent:

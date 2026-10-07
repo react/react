@@ -27,10 +27,7 @@ import {
   REACT_ACTIVITY_TYPE,
 } from 'shared/ReactSymbols';
 
-import {
-  enableTransitionTracing,
-  enableViewTransition,
-} from './ReactFeatureFlags';
+import {enableTransitionTracing} from './ReactFeatureFlags';
 
 // Keep in sync with react-reconciler/getComponentNameFromFiber
 function getWrappedName(
@@ -83,9 +80,7 @@ export default function getComponentNameFromType(type: mixed): string | null {
     case REACT_ACTIVITY_TYPE:
       return 'Activity';
     case REACT_VIEW_TRANSITION_TYPE:
-      if (enableViewTransition) {
-        return 'ViewTransition';
-      }
+      return 'ViewTransition';
     // Fall through
     case REACT_TRACING_MARKER_TYPE:
       if (enableTransitionTracing) {

@@ -127,9 +127,7 @@ import {
   disableLegacyMode,
   enableMoveBefore,
   disableCommentsAsDOMContainers,
-  enableSuspenseyImages,
   enableSrcObject,
-  enableViewTransition,
   enableHydrationChangeEvent,
   enableProfilerTimer,
 } from 'shared/ReactFeatureFlags';
@@ -6506,9 +6504,6 @@ export function isHostHoistableType(
 }
 
 export function maySuspendCommit(type: Type, props: Props): boolean {
-  if (!enableSuspenseyImages && !enableViewTransition) {
-    return false;
-  }
   // Suspensey images are the default, unless you opt-out of with either
   // loading="lazy" or onLoad={...} which implies you're ok waiting.
   return (
@@ -6616,9 +6611,6 @@ export function suspendInstance(
   type: Type,
   props: Props,
 ): void {
-  if (!enableSuspenseyImages && !enableViewTransition) {
-    return;
-  }
   if (
     // $FlowFixMe[prop-missing]
     typeof instance.decode === 'function'

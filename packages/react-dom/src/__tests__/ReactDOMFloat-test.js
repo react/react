@@ -10323,7 +10323,6 @@ background-color: green;
     );
   });
 
-  // @gate enableViewTransition
   it('still outlines a boundary with a suspensey image inside a ViewTransition when flushing the shell', async () => {
     // Unlike stylesheets (which block paint from the <head> anyway), images
     // inside ViewTransitions are outlined to enable animation reveals. This

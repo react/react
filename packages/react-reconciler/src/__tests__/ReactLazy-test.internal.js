@@ -977,7 +977,6 @@ describe('ReactLazy', () => {
     );
   });
 
-  // @gate enableViewTransition
   it('throws with a useful error when wrapping ViewTransition with lazy()', async () => {
     const BadLazy = lazy(() => fakeImport(React.ViewTransition));
 

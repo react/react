@@ -32,7 +32,6 @@ import {
   enableScopeAPI,
   enableTransitionTracing,
   enableLegacyHidden,
-  enableViewTransition,
 } from 'shared/ReactFeatureFlags';
 
 const REACT_CLIENT_REFERENCE: symbol = Symbol.for('react.client.reference');
@@ -104,7 +103,7 @@ export function isValidElementType(type: mixed): boolean {
     (enableLegacyHidden && type === REACT_LEGACY_HIDDEN_TYPE) ||
     (enableScopeAPI && type === REACT_SCOPE_TYPE) ||
     (enableTransitionTracing && type === REACT_TRACING_MARKER_TYPE) ||
-    (enableViewTransition && type === REACT_VIEW_TRANSITION_TYPE)
+    type === REACT_VIEW_TRANSITION_TYPE
   ) {
     return true;
   }
