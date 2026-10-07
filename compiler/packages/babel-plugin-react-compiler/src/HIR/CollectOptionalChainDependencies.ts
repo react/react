@@ -166,6 +166,7 @@ function matchOptionalTestBlock(
 ): {
   consequentId: IdentifierId;
   property: PropertyLiteral;
+  computed: boolean;
   propertyId: IdentifierId;
   storeLocalInstr: Instruction;
   consequentGoto: BlockId;
@@ -219,6 +220,7 @@ function matchOptionalTestBlock(
     return {
       consequentId: storeLocal.lvalue.place.identifier.id,
       property: propertyLoad.value.property,
+      computed: propertyLoad.value.computed,
       propertyId: propertyLoad.lvalue.identifier.id,
       storeLocalInstr,
       consequentGoto: consequentBlock.terminal.block,
@@ -279,6 +281,7 @@ function traverseOptionalBlock(
       ) {
         path.push({
           property: instrVal.property,
+          computed: instrVal.computed,
           optional: false,
           loc: instrVal.loc,
         });
@@ -401,6 +404,7 @@ function traverseOptionalBlock(
       ...baseObject.path,
       {
         property: matchConsequentResult.property,
+        computed: matchConsequentResult.computed,
         optional: optional.terminal.optional,
         loc: matchConsequentResult.propertyLoadLoc,
       },
