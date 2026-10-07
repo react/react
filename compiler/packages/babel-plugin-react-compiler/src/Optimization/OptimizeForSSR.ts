@@ -28,7 +28,7 @@ import {retainWhere} from '../Utils/utils';
 
 /**
  * Optimizes the code for running specifically in an SSR environment. This optimization
- * asssumes that setState will not be called during render during initial mount, which
+ * assumes that setState will not be called during render during initial mount, which
  * allows inlining useState/useReducer.
  *
  * Optimizations:

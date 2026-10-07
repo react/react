@@ -1385,8 +1385,8 @@ describe('ReactDOMServerPartialHydration', () => {
     }
 
     function Sibling() {
-      const [visible, setVisibilty] = React.useState(false);
-      showSibling = () => setVisibilty(true);
+      const [visible, setVisibility] = React.useState(false);
+      showSibling = () => setVisibility(true);
       if (visible) {
         return <div>First</div>;
       }
@@ -1447,8 +1447,8 @@ describe('ReactDOMServerPartialHydration', () => {
     }
 
     function App() {
-      const [visible, setVisibilty] = React.useState(true);
-      hideMiddle = () => setVisibilty(false);
+      const [visible, setVisibility] = React.useState(true);
+      hideMiddle = () => setVisibility(false);
 
       return (
         <div>

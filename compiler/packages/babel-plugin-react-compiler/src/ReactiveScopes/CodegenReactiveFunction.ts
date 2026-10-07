@@ -126,7 +126,7 @@ export function codegenFunction(
 
   /**
    * Fast Refresh reuses component instances at runtime even as the source of the component changes.
-   * The generated code needs to prevent values from one version of the code being reused after a code cange.
+   * The generated code needs to prevent values from one version of the code being reused after a code change.
    * If HMR detection is enabled and we know the source code of the component, assign a cache slot to track
    * the source hash, and later, emit code to check for source changes and reset the cache on source changes.
    */

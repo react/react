@@ -50,7 +50,7 @@ interface ClassInstance<R> {
   componentDidUpdate(
     prevProps: Object,
     prevState: Object,
-    snaphot: Object,
+    snapshot: Object,
   ): void;
   componentDidCatch(error: mixed, errorInfo: {componentStack: string}): void;
   componentWillUnmount(): void;
@@ -119,7 +119,7 @@ export const callComponentDidUpdateInDEV: (
   instance: ClassInstance<any>,
   prevProps: Object,
   prevState: Object,
-  snaphot: Object,
+  snapshot: Object,
 ) => void = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
     (callComponentDidUpdate.react_stack_bottom_frame.bind(

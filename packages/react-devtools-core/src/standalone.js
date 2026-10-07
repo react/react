@@ -386,7 +386,7 @@ function startServer(
 
     // The renderer interface doesn't read saved component filters directly,
     // because they are generally stored in localStorage within the context of the extension.
-    // Because of this it relies on the extension to pass filters, so include them wth the response here.
+    // Because of this it relies on the extension to pass filters, so include them with the response here.
     // This will ensure that saved filters are shared across different web pages.
     const componentFiltersString = JSON.stringify(getSavedComponentFilters());
 
