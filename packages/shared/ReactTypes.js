@@ -408,6 +408,8 @@ export type SuspenseProps = {
   suspenseCallback?: (Set<Wakeable> | null) => mixed,
 
   unstable_avoidThisFallback?: boolean,
+  // Internal to ServerErrorBoundary. Pending content blocks its parent.
+  unstable_errorBoundary?: boolean,
   defer?: boolean,
   name?: string,
 };

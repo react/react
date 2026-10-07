@@ -107,6 +107,9 @@ export const enableSuspenseyImages: boolean = false;
 
 export const enableFizzBlockingRender = __EXPERIMENTAL__; // rel="expect"
 
+// Recover locally from server render errors without showing a loading fallback.
+export const enableServerErrorBoundary: boolean = __EXPERIMENTAL__;
+
 export const enableSrcObject = __EXPERIMENTAL__;
 
 export const enableHydrationChangeEvent = __EXPERIMENTAL__;
