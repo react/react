@@ -491,6 +491,10 @@ function areHookInputsEqual(
       );
     }
   }
+  if (nextDeps.length !== prevDeps.length) {
+    // The arrays differ in size, so the extra entries can't be compared.
+    return false;
+  }
   // $FlowFixMe[incompatible-use] found when upgrading Flow
   for (let i = 0; i < prevDeps.length && i < nextDeps.length; i++) {
     // $FlowFixMe[incompatible-use] found when upgrading Flow

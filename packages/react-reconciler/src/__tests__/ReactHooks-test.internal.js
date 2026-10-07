@@ -580,6 +580,7 @@ describe('ReactHooks', () => {
     await act(() => {
       root.update(<App dependencies={['A', 'B']} />);
     });
+    assertLog(['Did commit: A, B']);
     assertConsoleErrorDev([
       'The final argument passed to useLayoutEffect changed size ' +
         'between renders. The order and size of this array must remain ' +
@@ -589,6 +590,38 @@ describe('ReactHooks', () => {
         'Incoming: [A, B]\n' +
         '    in App (at **)',
     ]);
+  });
+
+  it('recomputes when the dependencies array grows', async () => {
+    const {useMemo} = React;
+    function App({a, b}) {
+      const deps = b === undefined ? [a] : [a, b];
+      const value = useMemo(() => {
+        Scheduler.log('Compute');
+        return `a=${a} b=${b}`;
+      }, deps);
+      return value;
+    }
+    let root;
+    await act(() => {
+      root = ReactTestRenderer.create(<App a={1} />, {
+        unstable_isConcurrent: true,
+      });
+    });
+    assertLog(['Compute']);
+    await act(() => {
+      root.update(<App a={1} b={2} />);
+    });
+    assertLog(['Compute']);
+    assertConsoleErrorDev([
+      'The final argument passed to useMemo changed size between renders. ' +
+        'The order and size of this array must remain constant.\n' +
+        '\n' +
+        'Previous: [1]\n' +
+        'Incoming: [1, 2]\n' +
+        '    in App (at **)',
+    ]);
+    expect(root).toMatchRenderedOutput('a=1 b=2');
   });
 
   it('warns if switching from dependencies to no dependencies', async () => {
