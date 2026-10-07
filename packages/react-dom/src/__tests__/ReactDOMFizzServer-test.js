@@ -469,6 +469,7 @@ describe('ReactDOMFizzServer', () => {
         <span>Fallback</span>
       </div>,
     );
+    const serverFallback = container.getElementsByTagName('span')[0];
     const recoverableErrors = [];
     ReactDOMClient.hydrateRoot(container, <App />, {
       onRecoverableError(error) {
@@ -482,6 +483,9 @@ describe('ReactDOMFizzServer', () => {
         <span>Fallback</span>
       </div>,
     );
+    // Hydration must keep the SSR fallback DOM node in place. Remounting an
+    // identical fallback restarts CSS animations. (github.com/react/react/issues/37620)
+    expect(container.getElementsByTagName('span')[0]).toBe(serverFallback);
 
     await clientAct(() => {
       resolveBrowserText('Browser');
@@ -495,6 +499,211 @@ describe('ReactDOMFizzServer', () => {
         <span>Browser</span>
       </div>,
     );
+  });
+
+  // @gate enableBrowserAPI
+  it('does not remount the SSR fallback when hydration suspends on a client-created promise', async () => {
+    // Sequence from #37620: use(browser()) passes on the client, then the
+    // component suspends on a promise that only exists in the browser
+    // (setTimeout, localStorage, IndexedDB, ...). The server already painted
+    // the Suspense fallback; hydration must not tear it down.
+    let resolveClientPromise;
+    const clientPromise = new Promise(resolve => {
+      resolveClientPromise = resolve;
+    });
+
+    function ClientOnly() {
+      use(ReactDOM.browser());
+      const text = use(clientPromise);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Loading</span>}>
+            <ClientOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loading</span>
+      </div>,
+    );
+    const fallbackBeforeHydration = container.querySelector('span');
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loading</span>
+      </div>,
+    );
+    expect(container.querySelector('span')).toBe(fallbackBeforeHydration);
+
+    await clientAct(() => {
+      resolveClientPromise('Loaded');
+    });
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loaded</span>
+      </div>,
+    );
+    expect(recoverableErrors).toEqual([]);
+  });
+
+  // @gate enableBrowserAPI
+  it('replaces the SSR fallback once hydration finishes without re-suspending', async () => {
+    // Control: when the client render does not suspend on client data, the
+    // SSR fallback must still be replaced by primary content.
+    function ClientOnly() {
+      use(ReactDOM.browser());
+      return <span>Browser</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Loading</span>}>
+            <ClientOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+    const fallbackBeforeHydration = container.querySelector('span');
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+    expect(container.querySelector('span')).not.toBe(fallbackBeforeHydration);
+    expect(container.textContent).not.toContain('Loading');
+    expect(recoverableErrors).toEqual([]);
+  });
+
+  // @gate enableBrowserAPI
+  it('keeps the SSR fallback if the primary suspends again before resolving', async () => {
+    let resolveA;
+    const promiseA = new Promise(resolve => {
+      resolveA = resolve;
+    });
+    let resolveB;
+    const promiseB = new Promise(resolve => {
+      resolveB = resolve;
+    });
+
+    function ClientOnly() {
+      use(ReactDOM.browser());
+      const a = use(promiseA);
+      const b = use(promiseB);
+      return <span>{`${a} ${b}`}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Loading</span>}>
+            <ClientOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+    const fallbackBeforeHydration = container.querySelector('span');
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+    expect(container.querySelector('span')).toBe(fallbackBeforeHydration);
+
+    await clientAct(() => {
+      resolveA('a');
+    });
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loading</span>
+      </div>,
+    );
+    expect(container.querySelector('span')).toBe(fallbackBeforeHydration);
+
+    await clientAct(() => {
+      resolveB('b');
+    });
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>a b</span>
+      </div>,
+    );
+    expect(recoverableErrors).toEqual([]);
   });
 
   // @gate enableBrowserAPI
