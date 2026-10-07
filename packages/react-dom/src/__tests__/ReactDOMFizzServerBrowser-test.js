@@ -515,7 +515,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(errors).toEqual(['uh oh', 'uh oh']);
   });
 
-  // https://github.com/facebook/react/pull/25534/files - fix transposed escape functions
+  // https://github.com/react/react/pull/25534/files - fix transposed escape functions
   it('should encode title properly', async () => {
     const stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(

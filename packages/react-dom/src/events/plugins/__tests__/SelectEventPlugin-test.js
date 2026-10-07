@@ -29,7 +29,7 @@ describe('SelectEventPlugin', () => {
     container = null;
   });
 
-  // See https://github.com/facebook/react/pull/3639 for details.
+  // See https://github.com/react/react/pull/3639 for details.
   it('does not get confused when dependent events are registered independently', async () => {
     const select = jest.fn();
     const onSelect = event => {
@@ -156,7 +156,7 @@ describe('SelectEventPlugin', () => {
     expect(select).toHaveBeenCalledTimes(1);
   });
 
-  // Regression test for https://github.com/facebook/react/issues/11379
+  // Regression test for https://github.com/react/react/issues/11379
   it('should not wait for `mouseup` after receiving `dragend`', async () => {
     const select = jest.fn();
     const onSelect = event => {

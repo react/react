@@ -372,7 +372,7 @@ export function shouldSetTextContent(type: string, props: Props): boolean {
   // But creates an additional child Fiber for raw text children.
   // No additional native views are created though.
   // It's not clear to me which is better so I'm deferring for now.
-  // More context @ github.com/facebook/react/pull/8560#discussion_r92111303
+  // More context @ github.com/react/react/pull/8560#discussion_r92111303
   return false;
 }
 

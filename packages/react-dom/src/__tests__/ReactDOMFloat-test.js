@@ -3001,7 +3001,7 @@ body {
     ]);
   });
 
-  // https://github.com/facebook/react/issues/27585
+  // https://github.com/react/react/issues/27585
   it('does not reinsert already inserted stylesheets during a delayed commit', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -3060,7 +3060,7 @@ body {
     );
 
     // In a transition we add another reference to an already loaded resource
-    // https://github.com/facebook/react/issues/27585
+    // https://github.com/react/react/issues/27585
     React.startTransition(() => {
       root.render(
         <>
@@ -3072,7 +3072,7 @@ body {
       );
     });
     await waitForAll([]);
-    // In https://github.com/facebook/react/issues/27585 the order updated
+    // In https://github.com/react/react/issues/27585 the order updated
     // to second, third, first
     expect(getMeaningfulChildren(document)).toEqual(
       <html>
@@ -4842,7 +4842,7 @@ body {
     );
   });
 
-  // Fixes: https://github.com/facebook/react/issues/27910
+  // Fixes: https://github.com/react/react/issues/27910
   it('omits preloads for images inside noscript tags', async () => {
     function App() {
       return (

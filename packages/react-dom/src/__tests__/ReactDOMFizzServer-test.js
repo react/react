@@ -4554,7 +4554,7 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
-  // bugfix: https://github.com/facebook/react/issues/27286
+  // bugfix: https://github.com/react/react/issues/27286
   it('can render custom elements with children on ther server', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -4580,7 +4580,7 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
-  // https://github.com/facebook/react/issues/27540
+  // https://github.com/react/react/issues/27540
   // This test is not actually asserting much because there is possibly a bug in the closeing logic for the
   // Node implementation of Fizz. The close leads to an abort which sets the destination to null before the Float
   // method has an opportunity to schedule a write. We should fix this probably and once we do this test will start

@@ -71,7 +71,7 @@ function welcome(event: $FlowFixMe) {
   // The simplest solution is to ignore the duplicate events.
   // To be clear, this SHOULD NOT BE NECESSARY, since we remove the event handler below.
   //
-  // See https://github.com/facebook/react/issues/24162
+  // See https://github.com/react/react/issues/24162
   if (welcomeHasInitialized) {
     console.warn(
       'React DevTools detected duplicate welcome "message" events from the content script.',

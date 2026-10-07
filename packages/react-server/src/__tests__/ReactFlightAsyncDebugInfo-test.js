@@ -485,13 +485,13 @@ describe('ReactFlightAsyncDebugInfo', () => {
     }
 
     async function Component() {
-      await getData('http://github.com/facebook/react/pulls');
-      await getData('http://github.com/facebook/react/pulls/');
+      await getData('http://github.com/react/react/pulls');
+      await getData('http://github.com/react/react/pulls/');
       await getData(
         'https://this-is-a-very-long-domain-name-what-happens.app/test',
       );
       await getData(
-        'https://github.com/facebook/react/commit/75897c2dcd1dd3a6ca46284dd37e13d22b4b16b4',
+        'https://github.com/react/react/commit/75897c2dcd1dd3a6ca46284dd37e13d22b4b16b4',
       );
       await getData('/this-is-a-very-long-directory-name-what-happens/');
       await getData('/this-is-not');

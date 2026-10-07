@@ -3374,7 +3374,7 @@ function validateIterable(
   if (__DEV__) {
     if (iterator === iterable) {
       // We don't support rendering Generators as props because it's a mutation.
-      // See https://github.com/facebook/react/issues/12995
+      // See https://github.com/react/react/issues/12995
       // We do support generators if they were created by a GeneratorFunction component
       // as its direct child since we can recreate those by rerendering the component
       // as needed.
@@ -3421,7 +3421,7 @@ function validateAsyncIterable(
   if (__DEV__) {
     if (iterator === iterable) {
       // We don't support rendering Generators as props because it's a mutation.
-      // See https://github.com/facebook/react/issues/12995
+      // See https://github.com/react/react/issues/12995
       // We do support generators if they were created by a GeneratorFunction component
       // as its direct child since we can recreate those by rerendering the component
       // as needed.

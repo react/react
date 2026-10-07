@@ -2318,7 +2318,7 @@ describe('FragmentRefs', () => {
     // The desired behavior here is to return the topmost disconnected element when
     // fragment + parent are unmounted. Currently we have a pass during unmount that
     // recursively cleans up return pointers of the whole tree. We can change this
-    // with a future refactor. See: https://github.com/facebook/react/pull/32682#discussion_r2008313082
+    // with a future refactor. See: https://github.com/react/react/pull/32682#discussion_r2008313082
     it('returns the topmost disconnected element if the fragment and parent are unmounted', async () => {
       const containerRef = React.createRef();
       const parentRef = React.createRef();

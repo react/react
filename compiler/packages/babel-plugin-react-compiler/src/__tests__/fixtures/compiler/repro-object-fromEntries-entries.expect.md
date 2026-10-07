@@ -6,7 +6,7 @@
 import {useMemo} from 'react';
 import {Stringify} from 'shared-runtime';
 
-// derived from https://github.com/facebook/react/issues/32261
+// derived from https://github.com/react/react/issues/32261
 function Component({items}) {
   const record = useMemo(
     () =>
@@ -48,7 +48,7 @@ import { c as _c } from "react/compiler-runtime"; // @validatePreserveExistingMe
 import { useMemo } from "react";
 import { Stringify } from "shared-runtime";
 
-// derived from https://github.com/facebook/react/issues/32261
+// derived from https://github.com/react/react/issues/32261
 function Component(t0) {
   const $ = _c(4);
   const { items } = t0;

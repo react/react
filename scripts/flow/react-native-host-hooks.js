@@ -135,7 +135,7 @@ declare module 'react-native' {
   declare export type MeasureOnSuccessCallback = __MeasureOnSuccessCallback;
 }
 
-// See https://github.com/facebook/react/pull/15490 for more info
+// See https://github.com/react/react/pull/15490 for more info
 type __FabricUIManager = {
   createNode: (
     reactTag: number,

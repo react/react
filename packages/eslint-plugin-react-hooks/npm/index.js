@@ -16,7 +16,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Hint to Node’s cjs-module-lexer to make named imports work
-// https://github.com/facebook/react/issues/34801#issuecomment-3433478810
+// https://github.com/react/react/issues/34801#issuecomment-3433478810
 // eslint-disable-next-line ft-flow/no-unused-expressions
 0 &&
   (module.exports = {

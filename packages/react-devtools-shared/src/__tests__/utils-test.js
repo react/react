@@ -56,7 +56,7 @@ describe('utils', () => {
     });
 
     // Simulate a reported bug:
-    // https://github.com/facebook/react/issues/16685
+    // https://github.com/react/react/issues/16685
     // @reactVersion >= 16.0
     it('should return a fallback when the name prop is not a string', () => {
       const FauxComponent = {name: {}};

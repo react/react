@@ -7,7 +7,7 @@
 
 'use strict';
 
-// NOTE: Extracted from https://github.com/facebook/react/blob/main/packages/eslint-plugin-react-hooks/__tests__/ESLintRulesOfHooks-test.js
+// NOTE: Extracted from https://github.com/react/react/blob/main/packages/eslint-plugin-react-hooks/__tests__/ESLintRulesOfHooks-test.js
 
 /**
  * A string template tag that removes padding from the left side of multi-line strings
