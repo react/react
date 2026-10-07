@@ -2138,8 +2138,12 @@ function customizeViewTransitionError(
           // more specific reason in the console but the user might not look there.
           // Some of these errors are important to surface like duplicate name errors but
           // it's too noisy for unactionable cases like the document was hidden. Therefore,
-          // we hide all of them and hopefully it surfaces in another browser.
-          error.message === 'Transition was aborted because of invalid state'
+          // we hide all of them and hopefully it surfaces in another browser. Newer
+          // versions of Chromium append the reason to this message (e.g.
+          // ". Document hidden"), so match on the prefix rather than the exact message.
+          error.message.startsWith(
+            'Transition was aborted because of invalid state',
+          )
         ) {
           // Skip logging this. This is not considered an error.
           return null;
