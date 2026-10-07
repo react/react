@@ -342,21 +342,25 @@ export function revealCompletedBoundariesWithViewTransitions(
         },
         types: [], // TODO: Add a hard coded type for Suspense reveals.
       }));
-      transition.ready.finally(() => {
-        // Restore all the names/classes that we applied to what they were before.
-        // We do it in reverse order in case there were duplicates so the first one wins.
-        for (let i = restoreQueue.length - 3; i >= 0; i -= 3) {
-          const element = restoreQueue[i];
-          const elementStyle = element.style;
-          const previousName = restoreQueue[i + 1];
-          elementStyle['viewTransitionName'] = previousName;
-          const previousClassName = restoreQueue[i + 1];
-          elementStyle['viewTransitionClass'] = previousClassName;
-          if (element.getAttribute('style') === '') {
-            element.removeAttribute('style');
+      // `ready` rejects when the browser skips the transition, e.g. because the
+      // document is hidden. Catch so it isn't reported as an unhandled rejection.
+      transition.ready
+        .finally(() => {
+          // Restore all the names/classes that we applied to what they were before.
+          // We do it in reverse order in case there were duplicates so the first one wins.
+          for (let i = restoreQueue.length - 3; i >= 0; i -= 3) {
+            const element = restoreQueue[i];
+            const elementStyle = element.style;
+            const previousName = restoreQueue[i + 1];
+            elementStyle['viewTransitionName'] = previousName;
+            const previousClassName = restoreQueue[i + 1];
+            elementStyle['viewTransitionClass'] = previousClassName;
+            if (element.getAttribute('style') === '') {
+              element.removeAttribute('style');
+            }
           }
-        }
-      });
+        })
+        .catch(() => {});
       transition.finished.finally(() => {
         if (document['__reactViewTransition'] === transition) {
           document['__reactViewTransition'] = null;
