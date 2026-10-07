@@ -42,7 +42,7 @@ describe('ReactDOMFizzServerEdge', () => {
     }
   }
 
-  // https://github.com/facebook/react/issues/27540
+  // https://github.com/react/react/issues/27540
   it('does not try to write to the stream after it has been closed', async () => {
     async function preloadLate() {
       await 1;

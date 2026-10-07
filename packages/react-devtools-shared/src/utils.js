@@ -130,7 +130,7 @@ export function getAllEnumerableKeys(
   return keys;
 }
 
-// Mirror https://github.com/facebook/react/blob/7c21bf72ace77094fd1910cc350a548287ef8350/packages/shared/getComponentName.js#L27-L37
+// Mirror https://github.com/react/react/blob/7c21bf72ace77094fd1910cc350a548287ef8350/packages/shared/getComponentName.js#L27-L37
 export function getWrappedDisplayName(
   outerType: mixed,
   innerType: any,
@@ -156,7 +156,7 @@ export function getDisplayName(
 
   // The displayName property is not guaranteed to be a string.
   // It's only safe to use for our purposes if it's a string.
-  // github.com/facebook/react-devtools/issues/803
+  // github.com/react/react-devtools/issues/803
   if (typeof type.displayName === 'string') {
     displayName = type.displayName;
   } else if (typeof type.name === 'string' && type.name !== '') {
@@ -793,7 +793,7 @@ export function getDataType(data: Object): DataType {
         const iterator = data[Symbol.iterator]();
         if (!iterator) {
           // Proxies might break assumptoins about iterators.
-          // See github.com/facebook/react/issues/21654
+          // See github.com/react/react/issues/21654
         } else {
           return iterator === data ? 'opaque_iterator' : 'iterator';
         }
@@ -836,7 +836,7 @@ export function getDataType(data: Object): DataType {
 }
 
 // Fork of packages/react-is/src/ReactIs.js:30, but with legacy element type
-// Which has been changed in https://github.com/facebook/react/pull/28813
+// Which has been changed in https://github.com/react/react/pull/28813
 function typeOfWithLegacyElementSymbol(object: any): mixed {
   if (typeof object === 'object' && object !== null) {
     const $$typeof = object.$$typeof;

@@ -1105,7 +1105,7 @@ fn get_react_function_type(
 /// naming conventions and code patterns.
 ///
 /// Adapted from the ESLint rule at
-/// https://github.com/facebook/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js
+/// https://github.com/react/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js
 fn get_component_or_hook_like(
     name: Option<&str>,
     params: &[PatternLike],

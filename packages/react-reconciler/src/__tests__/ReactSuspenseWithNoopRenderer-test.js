@@ -3724,7 +3724,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
-  // Regression: https://github.com/facebook/react/issues/18486
+  // Regression: https://github.com/react/react/issues/18486
   // @gate enableLegacyCache
   it('does not get stuck in pending state with render phase updates', async () => {
     let setTextWithShortTransition;

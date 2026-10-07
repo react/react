@@ -1144,7 +1144,7 @@ export function attach(
       }
     }
 
-    /* DISABLED: https://github.com/facebook/react/pull/28417
+    /* DISABLED: https://github.com/react/react/pull/28417
     if (hideElementsWithPaths.size > 0) {
       const source = getSourceForFiber(fiber);
 

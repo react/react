@@ -25,7 +25,7 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
     // In Safari, microtasks don't always run on clean stack.
     // This setup crudely approximates it.
     // In reality, the sync flush happens when an iframe is added to the page.
-    // https://github.com/facebook/react/issues/22459
+    // https://github.com/react/react/issues/22459
     const originalQueueMicrotask = queueMicrotask;
     overrideQueueMicrotask = false;
     const fakeMicrotaskQueue = [];

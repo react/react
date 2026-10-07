@@ -2515,7 +2515,7 @@ describe('ReactFlightDOMNode', () => {
 
   // @gate __DEV__
   it('does not expose a debug-tree element whose props still hold an unresolved reference', async () => {
-    // Regression test for facebook/react#37361.
+    // Regression test for react/react#37361.
     //
     // A server component element sits in its parent's componentInfo. Its props
     // object is shared with its own componentInfo, so the debug channel

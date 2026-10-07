@@ -1,6 +1,6 @@
 # Fiber Debugger
 
-This is a debugger handy for visualizing how [Fiber](https://github.com/facebook/react/issues/6170) works internally.
+This is a debugger handy for visualizing how [Fiber](https://github.com/react/react/issues/6170) works internally.
 
 **It is only meant to be used by React contributors, and not by React users.**
 

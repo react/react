@@ -602,7 +602,7 @@ function updateSimpleMemoComponent(
         );
       } else if ((current.flags & ForceUpdateForLegacySuspense) !== NoFlags) {
         // This is a special case that only exists for legacy mode.
-        // See https://github.com/facebook/react/pull/19216.
+        // See https://github.com/react/react/pull/19216.
         didReceiveUpdate = true;
       }
     }
@@ -4280,7 +4280,7 @@ function beginWork(
       }
       if ((current.flags & ForceUpdateForLegacySuspense) !== NoFlags) {
         // This is a special case that only exists for legacy mode.
-        // See https://github.com/facebook/react/pull/19216.
+        // See https://github.com/react/react/pull/19216.
         didReceiveUpdate = true;
       } else {
         // An update was scheduled on this fiber, but there are no new props

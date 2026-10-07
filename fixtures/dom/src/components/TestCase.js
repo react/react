@@ -68,8 +68,7 @@ class TestCase extends React.Component {
           {introducedIn && <dt>First broken in: </dt>}
           {introducedIn && (
             <dd>
-              <a
-                href={'https://github.com/facebook/react/tag/v' + introducedIn}>
+              <a href={'https://github.com/react/react/tag/v' + introducedIn}>
                 <code>{introducedIn}</code>
               </a>
             </dd>
@@ -78,7 +77,7 @@ class TestCase extends React.Component {
           {resolvedIn && <dt>First supported in: </dt>}
           {resolvedIn && (
             <dd>
-              <a href={'https://github.com/facebook/react/tag/v' + resolvedIn}>
+              <a href={'https://github.com/react/react/tag/v' + resolvedIn}>
                 <code>{resolvedIn}</code>
               </a>
             </dd>
@@ -89,8 +88,7 @@ class TestCase extends React.Component {
             <dd>
               <a
                 href={
-                  'https://github.com/facebook/react/pull/' +
-                  resolvedBy.slice(1)
+                  'https://github.com/react/react/pull/' + resolvedBy.slice(1)
                 }>
                 <code>{resolvedBy}</code>
               </a>

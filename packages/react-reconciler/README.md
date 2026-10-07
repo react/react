@@ -51,15 +51,15 @@ const HostConfig = {
 * **[Building a simple custom renderer to DOM](https://medium.com/@agent_hunt/hello-world-custom-react-renderer-9a95b7cd04bc)**
 * **[Building a simple custom renderer to native](https://medium.com/@agent_hunt/introduction-to-react-native-renderers-aka-react-native-is-the-java-and-react-native-renderers-are-828a0022f433)**
 
-The full list of supported methods [can be found here](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). For their signatures, we recommend looking at specific examples below.
+The full list of supported methods [can be found here](https://github.com/react/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). For their signatures, we recommend looking at specific examples below.
 
 The React repository includes several renderers. Each of them has its own host config.
 
 The examples in the React repository are declared a bit differently than a third-party renderer would be. In particular, the `HostConfig` object mentioned above is never explicitly declared, and instead is a *module* in our code. However, its exports correspond directly to properties on a `HostConfig` object you'd need to declare in your code:
 
-* [React ART](https://github.com/facebook/react/blob/main/packages/react-art/src/ReactART.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-art/src/ReactFiberConfigART.js)
-* [React DOM](https://github.com/facebook/react/blob/main/packages/react-dom/src/client/ReactDOM.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js)
-* [React Native](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactFabric.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactFiberConfigFabric.js)
+* [React ART](https://github.com/react/react/blob/main/packages/react-art/src/ReactART.js) and its [host config](https://github.com/react/react/blob/main/packages/react-art/src/ReactFiberConfigART.js)
+* [React DOM](https://github.com/react/react/blob/main/packages/react-dom/src/client/ReactDOM.js) and its [host config](https://github.com/react/react/blob/main/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js)
+* [React Native](https://github.com/react/react/blob/main/packages/react-native-renderer/src/ReactFabric.js) and its [host config](https://github.com/react/react/blob/main/packages/react-native-renderer/src/ReactFiberConfigFabric.js)
 
 If these links break please file an issue and we’ll fix them. They intentionally link to the latest versions since the API is still evolving. If you have more questions please file an issue and we’ll try to help!
 
@@ -344,10 +344,10 @@ Return `(initiateCommit: Function) => Function` if the commit must be suspended.
 
 ### Persistence Methods
 
-If you use the persistent mode instead of the mutation mode, you would still need the "Core Methods". However, instead of the Mutation Methods above you will implement a different set of methods that performs cloning nodes and replacing them at the root level. You can find a list of them in the "Persistence" section [listed in this file](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). File an issue if you need help.
+If you use the persistent mode instead of the mutation mode, you would still need the "Core Methods". However, instead of the Mutation Methods above you will implement a different set of methods that performs cloning nodes and replacing them at the root level. You can find a list of them in the "Persistence" section [listed in this file](https://github.com/react/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). File an issue if you need help.
 
 ### Hydration Methods
 
 You can optionally implement hydration to "attach" to the existing tree during the initial render instead of creating it from scratch. For example, the DOM renderer uses this to attach to an HTML markup.
 
-To support hydration, you need to declare `supportsHydration: true` and then implement the methods in the "Hydration" section [listed in this file](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). File an issue if you need help.
+To support hydration, you need to declare `supportsHydration: true` and then implement the methods in the "Hydration" section [listed in this file](https://github.com/react/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). File an issue if you need help.

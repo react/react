@@ -1237,7 +1237,7 @@ describe('ProfilingCache', () => {
     `);
   });
 
-  // See https://github.com/facebook/react/issues/18831
+  // See https://github.com/react/react/issues/18831
   // @reactVersion >= 16.9
   it('should not crash during route transitions with Suspense', () => {
     const RouterContext = React.createContext();

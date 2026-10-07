@@ -972,7 +972,7 @@ describe('ReactDOMServer', () => {
   it('should warn when class contextType is undefined', () => {
     class Foo extends React.Component {
       // This commonly happens with circular deps
-      // https://github.com/facebook/react/issues/13969
+      // https://github.com/react/react/issues/13969
       static contextType = undefined;
       render() {
         return this.context.hello.world;

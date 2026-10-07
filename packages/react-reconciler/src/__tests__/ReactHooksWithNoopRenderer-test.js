@@ -928,7 +928,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 8" />);
     });
 
-    // Regression test for https://github.com/facebook/react/issues/14360
+    // Regression test for https://github.com/react/react/issues/14360
     it('handles dispatches with mixed priorities', async () => {
       const INCREMENT = 'INCREMENT';
 
@@ -3546,7 +3546,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(counter.current.count).toBe(0);
     });
 
-    // Regression test for https://github.com/facebook/react/issues/14782
+    // Regression test for https://github.com/react/react/issues/14782
     it('automatically updates when deps are not specified', async () => {
       const INCREMENT = 'INCREMENT';
 

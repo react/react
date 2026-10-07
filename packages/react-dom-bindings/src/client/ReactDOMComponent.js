@@ -327,7 +327,7 @@ function normalizeHTML(parent: Element, html: string) {
     // We could have created a separate document here to avoid
     // re-initializing custom elements if they exist. But this breaks
     // how <noscript> is being handled. So we use the same document.
-    // See the discussion in https://github.com/facebook/react/pull/11157.
+    // See the discussion in https://github.com/react/react/pull/11157.
     const testElement =
       parent.namespaceURI === MATH_NAMESPACE ||
       parent.namespaceURI === SVG_NAMESPACE
@@ -411,7 +411,7 @@ function setProp(
         // Avoid setting initial textContent when the text is empty. In IE11 setting
         // textContent on a <textarea> will cause the placeholder to not
         // show within the <textarea> until it has been focused and blurred again.
-        // https://github.com/facebook/react/issues/6731#issuecomment-254874553
+        // https://github.com/react/react/issues/6731#issuecomment-254874553
         const canSetTextContent =
           tag !== 'body' && (tag !== 'textarea' || value !== '');
         if (canSetTextContent) {
@@ -3348,7 +3348,7 @@ export function diffHydratedProperties(
         // Fallthrough
         default:
           // Intentionally use the original name.
-          // See discussion in https://github.com/facebook/react/pull/10676.
+          // See discussion in https://github.com/react/react/pull/10676.
           extraAttributes.add(attributes[i].name);
       }
     }

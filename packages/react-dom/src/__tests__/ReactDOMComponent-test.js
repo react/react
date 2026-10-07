@@ -1284,7 +1284,7 @@ describe('ReactDOMComponent', () => {
     });
 
     it('should not incur unnecessary DOM mutations for equal innerHTML', async () => {
-      // Regression test for https://github.com/facebook/react/issues/30994.
+      // Regression test for https://github.com/react/react/issues/30994.
       // Reassigning equal innerHTML destroys and recreates the child nodes,
       // which breaks in-progress gestures (e.g. swallows an in-flight click
       // when a re-render commits between focus and click) and discards state

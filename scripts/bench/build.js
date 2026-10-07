@@ -7,7 +7,7 @@ const {existsSync} = require('fs');
 const exec = require('child_process').exec;
 const {join} = require('path');
 
-const reactUrl = 'https://github.com/facebook/react.git';
+const reactUrl = 'https://github.com/react/react.git';
 
 function cleanDir() {
   return new Promise(_resolve => rimraf('remote-repo', _resolve));

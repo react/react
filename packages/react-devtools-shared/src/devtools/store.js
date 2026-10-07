@@ -2484,7 +2484,7 @@ export default class Store extends EventEmitter<{
 
   onBackendInitialized: () => void = () => {
     // Verify that the frontend version is compatible with the connected backend.
-    // See github.com/facebook/react/issues/21326
+    // See github.com/react/react/issues/21326
     if (this._shouldCheckBridgeProtocolCompatibility) {
       // Older backends don't support an explicit bridge protocol,
       // so we should timeout eventually and show a downgrade message.
@@ -2564,7 +2564,7 @@ export default class Store extends EventEmitter<{
   // The Store should never throw an Error without also emitting an event.
   // Otherwise Store errors will be invisible to users,
   // but the downstream errors they cause will be reported as bugs.
-  // For example, https://github.com/facebook/react/issues/21402
+  // For example, https://github.com/react/react/issues/21402
   // Emitting an error event allows the ErrorBoundary to show the original error.
   _throwAndEmitError(error: Error): empty {
     this.emit('error', error);

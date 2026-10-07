@@ -17,7 +17,7 @@ function asyncCopyTo(from, to) {
             reject(new Error(error));
           } else {
             // Wait for copied files to exist; ncp() sometimes completes prematurely.
-            // For more detail, see github.com/facebook/react/issues/22323
+            // For more detail, see github.com/react/react/issues/22323
             // Also github.com/AvianFlu/ncp/issues/127
             setTimeout(resolve, 10);
           }
