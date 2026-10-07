@@ -73,7 +73,6 @@ export type ContextDependency<T> = {
 };
 
 export type Dependencies = {
-  lanes: Lanes,
   firstContext: ContextDependency<mixed> | null,
   _debugThenableState?: null | ThenableState, // DEV-only
   ...
