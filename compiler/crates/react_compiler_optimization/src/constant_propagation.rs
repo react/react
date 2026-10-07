@@ -838,15 +838,16 @@ fn is_reserved_word(s: &str) -> bool {
 }
 
 /// Check if a character is valid as the start of a JS identifier (ID_Start + _ + $).
+/// Uses XID_Start, which omits a few ID_Start characters; keys with those stay computed.
 fn is_id_start(c: char) -> bool {
-    c == '_' || c == '$' || c.is_alphabetic()
+    c == '_' || c == '$' || unicode_ident::is_xid_start(c)
 }
 
 /// Check if a character is valid as a continuation of a JS identifier (ID_Continue + $ + \u200C + \u200D).
+/// Uses XID_Continue, which omits a few ID_Continue characters; keys with those stay computed.
 fn is_id_continue(c: char) -> bool {
     c == '$'
-        || c == '_'
-        || c.is_alphanumeric()
+        || unicode_ident::is_xid_continue(c)
         || c == '\u{200C}' // ZWNJ
         || c == '\u{200D}' // ZWJ
 }
