@@ -31,7 +31,6 @@ export const enableInfiniteRenderLoopDetectionForceThrow: boolean = __VARIANT__;
 export const enableConditionalUseWarning: boolean = __VARIANT__;
 
 export const enableSuspenseyImages: boolean = __VARIANT__;
-export const enableViewTransition: boolean = __VARIANT__;
 export const enableViewTransitionParentEnterExit: boolean = __VARIANT__;
 export const enableScrollEndPolyfill: boolean = __VARIANT__;
 export const enableInternalInstanceMap: boolean = __VARIANT__;

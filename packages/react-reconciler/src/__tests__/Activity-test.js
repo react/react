@@ -1577,33 +1577,19 @@ describe('Activity', () => {
       'componentWillUnmount',
       'render: 1',
       // Bugfix: snapshots for hidden trees should not need to be read.
-      ...(gate('enableViewTransition')
-        ? []
-        : ['getSnapshotBeforeUpdate: snapshot-1-to-1']),
     ]);
 
     // Trigger an update while hidden by calling setState
     await act(() => {
       setState(2);
     });
-    assertLog([
-      'render: 2',
-      ...(gate('enableViewTransition')
-        ? []
-        : ['getSnapshotBeforeUpdate: snapshot-1-to-2']),
-    ]);
+    assertLog(['render: 2']);
 
     // This is treated as a new mount so the snapshot also shouldn't be read.
     await act(() => {
       root.render(<Wrapper show={true} />);
     });
-    assertLog([
-      'render: 2',
-      ...(gate('enableViewTransition')
-        ? []
-        : ['getSnapshotBeforeUpdate: snapshot-2-to-2']),
-      'componentDidMount',
-    ]);
+    assertLog(['render: 2', 'componentDidMount']);
   });
 
   it('warns if you pass a hidden prop', async () => {

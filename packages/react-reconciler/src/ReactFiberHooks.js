@@ -41,7 +41,6 @@ import {
   enableLegacyCache,
   disableLegacyMode,
   enableNoCloningMemoCache,
-  enableViewTransition,
   enableGestureTransition,
 } from 'shared/ReactFeatureFlags';
 import {
@@ -2190,17 +2189,15 @@ function runActionStateAction<S, P>(
     // This is a fork of startTransition
     const prevTransition = ReactSharedInternals.T;
     const currentTransition: Transition = {} as any;
-    if (enableViewTransition) {
-      currentTransition.types =
-        prevTransition !== null
-          ? // If we're a nested transition, we should use the same set as the parent
-            // since we're conceptually always joined into the same entangled transition.
-            // In practice, this only matters if we add transition types in the inner
-            // without setting state. In that case, the inner transition can finish
-            // without waiting for the outer.
-            prevTransition.types
-          : null;
-    }
+    currentTransition.types =
+      prevTransition !== null
+        ? // If we're a nested transition, we should use the same set as the parent
+          // since we're conceptually always joined into the same entangled transition.
+          // In practice, this only matters if we add transition types in the inner
+          // without setting state. In that case, the inner transition can finish
+          // without waiting for the outer.
+          prevTransition.types
+        : null;
     if (enableGestureTransition) {
       currentTransition.gesture = null;
     }
@@ -3129,17 +3126,15 @@ function startTransition<S>(
 
   const prevTransition = ReactSharedInternals.T;
   const currentTransition: Transition = {} as any;
-  if (enableViewTransition) {
-    currentTransition.types =
-      prevTransition !== null
-        ? // If we're a nested transition, we should use the same set as the parent
-          // since we're conceptually always joined into the same entangled transition.
-          // In practice, this only matters if we add transition types in the inner
-          // without setting state. In that case, the inner transition can finish
-          // without waiting for the outer.
-          prevTransition.types
-        : null;
-  }
+  currentTransition.types =
+    prevTransition !== null
+      ? // If we're a nested transition, we should use the same set as the parent
+        // since we're conceptually always joined into the same entangled transition.
+        // In practice, this only matters if we add transition types in the inner
+        // without setting state. In that case, the inner transition can finish
+        // without waiting for the outer.
+        prevTransition.types
+      : null;
   if (enableGestureTransition) {
     currentTransition.gesture = null;
   }

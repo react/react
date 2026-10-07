@@ -19,7 +19,6 @@ import ReactSharedInternals from 'shared/ReactSharedInternals';
 
 import {
   enableTransitionTracing,
-  enableViewTransition,
   enableGestureTransition,
 } from 'shared/ReactFeatureFlags';
 
@@ -28,7 +27,7 @@ import reportGlobalError from 'shared/reportGlobalError';
 import noop from 'shared/noop';
 
 export type Transition = {
-  types: null | TransitionTypes, // enableViewTransition
+  types: null | TransitionTypes,
   gesture: null | GestureProvider, // enableGestureTransition
   name: null | string, // enableTransitionTracing only
   startTime: number, // enableTransitionTracing only
@@ -48,17 +47,15 @@ export function startTransition(
 ): void {
   const prevTransition = ReactSharedInternals.T;
   const currentTransition: Transition = {} as any;
-  if (enableViewTransition) {
-    currentTransition.types =
-      prevTransition !== null
-        ? // If we're a nested transition, we should use the same set as the parent
-          // since we're conceptually always joined into the same entangled transition.
-          // In practice, this only matters if we add transition types in the inner
-          // without setting state. In that case, the inner transition can finish
-          // without waiting for the outer.
-          prevTransition.types
-        : null;
-  }
+  currentTransition.types =
+    prevTransition !== null
+      ? // If we're a nested transition, we should use the same set as the parent
+        // since we're conceptually always joined into the same entangled transition.
+        // In practice, this only matters if we add transition types in the inner
+        // without setting state. In that case, the inner transition can finish
+        // without waiting for the outer.
+        prevTransition.types
+      : null;
   if (enableGestureTransition) {
     currentTransition.gesture = null;
   }
@@ -138,9 +135,7 @@ export function startGestureTransition(
   }
   const prevTransition = ReactSharedInternals.T;
   const currentTransition: Transition = {} as any;
-  if (enableViewTransition) {
-    currentTransition.types = null;
-  }
+  currentTransition.types = null;
   // $FlowFixMe[constant-condition]
   if (enableGestureTransition) {
     currentTransition.gesture = provider;
