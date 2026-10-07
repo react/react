@@ -2114,6 +2114,7 @@ function renderFragment(
   // way up. Which is what we want since we've consumed it. If this changes to
   // be recursive serialization, we need to reset the keyPath and implicitSlot,
   // before recursing here.
+  registerModelRoot(request, task, children);
   if (__DEV__) {
     const debugInfo: ?ReactDebugInfo = (children as any)._debugInfo;
     if (debugInfo) {
@@ -2179,6 +2180,7 @@ function renderAsyncFragment(
   // way up. Which is what we want since we've consumed it. If this changes to
   // be recursive serialization, we need to reset the keyPath and implicitSlot,
   // before recursing here.
+  registerModelRoot(request, task, children);
   const asyncIterator = getAsyncIterator.call(children);
   return serializeAsyncIterable(request, task, children, asyncIterator);
 }
@@ -3677,6 +3679,20 @@ function serializeImportString(request: Request, value: string): string {
 
 let modelRoot: null | ReactClientValue = false;
 
+function registerModelRoot(
+  request: Request,
+  task: Task,
+  value: Reference,
+): void {
+  if ((modelRoot as ReactClientValue | Reference) === value) {
+    // Promise tasks receive their value after task creation. Register it before
+    // serializing its contents, but only once we know it won't be wrapped by
+    // the surrounding Server Component's key or implicit slot.
+    request.writtenObjects.set(value, serializeByValueID(task.id));
+    modelRoot = null;
+  }
+}
+
 function renderModel(
   request: Request,
   task: Task,
@@ -3849,6 +3865,8 @@ function renderModelDestructive(
               // We currently don't have a data structure that lets us see that though.
               return existingReference;
             }
+          } else if (modelRoot === value) {
+            registerModelRoot(request, task, value);
           } else if (parentPropertyName.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
             const parentReference = writtenObjects.get(parent);
@@ -4126,71 +4144,89 @@ function renderModelDestructive(
     }
 
     if (value instanceof Map) {
+      registerModelRoot(request, task, value);
       return serializeMap(request, value);
     }
     if (value instanceof Set) {
+      registerModelRoot(request, task, value);
       return serializeSet(request, value);
     }
     // TODO: FormData is not available in old Node. Remove the typeof later.
     if (typeof FormData === 'function' && value instanceof FormData) {
+      registerModelRoot(request, task, value);
       return serializeFormData(request, value);
     }
     if (value instanceof Error) {
+      registerModelRoot(request, task, value);
       return serializeErrorValue(request, value);
     }
     if (value instanceof ArrayBuffer) {
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'A', new Uint8Array(value));
     }
     if (value instanceof Int8Array) {
       // char
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'O', value);
     }
     if (value instanceof Uint8Array) {
       // unsigned char
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'o', value);
     }
     if (value instanceof Uint8ClampedArray) {
       // unsigned clamped char
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'U', value);
     }
     if (value instanceof Int16Array) {
       // sort
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'S', value);
     }
     if (value instanceof Uint16Array) {
       // unsigned short
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 's', value);
     }
     if (value instanceof Int32Array) {
       // long
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'L', value);
     }
     if (value instanceof Uint32Array) {
       // unsigned long
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'l', value);
     }
     if (value instanceof Float32Array) {
       // float
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'G', value);
     }
     if (value instanceof Float64Array) {
       // double
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'g', value);
     }
     if (value instanceof BigInt64Array) {
       // number
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'M', value);
     }
     if (value instanceof BigUint64Array) {
       // unsigned number
       // We use "m" instead of "n" since JSON can start with "null"
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'm', value);
     }
     if (value instanceof DataView) {
+      registerModelRoot(request, task, value);
       return serializeTypedArray(request, 'V', value);
     }
     // TODO: Blob is not available in old Node. Remove the typeof check later.
     if (typeof Blob === 'function' && value instanceof Blob) {
+      registerModelRoot(request, task, value);
       return serializeBlob(request, value);
     }
 
@@ -4202,6 +4238,9 @@ function renderModelDestructive(
         // Iterator, not Iterable
         return serializeIterator(request, iterator as any);
       }
+      if (task.keyPath === null) {
+        registerModelRoot(request, task, value);
+      }
       return renderFragment(request, task, Array.from(iterator as any));
     }
 
@@ -4210,6 +4249,7 @@ function renderModelDestructive(
       typeof ReadableStream === 'function' &&
       value instanceof ReadableStream
     ) {
+      registerModelRoot(request, task, value);
       return serializeReadableStream(request, task, value);
     }
     const getAsyncIterator: void | (() => $AsyncIterator<any, any, any>) = (
@@ -4225,6 +4265,7 @@ function renderModelDestructive(
     // end up being a Date instance here. This is rare so we deprioritize it by putting it deep
     // in this function
     if (value instanceof Date) {
+      registerModelRoot(request, task, value);
       return serializeDate(value);
     }
 
