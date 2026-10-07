@@ -406,7 +406,6 @@ describe('ReactDOMFizzServer', () => {
     );
   }
 
-  // @gate enableBrowserAPI
   it('can opt a component into browser-only rendering', async () => {
     let resolveBrowserText;
     const browserText = new Promise(resolve => {
@@ -497,7 +496,6 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
-  // @gate enableBrowserAPI
   it('can opt a component into browser-only rendering after streaming the fallback', async () => {
     let resolveServerReady;
     const serverReady = new Promise(resolve => {
@@ -575,7 +573,6 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
-  // @gate enableBrowserAPI
   it('supports omitted and direct string browser reasons', async () => {
     const directReason = 'Only render this content in a browser';
     const withoutReason = ReactDOM.browser();
@@ -631,7 +628,6 @@ describe('ReactDOMFizzServer', () => {
     expect(browserBailouts[1].cause).toBe(directReason);
   });
 
-  // @gate enableBrowserAPI
   it('supports any value returned by a browser reason initializer', async () => {
     const reasonValues = [undefined, null, 42, Symbol('browser reason')];
     const initializeReasons = reasonValues.map(reason => jest.fn(() => reason));
@@ -682,7 +678,6 @@ describe('ReactDOMFizzServer', () => {
     });
   });
 
-  // @gate enableBrowserAPI
   it('initializes a shared browser reason at each use site', async () => {
     const browserReasons = [];
     const initializeReason = jest.fn(() => {
@@ -731,7 +726,6 @@ describe('ReactDOMFizzServer', () => {
     expect(browserBailouts[1].stack).toContain('BrowserOnlyB');
   });
 
-  // @gate enableBrowserAPI
   it('uses a fallback if a browser reason initializer throws', async () => {
     const reasonError = new Error('Failed to initialize browser reason');
     const initializeReason = jest.fn(() => {
@@ -773,7 +767,6 @@ describe('ReactDOMFizzServer', () => {
     expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
   });
 
-  // @gate enableBrowserAPI
   it('errors if browser-only content is rendered outside Suspense', async () => {
     const browserReason = 'Only render this content in a browser';
     const browserValue = ReactDOM.browser(browserReason);
@@ -820,7 +813,6 @@ describe('ReactDOMFizzServer', () => {
     expect(browserBailouts).toEqual([]);
   });
 
-  // @gate enableBrowserAPI
   it('can abort all pending boundaries into browser-only rendering', async () => {
     const never = new Promise(() => {});
     let isClient = false;
@@ -910,7 +902,6 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
-  // @gate enableBrowserAPI
   it('errors if aborted with browser() before the shell completes', async () => {
     const never = new Promise(() => {});
     let browserReason;
@@ -969,7 +960,6 @@ describe('ReactDOMFizzServer', () => {
     expect(browserBailouts).toEqual([]);
   });
 
-  // @gate enableBrowserAPI
   it('reports nested browser bailouts if aborting fatals the shell', async () => {
     const never = new Promise(() => {});
     const browserReason = 'Abort pending work into browser rendering';
@@ -1035,7 +1025,6 @@ describe('ReactDOMFizzServer', () => {
     expect(browserBailouts[0].cause).toBe(browserReason);
   });
 
-  // @gate enableBrowserAPI
   it('uses a fallback if a browser reason initializer throws during abort', async () => {
     const never = new Promise(() => {});
     const reasonError = new Error('Failed to initialize browser reason');
@@ -1082,7 +1071,6 @@ describe('ReactDOMFizzServer', () => {
     expect(browserBailouts).toEqual([]);
   });
 
-  // @gate enableBrowserAPI
   it('reports the browser value if it is thrown instead of passed to use', async () => {
     const initializeReason = jest.fn(
       () => new Error('Only render this content in a browser'),
@@ -8008,7 +7996,6 @@ describe('ReactDOMFizzServer', () => {
     expect(errors).toEqual(['abort reason', 'abort reason']);
   });
 
-  // @gate enableBrowserAPI
   it('reports an in-flight browser bailout after another root task fatals while aborting', async () => {
     const promise = new Promise(() => {});
     function SuspendedRoot() {

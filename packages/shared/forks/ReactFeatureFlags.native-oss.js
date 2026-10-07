@@ -29,7 +29,6 @@ export const enableFlightWeakThenables: boolean = false;
 export const enableFlightObjectReferences: boolean = false;
 export const enableCPUSuspense: boolean = false;
 export const enableCreateEventHandleAPI: boolean = false;
-export const enableBrowserAPI: boolean = true;
 export const enableMoveBefore: boolean = true;
 export const enableFizzExternalRuntime: boolean = true;
 export const enableInfiniteRenderLoopDetection: boolean = false;
