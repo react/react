@@ -236,6 +236,7 @@ import {
 } from './ReactFiberLegacyContext';
 import {
   getIsHydrating,
+  didFallbackHydrationFail,
   enterHydrationState,
   reenterHydrationStateFromDehydratedActivityInstance,
   reenterHydrationStateFromDehydratedSuspenseInstance,
@@ -2908,6 +2909,7 @@ function mountSuspenseFallbackAfterRetryWithoutHydrating(
   primaryChildren: $FlowFixMe,
   fallbackChildren: $FlowFixMe,
   renderLanes: Lanes,
+  hydrateFallback: boolean,
 ) {
   const fiberMode = workInProgress.mode;
   const primaryChildProps: OffscreenProps = {
@@ -2927,14 +2929,34 @@ function mountSuspenseFallbackAfterRetryWithoutHydrating(
   );
   // Needs a placement effect because the parent (the Suspense
   // boundary) already mounted but this is a new fiber.
-  fallbackChildFragment.flags |= Placement;
+  if (hydrateFallback) {
+    fallbackChildFragment.flags |= Hydrating | PlacementDEV;
+    const previousState = current.memoizedState as SuspenseState;
+    reenterHydrationStateFromDehydratedSuspenseInstance(
+      workInProgress,
+      previousState.dehydrated as SuspenseInstance,
+      previousState.treeContext,
+    );
+    // Undo only the deletion of the fragment whose DOM will be hydrated.
+    const deletions = workInProgress.deletions;
+    if (deletions !== null) {
+      const remaining = deletions.filter(child => child !== current.child);
+      workInProgress.deletions = remaining.length === 0 ? null : remaining;
+      if (remaining.length === 0) workInProgress.flags &= ~ChildDeletion;
+    }
+  } else {
+    fallbackChildFragment.flags |= Placement;
+  }
 
   primaryChildFragment.return = workInProgress;
   fallbackChildFragment.return = workInProgress;
   primaryChildFragment.sibling = fallbackChildFragment;
   workInProgress.child = primaryChildFragment;
 
-  if (disableLegacyMode || (workInProgress.mode & ConcurrentMode) !== NoMode) {
+  if (
+    !hydrateFallback &&
+    (disableLegacyMode || (workInProgress.mode & ConcurrentMode) !== NoMode)
+  ) {
     // We will have dropped the effect list which contains the
     // deletion. We need to reconcile to delete the current child.
     reconcileChildFibers(workInProgress, current.child, null, renderLanes);
@@ -3192,12 +3214,19 @@ function updateDehydratedSuspenseComponent(
 
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
+      const hydrateFallback =
+        !didFallbackHydrationFail(current) &&
+        current.memoizedProps === nextProps &&
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST;
       mountSuspenseFallbackAfterRetryWithoutHydrating(
         current,
         workInProgress,
         nextPrimaryChildren,
         nextFallbackChildren,
         renderLanes,
+        hydrateFallback,
       );
       const primaryChildFragment: Fiber = workInProgress.child as any;
       primaryChildFragment.memoizedState =
@@ -3207,7 +3236,9 @@ function updateDehydratedSuspenseComponent(
         didPrimaryChildrenDefer,
         renderLanes,
       );
-      workInProgress.memoizedState = SUSPENDED_MARKER;
+      workInProgress.memoizedState = hydrateFallback
+        ? {...suspenseState, isHydratingFallback: true}
+        : SUSPENDED_MARKER;
       return bailoutOffscreenComponent(null, primaryChildFragment);
     }
   }
