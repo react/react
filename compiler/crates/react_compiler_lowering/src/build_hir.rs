@@ -6545,20 +6545,18 @@ fn lower_object_method(
         })?;
         return Ok(None);
     }
-    let key = lower_object_property_key(builder, &method.key, method.computed)?.unwrap_or(
-        ObjectPropertyKey::String {
-            name: String::new(),
-        },
-    );
-
     let lowered_func = lower_function_for_object_method(builder, method)?;
-
     let loc = convert_opt_loc(&method.base.loc);
     let method_value = InstructionValue::ObjectMethod {
         loc: loc.clone(),
         lowered_func,
     };
     let method_place = lower_value_to_temporary(builder, method_value)?;
+    let key = lower_object_property_key(builder, &method.key, method.computed)?.unwrap_or(
+        ObjectPropertyKey::String {
+            name: String::new(),
+        },
+    );
 
     Ok(Some(ObjectProperty {
         key,
