@@ -563,7 +563,7 @@ __DEV__ &&
         case 32768:
         case 65536:
         case 131072:
-          return enableParallelTransitions ? lanes & -lanes : lanes & 261888;
+          return lanes & -lanes;
         case 262144:
         case 524288:
         case 1048576:
@@ -15532,10 +15532,6 @@ __DEV__ &&
           ((shouldFireAfterActiveInstanceBlur = !0),
           beforeActiveInstanceBlur(finishedWork));
         switch (finishedWork.tag) {
-          case 0:
-          case 11:
-          case 15:
-            break;
           case 1:
             0 !== (flags & 1024) &&
               null !== current &&
@@ -15560,6 +15556,9 @@ __DEV__ &&
                     finishedWork.textContent = "";
                 }
             break;
+          case 0:
+          case 11:
+          case 15:
           case 5:
           case 26:
           case 27:
@@ -16622,8 +16621,8 @@ __DEV__ &&
             null !== current)
           )
             for (var ii = 0; ii < current.length; ii++) {
-              var _eventPayloads$ii2 = current[ii];
-              _eventPayloads$ii2.ref.impl = _eventPayloads$ii2.nextImpl;
+              var _eventPayloads$ii = current[ii];
+              _eventPayloads$ii.ref.impl = _eventPayloads$ii.nextImpl;
             }
           recursivelyTraverseMutationEffects(root, finishedWork, lanes);
           commitReconciliationEffects(finishedWork);
@@ -16713,12 +16712,12 @@ __DEV__ &&
                             ).get(root + (flags.href || "")))
                           )
                             for (
-                              _eventPayloads$ii2 = 0;
-                              _eventPayloads$ii2 < ii.length;
-                              _eventPayloads$ii2++
+                              _eventPayloads$ii = 0;
+                              _eventPayloads$ii < ii.length;
+                              _eventPayloads$ii++
                             )
                               if (
-                                ((current = ii[_eventPayloads$ii2]),
+                                ((current = ii[_eventPayloads$ii]),
                                 current.getAttribute("href") ===
                                   (null == flags.href || "" === flags.href
                                     ? null
@@ -16734,7 +16733,7 @@ __DEV__ &&
                                       ? null
                                       : flags.crossOrigin))
                               ) {
-                                ii.splice(_eventPayloads$ii2, 1);
+                                ii.splice(_eventPayloads$ii, 1);
                                 break b;
                               }
                           current = lanes.createElement(root);
@@ -16750,12 +16749,12 @@ __DEV__ &&
                             ).get(root + (flags.content || "")))
                           )
                             for (
-                              _eventPayloads$ii2 = 0;
-                              _eventPayloads$ii2 < ii.length;
-                              _eventPayloads$ii2++
+                              _eventPayloads$ii = 0;
+                              _eventPayloads$ii < ii.length;
+                              _eventPayloads$ii++
                             )
                               if (
-                                ((current = ii[_eventPayloads$ii2]),
+                                ((current = ii[_eventPayloads$ii]),
                                 checkAttributeStringCoercion(
                                   flags.content,
                                   "content"
@@ -16779,7 +16778,7 @@ __DEV__ &&
                                       ? null
                                       : flags.charSet))
                               ) {
-                                ii.splice(_eventPayloads$ii2, 1);
+                                ii.splice(_eventPayloads$ii, 1);
                                 break b;
                               }
                           current = lanes.createElement(root);
@@ -16915,10 +16914,10 @@ __DEV__ &&
           rootMutationContext = !1;
           enableViewTransition && (viewTransitionMutationContext = !1);
           tagCaches = null;
-          _eventPayloads$ii2 = currentHoistableRoot;
+          _eventPayloads$ii = currentHoistableRoot;
           currentHoistableRoot = getHoistableRoot(root.containerInfo);
           recursivelyTraverseMutationEffects(root, finishedWork, lanes);
-          currentHoistableRoot = _eventPayloads$ii2;
+          currentHoistableRoot = _eventPayloads$ii;
           commitReconciliationEffects(finishedWork);
           if (
             flags & 4 &&
@@ -16990,9 +16989,9 @@ __DEV__ &&
               null !== finishedWork.memoizedState &&
                 ((ii = finishedWork.memoizedProps.suspenseCallback),
                 "function" === typeof ii
-                  ? ((_eventPayloads$ii2 = finishedWork.updateQueue),
-                    null !== _eventPayloads$ii2 &&
-                      ii(new Set(_eventPayloads$ii2)))
+                  ? ((_eventPayloads$ii = finishedWork.updateQueue),
+                    null !== _eventPayloads$ii &&
+                      ii(new Set(_eventPayloads$ii)))
                   : void 0 !== ii &&
                     console.error("Unexpected type for suspenseCallback."));
             } catch (error) {
@@ -17006,7 +17005,7 @@ __DEV__ &&
           break;
         case 22:
           ii = null !== finishedWork.memoizedState;
-          _eventPayloads$ii2 =
+          _eventPayloads$ii =
             null !== current && null !== current.memoizedState;
           var prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden,
             prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden,
@@ -17015,12 +17014,12 @@ __DEV__ &&
           offscreenDirectParentIsHidden =
             _prevOffscreenDirectParentIsHidden2 || ii;
           offscreenSubtreeWasHidden =
-            prevOffscreenSubtreeWasHidden || _eventPayloads$ii2;
+            prevOffscreenSubtreeWasHidden || _eventPayloads$ii;
           recursivelyTraverseMutationEffects(root, finishedWork, lanes);
           offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
           offscreenDirectParentIsHidden = _prevOffscreenDirectParentIsHidden2;
           offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
-          _eventPayloads$ii2 &&
+          _eventPayloads$ii &&
             !ii &&
             !prevOffscreenSubtreeIsHidden &&
             !prevOffscreenSubtreeWasHidden &&
@@ -17041,13 +17040,13 @@ __DEV__ &&
               : root._visibility | OffscreenVisible),
             !ii ||
               null === current ||
-              _eventPayloads$ii2 ||
+              _eventPayloads$ii ||
               offscreenSubtreeIsHidden ||
               offscreenSubtreeWasHidden ||
               ((root = IncludeHostSingletons),
-              (lanes = _eventPayloads$ii2 || offscreenSubtreeWasHidden),
+              (lanes = _eventPayloads$ii || offscreenSubtreeWasHidden),
               (current = offscreenSubtreeIsHidden),
-              (_eventPayloads$ii2 = offscreenSubtreeWasHidden),
+              (_eventPayloads$ii = offscreenSubtreeWasHidden),
               (offscreenSubtreeIsHidden = ii || offscreenSubtreeIsHidden),
               (offscreenSubtreeWasHidden = lanes),
               recursivelyTraverseDisappearLayoutEffects(finishedWork, root),
@@ -17062,7 +17061,7 @@ __DEV__ &&
                   "Disconnect"
                 ),
               (offscreenSubtreeIsHidden = current),
-              (offscreenSubtreeWasHidden = _eventPayloads$ii2)),
+              (offscreenSubtreeWasHidden = _eventPayloads$ii)),
             (!ii && offscreenDirectParentIsHidden) ||
               hideOrUnhideAllChildren(finishedWork, ii));
           flags & 4 &&
@@ -17090,11 +17089,11 @@ __DEV__ &&
                 safelyDetachRef(current, current.return)),
             (flags = pushMutationContext()),
             (ii = inUpdateViewTransition),
-            (_eventPayloads$ii2 =
+            (_eventPayloads$ii =
               enableViewTransition && (lanes & 335544064) === lanes),
             (prevOffscreenSubtreeIsHidden = finishedWork.memoizedProps),
             (inUpdateViewTransition =
-              _eventPayloads$ii2 &&
+              _eventPayloads$ii &&
               "none" !==
                 getViewTransitionClassName(
                   prevOffscreenSubtreeIsHidden.default,
@@ -17102,7 +17101,7 @@ __DEV__ &&
                 )),
             recursivelyTraverseMutationEffects(root, finishedWork, lanes),
             commitReconciliationEffects(finishedWork),
-            _eventPayloads$ii2 &&
+            _eventPayloads$ii &&
               null !== current &&
               viewTransitionMutationContext &&
               (finishedWork.flags |= 4),
@@ -19780,8 +19779,7 @@ __DEV__ &&
       spawnedLane,
       didAttemptEntireTree
     ) {
-      enableParallelTransitions &&
-        (suspendedLanes = getEntangledLanes(root, suspendedLanes));
+      suspendedLanes = getEntangledLanes(root, suspendedLanes);
       suspendedLanes &= ~workInProgressRootPingedLanes;
       suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
       root.suspendedLanes |= suspendedLanes;
@@ -29657,7 +29655,6 @@ __DEV__ &&
       enableViewTransition = dynamicFeatureFlags.enableViewTransition,
       enableScrollEndPolyfill = dynamicFeatureFlags.enableScrollEndPolyfill,
       enableInternalInstanceMap = dynamicFeatureFlags.enableInternalInstanceMap,
-      enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions,
       enableViewTransitionParentEnterExit =
         dynamicFeatureFlags.enableViewTransitionParentEnterExit,
       enableSchedulingProfiler = dynamicFeatureFlags.enableSchedulingProfiler,
@@ -34047,11 +34044,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-classic-d75b0697-20261006" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-classic-b618bbb4-20261007" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-classic-d75b0697-20261006\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-classic-b618bbb4-20261007\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -34094,10 +34091,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-classic-d75b0697-20261006",
+          version: "19.3.0-www-classic-b618bbb4-20261007",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-classic-d75b0697-20261006"
+          reconcilerVersion: "19.3.0-www-classic-b618bbb4-20261007"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -34888,5 +34885,5 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-classic-d75b0697-20261006";
+    exports.version = "19.3.0-www-classic-b618bbb4-20261007";
   })();

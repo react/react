@@ -57,7 +57,6 @@ var dynamicFeatureFlags = require("ReactFeatureFlags"),
   enableViewTransition = dynamicFeatureFlags.enableViewTransition,
   enableScrollEndPolyfill = dynamicFeatureFlags.enableScrollEndPolyfill,
   enableInternalInstanceMap = dynamicFeatureFlags.enableInternalInstanceMap,
-  enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions,
   enableViewTransitionParentEnterExit =
     dynamicFeatureFlags.enableViewTransitionParentEnterExit,
   enableSchedulingProfiler = dynamicFeatureFlags.enableSchedulingProfiler;
@@ -472,7 +471,7 @@ function getHighestPriorityLanes(lanes) {
     case 32768:
     case 65536:
     case 131072:
-      return enableParallelTransitions ? lanes & -lanes : lanes & 261888;
+      return lanes & -lanes;
     case 262144:
     case 524288:
     case 1048576:
@@ -10962,10 +10961,6 @@ function commitBeforeMutationEffects_complete(
       ((shouldFireAfterActiveInstanceBlur = !0),
       beforeActiveInstanceBlur(fiber));
     switch (fiber.tag) {
-      case 0:
-      case 11:
-      case 15:
-        break;
       case 1:
         if (0 !== (flags & 1024) && null !== current) {
           isViewTransitionEligible = void 0;
@@ -11007,6 +11002,9 @@ function commitBeforeMutationEffects_complete(
                 current.textContent = "";
             }
         break;
+      case 0:
+      case 11:
+      case 15:
       case 5:
       case 26:
       case 27:
@@ -11936,8 +11934,8 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
         null !== current)
       )
         for (var ii = 0; ii < current.length; ii++) {
-          var _eventPayloads$ii2 = current[ii];
-          _eventPayloads$ii2.ref.impl = _eventPayloads$ii2.nextImpl;
+          var _eventPayloads$ii = current[ii];
+          _eventPayloads$ii.ref.impl = _eventPayloads$ii.nextImpl;
         }
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
       commitReconciliationEffects(finishedWork);
@@ -12019,12 +12017,12 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
                         ).get(root + (lanes.href || "")))
                       )
                         for (
-                          _eventPayloads$ii2 = 0;
-                          _eventPayloads$ii2 < ii.length;
-                          _eventPayloads$ii2++
+                          _eventPayloads$ii = 0;
+                          _eventPayloads$ii < ii.length;
+                          _eventPayloads$ii++
                         )
                           if (
-                            ((current = ii[_eventPayloads$ii2]),
+                            ((current = ii[_eventPayloads$ii]),
                             current.getAttribute("href") ===
                               (null == lanes.href || "" === lanes.href
                                 ? null
@@ -12038,7 +12036,7 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
                                   ? null
                                   : lanes.crossOrigin))
                           ) {
-                            ii.splice(_eventPayloads$ii2, 1);
+                            ii.splice(_eventPayloads$ii, 1);
                             break b;
                           }
                       current = flags.createElement(root);
@@ -12054,12 +12052,12 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
                         ).get(root + (lanes.content || "")))
                       )
                         for (
-                          _eventPayloads$ii2 = 0;
-                          _eventPayloads$ii2 < ii.length;
-                          _eventPayloads$ii2++
+                          _eventPayloads$ii = 0;
+                          _eventPayloads$ii < ii.length;
+                          _eventPayloads$ii++
                         )
                           if (
-                            ((current = ii[_eventPayloads$ii2]),
+                            ((current = ii[_eventPayloads$ii]),
                             current.getAttribute("content") ===
                               (null == lanes.content
                                 ? null
@@ -12077,7 +12075,7 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
                               current.getAttribute("charset") ===
                                 (null == lanes.charSet ? null : lanes.charSet))
                           ) {
-                            ii.splice(_eventPayloads$ii2, 1);
+                            ii.splice(_eventPayloads$ii, 1);
                             break b;
                           }
                       current = flags.createElement(root);
@@ -12185,10 +12183,10 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
       rootMutationContext = !1;
       enableViewTransition && (viewTransitionMutationContext = !1);
       tagCaches = null;
-      _eventPayloads$ii2 = currentHoistableRoot;
+      _eventPayloads$ii = currentHoistableRoot;
       currentHoistableRoot = getHoistableRoot(root.containerInfo);
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
-      currentHoistableRoot = _eventPayloads$ii2;
+      currentHoistableRoot = _eventPayloads$ii;
       commitReconciliationEffects(finishedWork);
       if (flags & 4 && null !== current && current.memoizedState.isDehydrated)
         try {
@@ -12252,8 +12250,8 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
           null !== finishedWork.memoizedState &&
             ((ii = finishedWork.memoizedProps.suspenseCallback),
             "function" === typeof ii &&
-              ((_eventPayloads$ii2 = finishedWork.updateQueue),
-              null !== _eventPayloads$ii2 && ii(new Set(_eventPayloads$ii2))));
+              ((_eventPayloads$ii = finishedWork.updateQueue),
+              null !== _eventPayloads$ii && ii(new Set(_eventPayloads$ii))));
         } catch (error) {
           captureCommitPhaseError(finishedWork, finishedWork.return, error);
         }
@@ -12265,7 +12263,7 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
       break;
     case 22:
       ii = null !== finishedWork.memoizedState;
-      _eventPayloads$ii2 = null !== current && null !== current.memoizedState;
+      _eventPayloads$ii = null !== current && null !== current.memoizedState;
       var prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden,
         prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden,
         prevOffscreenDirectParentIsHidden$203 = offscreenDirectParentIsHidden;
@@ -12273,12 +12271,12 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
       offscreenDirectParentIsHidden =
         prevOffscreenDirectParentIsHidden$203 || ii;
       offscreenSubtreeWasHidden =
-        prevOffscreenSubtreeWasHidden || _eventPayloads$ii2;
+        prevOffscreenSubtreeWasHidden || _eventPayloads$ii;
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
       offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
       offscreenDirectParentIsHidden = prevOffscreenDirectParentIsHidden$203;
       offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
-      _eventPayloads$ii2 &&
+      _eventPayloads$ii &&
         !ii &&
         !prevOffscreenSubtreeIsHidden &&
         !prevOffscreenSubtreeWasHidden &&
@@ -12297,10 +12295,10 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
         (root._visibility = ii ? root._visibility & -2 : root._visibility | 1),
         !ii ||
           null === current ||
-          _eventPayloads$ii2 ||
+          _eventPayloads$ii ||
           offscreenSubtreeIsHidden ||
           offscreenSubtreeWasHidden ||
-          ((root = _eventPayloads$ii2 || offscreenSubtreeWasHidden),
+          ((root = _eventPayloads$ii || offscreenSubtreeWasHidden),
           (lanes = offscreenSubtreeIsHidden),
           (current = offscreenSubtreeWasHidden),
           (offscreenSubtreeIsHidden = ii || offscreenSubtreeIsHidden),
@@ -12345,11 +12343,11 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
             safelyDetachRef(current, current.return)),
         (flags = pushMutationContext()),
         (ii = inUpdateViewTransition),
-        (_eventPayloads$ii2 =
+        (_eventPayloads$ii =
           enableViewTransition && (lanes & 335544064) === lanes),
         (prevOffscreenSubtreeIsHidden = finishedWork.memoizedProps),
         (inUpdateViewTransition =
-          _eventPayloads$ii2 &&
+          _eventPayloads$ii &&
           "none" !==
             getViewTransitionClassName(
               prevOffscreenSubtreeIsHidden.default,
@@ -12357,7 +12355,7 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
             )),
         recursivelyTraverseMutationEffects(root, finishedWork, lanes),
         commitReconciliationEffects(finishedWork),
-        _eventPayloads$ii2 &&
+        _eventPayloads$ii &&
           null !== current &&
           viewTransitionMutationContext &&
           (finishedWork.flags |= 4),
@@ -14691,8 +14689,7 @@ function markRootSuspended(
   spawnedLane,
   didAttemptEntireTree
 ) {
-  enableParallelTransitions &&
-    (suspendedLanes = getEntangledLanes(root, suspendedLanes));
+  suspendedLanes = getEntangledLanes(root, suspendedLanes);
   suspendedLanes &= ~workInProgressRootPingedLanes;
   suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
   root.suspendedLanes |= suspendedLanes;
@@ -22875,14 +22872,14 @@ function getCrossOriginStringAs(as, input) {
 }
 var isomorphicReactPackageVersion$jscomp$inline_2418 = React.version;
 if (
-  "19.3.0-www-classic-d75b0697-20261006" !==
+  "19.3.0-www-classic-b618bbb4-20261007" !==
   isomorphicReactPackageVersion$jscomp$inline_2418
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2418,
-      "19.3.0-www-classic-d75b0697-20261006"
+      "19.3.0-www-classic-b618bbb4-20261007"
     )
   );
 Internals.findDOMNode = function (componentOrElement) {
@@ -22900,10 +22897,10 @@ Internals.Events = [
 ];
 var internals$jscomp$inline_2420 = {
   bundleType: 0,
-  version: "19.3.0-www-classic-d75b0697-20261006",
+  version: "19.3.0-www-classic-b618bbb4-20261007",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-classic-d75b0697-20261006"
+  reconcilerVersion: "19.3.0-www-classic-b618bbb4-20261007"
 };
 enableSchedulingProfiler &&
   ((internals$jscomp$inline_2420.getLaneLabelMap = getLaneLabelMap),
@@ -23348,7 +23345,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-www-classic-d75b0697-20261006";
+exports.version = "19.3.0-www-classic-b618bbb4-20261007";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&
