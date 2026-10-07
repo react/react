@@ -195,7 +195,54 @@ const tests: CompilerTestCases = {
   ],
 };
 
+const refsTests: CompilerTestCases = {
+  valid: [
+    {
+      name: 'Allows deferred ref access in IntersectionObserver callbacks',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback, useMemo, useRef} from 'react';
+
+        type IntersectionCallback = (isIntersecting: boolean) => void;
+
+        function useIntersectionObserver(options: Partial<IntersectionObserverInit>) {
+          const callbacks = useRef(new Map<string, IntersectionCallback>());
+          const onIntersect = useCallback(
+            (entries: ReadonlyArray<IntersectionObserverEntry>) => {
+              entries.forEach(entry =>
+                callbacks.current.get(entry.target.id)?.(entry.isIntersecting),
+              );
+            },
+            [],
+          );
+          return useMemo(
+            () => new IntersectionObserver(onIntersect, options),
+            [onIntersect, options],
+          );
+        }
+      `,
+    },
+  ],
+  invalid: [
+    {
+      name: 'Rejects ref access in callbacks passed to unknown constructors',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback, useMemo, useRef} from 'react';
+
+        function useObserver(Observer) {
+          const ref = useRef(null);
+          const callback = useCallback(() => ref.current, []);
+          return useMemo(() => new Observer(callback), [Observer, callback]);
+        }
+      `,
+      errors: [{message: /Cannot access refs during render/}],
+    },
+  ],
+};
+
 const eslintTester = new ESLintTesterV8({
   parser: require.resolve('@typescript-eslint/parser-v5'),
 });
 eslintTester.run('react-compiler', allRules['immutability'].rule, tests);
+eslintTester.run('react-compiler refs', allRules['refs'].rule, refsTests);
