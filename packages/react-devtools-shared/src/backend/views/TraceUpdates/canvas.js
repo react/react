@@ -13,6 +13,7 @@ import type {HostInstance} from '../../types';
 import type Agent from '../../agent';
 
 import {isReactNativeEnvironment} from 'react-devtools-shared/src/backend/utils';
+import {getEffectiveZoom} from '../utils';
 
 // Note these colors are in sync with DevTools Profiler chart colors.
 const COLORS = [
@@ -49,6 +50,18 @@ function drawWeb(nodeToData: Map<HostInstance, Data>) {
 
   const dpr = window.devicePixelRatio || 1;
   const canvasFlow: HTMLCanvasElement = canvas as any as HTMLCanvasElement;
+
+  // CSS zoom inherited from the document scales the canvas' size and drawing
+  // coordinates, while the rects to draw are unscaled viewport coordinates.
+  // Cancel the inherited zoom out so both coordinate systems match.
+  const inheritedZoom = getEffectiveZoom(
+    canvasFlow.parentElement ?? window.document.documentElement,
+  );
+  canvasFlow.style.setProperty(
+    'zoom',
+    inheritedZoom !== 1 ? String(1 / inheritedZoom) : '1',
+  );
+
   canvasFlow.width = window.innerWidth * dpr;
   canvasFlow.height = window.innerHeight * dpr;
   canvasFlow.style.width = `${window.innerWidth}px`;
