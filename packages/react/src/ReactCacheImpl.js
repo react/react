@@ -7,6 +7,8 @@
  * @flow
  */
 
+import {enableFlightLedgers} from 'shared/ReactFeatureFlags';
+
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 
 const UNTERMINATED = 0;
@@ -18,6 +20,7 @@ type UnterminatedCacheNode<T> = {
   v: void,
   o: null | WeakMap<Function | Object, CacheNode<T>>,
   p: null | Map<string | number | null | void | symbol | boolean, CacheNode<T>>,
+  u: mixed,
 };
 
 type TerminatedCacheNode<T> = {
@@ -25,6 +28,7 @@ type TerminatedCacheNode<T> = {
   v: T,
   o: null | WeakMap<Function | Object, CacheNode<T>>,
   p: null | Map<string | number | null | void | symbol | boolean, CacheNode<T>>,
+  u: mixed,
 };
 
 type ErroredCacheNode<T> = {
@@ -32,6 +36,7 @@ type ErroredCacheNode<T> = {
   v: mixed,
   o: null | WeakMap<Function | Object, CacheNode<T>>,
   p: null | Map<string | number | null | void | symbol | boolean, CacheNode<T>>,
+  u: mixed,
 };
 
 type CacheNode<T> =
@@ -49,6 +54,7 @@ function createCacheNode<T>(): CacheNode<T> {
     v: undefined, // value, either the cached result or an error, depending on s
     o: null, // object cache, a WeakMap where non-primitive arguments are stored
     p: null, // primitive cache, a regular Map where primitive arguments are stored.
+    u: null, // unit used to track this entry's render effects (e.g. ledger writes)
   };
 }
 
@@ -106,14 +112,42 @@ export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
       }
     }
     if (cacheNode.s === TERMINATED) {
+      // Reusing the cached value also reuses the ledger writes that produced it.
+      if (
+        enableFlightLedgers &&
+        dispatcher.units !== null &&
+        cacheNode.u !== null
+      ) {
+        dispatcher.units.hit(cacheNode.u);
+      }
       return cacheNode.v;
     }
     if (cacheNode.s === ERRORED) {
+      if (
+        enableFlightLedgers &&
+        dispatcher.units !== null &&
+        cacheNode.u !== null
+      ) {
+        dispatcher.units.hit(cacheNode.u);
+      }
       throw cacheNode.v;
     }
+    const units = enableFlightLedgers ? dispatcher.units : null;
     try {
-      // $FlowFixMe[incompatible-type]: We don't want to use rest arguments since we transpile the code.
-      const result = fn.apply(null, arguments);
+      let result: T;
+      if (units !== null) {
+        // Passing `arguments` to the hooks can force V8 to allocate it on cache
+        // hits too. Copy it here so that allocation stays on the miss path.
+        const args = [];
+        for (let i = 0, l = arguments.length; i < l; i++) {
+          args[i] = arguments[i];
+        }
+        // $FlowFixMe[incompatible-type]: We don't want to use rest arguments since we transpile the code.
+        result = units.miss(cacheNode, fn, args);
+      } else {
+        // $FlowFixMe[incompatible-type]: We don't want to use rest arguments since we transpile the code.
+        result = fn.apply(null, arguments);
+      }
       const terminatedNode: TerminatedCacheNode<T> = cacheNode as any;
       terminatedNode.s = TERMINATED;
       terminatedNode.v = result;
