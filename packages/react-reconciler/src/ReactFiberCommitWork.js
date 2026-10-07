@@ -684,6 +684,15 @@ function commitLayoutEffectOnFiber(
         committedLanes,
       );
 
+      // Attach the ref before scheduling any renderer mount effects below
+      // (eg the DOM renderer's auto-focus for inputs and form controls). Those
+      // effects can synchronously fire user code, such as a focus event
+      // handler, which may read the ref of this same host instance. The ref
+      // needs to already be attached by then.
+      if (flags & Ref) {
+        safelyAttachRef(finishedWork, finishedWork.return);
+      }
+
       // Renderers may schedule work to be done after host components are mounted
       // (eg DOM renderer may schedule auto-focus for inputs and form controls).
       // These effects should only be committed when components are first mounted,
@@ -694,10 +703,6 @@ function commitLayoutEffectOnFiber(
         } else if (flags & Hydrate) {
           commitHostHydratedInstance(finishedWork);
         }
-      }
-
-      if (flags & Ref) {
-        safelyAttachRef(finishedWork, finishedWork.return);
       }
       break;
     }
@@ -3369,6 +3374,13 @@ function reappearLayoutEffects(
         layoutEffectTraversalFlags,
       );
 
+      // Attach the ref before scheduling any renderer mount effects below,
+      // for the same reason as in commitLayoutEffectOnFiber: those effects
+      // (eg auto-focus) can synchronously fire user code that reads the ref
+      // of this same host instance.
+      // TODO: Check flags & Ref
+      safelyAttachRef(finishedWork, finishedWork.return);
+
       // Renderers may schedule work to be done after host components are mounted
       // (eg DOM renderer may schedule auto-focus for inputs and form controls).
       // These effects should only be committed when components are first mounted,
@@ -3376,9 +3388,6 @@ function reappearLayoutEffects(
       if (includeWorkInProgressEffects && current === null && flags & Update) {
         commitHostMount(finishedWork);
       }
-
-      // TODO: Check flags & Ref
-      safelyAttachRef(finishedWork, finishedWork.return);
       break;
     }
     case HostText: {
@@ -3428,12 +3437,12 @@ function reappearLayoutEffects(
         layoutEffectTraversalFlags,
       );
 
+      // TODO: Check flags & Ref
+      safelyAttachRef(finishedWork, finishedWork.return);
+
       if (includeWorkInProgressEffects && current === null && flags & Update) {
         commitHostMount(finishedWork);
       }
-
-      // TODO: Check flags & Ref
-      safelyAttachRef(finishedWork, finishedWork.return);
       break;
     }
     case Profiler: {
