@@ -4847,14 +4847,12 @@ function flushComponentPerformance(
       if (
         typeof resolvedValue === 'object' &&
         resolvedValue !== null &&
-        (isArray(resolvedValue) ||
-          typeof resolvedValue[ASYNC_ITERATOR] === 'function' ||
-          resolvedValue.$$typeof === REACT_ELEMENT_TYPE ||
-          resolvedValue.$$typeof === REACT_LAZY_TYPE) &&
         isArray(resolvedValue._debugInfo)
       ) {
         // It's possible that the value has been given the debug info.
-        // In that case we need to look for it on the resolved value.
+        // In that case we need to look for it on the resolved value. Any
+        // object that carries its own _debugInfo array is a valid source,
+        // including plain object roots (e.g. a record of named slots).
         debugInfo = resolvedValue._debugInfo;
       }
     }
