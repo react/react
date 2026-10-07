@@ -2471,7 +2471,7 @@ fn compute_signature_for_instruction(
                 }
             }
         }
-        InstructionValue::JsxFragment { children: _, .. } => {
+        InstructionValue::JsxFragment { .. } => {
             effects.push(AliasingEffect::Create {
                 into: lvalue.clone(),
                 value: ValueKind::Frozen,
@@ -2663,7 +2663,6 @@ fn compute_signature_for_instruction(
         InstructionValue::StoreGlobal {
             name,
             value: sg_value,
-            loc: _,
             ..
         } => {
             let variable = format!("`{}`", name);
