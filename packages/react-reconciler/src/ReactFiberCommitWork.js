@@ -47,7 +47,6 @@ import type {ViewTransitionState} from './ReactFiberViewTransitionComponent';
 import {
   alwaysThrottleRetries,
   enableCreateEventHandleAPI,
-  enableEffectEventMutationPhase,
   enableProfilerTimer,
   enableProfilerCommitHooks,
   enableSuspenseCallback,
@@ -503,22 +502,6 @@ function commitBeforeMutationEffectsOnFiber(
   }
 
   switch (finishedWork.tag) {
-    case FunctionComponent:
-    case ForwardRef:
-    case SimpleMemoComponent: {
-      if (!enableEffectEventMutationPhase && (flags & Update) !== NoFlags) {
-        const updateQueue: FunctionComponentUpdateQueue | null =
-          finishedWork.updateQueue as any;
-        const eventPayloads = updateQueue !== null ? updateQueue.events : null;
-        if (eventPayloads !== null) {
-          for (let ii = 0; ii < eventPayloads.length; ii++) {
-            const {ref, nextImpl} = eventPayloads[ii];
-            ref.impl = nextImpl;
-          }
-        }
-      }
-      break;
-    }
     case ClassComponent: {
       if ((flags & Snapshot) !== NoFlags) {
         if (current !== null) {
@@ -537,6 +520,9 @@ function commitBeforeMutationEffectsOnFiber(
       }
       break;
     }
+    case FunctionComponent:
+    case ForwardRef:
+    case SimpleMemoComponent:
     case HostComponent:
     case HostHoistable:
     case HostSingleton:
@@ -2078,17 +2064,14 @@ function commitMutationEffectsOnFiber(
       // This ensures that parent event effects are mutated before child effects.
       // This isn't a supported use case, so we can re-consider it,
       // but this was the behavior we originally shipped.
-      if (enableEffectEventMutationPhase) {
-        if (flags & Update) {
-          const updateQueue: FunctionComponentUpdateQueue | null =
-            finishedWork.updateQueue as any;
-          const eventPayloads =
-            updateQueue !== null ? updateQueue.events : null;
-          if (eventPayloads !== null) {
-            for (let ii = 0; ii < eventPayloads.length; ii++) {
-              const {ref, nextImpl} = eventPayloads[ii];
-              ref.impl = nextImpl;
-            }
+      if (flags & Update) {
+        const updateQueue: FunctionComponentUpdateQueue | null =
+          finishedWork.updateQueue as any;
+        const eventPayloads = updateQueue !== null ? updateQueue.events : null;
+        if (eventPayloads !== null) {
+          for (let ii = 0; ii < eventPayloads.length; ii++) {
+            const {ref, nextImpl} = eventPayloads[ii];
+            ref.impl = nextImpl;
           }
         }
       }

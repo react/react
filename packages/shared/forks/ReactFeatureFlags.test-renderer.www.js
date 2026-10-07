@@ -62,7 +62,6 @@ export const enableReactTestRendererWarning: boolean = false;
 export const disableLegacyMode: boolean = true;
 
 export const enableObjectFiber: boolean = false;
-export const enableEffectEventMutationPhase: boolean = true;
 
 export const enableYieldingBeforePassive: boolean = false;
 

@@ -46,7 +46,6 @@ export const enablePerformanceIssueReporting: boolean = false;
 export const enableSchedulingProfiler: boolean =
   !enableComponentPerformanceTrack && __PROFILE__;
 export const enableScopeAPI: boolean = false;
-export const enableEffectEventMutationPhase: boolean = true;
 export const enableSuspenseAvoidThisFallback: boolean = false;
 export const enableSuspenseCallback: boolean = false;
 export const enableTaint: boolean = true;

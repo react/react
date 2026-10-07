@@ -78,8 +78,6 @@ export const disableCommentsAsDOMContainers: boolean = false;
 
 export const enableCreateEventHandleAPI: boolean = true;
 
-export const enableEffectEventMutationPhase: boolean = true;
-
 export const enableScopeAPI: boolean = true;
 
 export const enableSuspenseCallback: boolean = true;

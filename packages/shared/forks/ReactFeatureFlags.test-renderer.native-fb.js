@@ -43,7 +43,6 @@ export const enableSchedulingProfiler = __PROFILE__;
 export const enableComponentPerformanceTrack = false;
 export const enablePerformanceIssueReporting = false;
 export const enableScopeAPI = false;
-export const enableEffectEventMutationPhase = true;
 export const enableSuspenseAvoidThisFallback = false;
 export const enableSuspenseCallback = false;
 export const enableTaint = true;

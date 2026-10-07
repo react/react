@@ -56,8 +56,6 @@ export const enableInfiniteRenderLoopDetection: boolean = false;
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 export const enableConditionalUseWarning: boolean = true;
 
-export const enableEffectEventMutationPhase: boolean = true;
-
 export const enableYieldingBeforePassive: boolean = true;
 
 export const enableThrottledScheduling: boolean = false;
