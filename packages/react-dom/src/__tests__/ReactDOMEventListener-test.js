@@ -1301,4 +1301,78 @@ describe('ReactDOMEventListener', () => {
 
     expect(log).toEqual([false]);
   });
+
+  it('should subscribe to selectionchange when the root is the document', async () => {
+    const log = [];
+    const originalDocAddEventListener = document.addEventListener;
+    document.addEventListener = function (type, fn, options) {
+      if (type === 'selectionchange') {
+        log.push(options);
+      }
+      return originalDocAddEventListener.call(this, type, fn, options);
+    };
+    try {
+      const root = ReactDOMClient.createRoot(document);
+      await act(() => {
+        root.render(
+          <html>
+            <body>
+              <input />
+            </body>
+          </html>,
+        );
+      });
+    } finally {
+      document.addEventListener = originalDocAddEventListener;
+    }
+
+    expect(log).toEqual([false]);
+  });
+
+  it('should fire onSelect on selectionchange when the root is the document', async () => {
+    const onSelect = jest.fn();
+    const root = ReactDOMClient.createRoot(document);
+    await act(() => {
+      root.render(
+        <html>
+          <body>
+            <input type="text" onSelect={onSelect} />
+          </body>
+        </html>,
+      );
+    });
+
+    document.body.firstChild.focus();
+    expect(onSelect).toHaveBeenCalledTimes(0);
+
+    // This is dispatched e.g. when the selection is changed from code
+    document.dispatchEvent(
+      new Event('selectionchange', {bubbles: false, cancelable: false}),
+    );
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('should dispatch events to a document root created after another root', async () => {
+    const otherRoot = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      otherRoot.render(<span />);
+    });
+
+    let clicks = 0;
+    const root = ReactDOMClient.createRoot(document);
+    await act(() => {
+      root.render(
+        <html>
+          <body>
+            <button onClick={() => clicks++} />
+          </body>
+        </html>,
+      );
+    });
+
+    await act(() => {
+      document.body.firstChild.click();
+    });
+    expect(clicks).toBe(1);
+  });
 });
