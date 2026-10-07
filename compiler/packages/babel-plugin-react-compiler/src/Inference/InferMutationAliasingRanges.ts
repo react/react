@@ -598,6 +598,8 @@ type Node = {
 };
 class AliasingState {
   nodes: Map<Identifier, Node> = new Map();
+  // Functions whose errors have already been recorded, see appendFunctionErrors
+  reportedFunctions: Set<Identifier> = new Set();
 
   create(place: Place, value: Node['value']): void {
     this.nodes.set(place.identifier, {
@@ -674,11 +676,18 @@ class AliasingState {
       }
       seen.add(current);
       const node = this.nodes.get(current);
-      if (node == null || node.transitive != null || node.local != null) {
+      if (node == null) {
         continue;
       }
-      if (node.value.kind === 'Function') {
+      if (
+        node.value.kind === 'Function' &&
+        !this.reportedFunctions.has(current)
+      ) {
+        this.reportedFunctions.add(current);
         appendFunctionErrors(env, node.value.function);
+      }
+      if (node.transitive != null || node.local != null) {
+        continue;
       }
       for (const [alias, when] of node.createdFrom) {
         if (when >= index) {
@@ -737,11 +746,18 @@ class AliasingState {
           Math.max(node.id.mutableRange.end, end),
         );
       }
+      /**
+       * Mutating a function value models calling it, so its errors are
+       * reported. A function reached by a forward edge only had one of its
+       * captured values mutated (eg a hoisted context variable being
+       * initialized), which does not call the function.
+       */
       if (
         node.value.kind === 'Function' &&
-        node.transitive == null &&
-        node.local == null
+        direction === 'backwards' &&
+        !this.reportedFunctions.has(current)
       ) {
+        this.reportedFunctions.add(current);
         appendFunctionErrors(env, node.value.function);
       }
       if (transitive) {
