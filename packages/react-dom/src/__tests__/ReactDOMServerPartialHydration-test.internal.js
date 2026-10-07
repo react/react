@@ -4135,6 +4135,113 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(ref.current).toBe(span);
   });
 
+  describe.each([
+    [false, 'Initial'],
+    [true, 'Initial'],
+    [false, 'Final'],
+    [true, 'Final'],
+  ])(
+    'suspended root hydration (transition: %s, initial value: %s)',
+    (isTransition, initialValue) => {
+      it('waits for a lazy component without repeatedly restarting a deferred value', async () => {
+        let resolve;
+        const promise = new Promise(r => {
+          resolve = () => r({default: Content});
+        });
+        const Lazy = React.lazy(() => {
+          Scheduler.log('Lazy initializer');
+          return promise;
+        });
+
+        function Content() {
+          Scheduler.log('Content');
+          return <i>Content</i>;
+        }
+
+        function App() {
+          const value = React.useDeferredValue('Final', initialValue);
+          Scheduler.log(value);
+          return (
+            <div>
+              <span>{value}</span>
+              <Lazy />
+            </div>
+          );
+        }
+
+        const container = document.createElement('div');
+        container.innerHTML = `<div><span>${initialValue}</span><i>Content</i></div>`;
+        const serverDiv = container.firstChild;
+        const serverSpan = serverDiv.firstChild;
+        const serverContent = serverDiv.lastChild;
+        const onRecoverableError = jest.fn();
+
+        const hydrate = () =>
+          ReactDOMClient.hydrateRoot(container, <App />, {onRecoverableError});
+        if (isTransition) {
+          React.startTransition(hydrate);
+        } else {
+          hydrate();
+        }
+
+        await waitForPaint([initialValue, 'Lazy initializer']);
+        // Flush individual scheduler turns so a regression fails with an
+        // unexpected render instead of hanging while draining an infinite queue.
+        await waitForPaint(isTransition ? [] : [initialValue]);
+        await waitForPaint([]);
+        await waitForPaint([]);
+        expect(Scheduler.unstable_hasPendingWork()).toBe(false);
+        expect(container.firstChild).toBe(serverDiv);
+        expect(serverSpan.textContent).toBe(initialValue);
+
+        resolve();
+        await waitForAll([
+          initialValue,
+          'Content',
+          'Final',
+          ...(initialValue === 'Final' ? [] : ['Content']),
+        ]);
+
+        expect(onRecoverableError).not.toHaveBeenCalled();
+        expect(container.firstChild).toBe(serverDiv);
+        expect(serverDiv.firstChild).toBe(serverSpan);
+        expect(serverDiv.lastChild).toBe(serverContent);
+        expect(container.innerHTML).toBe(
+          '<div><span>Final</span><i>Content</i></div>',
+        );
+      });
+    },
+  );
+
+  it('can defer a value after an early update switches hydration to client rendering', async () => {
+    const promise = new Promise(() => {});
+
+    function App() {
+      const value = React.useDeferredValue('Final', 'Initial');
+      Scheduler.log(value);
+      if (value === 'Initial') {
+        throw promise;
+      }
+      return <span>{value}</span>;
+    }
+
+    const container = document.createElement('div');
+    container.innerHTML = '<span>Server</span>';
+    const serverSpan = container.firstChild;
+    const onRecoverableError = jest.fn();
+
+    const root = ReactDOMClient.hydrateRoot(container, <span>Server</span>, {
+      onRecoverableError,
+    });
+    // Switch to client rendering before hydration begins. Although the current
+    // root is still dehydrated, the deferred value can now unblock rendering.
+    root.render(<App />);
+    await waitForAll(['Initial', 'Initial', 'Final']);
+
+    expect(container.innerHTML).toBe('<span>Final</span>');
+    expect(container.firstChild).not.toBe(serverSpan);
+  });
+
   // Regression for https://github.com/facebook/react/issues/35210 and other issues where lazy elements created in flight
   // caused hydration issues b/c the replay pathway did not correctly reset the hydration cursor
   it('Can hydrate even when lazy content resumes immediately inside a HostComponent', async () => {
