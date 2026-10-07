@@ -248,8 +248,7 @@ fn evaluate_phi(phi: &Phi, constants: &Constants) -> Option<Constant> {
             }
             Some(current) => match (current, operand_value) {
                 (Constant::Primitive { value: a, .. }, Constant::Primitive { value: b, .. }) => {
-                    // Use JS strict equality semantics: NaN !== NaN
-                    if !js_strict_equal(a, b) {
+                    if !js_object_is(a, b) {
                         return None;
                     }
                 }
@@ -1018,6 +1017,20 @@ fn js_strict_equal(lhs: &PrimitiveValue, rhs: &PrimitiveValue) -> bool {
         (PrimitiveValue::String(a), PrimitiveValue::String(b)) => a == b,
         // Different types => false
         _ => false,
+    }
+}
+
+fn js_object_is(lhs: &PrimitiveValue, rhs: &PrimitiveValue) -> bool {
+    match (lhs, rhs) {
+        (PrimitiveValue::Number(a), PrimitiveValue::Number(b)) => {
+            let av = a.value();
+            let bv = b.value();
+            if av.is_nan() && bv.is_nan() {
+                return true;
+            }
+            av.to_bits() == bv.to_bits()
+        }
+        _ => js_strict_equal(lhs, rhs),
     }
 }
 
