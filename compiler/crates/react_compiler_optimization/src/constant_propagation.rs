@@ -1024,7 +1024,22 @@ fn js_strict_equal(lhs: &PrimitiveValue, rhs: &PrimitiveValue) -> bool {
 /// Convert a string to a number using JS `ToNumber` semantics.
 /// In JS: `""` → 0, `" "` → 0, `" 42 "` → 42, `"0x1A"` → 26, `"Infinity"` → Infinity.
 fn js_to_number(s: &str) -> f64 {
-    let trimmed = s.trim();
+    let trimmed = s.trim_matches(|c| {
+        matches!(
+            c,
+            '\u{0009}'..='\u{000d}'
+                | '\u{0020}'
+                | '\u{00a0}'
+                | '\u{1680}'
+                | '\u{2000}'..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+        )
+    });
     if trimmed.is_empty() {
         return 0.0;
     }
@@ -1034,28 +1049,98 @@ fn js_to_number(s: &str) -> f64 {
     if trimmed == "-Infinity" {
         return f64::NEG_INFINITY;
     }
+    let unsigned = trimmed
+        .strip_prefix('+')
+        .or_else(|| trimmed.strip_prefix('-'))
+        .unwrap_or(trimmed);
+    if unsigned.eq_ignore_ascii_case("inf") || unsigned.eq_ignore_ascii_case("infinity") {
+        return f64::NAN;
+    }
     // Handle hex literals (0x/0X)
     if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
-        return match u64::from_str_radix(&trimmed[2..], 16) {
-            Ok(v) => v as f64,
-            Err(_) => f64::NAN,
-        };
+        return parse_power_of_two_radix_number(&trimmed[2..], 16).unwrap_or(f64::NAN);
     }
     // Handle octal literals (0o/0O)
     if trimmed.starts_with("0o") || trimmed.starts_with("0O") {
-        return match u64::from_str_radix(&trimmed[2..], 8) {
-            Ok(v) => v as f64,
-            Err(_) => f64::NAN,
-        };
+        return parse_power_of_two_radix_number(&trimmed[2..], 8).unwrap_or(f64::NAN);
     }
     // Handle binary literals (0b/0B)
     if trimmed.starts_with("0b") || trimmed.starts_with("0B") {
-        return match u64::from_str_radix(&trimmed[2..], 2) {
-            Ok(v) => v as f64,
-            Err(_) => f64::NAN,
-        };
+        return parse_power_of_two_radix_number(&trimmed[2..], 2).unwrap_or(f64::NAN);
     }
     trimmed.parse::<f64>().unwrap_or(f64::NAN)
+}
+
+/// Parses an unsigned binary, octal, or hexadecimal integer as a JS Number.
+/// Values wider than 53 bits use a guard bit and sticky bit to implement
+/// IEEE-754 round-to-nearest, ties-to-even without an arbitrary-precision integer.
+fn parse_power_of_two_radix_number(digits: &str, radix: u32) -> Option<f64> {
+    let bits_per_digit = match radix {
+        2 => 1,
+        8 => 3,
+        16 => 4,
+        _ => unreachable!(),
+    };
+    if digits.is_empty() {
+        return None;
+    }
+
+    let mut bit_length = 0;
+    let mut significand = 0u64;
+    let mut guard = false;
+    let mut sticky = false;
+
+    for byte in digits.bytes() {
+        let value = match byte {
+            b'0'..=b'9' => (byte - b'0') as u32,
+            b'a'..=b'f' => (byte - b'a' + 10) as u32,
+            b'A'..=b'F' => (byte - b'A' + 10) as u32,
+            _ => return None,
+        };
+        if value >= radix {
+            return None;
+        }
+        for shift in (0..bits_per_digit).rev() {
+            let bit = (value >> shift) & 1;
+            if bit_length == 0 && bit == 0 {
+                continue;
+            }
+            bit_length = (bit_length + 1).min(1025);
+            if bit_length <= 53 {
+                significand = (significand << 1) | bit as u64;
+            } else if bit_length == 54 {
+                guard = bit != 0;
+            } else {
+                sticky |= bit != 0;
+            }
+        }
+    }
+
+    if bit_length == 0 {
+        return Some(0.0);
+    }
+    if bit_length > 1024 {
+        return Some(f64::INFINITY);
+    }
+    if bit_length <= 53 {
+        return Some(significand as f64);
+    }
+
+    if guard && (sticky || significand & 1 != 0) {
+        significand += 1;
+    }
+
+    let mut exponent = bit_length - 1;
+    if significand == 1 << 53 {
+        significand >>= 1;
+        exponent += 1;
+    }
+    if exponent > 1023 {
+        return Some(f64::INFINITY);
+    }
+
+    let fraction = significand & ((1 << 52) - 1);
+    Some(f64::from_bits(((exponent as u64 + 1023) << 52) | fraction))
 }
 
 fn js_abstract_equal(lhs: &PrimitiveValue, rhs: &PrimitiveValue) -> bool {
