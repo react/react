@@ -249,6 +249,302 @@ describe('ReactDOMViewTransition', () => {
     });
 
     // @gate enableViewTransition
+    it('preserves transition types while an unrelated Suspense boundary reveals', async () => {
+      const startViewTransitionSpy = jest.fn(document.startViewTransition);
+      document.startViewTransition = startViewTransitionSpy;
+      const onShare = jest.fn();
+      let setPage;
+      let setWidget;
+      let resolvePage;
+      let resolveWidget;
+      const pageData = new Promise(resolve => {
+        resolvePage = resolve;
+      });
+      const widgetData = new Promise(resolve => {
+        resolveWidget = resolve;
+      });
+
+      function Data({data}) {
+        return typeof data === 'string' ? data : React.use(data);
+      }
+
+      function App() {
+        const [page, _setPage] = React.useState('Page 1');
+        const [widget, _setWidget] = React.useState(false);
+        setPage = _setPage;
+        setWidget = _setWidget;
+        return (
+          <>
+            <ViewTransition>
+              <Suspense key={widget} fallback={<p>Loading widget</p>}>
+                <p>
+                  <Data data={widget ? widgetData : 'Widget'} />
+                </p>
+              </Suspense>
+            </ViewTransition>
+            <ViewTransition
+              key={page === 'Page 1' ? 'old' : 'new'}
+              name="page"
+              share={{forward: 'slide-forward', default: 'none'}}
+              default="none"
+              onShare={onShare}>
+              <p>
+                <Data data={page} />
+              </p>
+            </ViewTransition>
+          </>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<App />));
+
+      await act(() => setWidget(true));
+      startViewTransitionSpy.mockClear();
+      await act(() => {
+        startTransition(() => {
+          React.addTransitionType('forward');
+          setPage(pageData);
+        });
+      });
+      expect(container.textContent).toBe('Loading widgetPage 1');
+      expect(startViewTransitionSpy).not.toHaveBeenCalled();
+
+      await act(() => resolveWidget('Loaded widget'));
+      expect(container.textContent).toBe('Loaded widgetPage 1');
+      expect(startViewTransitionSpy).toHaveBeenCalledTimes(1);
+      expect(startViewTransitionSpy.mock.calls[0][0].types).toBe(null);
+      expect(onShare).not.toHaveBeenCalled();
+
+      await act(() => resolvePage('Page 2'));
+      expect(container.textContent).toBe('Loaded widgetPage 2');
+      expect(startViewTransitionSpy).toHaveBeenCalledTimes(2);
+      expect(startViewTransitionSpy.mock.calls[1][0].types).toEqual([
+        'forward',
+      ]);
+      expect(onShare).toHaveBeenCalledTimes(1);
+    });
+
+    [false, true].forEach(resolveTogether => {
+      // @gate enableViewTransition
+      it(
+        'merges types only for the lanes being committed (together: ' +
+          resolveTogether +
+          ')',
+        async () => {
+          const startViewTransitionSpy = jest.fn(document.startViewTransition);
+          document.startViewTransition = startViewTransitionSpy;
+          const setters = [];
+          const resolvers = [];
+          const data = [0, 1].map(
+            index =>
+              new Promise(resolve => {
+                resolvers[index] = resolve;
+              }),
+          );
+
+          function Content({index}) {
+            const [text, setText] = React.useState('Initial ' + index);
+            setters[index] = setText;
+            return (
+              <ViewTransition>
+                <p>{typeof text === 'string' ? text : React.use(text)}</p>
+              </ViewTransition>
+            );
+          }
+
+          let setVersion;
+          function App() {
+            const [, _setVersion] = React.useState(0);
+            setVersion = _setVersion;
+            return (
+              <>
+                <Suspense fallback="Loading first">
+                  <Content index={0} />
+                </Suspense>
+                <Suspense fallback="Loading second">
+                  <Content index={1} />
+                </Suspense>
+              </>
+            );
+          }
+
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => root.render(<App />));
+          await act(() => {
+            startTransition(() => {
+              React.addTransitionType('forward');
+              React.addTransitionType('shared');
+              setters[0](data[0]);
+              if (resolveTogether) {
+                // Updating a shared queue entangles the two transition lanes.
+                setVersion(version => version + 1);
+              }
+            });
+          });
+          await act(() => {
+            startTransition(() => {
+              React.addTransitionType('backward');
+              React.addTransitionType('shared');
+              setters[1](data[1]);
+              if (resolveTogether) {
+                setVersion(version => version + 1);
+              }
+            });
+          });
+          expect(container.textContent).toBe('Initial 0Initial 1');
+          expect(startViewTransitionSpy).not.toHaveBeenCalled();
+
+          if (resolveTogether) {
+            await act(() => {
+              resolvers[0]('First');
+              resolvers[1]('Second');
+            });
+            expect(container.textContent).toBe('FirstSecond');
+            expect(startViewTransitionSpy).toHaveBeenCalledTimes(1);
+            expect(startViewTransitionSpy.mock.calls[0][0].types).toEqual([
+              'forward',
+              'shared',
+              'backward',
+            ]);
+          } else {
+            await act(() => resolvers[0]('First'));
+            expect(container.textContent).toBe('FirstInitial 1');
+            expect(startViewTransitionSpy).toHaveBeenCalledTimes(1);
+            expect(startViewTransitionSpy.mock.calls[0][0].types).toEqual([
+              'forward',
+              'shared',
+            ]);
+
+            await act(() => resolvers[1]('Second'));
+            expect(container.textContent).toBe('FirstSecond');
+            expect(startViewTransitionSpy).toHaveBeenCalledTimes(2);
+            expect(startViewTransitionSpy.mock.calls[1][0].types).toEqual([
+              'backward',
+              'shared',
+            ]);
+          }
+        },
+      );
+    });
+
+    // @gate enableViewTransition
+    it('does not reuse types from an abandoned transition', async () => {
+      const startViewTransitionSpy = jest.fn(document.startViewTransition);
+      document.startViewTransition = startViewTransitionSpy;
+      const pendingData = new Promise(() => {});
+      let setText;
+
+      function Content() {
+        const [text, _setText] = React.useState('Initial');
+        setText = _setText;
+        return typeof text === 'string' ? text : React.use(text);
+      }
+
+      function App({show, step}) {
+        return (
+          <ViewTransition>
+            <p>{step}</p>
+            {show && (
+              <Suspense fallback="Loading">
+                <Content />
+              </Suspense>
+            )}
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<App show={true} step={0} />));
+      await act(() => {
+        startTransition(() => {
+          React.addTransitionType('abandoned');
+          setText(pendingData);
+        });
+      });
+      expect(container.textContent).toBe('0Initial');
+      expect(startViewTransitionSpy).not.toHaveBeenCalled();
+
+      // Removing the component drops its pending transition lane without a
+      // view transition. Its types must be cleared even though they weren't used.
+      await act(() => {
+        require('react-dom').flushSync(() =>
+          root.render(<App show={false} step={0} />),
+        );
+      });
+      expect(container.textContent).toBe('0');
+      expect(startViewTransitionSpy).not.toHaveBeenCalled();
+
+      // Cycle through all lanes so a stale entry cannot hide until lane reuse.
+      const {TotalLanes} = require('react-reconciler/src/ReactFiberLane');
+      for (let step = 1; step <= TotalLanes; step++) {
+        await act(() => {
+          startTransition(() => root.render(<App show={false} step={step} />));
+        });
+        expect(container.textContent).toBe(String(step));
+        expect(startViewTransitionSpy).toHaveBeenCalledTimes(step);
+        expect(startViewTransitionSpy.mock.calls[step - 1][0].types).toBe(null);
+      }
+    });
+
+    // @gate enableViewTransition
+    it('preserves and deduplicates types across an async transition', async () => {
+      const startViewTransitionSpy = jest.fn(document.startViewTransition);
+      document.startViewTransition = startViewTransitionSpy;
+      let resolveAction;
+      const action = new Promise(resolve => {
+        resolveAction = resolve;
+      });
+      const onUpdate = jest.fn();
+      let setText;
+
+      function App() {
+        const [text, _setText] = React.useState('Initial');
+        setText = _setText;
+        return (
+          <ViewTransition onUpdate={onUpdate}>
+            <p>{text}</p>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<App />));
+      await act(() => {
+        startTransition(async () => {
+          React.addTransitionType('forward');
+          await action;
+          React.addTransitionType('shared');
+          startTransition(() => {
+            React.addTransitionType('forward');
+            startTransition(() => {
+              React.addTransitionType('shared');
+              React.addTransitionType('nested');
+              setText('Updated');
+            });
+          });
+        });
+      });
+      expect(container.textContent).toBe('Initial');
+      expect(startViewTransitionSpy).not.toHaveBeenCalled();
+
+      await act(() => resolveAction());
+      expect(container.textContent).toBe('Updated');
+      expect(startViewTransitionSpy).toHaveBeenCalledTimes(1);
+      expect(startViewTransitionSpy.mock.calls[0][0].types).toEqual([
+        'forward',
+        'shared',
+        'nested',
+      ]);
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      expect(onUpdate.mock.calls[0][1]).toEqual([
+        'forward',
+        'shared',
+        'nested',
+      ]);
+    });
+
+    // @gate enableViewTransition
     it('fires onEnter when a ViewTransition mounts', async () => {
       const onEnter = jest.fn();
       const startViewTransitionSpy = jest.fn(document.startViewTransition);

@@ -9,22 +9,23 @@
 
 import type {FiberRoot} from './ReactInternalTypes';
 import type {TransitionTypes} from 'react/src/ReactTransitionType';
+import type {Lane, Lanes} from './ReactFiberLane';
 
 import {enableViewTransition} from 'shared/ReactFeatureFlags';
-import {includesTransitionLane} from './ReactFiberLane';
+import {NoLanes, laneToIndex, pickArbitraryLane} from './ReactFiberLane';
 
 export function queueTransitionTypes(
   root: FiberRoot,
+  lane: Lane,
   transitionTypes: TransitionTypes,
 ): void {
   if (enableViewTransition) {
-    // TODO: We should really store transitionTypes per lane in a LaneMap on
-    // the root. Then merge it when we commit. We currently assume that all
-    // Transitions are entangled.
-    if (includesTransitionLane(root.pendingLanes)) {
-      let queued = root.transitionTypes;
+    // Only associate types with roots that have work in this transition's lane.
+    if ((root.pendingLanes & lane) !== NoLanes) {
+      const index = laneToIndex(lane);
+      let queued = root.transitionTypes[index];
       if (queued === null) {
-        queued = root.transitionTypes = [];
+        queued = root.transitionTypes[index] = [];
       }
       for (let i = 0; i < transitionTypes.length; i++) {
         const transitionType = transitionTypes[i];
@@ -63,8 +64,26 @@ export function clearEntangledAsyncTransitionTypes() {
 
 export function claimQueuedTransitionTypes(
   root: FiberRoot,
+  lanes: Lanes,
 ): null | TransitionTypes {
-  const claimed = root.transitionTypes;
-  root.transitionTypes = null;
+  // Read the types before markRootFinished clears lanes that are no longer
+  // pending. Types for other lanes must not be included in this commit.
+  let claimed: null | TransitionTypes = null;
+  while (lanes !== NoLanes) {
+    const lane = pickArbitraryLane(lanes);
+    const queued = root.transitionTypes[laneToIndex(lane)];
+    if (queued !== null) {
+      if (claimed === null) {
+        claimed = [];
+      }
+      for (let i = 0; i < queued.length; i++) {
+        const transitionType = queued[i];
+        if (claimed.indexOf(transitionType) === -1) {
+          claimed.push(transitionType);
+        }
+      }
+    }
+    lanes &= ~lane;
+  }
   return claimed;
 }

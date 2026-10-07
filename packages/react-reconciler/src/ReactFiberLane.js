@@ -30,6 +30,7 @@ import {
   enableDefaultTransitionIndicator,
   enableGestureTransition,
   enableParallelTransitions,
+  enableViewTransition,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {clz32} from './clz32';
@@ -777,7 +778,7 @@ function pickArbitraryLaneIndex(lanes: Lanes) {
   return 31 - clz32(lanes);
 }
 
-function laneToIndex(lane: Lane) {
+export function laneToIndex(lane: Lane): number {
   return pickArbitraryLaneIndex(lane);
 }
 
@@ -932,6 +933,10 @@ export function markRootFinished(
 
     entanglements[index] = NoLanes;
     expirationTimes[index] = NoTimestamp;
+
+    if (enableViewTransition) {
+      root.transitionTypes[index] = null;
+    }
 
     const hiddenUpdatesForLane = hiddenUpdates[index];
     if (hiddenUpdatesForLane !== null) {
