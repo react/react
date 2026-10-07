@@ -14,7 +14,7 @@ if (process.env.GH_TOKEN == null) {
   process.exit(1);
 }
 
-const REPO = process.env.GITHUB_REPOSITORY || 'facebook/react';
+const REPO = process.env.GITHUB_REPOSITORY || 'react/react';
 const WORKFLOW_ID = 'runtime_build_and_test.yml';
 const GITHUB_HEADERS = `
   -H "Accept: application/vnd.github+json" \
