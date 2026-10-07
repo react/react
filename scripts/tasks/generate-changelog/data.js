@@ -131,7 +131,7 @@ async function fetchPullRequestMetadata(prNumber, {log}) {
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || null;
   const requestOptions = {
     hostname: 'api.github.com',
-    path: `/repos/facebook/react/pulls/${prNumber}`,
+    path: `/repos/react/react/pulls/${prNumber}`,
     method: 'GET',
     headers: {
       'User-Agent': 'generate-changelog-script',

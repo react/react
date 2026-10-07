@@ -113,7 +113,7 @@ async function getCommitLog(sha) {
       let username;
       if (hasGh) {
         const response = await execRead(
-          `gh api /repos/facebook/react/pulls/${pr}`
+          `gh api /repos/react/react/pulls/${pr}`
         );
         const {user} = JSON.parse(response);
         username = `[${user.login}](${user.html_url})`;

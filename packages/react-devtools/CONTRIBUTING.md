@@ -4,7 +4,7 @@ Interested in contributing to React DevTools, but not sure where to start? This 
 # Install project dependencies
 To get started, check out the React repo:
 ```sh
-git clone git@github.com:facebook/react.git
+git clone git@github.com:react/react.git
 ```
 Next install dependencies:
 ```sh

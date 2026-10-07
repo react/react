@@ -482,7 +482,7 @@ Allocation sites are created from:
 - **`Create`/`CreateFrom` effects**: Synthetic InstructionValues via `effectInstructionValueCache` (maps interned effect → synthetic InstructionValue)
 - **`CreateFunction` effects**: The actual `FunctionExpression` InstructionValue from the HIR
 
-**Upstream simplification** ([facebook/react#33650](https://github.com/react/react/pull/33650)): This PR replaces `InstructionValue` with the interned `AliasingEffect` itself as the allocation-site key:
+**Upstream simplification** ([react/react#33650](https://github.com/react/react/pull/33650)): This PR replaces `InstructionValue` with the interned `AliasingEffect` itself as the allocation-site key:
 
 ```
 #values: Map<AliasingEffect, AbstractValue>     // interned AliasingEffect as KEY
