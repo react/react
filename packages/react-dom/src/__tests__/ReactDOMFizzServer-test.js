@@ -1931,6 +1931,35 @@ describe('ReactDOMFizzServer', () => {
     expect(getVisibleChildren(container)).toEqual(<div>Hello World</div>);
   });
 
+  // Regression test for https://github.com/facebook/react/issues/37666
+  it(
+    'reveals a boundary that completes after the shell even if ' +
+      'requestAnimationFrame never fires, e.g. because the document was ' +
+      'opened directly into a background tab',
+    async () => {
+      // Browsers don't run rAF callbacks in a tab that has never been
+      // foregrounded, so the reveal must not depend solely on rAF firing.
+      global.requestAnimationFrame = global.window.requestAnimationFrame =
+        () => {};
+
+      await act(() => {
+        const {pipe} = renderToPipeableStream(
+          <div>
+            <Suspense fallback={<Text text="Loading..." />}>
+              <AsyncText text="Hello World" />
+            </Suspense>
+          </div>,
+        );
+        pipe(writable);
+      });
+      expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>)
+      await act(() => {
+        resolveText('Hello World')
+      });
+      expect(getVisibleChildren(container)).toEqual(<div>Hello World</div>);
+    },
+  );
+
   it('waits for pending content to come in from the server and then hydrates it', async () => {
     const ref = React.createRef();
 
