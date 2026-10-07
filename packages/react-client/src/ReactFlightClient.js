@@ -105,7 +105,11 @@ import type {
   LedgerGraph,
 } from 'react-server/src/ReactFlightLedgers';
 import {
+  BIT_LEDGER,
   MASK_LEDGER,
+  MIN_LEDGER,
+  MAX_LEDGER,
+  SET_LEDGER,
   createLedgerCell,
   reduceLedgerCell,
 } from 'react-server/src/ReactFlightLedgers';
@@ -4107,7 +4111,9 @@ function resolveLedgerTotalsAtClose(response: Response): void {
 function initializeLedgerChunk<T>(chunk: ResolvedLedgerChunk<T>): void {
   const record = chunk.value;
   const response = chunk.reason;
-  const total = reduceLedgerCell(record).state;
+  const state = reduceLedgerCell(record).state;
+  // An unwritten min/max ledger resolves to undefined.
+  const total = state === null ? undefined : state;
   const initializedChunk: InitializedChunk<mixed> = chunk as any;
   initializedChunk.status = INITIALIZED;
   initializedChunk.value = total;
@@ -4117,12 +4123,23 @@ function initializeLedgerChunk<T>(chunk: ResolvedLedgerChunk<T>): void {
   }
 }
 
-// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
 function resolveLedgerType(response: Response, id: number, row: string): void {
   let kind: LedgerKind;
   switch (row.charCodeAt(0)) {
+    case 48 /* "0" */:
+      kind = BIT_LEDGER;
+      break;
     case 49 /* "1" */:
       kind = MASK_LEDGER;
+      break;
+    case 50 /* "2" */:
+      kind = MIN_LEDGER;
+      break;
+    case 51 /* "3" */:
+      kind = MAX_LEDGER;
+      break;
+    case 52 /* "4" */:
+      kind = SET_LEDGER;
       break;
     default:
       return;
@@ -4189,7 +4206,8 @@ function resolveUnitDeclaration(
 }
 
 function resolveLedgerDelta(response: Response, id: number, row: string): void {
-  const delta: [string, number] = parseModel(response, row);
+  // The type declaration determines the decoded payload's shape.
+  const delta: [string, any] = parseModel(response, row);
   const ledgers = getResponseLedgers(response);
   const unit = ledgers.units.get(id);
   if (unit === undefined) {
@@ -4207,7 +4225,38 @@ function resolveLedgerDelta(response: Response, id: number, row: string): void {
   if (cell === undefined) {
     cells.set(type, (cell = createLedgerCell(type)));
   }
-  cell.state = (cell.state | delta[1]) >>> 0;
+  switch (cell.kind) {
+    case BIT_LEDGER:
+      cell.state = true;
+      break;
+    case MASK_LEDGER: {
+      const state: number = delta[1];
+      cell.state = (cell.state | state) >>> 0;
+      break;
+    }
+    case MIN_LEDGER: {
+      const state: number = delta[1];
+      const previous = cell.state;
+      if (previous === null || state < previous) {
+        cell.state = state;
+      }
+      break;
+    }
+    case MAX_LEDGER: {
+      const state: number = delta[1];
+      const previous = cell.state;
+      if (previous === null || state > previous) {
+        cell.state = state;
+      }
+      break;
+    }
+    default: {
+      const entries: Array<mixed> = delta[1];
+      for (let i = 0; i < entries.length; i++) {
+        cell.state.add(entries[i]);
+      }
+    }
+  }
 }
 
 function resolveUnitReferences(
