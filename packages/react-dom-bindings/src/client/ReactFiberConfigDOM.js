@@ -822,8 +822,8 @@ export function resolveEventTimeStamp(): number {
   return event && event !== schedulerEvent ? event.timeStamp : -1.1;
 }
 
-export const isPrimaryRenderer = true;
-export const warnsIfNotActing = true;
+export const isPrimaryRenderer: boolean = true;
+export const warnsIfNotActing: boolean = true;
 // This initialization code may run even on server environments
 // if a component just imports ReactDOM (e.g. for findDOMNode).
 // Some environments might not have setTimeout or clearTimeout.
@@ -865,7 +865,7 @@ export function getInstanceFromScope(
 // -------------------
 //     Microtasks
 // -------------------
-export const supportsMicrotasks = true;
+export const supportsMicrotasks: boolean = true;
 export const scheduleMicrotask: any =
   typeof queueMicrotask === 'function'
     ? queueMicrotask
@@ -884,7 +884,7 @@ function handleErrorInNextTick(error: any) {
 //     Mutation
 // -------------------
 
-export const supportsMutation = true;
+export const supportsMutation: boolean = true;
 
 export function commitMount(
   domElement: Instance,
@@ -2136,8 +2136,12 @@ function customizeViewTransitionError(
           // more specific reason in the console but the user might not look there.
           // Some of these errors are important to surface like duplicate name errors but
           // it's too noisy for unactionable cases like the document was hidden. Therefore,
-          // we hide all of them and hopefully it surfaces in another browser.
-          error.message === 'Transition was aborted because of invalid state'
+          // we hide all of them and hopefully it surfaces in another browser. Newer
+          // versions of Chromium append the reason to this message (e.g.
+          // ". Document hidden"), so match on the prefix rather than the exact message.
+          error.message.startsWith(
+            'Transition was aborted because of invalid state',
+          )
         ) {
           // Skip logging this. This is not considered an error.
           return null;
@@ -4053,7 +4057,7 @@ export function bindInstance(
 //     Hydration
 // -------------------
 
-export const supportsHydration = true;
+export const supportsHydration: boolean = true;
 
 export function canHydrateInstance(
   instance: HydratableInstance,
@@ -4750,7 +4754,7 @@ export function shouldDeleteUnhydratedTailInstances(
 //     Test Selectors
 // -------------------
 
-export const supportsTestSelectors = true;
+export const supportsTestSelectors: boolean = true;
 
 export function findFiberRoot(node: Instance): null | FiberRoot {
   const stack = [node];
@@ -4917,7 +4921,7 @@ export function requestPostPaintCallback(callback: (time: number) => void) {
 //     Singletons
 // -------------------
 
-export const supportsSingletons = true;
+export const supportsSingletons: boolean = true;
 
 export function isHostSingletonType(type: string): boolean {
   return type === 'html' || type === 'head' || type === 'body';
@@ -5077,7 +5081,7 @@ function clearSingletonPreambleContribution(instance: Instance): void {
 //     Resources
 // -------------------
 
-export const supportsResources = true;
+export const supportsResources: boolean = true;
 
 type HoistableTagType = 'link' | 'meta' | 'title';
 type TResource<

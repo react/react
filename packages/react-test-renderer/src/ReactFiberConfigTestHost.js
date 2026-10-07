@@ -263,8 +263,8 @@ export function shouldAttemptEagerTransition(): boolean {
   return false;
 }
 
-export const isPrimaryRenderer = false;
-export const warnsIfNotActing = true;
+export const isPrimaryRenderer: boolean = false;
+export const warnsIfNotActing: boolean = true;
 
 export const scheduleTimeout = setTimeout;
 export const cancelTimeout = clearTimeout;
@@ -275,7 +275,7 @@ export const noTimeout: -1 = -1;
 //     Mutation
 // -------------------
 
-export const supportsMutation = true;
+export const supportsMutation: boolean = true;
 
 export function commitUpdate(
   instance: Instance,
