@@ -834,7 +834,6 @@ let currentRequest: null | Request = null;
 
 export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
-  // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     const store = requestStorage.getStore();
     if (store) return store;
@@ -6374,7 +6373,6 @@ export function startWork(request: Request): void {
   } else {
     request.flushScheduled = request.destination !== null;
     // When prerendering we use microtasks for pinging work
-    // $FlowFixMe[constant-condition]
     if (supportsRequestStorage) {
       scheduleMicrotask(() =>
         requestStorage.run(request, performWork, request),
@@ -6397,7 +6395,6 @@ export function startWork(request: Request): void {
         // During a prerender we don't want to be too aggressive in emitting early preloads
         // because we aren't responding to a live request and we can wait for the prerender to
         // postpone before we emit anything.
-        // $FlowFixMe[constant-condition]
         if (supportsRequestStorage) {
           requestStorage.run(
             request,

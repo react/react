@@ -529,7 +529,6 @@ function commitBeforeMutationEffectsOnFiber(
     }
     case HostRoot: {
       if ((flags & Snapshot) !== NoFlags) {
-        // $FlowFixMe[constant-condition]
         if (supportsMutation) {
           const root = finishedWork.stateNode;
           clearContainer(root.containerInfo);
@@ -659,7 +658,6 @@ function commitLayoutEffectOnFiber(
       break;
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         // We acquire the singleton instance first so it has appropriate
         // styles before other layout effects run. This isn't perfect because
@@ -803,7 +801,6 @@ function commitLayoutEffectOnFiber(
             // effects that were unmounted when the Offscreen subtree was
             // hidden. So this is a superset of the normal commitLayoutEffects.
             let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
-            // $FlowFixMe[constant-condition]
             if (supportsSingletons) {
               layoutEffectTraversalFlags = IncludeHostSingletons;
             } else {
@@ -1196,7 +1193,6 @@ function commitTransitionProgress(offscreenFiber: Fiber) {
 }
 
 function hideOrUnhideAllChildren(parentFiber: Fiber, isHidden: boolean) {
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -1210,7 +1206,6 @@ function hideOrUnhideAllChildren(parentFiber: Fiber, isHidden: boolean) {
 }
 
 function hideOrUnhideAllChildrenOnFiber(fiber: Fiber, isHidden: boolean) {
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -1259,7 +1254,6 @@ function hideOrUnhideAllChildrenOnFiber(fiber: Fiber, isHidden: boolean) {
 }
 
 function hideOrUnhideNearestPortals(parentFiber: Fiber, isHidden: boolean) {
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -1273,7 +1267,6 @@ function hideOrUnhideNearestPortals(parentFiber: Fiber, isHidden: boolean) {
 }
 
 function hideOrUnhideNearestPortalsOnFiber(fiber: Fiber, isHidden: boolean) {
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -1386,7 +1379,6 @@ function commitDeletionEffects(
 ) {
   const prevEffectStart = pushComponentEffectStart();
 
-  // $FlowFixMe[constant-condition]
   if (supportsMutation) {
     // We only have the top Fiber that was deleted but we need to recurse down its
     // children to find all the terminal nodes.
@@ -1410,7 +1402,6 @@ function commitDeletionEffects(
     findParent: while (parent !== null) {
       switch (parent.tag) {
         case HostSingleton: {
-          // $FlowFixMe[constant-condition]
           if (supportsSingletons) {
             if (isSingletonScope(parent.type)) {
               hostParent = parent.stateNode;
@@ -1501,7 +1492,6 @@ function commitDeletionEffectsOnFiber(
   // that don't modify the stack.
   switch (deletedFiber.tag) {
     case HostHoistable: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         if (!offscreenSubtreeWasHidden) {
           safelyDetachRef(deletedFiber, nearestMountedAncestor);
@@ -1527,7 +1517,6 @@ function commitDeletionEffectsOnFiber(
       // Fall through
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         if (!offscreenSubtreeWasHidden) {
           safelyDetachRef(deletedFiber, nearestMountedAncestor);
@@ -1575,7 +1564,6 @@ function commitDeletionEffectsOnFiber(
       // We only need to remove the nearest host child. Set the host parent
       // to `null` on the stack to indicate that nested children don't
       // need to be removed.
-      // $FlowFixMe[constant-condition]
       if (supportsMutation) {
         const prevHostParent = hostParent;
         const prevHostParentIsContainer = hostParentIsContainer;
@@ -1640,7 +1628,6 @@ function commitDeletionEffectsOnFiber(
       // Dehydrated fragments don't have any children
 
       // Delete the dehydrated suspense boundary and all of its content.
-      // $FlowFixMe[constant-condition]
       if (supportsMutation) {
         if (hostParent !== null) {
           if (hostParentIsContainer) {
@@ -1659,7 +1646,6 @@ function commitDeletionEffectsOnFiber(
       break;
     }
     case HostPortal: {
-      // $FlowFixMe[constant-condition]
       if (supportsMutation) {
         // When we go into a portal, it becomes the parent to remove from.
         const prevHostParent = hostParent;
@@ -1674,7 +1660,6 @@ function commitDeletionEffectsOnFiber(
         hostParent = prevHostParent;
         hostParentIsContainer = prevHostParentIsContainer;
       } else {
-        // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
           commitHostPortalContainerChildren(
             deletedFiber.stateNode,
@@ -1861,7 +1846,6 @@ function commitActivityHydrationCallbacks(
   finishedRoot: FiberRoot,
   finishedWork: Fiber,
 ) {
-  // $FlowFixMe[constant-condition]
   if (!supportsHydration) {
     return;
   }
@@ -1896,7 +1880,6 @@ function commitSuspenseHydrationCallbacks(
   finishedRoot: FiberRoot,
   finishedWork: Fiber,
 ) {
-  // $FlowFixMe[constant-condition]
   if (!supportsHydration) {
     return;
   }
@@ -2131,7 +2114,6 @@ function commitMutationEffectsOnFiber(
       break;
     }
     case HostHoistable: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // We cast because we always set the root at the React root and so it cannot be
         // null while we are processing mutation effects
@@ -2238,7 +2220,6 @@ function commitMutationEffectsOnFiber(
       // Fall through
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         recursivelyTraverseMutationEffects(root, finishedWork, lanes);
         commitReconciliationEffects(finishedWork, lanes);
@@ -2272,7 +2253,6 @@ function commitMutationEffectsOnFiber(
           safelyDetachRef(current, current.return);
         }
       }
-      // $FlowFixMe[constant-condition]
       if (supportsMutation) {
         // TODO: ContentReset gets cleared by the children during the commit
         // phase. This is a refactor hazard because it means we must read
@@ -2312,7 +2292,6 @@ function commitMutationEffectsOnFiber(
           }
         }
       } else {
-        // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
           if (finishedWork.alternate !== null) {
             // `finishedWork.alternate.stateNode` is pointing to a stale shadow
@@ -2332,7 +2311,6 @@ function commitMutationEffectsOnFiber(
       commitReconciliationEffects(finishedWork, lanes);
 
       if (flags & Update) {
-        // $FlowFixMe[constant-condition]
         if (supportsMutation) {
           if (finishedWork.stateNode === null) {
             throw new Error(
@@ -2357,7 +2335,6 @@ function commitMutationEffectsOnFiber(
       const prevProfilerEffectDuration = pushNestedEffectDurations();
 
       pushRootMutationContext();
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         prepareToCommitHoistables();
 
@@ -2374,7 +2351,6 @@ function commitMutationEffectsOnFiber(
       }
 
       if (flags & Update) {
-        // $FlowFixMe[constant-condition]
         if (supportsMutation && supportsHydration) {
           if (current !== null) {
             const prevRootState: RootState = current.memoizedState;
@@ -2383,7 +2359,6 @@ function commitMutationEffectsOnFiber(
             }
           }
         }
-        // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
           commitHostRootContainerChildren(root, finishedWork);
         }
@@ -2434,7 +2409,6 @@ function commitMutationEffectsOnFiber(
       const prevOffscreenDirectParentIsHidden = offscreenDirectParentIsHidden;
       offscreenDirectParentIsHidden = offscreenSubtreeIsHidden;
       const prevMutationContext = pushMutationContext();
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         const previousHoistableRoot = currentHoistableRoot;
         currentHoistableRoot = getHoistableRoot(
@@ -2458,7 +2432,6 @@ function commitMutationEffectsOnFiber(
       offscreenDirectParentIsHidden = prevOffscreenDirectParentIsHidden;
 
       if (flags & Update) {
-        // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
           commitHostPortalContainerChildren(
             finishedWork.stateNode,
@@ -2625,7 +2598,6 @@ function commitMutationEffectsOnFiber(
             ) {
               // Disappear the layout effects of all the children
               let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
-              // $FlowFixMe[constant-condition]
               if (supportsSingletons) {
                 layoutEffectTraversalFlags = IncludeHostSingletons;
               } else {
@@ -2667,7 +2639,6 @@ function commitMutationEffectsOnFiber(
           }
         }
 
-        // $FlowFixMe[constant-condition]
         if (supportsMutation) {
           // If it's trying to unhide but the parent is still hidden, then we should not unhide.
           if (isHidden || !offscreenDirectParentIsHidden) {
@@ -3126,7 +3097,6 @@ function disappearLayoutEffects(
       break;
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         const includeHostSingletons =
           (layoutEffectTraversalFlags & IncludeHostSingletons) !==
@@ -3165,7 +3135,6 @@ function disappearLayoutEffects(
       // TODO (Offscreen) Check: flags & RefStatic
       safelyDetachRef(finishedWork, finishedWork.return);
 
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // We only act on Hoistable Instances (memoizedState === null).
         // Resources (memoizedState !== null) are ref-counted and intentionally
@@ -3337,7 +3306,6 @@ function reappearLayoutEffects(
     //  ...
     // }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         const includeHostSingletons =
           (layoutEffectTraversalFlags & IncludeHostSingletons) !==
@@ -3386,7 +3354,6 @@ function reappearLayoutEffects(
       break;
     }
     case HostHoistable: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // The reappear traversal runs whenever an Activity transitions from
         // hidden to visible. We piggy-back on it (rather than adding a
@@ -3952,7 +3919,6 @@ function commitPassiveMountOnFiber(
       }
 
       if (isViewTransitionEligible) {
-        // $FlowFixMe[constant-condition]
         if (supportsMutation && rootViewTransitionNameCanceled) {
           restoreRootViewTransitionName(finishedRoot.containerInfo);
         }
@@ -4928,7 +4894,6 @@ function accumulateSuspenseyCommitOnFiber(
     }
     case HostRoot:
     case HostPortal: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         const previousHoistableRoot = currentHoistableRoot;
         const container: Container = fiber.stateNode.containerInfo;

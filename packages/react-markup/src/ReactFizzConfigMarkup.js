@@ -35,10 +35,10 @@ import {NotPending} from 'react-dom-bindings/src/shared/ReactDOMFormActions';
 import hasOwnProperty from 'shared/hasOwnProperty';
 
 // Allow embedding inside another Fizz render.
-export const isPrimaryRenderer = false;
+export const isPrimaryRenderer: boolean = false;
 
 // Disable Client Hooks
-export const supportsClientAPIs = false;
+export const supportsClientAPIs: boolean = false;
 
 import {stringToChunk} from 'react-server/src/ReactServerStreamConfig';
 
