@@ -189,6 +189,12 @@ function handleMessageFromPage(event: any) {
     case 'react-devtools-backend-manager': {
       const {source, payload} = event.data;
 
+      if (payload?.type === 'backend-manager-injected') {
+        // The backend manager won't initialize the backend until it receives a hello.
+        sayHelloToBackendManager();
+        break;
+      }
+
       chrome.runtime.sendMessage({
         source,
         payload,
