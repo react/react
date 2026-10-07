@@ -187,7 +187,6 @@ import {
   enableViewTransition,
   enableViewTransitionParentEnterExit,
   enableFizzBlockingRender,
-  enableAsyncDebugInfo,
   enableCPUSuspense,
 } from 'shared/ReactFeatureFlags';
 
@@ -4793,7 +4792,7 @@ function abortTask(task: Task, request: Request): void {
     segment.status = ABORTED;
   }
 
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // Capture async debug information at the point abort begins. The task may
     // receive more data before finishAbort runs and no longer suspend at the
     // call site we need to report.

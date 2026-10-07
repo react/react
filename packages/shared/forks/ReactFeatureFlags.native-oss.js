@@ -24,7 +24,6 @@ export const disableLegacyContextForFunctionComponents: boolean = true;
 export const disableLegacyMode: boolean = false;
 export const disableSchedulerTimeoutInWorkLoop: boolean = false;
 export const disableTextareaChildren: boolean = false;
-export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
 export const enableFlightObjectReferences: boolean = false;

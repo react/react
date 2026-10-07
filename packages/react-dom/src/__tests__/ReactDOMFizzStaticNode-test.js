@@ -559,9 +559,7 @@ describe('ReactDOMFizzStaticNode', () => {
           '\n    in AbortAndSuspend (at **)\n    in App',
         );
         expect(normalizeCodeLocInfo(ignoreListStack(ownerStack))).toBe(
-          (gate(flags => flags.enableAsyncDebugInfo)
-            ? '\n    in AbortAndSuspend (at **)'
-            : '') + '\n    in App (at **)',
+          '\n    in AbortAndSuspend (at **)\n    in App (at **)',
         );
       } else {
         expect(ownerStack).toBeNull();

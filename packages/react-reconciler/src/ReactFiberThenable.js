@@ -24,10 +24,7 @@ import {getWorkInProgressRoot} from './ReactFiberWorkLoop';
 
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 
-import {
-  enableAsyncDebugInfo,
-  enableConditionalUseWarning,
-} from 'shared/ReactFeatureFlags';
+import {enableConditionalUseWarning} from 'shared/ReactFeatureFlags';
 
 import noop from 'shared/noop';
 
@@ -176,7 +173,7 @@ export function trackUsedThenable<T>(
     }
   }
 
-  if (__DEV__ && enableAsyncDebugInfo && thenable._debugInfo === undefined) {
+  if (__DEV__ && thenable._debugInfo === undefined) {
     // In DEV mode if the thenable that we observed had no debug info, then we add
     // an inferred debug info so that we're able to track its potential I/O uniquely.
     // We don't know the real start time since the I/O could have started much

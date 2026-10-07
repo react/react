@@ -15,7 +15,6 @@ import {
   enableTaint,
   enableProfilerTimer,
   enableComponentPerformanceTrack,
-  enableAsyncDebugInfo,
   enableFlightWeakThenables,
   enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
@@ -782,10 +781,7 @@ function RequestInstance(
   }
 
   let timeOrigin: number;
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     // We start by serializing the time origin. Any future timestamps will be
     // emitted relatively to this origin. Instead of using performance.timeOrigin
     // as this origin, we use the timestamp at the start of the request.
@@ -1097,10 +1093,7 @@ function createThenableTask(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1150,11 +1143,7 @@ function serializeThenable(
         const keyPath = task.keyPath;
         const implicitSlot = task.implicitSlot;
         const formatContext = task.formatContext;
-        const lastTimestamp =
-          enableProfilerTimer &&
-          (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ? task.time
-            : 0;
+        const lastTimestamp = enableProfilerTimer ? task.time : 0;
         const debugOwner = __DEV__ ? task.debugOwner : null;
         const debugStack = __DEV__ ? task.debugStack : null;
         const debugTask = __DEV__ ? task.debugTask : null;
@@ -1201,10 +1190,7 @@ function serializeThenable(
               debugStack,
               debugTask,
             );
-            if (
-              enableProfilerTimer &&
-              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ) {
+            if (enableProfilerTimer) {
               // If this is async we need to time when this task finishes.
               newTask.timed = true;
             }
@@ -1263,10 +1249,7 @@ function serializeThenable(
         },
         reason => {
           if (newTask.status === PENDING) {
-            if (
-              enableProfilerTimer &&
-              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ) {
+            if (enableProfilerTimer) {
               // If this is async we need to time when this task finishes.
               newTask.timed = true;
             }
@@ -1316,10 +1299,7 @@ function serializeReadableStream(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1419,10 +1399,7 @@ function serializeAsyncIterable(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1854,10 +1831,7 @@ function renderFunctionComponent<Props>(
       outlineComponentInfo(request, componentDebugInfo);
 
       // Track when we started rendering this component.
-      if (
-        enableProfilerTimer &&
-        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ) {
+      if (enableProfilerTimer) {
         advanceTaskTime(request, task, performance.now());
       }
 
@@ -1929,18 +1903,17 @@ function renderFunctionComponent<Props>(
     throw null;
   }
 
-  if (__DEV__ || (enableProfilerTimer && enableAsyncDebugInfo)) {
+  if (__DEV__ || enableProfilerTimer) {
     // Forward any debug information for any Promises that we use():ed during the render.
     // We do this at the end so that we don't keep doing this for each retry.
     const trackedThenables = getTrackedThenablesAfterRendering();
     if (trackedThenables !== null) {
-      const stacks: Array<Error> =
-        __DEV__ && enableAsyncDebugInfo
-          ? (trackedThenables as any)._stacks ||
-            ((trackedThenables as any)._stacks = [])
-          : (null as any);
+      const stacks: Array<Error> = __DEV__
+        ? (trackedThenables as any)._stacks ||
+          ((trackedThenables as any)._stacks = [])
+        : (null as any);
       for (let i = 0; i < trackedThenables.length; i++) {
-        const stack = __DEV__ && enableAsyncDebugInfo ? stacks[i] : null;
+        const stack = __DEV__ ? stacks[i] : null;
         forwardDebugInfoFromThenable(
           request,
           task,
@@ -2276,10 +2249,7 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -2297,10 +2267,7 @@ function outlineTask(request: Request, task: Task): ReactJSONValue {
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -2841,10 +2808,7 @@ function emitAsyncSequence(
 }
 
 function pingTask(request: Request, task: Task): void {
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     // If this was async we need to emit the time when it completes.
     task.timed = true;
   }
@@ -2929,10 +2893,7 @@ function createTaskWithID(
     | 'debugStack'
     | 'debugTask',
   > as any;
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     task.timed = false;
     task.time = lastTimestamp;
   }
@@ -3298,8 +3259,7 @@ function outlineModelWithFormatContext(
     false, // It makes no sense for that use case to be contextual.
     formatContext, // Except for FormatContext we optimistically use it.
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+    enableProfilerTimer
       ? performance.now() // TODO: This should really inherit the time from the task.
       : 0,
     null, // TODO: Currently we don't associate any debug information with
@@ -3564,8 +3524,7 @@ function serializeBlob(request: Request, blob: Blob): string {
     false,
     createRootFormatContext(),
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+    enableProfilerTimer
       ? performance.now() // TODO: This should really inherit the time from the task.
       : 0,
     null, // TODO: Currently we don't associate any debug information with
@@ -3739,10 +3698,7 @@ function renderModel(
           task.implicitSlot,
           task.formatContext,
           request.abortableTasks,
-          enableProfilerTimer &&
-            (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ? task.time
-            : 0,
+          enableProfilerTimer ? task.time : 0,
           __DEV__ ? task.debugOwner : null,
           __DEV__ ? task.debugStack : null,
           __DEV__ ? task.debugTask : null,
@@ -6018,7 +5974,7 @@ function forwardDebugInfoFromThenable(
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     const sequence = getAsyncSequenceFromPromise(thenable);
     if (sequence !== null) {
       emitAsyncSequence(request, task, sequence, debugInfo, owner, stack);
@@ -6039,7 +5995,7 @@ function forwardDebugInfoFromCurrentContext(
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     const sequence = getCurrentAsyncSequence();
     if (sequence !== null) {
       emitAsyncSequence(request, task, sequence, debugInfo, null, null);
@@ -6062,7 +6018,7 @@ function forwardDebugInfoFromAbortedTask(request: Request, task: Task): void {
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     let thenable: null | Thenable<any> = null;
     if (typeof model.then === 'function') {
       thenable = model as any;
@@ -6138,10 +6094,7 @@ function advanceTaskTime(
   task: Task,
   timestamp: number,
 ): void {
-  if (
-    !enableProfilerTimer ||
-    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
-  ) {
+  if (!enableProfilerTimer) {
     return;
   }
   // Emits a timing chunk, if the new timestamp is higher than the previous timestamp of this task.
@@ -6157,10 +6110,7 @@ function advanceTaskTime(
 }
 
 function markOperationEndTime(request: Request, task: Task, timestamp: number) {
-  if (
-    !enableProfilerTimer ||
-    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
-  ) {
+  if (!enableProfilerTimer) {
     return;
   }
   // This is like advanceTaskTime() but always emits a timing chunk even if it doesn't advance.
@@ -6282,10 +6232,7 @@ function emitChunk(
 }
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     if (task.timed) {
       markOperationEndTime(request, task, performance.now());
     }
@@ -6364,10 +6311,7 @@ function retryTask(request: Request, task: Task): void {
       }
     }
     // We've finished rendering. Log the end time.
-    if (
-      enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-    ) {
+    if (enableProfilerTimer) {
       if (task.timed) {
         markOperationEndTime(request, task, performance.now());
       }
@@ -6506,10 +6450,7 @@ function finishAbortedTask(
   }
   forwardDebugInfoFromAbortedTask(request, task);
   // Track when we aborted this task as its end time.
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     if (task.timed) {
       markOperationEndTime(request, task, request.abortTime);
     }
@@ -6935,10 +6876,7 @@ export function abort(request: Request, reason: mixed): void {
   }
   try {
     request.status = ABORTING;
-    if (
-      enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-    ) {
+    if (enableProfilerTimer) {
       request.abortTime = performance.now();
     }
     request.cacheController.abort(reason);

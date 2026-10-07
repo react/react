@@ -3145,7 +3145,7 @@ describe('ReactFlight', () => {
       expect(getDebugInfo(result)).toEqual(
         __DEV__
           ? [
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 22 : 20},
+              {time: 22},
               {
                 name: 'ServerComponent',
                 env: 'Server',
@@ -3155,7 +3155,7 @@ describe('ReactFlight', () => {
                   transport: expect.arrayContaining([]),
                 },
               },
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 53 : 21},
+              {time: 53},
             ]
           : undefined,
       );
@@ -3165,7 +3165,7 @@ describe('ReactFlight', () => {
       expect(getDebugInfo(await thirdPartyChildren[0])).toEqual(
         __DEV__
           ? [
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22}, // Clamped to the start
+              {time: 54}, // Clamped to the start
               {
                 name: 'ThirdPartyComponent',
                 env: 'third-party',
@@ -3173,15 +3173,15 @@ describe('ReactFlight', () => {
                 stack: '    in Object.<anonymous> (at **)',
                 props: {},
               },
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22},
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 55 : 23}, // This last one is when the promise resolved into the first party.
+              {time: 54},
+              {time: 55}, // This last one is when the promise resolved into the first party.
             ]
           : undefined,
       );
       expect(getDebugInfo(thirdPartyChildren[1])).toEqual(
         __DEV__
           ? [
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22}, // Clamped to the start
+              {time: 54}, // Clamped to the start
               {
                 name: 'ThirdPartyLazyComponent',
                 env: 'third-party',
@@ -3189,7 +3189,7 @@ describe('ReactFlight', () => {
                 stack: '    in myLazy (at **)\n    in lazyInitializer (at **)',
                 props: {},
               },
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22},
+              {time: 54},
             ]
           : undefined,
       );
@@ -3197,7 +3197,7 @@ describe('ReactFlight', () => {
       expect(getDebugInfo(fragment)).toEqual(
         __DEV__
           ? [
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22},
+              {time: 54},
               {
                 name: 'ThirdPartyFragmentComponent',
                 env: 'third-party',
@@ -3205,7 +3205,7 @@ describe('ReactFlight', () => {
                 stack: '    in Object.<anonymous> (at **)',
                 props: {},
               },
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22},
+              {time: 54},
             ]
           : undefined,
       );
@@ -3435,7 +3435,7 @@ describe('ReactFlight', () => {
                 props: {},
               },
               {time: 16},
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 24 : 17},
+              {time: 24},
             ]
           : undefined,
       );

@@ -19,7 +19,6 @@ export const disableLegacyContextForFunctionComponents = false;
 export const disableLegacyMode = false;
 export const disableSchedulerTimeoutInWorkLoop = false;
 export const disableTextareaChildren = false;
-export const enableAsyncDebugInfo = true;
 export const enableAsyncIterableChildren = false;
 export const enableFlightWeakThenables = false;
 export const enableFlightObjectReferences = false;
