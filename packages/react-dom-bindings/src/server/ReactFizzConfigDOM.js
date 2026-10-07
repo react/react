@@ -2998,7 +2998,7 @@ function pushLink(
     } else {
       // This stylesheet refers to a Resource and we create a new one if necessary
       let styleQueue = renderState.styles.get(precedence);
-      const hasKey = resumableState.styleResources.hasOwnProperty(key);
+      const hasKey = hasOwnProperty.call(resumableState.styleResources, key);
       const resourceState = hasKey
         ? resumableState.styleResources[key]
         : undefined;
@@ -3199,7 +3199,7 @@ function pushStyle(
 
   const key = getResourceKey(href);
   let styleQueue = renderState.styles.get(precedence);
-  const hasKey = resumableState.styleResources.hasOwnProperty(key);
+  const hasKey = hasOwnProperty.call(resumableState.styleResources, key);
   const resourceState = hasKey ? resumableState.styleResources[key] : undefined;
   if (resourceState !== EXISTS) {
     // We are going to create this resource now so it is marked as Exists
@@ -3447,7 +3447,7 @@ function pushImg(
         // $FlowFixMe[incompatible-type] - Flow should understand that this is a Resource if the condition was true
         renderState.highImagePreloads.add(resource);
       }
-    } else if (!resumableState.imageResources.hasOwnProperty(key)) {
+    } else if (!hasOwnProperty.call(resumableState.imageResources, key)) {
       // We must construct a new preload resource
       resumableState.imageResources[key] = PRELOAD_NO_CREDS;
       const crossOrigin = getCrossOriginString(props.crossOrigin);
@@ -3876,7 +3876,7 @@ function pushScript(
     preloads = renderState.preloads.scripts;
   }
 
-  const hasKey = resources.hasOwnProperty(key);
+  const hasKey = hasOwnProperty.call(resources, key);
   const resourceState = hasKey ? resources[key] : undefined;
   if (resourceState !== EXISTS) {
     // We are going to create this resource now so it is marked as Exists
@@ -6295,7 +6295,7 @@ function prefetchDNS(href: string) {
 
   if (typeof href === 'string' && href) {
     const key = getResourceKey(href);
-    if (!resumableState.dnsResources.hasOwnProperty(key)) {
+    if (!hasOwnProperty.call(resumableState.dnsResources, key)) {
       resumableState.dnsResources[key] = EXISTS;
 
       const headers = renderState.headers;
@@ -6354,7 +6354,7 @@ function preconnect(href: string, crossOrigin: ?CrossOriginEnum) {
           ? 'anonymous'
           : 'default';
     const key = getResourceKey(href);
-    if (!resumableState.connectResources[bucket].hasOwnProperty(key)) {
+    if (!hasOwnProperty.call(resumableState.connectResources[bucket], key)) {
       resumableState.connectResources[bucket][key] = EXISTS;
 
       const headers = renderState.headers;
@@ -6417,7 +6417,7 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
           fetchPriority = options.fetchPriority;
         }
         const key = getImageResourceKey(href, imageSrcSet, imageSizes);
-        if (resumableState.imageResources.hasOwnProperty(key)) {
+        if (hasOwnProperty.call(resumableState.imageResources, key)) {
           // we can return if we already have this resource
           return;
         }
@@ -6486,7 +6486,7 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
       }
       case 'style': {
         const key = getResourceKey(href);
-        if (resumableState.styleResources.hasOwnProperty(key)) {
+        if (hasOwnProperty.call(resumableState.styleResources, key)) {
           // we can return if we already have this resource
           return;
         }
@@ -6507,7 +6507,7 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
       }
       case 'script': {
         const key = getResourceKey(href);
-        if (resumableState.scriptResources.hasOwnProperty(key)) {
+        if (hasOwnProperty.call(resumableState.scriptResources, key)) {
           // we can return if we already have this resource
           return;
         }
@@ -6528,11 +6528,14 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
       }
       default: {
         const key = getResourceKey(href);
-        const hasAsType = resumableState.unknownResources.hasOwnProperty(as);
+        const hasAsType = hasOwnProperty.call(
+          resumableState.unknownResources,
+          as,
+        );
         let resources;
         if (hasAsType) {
           resources = resumableState.unknownResources[as];
-          if (resources.hasOwnProperty(key)) {
+          if (hasOwnProperty.call(resources, key)) {
             // we can return if we already have this resource
             return;
           }
@@ -6620,7 +6623,7 @@ function preloadModule(
     let resource;
     switch (as) {
       case 'script': {
-        if (resumableState.moduleScriptResources.hasOwnProperty(key)) {
+        if (hasOwnProperty.call(resumableState.moduleScriptResources, key)) {
           // we can return if we already have this resource
           return;
         }
@@ -6635,12 +6638,14 @@ function preloadModule(
         break;
       }
       default: {
-        const hasAsType =
-          resumableState.moduleUnknownResources.hasOwnProperty(as);
+        const hasAsType = hasOwnProperty.call(
+          resumableState.moduleUnknownResources,
+          as,
+        );
         let resources;
         if (hasAsType) {
           resources = resumableState.moduleUnknownResources[as];
-          if (resources.hasOwnProperty(key)) {
+          if (hasOwnProperty.call(resources, key)) {
             // we can return if we already have this resource
             return;
           }
@@ -6691,7 +6696,7 @@ function preinitStyle(
     const key = getResourceKey(href);
 
     let styleQueue = renderState.styles.get(precedence);
-    const hasKey = resumableState.styleResources.hasOwnProperty(key);
+    const hasKey = hasOwnProperty.call(resumableState.styleResources, key);
     const resourceState = hasKey
       ? resumableState.styleResources[key]
       : undefined;
@@ -6774,7 +6779,7 @@ function preinitScript(src: string, options?: ?PreinitScriptOptions): void {
   if (src) {
     const key = getResourceKey(src);
 
-    const hasKey = resumableState.scriptResources.hasOwnProperty(key);
+    const hasKey = hasOwnProperty.call(resumableState.scriptResources, key);
     const resourceState = hasKey
       ? resumableState.scriptResources[key]
       : undefined;
@@ -6836,7 +6841,10 @@ function preinitModuleScript(
   const renderState = getRenderState(request);
   if (src) {
     const key = getResourceKey(src);
-    const hasKey = resumableState.moduleScriptResources.hasOwnProperty(key);
+    const hasKey = hasOwnProperty.call(
+      resumableState.moduleScriptResources,
+      key,
+    );
     const resourceState = hasKey
       ? resumableState.moduleScriptResources[key]
       : undefined;
@@ -6895,8 +6903,8 @@ function preloadBootstrapScriptOrModule(
 
   if (__DEV__) {
     if (
-      resumableState.scriptResources.hasOwnProperty(key) ||
-      resumableState.moduleScriptResources.hasOwnProperty(key)
+      hasOwnProperty.call(resumableState.scriptResources, key) ||
+      hasOwnProperty.call(resumableState.moduleScriptResources, key)
     ) {
       // This is coded as a React error because it should be impossible for a userspace preload to preempt this call
       // If a userspace preload can preempt it then this assumption is broken and we need to reconsider this strategy
@@ -6928,7 +6936,7 @@ function internalPreinitScript(
   chunks: Array<Chunk | PrecomputedChunk>,
 ): void {
   const key = getResourceKey(src);
-  if (!resumableState.scriptResources.hasOwnProperty(key)) {
+  if (!hasOwnProperty.call(resumableState.scriptResources, key)) {
     const resource: Resource = chunks;
     resumableState.scriptResources[key] = EXISTS;
     renderState.scripts.add(resource);

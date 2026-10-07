@@ -5667,6 +5667,58 @@ body {
   });
 
   describe('ReactDOM.prefetchDNS(href)', () => {
+    it('dedupes resources whose href collides with Object.prototype keys', async () => {
+      function App() {
+        ReactDOM.prefetchDNS('hasOwnProperty');
+        ReactDOM.prefetchDNS('hasOwnProperty');
+        ReactDOM.prefetchDNS('other');
+        ReactDOM.preconnect('hasOwnProperty');
+        ReactDOM.preconnect('hasOwnProperty');
+        ReactDOM.preload('hasOwnProperty', {as: 'image'});
+        ReactDOM.preload('hasOwnProperty', {as: 'image'});
+        ReactDOM.preload('hasOwnProperty', {as: 'style'});
+        ReactDOM.preload('hasOwnProperty', {as: 'style'});
+        ReactDOM.preload('hasOwnProperty', {as: 'script'});
+        ReactDOM.preload('hasOwnProperty', {as: 'script'});
+        ReactDOM.preload('hasOwnProperty', {as: 'font'});
+        ReactDOM.preload('hasOwnProperty', {as: 'font'});
+        ReactDOM.preinit('hasOwnProperty', {as: 'script'});
+        ReactDOM.preinit('hasOwnProperty', {as: 'script'});
+        ReactDOM.preinitModule('hasOwnProperty');
+        ReactDOM.preinitModule('hasOwnProperty');
+        return (
+          <html>
+            <body>hello world</body>
+          </html>
+        );
+      }
+
+      await act(() => {
+        renderToPipeableStream(<App />).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link rel="dns-prefetch" href="hasOwnProperty" />
+            <link rel="dns-prefetch" href="other" />
+            <link rel="preconnect" href="hasOwnProperty" />
+            <link
+              rel="preload"
+              as="font"
+              href="hasOwnProperty"
+              crossorigin=""
+            />
+            <script async="" src="hasOwnProperty" />
+            <script type="module" async="" src="hasOwnProperty" />
+            <link rel="preload" as="image" href="hasOwnProperty" />
+            <link rel="preload" as="style" href="hasOwnProperty" />
+          </head>
+          <body>hello world</body>
+        </html>,
+      );
+    });
+
     it('creates a dns-prefetch resource when called', async () => {
       function App({url}) {
         ReactDOM.prefetchDNS(url);
