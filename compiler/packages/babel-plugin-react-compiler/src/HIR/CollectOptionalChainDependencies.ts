@@ -37,12 +37,14 @@ export function collectOptionalChainSidemap(
     processedInstrsInOptional: new Set(),
     temporariesReadInOptional: new Map(),
     hoistableObjects: new Map(),
+    unusedOptionalChains: new Map(),
   };
   traverseFunction(fn, context);
   return {
     temporariesReadInOptional: context.temporariesReadInOptional,
     processedInstrsInOptional: context.processedInstrsInOptional,
     hoistableObjects: context.hoistableObjects,
+    unusedOptionalChains: context.unusedOptionalChains,
   };
 }
 export type OptionalChainSidemap = {
@@ -112,6 +114,22 @@ export type OptionalChainSidemap = {
    * ```
    */
   hoistableObjects: ReadonlyMap<BlockId, ReactiveScopeDependency>;
+  /**
+   * Records outermost optional chains whose value is never consumed, keyed by
+   * the chain's optional terminal.
+   *
+   * Instructions within an optional chain are skipped during dependency
+   * collection (see `processedInstrsInOptional`) and the chain is instead
+   * recorded as a dependency at the point where its value is consumed, e.g. by
+   * the phi at the chain's fallthrough block. If the value is unused (e.g. the
+   * `_` in `const _ = a?.b`), that phi is pruned by DCE and nothing would
+   * otherwise visit the chain. That in turn means the chain's base (`a`) would
+   * never be recorded as an output of its declaring scope, even though the
+   * chain is preserved as an expression statement after that scope.
+   *
+   * `PropagateScopeDependencies` visits these chains at their terminal instead.
+   */
+  unusedOptionalChains: ReadonlyMap<OptionalTerminal, ReactiveScopeDependency>;
 };
 
 type OptionalTraversalContext = {
@@ -124,6 +142,7 @@ type OptionalTraversalContext = {
   processedInstrsInOptional: Set<Instruction | Terminal>;
   temporariesReadInOptional: Map<IdentifierId, ReactiveScopeDependency>;
   hoistableObjects: Map<BlockId, ReactiveScopeDependency>;
+  unusedOptionalChains: Map<OptionalTerminal, ReactiveScopeDependency>;
 };
 
 function traverseFunction(
@@ -147,13 +166,39 @@ function traverseFunction(
       block.terminal.kind === 'optional' &&
       !context.seenOptionals.has(block.id)
     ) {
-      traverseOptionalBlock(
-        block as TBasicBlock<OptionalTerminal>,
-        context,
-        null,
-      );
+      const optional = block as TBasicBlock<OptionalTerminal>;
+      const resultId = traverseOptionalBlock(optional, context, null);
+      if (resultId != null) {
+        recordUnusedOptionalChain(optional, resultId, context);
+      }
     }
   }
+}
+
+/**
+ * Records an outermost optional chain in `unusedOptionalChains` if its value
+ * is never consumed, i.e. no phi in the chain's fallthrough block references
+ * the result of the chain's consequent block.
+ */
+function recordUnusedOptionalChain(
+  optional: TBasicBlock<OptionalTerminal>,
+  resultId: IdentifierId,
+  context: OptionalTraversalContext,
+): void {
+  const fallthrough = assertNonNull(
+    context.blocks.get(optional.terminal.fallthrough),
+  );
+  for (const phi of fallthrough.phis) {
+    for (const [, operand] of phi.operands) {
+      if (operand.identifier.id === resultId) {
+        return;
+      }
+    }
+  }
+  context.unusedOptionalChains.set(
+    optional.terminal,
+    assertNonNull(context.temporariesReadInOptional.get(resultId)),
+  );
 }
 /**
  * Match the consequent and alternate blocks of an optional.
