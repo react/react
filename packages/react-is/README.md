@@ -78,6 +78,42 @@ ReactIs.isFragment(<></>); // true
 ReactIs.typeOf(<></>) === ReactIs.Fragment; // true
 ```
 
+#### ForwardRef
+
+```js
+import React from "react";
+import * as ReactIs from 'react-is';
+
+const ForwardRefComponent = React.forwardRef((props, ref) => <div ref={ref} />);
+
+ReactIs.isForwardRef(<ForwardRefComponent />); // true
+ReactIs.typeOf(<ForwardRefComponent />) === ReactIs.ForwardRef; // true
+```
+
+#### Lazy
+
+```js
+import React from "react";
+import * as ReactIs from 'react-is';
+
+const LazyComponent = React.lazy(() => import("./SomeComponent"));
+
+ReactIs.isLazy(<LazyComponent />); // true
+ReactIs.typeOf(<LazyComponent />) === ReactIs.Lazy; // true
+```
+
+#### Memo
+
+```js
+import React from "react";
+import * as ReactIs from 'react-is';
+
+const MemoComponent = React.memo(() => <div />);
+
+ReactIs.isMemo(<MemoComponent />); // true
+ReactIs.typeOf(<MemoComponent />) === ReactIs.Memo; // true
+```
+
 #### Portal
 
 ```js
@@ -92,6 +128,18 @@ ReactIs.isPortal(portal); // true
 ReactIs.typeOf(portal) === ReactIs.Portal; // true
 ```
 
+#### Profiler
+
+```js
+import React from "react";
+import * as ReactIs from 'react-is';
+
+const profiler = <React.Profiler id="App" onRender={() => {}} />;
+
+ReactIs.isProfiler(profiler); // true
+ReactIs.typeOf(profiler) === ReactIs.Profiler; // true
+```
+
 #### StrictMode
 
 ```js
@@ -100,4 +148,14 @@ import * as ReactIs from 'react-is';
 
 ReactIs.isStrictMode(<React.StrictMode />); // true
 ReactIs.typeOf(<React.StrictMode />) === ReactIs.StrictMode; // true
+```
+
+#### Suspense
+
+```js
+import React from "react";
+import * as ReactIs from 'react-is';
+
+ReactIs.isSuspense(<React.Suspense />); // true
+ReactIs.typeOf(<React.Suspense />) === ReactIs.Suspense; // true
 ```
