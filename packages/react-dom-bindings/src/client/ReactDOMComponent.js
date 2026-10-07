@@ -71,7 +71,6 @@ import {
   enableHydrationChangeEvent,
   enableScrollEndPolyfill,
   enableSrcObject,
-  enableTrustedTypesIntegration,
   enableViewTransition,
   enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
@@ -533,14 +532,10 @@ function setProp(
         domElement.removeAttribute(key);
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value as any),
-      ) as any;
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttribute(key, sanitizedValue);
       break;
     }
@@ -604,14 +599,10 @@ function setProp(
         domElement.removeAttribute(key);
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value as any),
-      ) as any;
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttribute(key, sanitizedValue);
       break;
     }
@@ -711,14 +702,10 @@ function setProp(
         domElement.removeAttribute('xlink:href');
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value as any),
-      ) as any;
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttributeNS(xlinkNamespace, 'xlink:href', sanitizedValue);
       break;
     }
@@ -744,10 +731,7 @@ function setProp(
         if (__DEV__) {
           checkAttributeStringCoercion(value, key);
         }
-        domElement.setAttribute(
-          key,
-          enableTrustedTypesIntegration ? (value as any) : '' + (value as any),
-        );
+        domElement.setAttribute(key, value as any);
       } else {
         domElement.removeAttribute(key);
       }

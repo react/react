@@ -124,7 +124,6 @@ import {
 import {
   enableCreateEventHandleAPI,
   enableScopeAPI,
-  enableTrustedTypesIntegration,
   disableLegacyMode,
   enableMoveBefore,
   disableCommentsAsDOMContainers,
@@ -574,7 +573,6 @@ export function createInstance(
           const div = ownerDocument.createElement('div');
           if (__DEV__) {
             if (
-              enableTrustedTypesIntegration &&
               !didWarnScriptTags &&
               // Data block scripts are not executed by UAs anyway so
               // we don't need to warn: https://html.spec.whatwg.org/multipage/scripting.html#attr-script-type

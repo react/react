@@ -50,7 +50,6 @@ export const enableSuspenseAvoidThisFallback: boolean = false;
 export const enableSuspenseCallback: boolean = false;
 export const enableTaint: boolean = true;
 export const enableTransitionTracing: boolean = false;
-export const enableTrustedTypesIntegration: boolean = true;
 export const passChildrenWhenCloningPersistedNodes: boolean = false;
 export const retryLaneExpirationMs = 5000;
 export const syncLaneExpirationMs = 250;

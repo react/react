@@ -59,7 +59,6 @@ export const enableSuspenseAvoidThisFallback: boolean = false;
 export const enableSuspenseCallback: boolean = true;
 export const enableTaint: boolean = true;
 export const enableTransitionTracing: boolean = false;
-export const enableTrustedTypesIntegration: boolean = true;
 export const enableUpdaterTracking: boolean = __PROFILE__;
 export const retryLaneExpirationMs = 5000;
 export const syncLaneExpirationMs = 250;

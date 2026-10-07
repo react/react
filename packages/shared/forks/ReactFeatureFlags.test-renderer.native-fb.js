@@ -47,7 +47,6 @@ export const enableSuspenseAvoidThisFallback = false;
 export const enableSuspenseCallback = false;
 export const enableTaint = true;
 export const enableTransitionTracing = false;
-export const enableTrustedTypesIntegration = true;
 export const enableUpdaterTracking = false;
 export const passChildrenWhenCloningPersistedNodes = false;
 export const retryLaneExpirationMs = 5000;

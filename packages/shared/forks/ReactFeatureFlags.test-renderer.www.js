@@ -29,7 +29,6 @@ export const enableCreateEventHandleAPI: boolean = false;
 export const enableSuspenseCallback: boolean = true;
 export const disableLegacyContext: boolean = false;
 export const disableLegacyContextForFunctionComponents: boolean = false;
-export const enableTrustedTypesIntegration: boolean = true;
 export const disableTextareaChildren: boolean = false;
 export const enableSuspenseAvoidThisFallback: boolean = true;
 export const enableCPUSuspense: boolean = false;

@@ -602,14 +602,10 @@ describe('ReactDOMFloat', () => {
         '>   <script href="foo">\n' +
         '\n' +
         '    in script (at **)',
-      ...(gate('enableTrustedTypesIntegration')
-        ? [
-            'Encountered a script tag while rendering React component. ' +
-              'Scripts inside React components are never executed when rendering on the client. ' +
-              'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
-              '     in script (at **)',
-          ]
-        : []),
+      'Encountered a script tag while rendering React component. ' +
+        'Scripts inside React components are never executed when rendering on the client. ' +
+        'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
+        '     in script (at **)',
     ]);
 
     root.render(
@@ -2753,14 +2749,10 @@ body {
         '>   <script itemProp="foo">\n' +
         '\n' +
         '    in script (at **)',
-      ...(gate('enableTrustedTypesIntegration')
-        ? [
-            'Encountered a script tag while rendering React component. ' +
-              'Scripts inside React components are never executed when rendering on the client. ' +
-              'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
-              '     in script (at **)',
-          ]
-        : []),
+      'Encountered a script tag while rendering React component. ' +
+        'Scripts inside React components are never executed when rendering on the client. ' +
+        'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
+        '     in script (at **)',
     ]);
   });
 
