@@ -3270,6 +3270,303 @@ describe('ReactDOMFizzServer', () => {
     },
   );
 
+  it('ignores a completed segment whose placeholder was removed by a client render at the root', async () => {
+    let isClient = false;
+
+    function subscribe() {
+      return () => {};
+    }
+    function getClientSnapshot() {
+      return 'Yay!';
+    }
+    function getServerSnapshot() {
+      if (isClient) {
+        throw new Error('Hydration error');
+      }
+      return 'Yay!';
+    }
+
+    function Child() {
+      const value = useSyncExternalStore(
+        subscribe,
+        getClientSnapshot,
+        getServerSnapshot,
+      );
+      Scheduler.log(value);
+      return value;
+    }
+
+    function App() {
+      return (
+        <div>
+          <span>
+            <Child />
+          </span>
+          <Suspense fallback="Loading...">
+            <div>
+              <Text text="Hello" />
+              <AsyncText text="World" />
+            </div>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    assertLog(['Yay!']);
+    // The boundary's content was emitted early, with a placeholder for the
+    // segment that is still pending.
+    expect(container.querySelector('[id^="P:"]')).not.toBe(null);
+
+    isClient = true;
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
+        if (error.cause) {
+          Scheduler.log('Cause: ' + normalizeError(error.cause.message));
+        }
+      },
+    });
+    await waitForAll([
+      'Yay!',
+      'onRecoverableError: There was an error while hydrating but React was able to recover by instead client rendering the entire root.',
+      'Cause: Hydration error',
+    ]);
+    // Client rendering the root cleared the container, including the streamed
+    // segments and the placeholder inside them.
+    expect(container.querySelector('[id^="P:"]')).toBe(null);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Yay!</span>
+        Loading...
+      </div>,
+    );
+
+    const errors = [];
+    function onError(event) {
+      errors.push(event.message);
+      event.preventDefault();
+    }
+    window.addEventListener('error', onError);
+    try {
+      // The pending segment now streams in. Its placeholder is gone.
+      await act(() => {
+        resolveText('World');
+      });
+    } finally {
+      window.removeEventListener('error', onError);
+    }
+    expect(errors).toEqual([]);
+    // The segment's container is not left behind in the document.
+    expect(container.querySelector('[id^="S:"]')).toBe(null);
+
+    // The client render retries on its own.
+    await clientAct(() => {});
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Yay!</span>
+        <div>
+          {'Hello'}
+          {'World'}
+        </div>
+      </div>,
+    );
+  });
+
+  it('ignores a completed segment whose placeholder was in a fallback that was already replaced', async () => {
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Loading outer...">
+            <section>
+              <Suspense fallback={<AsyncText text="Loading inner..." />}>
+                <AsyncText text="Inner" />
+              </Suspense>
+            </section>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    // The inner fallback is itself pending, so the outer boundary's early
+    // content holds a placeholder for it.
+    expect(container.querySelector('[id^="P:"]')).not.toBe(null);
+
+    // Completing the inner content aborts the pending inner fallback, and the
+    // aborted fallback segment is emitted after the inner boundary completes.
+    resolveText('Inner');
+    await new Promise(resolve => {
+      setImmediate(resolve);
+    });
+    const chunk = buffer;
+    buffer = '';
+    const secondSegment = chunk.indexOf(
+      '<div hidden id="S:',
+      chunk.indexOf('<div hidden id="S:') + 1,
+    );
+    const first = chunk.slice(0, secondSegment);
+    const second = chunk.slice(secondSegment);
+    expect(first).toMatch(/\$RC\(|data-rci/);
+    expect(second).toMatch(/\$RS\(|data-rsi/);
+
+    const errors = [];
+    function onError(event) {
+      errors.push(event.message);
+      event.preventDefault();
+    }
+    window.addEventListener('error', onError);
+    try {
+      // The stream is split between the two instructions, and the inner
+      // boundary is revealed before the rest arrives.
+      const firstPart = document.createElement('div');
+      firstPart.innerHTML = first;
+      await insertNodesAndExecuteScripts(firstPart, container, CSPnonce);
+      jest.runAllTimers();
+      expect(container.querySelector('[id^="P:"]')).toBe(null);
+
+      const secondPart = document.createElement('div');
+      secondPart.innerHTML = second;
+      await insertNodesAndExecuteScripts(secondPart, container, CSPnonce);
+      jest.runAllTimers();
+    } finally {
+      window.removeEventListener('error', onError);
+    }
+    expect(errors).toEqual([]);
+    expect(container.querySelector('[id^="S:"]')).toBe(null);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <section>Inner</section>
+      </div>,
+    );
+  });
+
+  it('ignores a completed segment whose container was removed by a client render at the root', async () => {
+    let isClient = false;
+
+    function subscribe() {
+      return () => {};
+    }
+    function getClientSnapshot() {
+      return 'Yay!';
+    }
+    function getServerSnapshot() {
+      if (isClient) {
+        throw new Error('Hydration error');
+      }
+      return 'Yay!';
+    }
+
+    function Child() {
+      const value = useSyncExternalStore(
+        subscribe,
+        getClientSnapshot,
+        getServerSnapshot,
+      );
+      Scheduler.log(value);
+      return value;
+    }
+
+    function App() {
+      return (
+        <div>
+          <span>
+            <Child />
+          </span>
+          <Suspense fallback="Loading...">
+            <div>
+              <Text text="Hello" />
+              <AsyncText text="World" />
+            </div>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    assertLog(['Yay!']);
+    expect(container.querySelector('[id^="P:"]')).not.toBe(null);
+
+    resolveText('World');
+    await new Promise(resolve => {
+      setImmediate(resolve);
+    });
+    const chunk = buffer;
+    buffer = '';
+    const containerStart = chunk.indexOf('<div hidden id="');
+    const idStart = containerStart + '<div hidden id="'.length;
+    const segmentID = chunk.slice(idStart, chunk.indexOf('"', idStart));
+    const containerEnd =
+      chunk.indexOf('</div>', containerStart) + '</div>'.length;
+    const first = chunk.slice(0, containerEnd);
+    const second = chunk.slice(containerEnd);
+    expect(first).not.toMatch(/\$RS\(|data-rsi/);
+    expect(second).toMatch(/\$RS\(|data-rsi/);
+
+    // The stream is split between the segment's container and the instruction
+    // that completes it.
+    const firstPart = document.createElement('div');
+    firstPart.innerHTML = first;
+    await insertNodesAndExecuteScripts(firstPart, container, CSPnonce);
+    expect(document.getElementById(segmentID)).not.toBe(null);
+
+    isClient = true;
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
+        if (error.cause) {
+          Scheduler.log('Cause: ' + normalizeError(error.cause.message));
+        }
+      },
+    });
+    await waitForAll([
+      'Yay!',
+      'onRecoverableError: There was an error while hydrating but React was able to recover by instead client rendering the entire root.',
+      'Cause: Hydration error',
+    ]);
+    // Client rendering the root cleared the container, including the segment's
+    // container and its placeholder.
+    expect(document.getElementById(segmentID)).toBe(null);
+    expect(container.querySelector('[id^="P:"]')).toBe(null);
+
+    const errors = [];
+    function onError(event) {
+      errors.push(event.message);
+      event.preventDefault();
+    }
+    window.addEventListener('error', onError);
+    try {
+      const secondPart = document.createElement('div');
+      secondPart.innerHTML = second;
+      await insertNodesAndExecuteScripts(secondPart, container, CSPnonce);
+      jest.runAllTimers();
+    } finally {
+      window.removeEventListener('error', onError);
+    }
+    expect(errors).toEqual([]);
+
+    // The client render retries on its own.
+    await clientAct(() => {});
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Yay!</span>
+        <div>
+          {'Hello'}
+          {'World'}
+        </div>
+      </div>,
+    );
+  });
+
   it('can hydrate uSES in StrictMode with different client and server snapshot (sync)', async () => {
     function subscribe() {
       return () => {};
