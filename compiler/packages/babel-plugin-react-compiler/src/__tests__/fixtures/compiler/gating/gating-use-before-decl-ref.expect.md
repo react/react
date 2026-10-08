@@ -25,9 +25,9 @@ import { c as _c } from "react/compiler-runtime";
 import { isForgetEnabled_Fixtures } from "ReactForgetFeatureFlag"; // @gating
 import { createRef, forwardRef } from "react";
 import { Stringify } from "shared-runtime";
+const isForgetEnabled_Fixtures_result = isForgetEnabled_Fixtures();
 
 const Foo = forwardRef(Foo_withRef);
-const isForgetEnabled_Fixtures_result = isForgetEnabled_Fixtures();
 function Foo_withRef_optimized(props, ref) {
   const $ = _c(3);
   let t0;
