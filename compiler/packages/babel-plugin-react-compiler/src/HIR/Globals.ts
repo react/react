@@ -1071,16 +1071,35 @@ export function installTypeConfig(
 }
 
 export function getReanimatedModuleType(registry: ShapeRegistry): ObjectType {
+  const reanimatedType: Array<[string, BuiltInType]> = [];
+
+  /**
+   * useFrameCallback registers its callback in an effect keyed on the
+   * callback's identity, so unlike the hooks below (which key on the worklet's
+   * closure and hash) its argument must stay memoized: otherwise every render
+   * re-registers the callback and restarts `timeSinceFirstFrame`.
+   */
+  reanimatedType.push([
+    'useFrameCallback',
+    addHook(registry, {
+      positionalParams: [],
+      restParam: Effect.Freeze,
+      returnType: {kind: 'Poly'},
+      returnValueKind: ValueKind.Frozen,
+      noAlias: false,
+      calleeEffect: Effect.Read,
+      hookKind: 'Custom',
+    }),
+  ]);
+
   // hooks that freeze args and return frozen value
   const frozenHooks = [
-    'useFrameCallback',
     'useAnimatedStyle',
     'useAnimatedProps',
     'useAnimatedScrollHandler',
     'useAnimatedReaction',
     'useWorkletCallback',
   ];
-  const reanimatedType: Array<[string, BuiltInType]> = [];
   for (const hook of frozenHooks) {
     reanimatedType.push([
       hook,

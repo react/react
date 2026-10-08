@@ -1529,9 +1529,27 @@ fn build_misc_shapes(shapes: &mut ShapeRegistry) {
 pub fn get_reanimated_module_type(shapes: &mut ShapeRegistry) -> Type {
     let mut reanimated_type: Vec<(String, Type)> = Vec::new();
 
+    // useFrameCallback registers its callback in an effect keyed on the
+    // callback's identity, so unlike the hooks below (which key on the
+    // worklet's closure and hash) its argument must stay memoized: otherwise
+    // every render re-registers the callback and restarts
+    // `timeSinceFirstFrame`.
+    let frame_callback_type = add_hook(
+        shapes,
+        HookSignatureBuilder {
+            rest_param: Some(Effect::Freeze),
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Frozen,
+            no_alias: false,
+            hook_kind: HookKind::Custom,
+            ..Default::default()
+        },
+        None,
+    );
+    reanimated_type.push(("useFrameCallback".to_string(), frame_callback_type));
+
     // hooks that freeze args and return frozen value
     let frozen_hooks = [
-        "useFrameCallback",
         "useAnimatedStyle",
         "useAnimatedProps",
         "useAnimatedScrollHandler",
