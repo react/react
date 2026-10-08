@@ -11,3 +11,4 @@ React is a JavaScript library for building user interfaces.
 
 - **Rust Compiler Port**: Plans in `compiler/docs/rust-port/`, implementation in `compiler/crates/`
 - Branch: `rust-research`
+react is the frontend framework 
