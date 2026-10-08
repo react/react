@@ -144,6 +144,20 @@ declare class ToggleEvent extends Event {
   +newState: string;
 }
 
+type CommandEvent$Init = {
+  ...Event$Init,
+  command?: string,
+  source?: Element | null,
+  ...
+};
+
+// https://html.spec.whatwg.org/multipage/interaction.html#commandevent
+declare class CommandEvent extends Event {
+  constructor(type: CommandEventTypes, eventInit?: CommandEvent$Init): void;
+  +command: string;
+  +source: Element | null;
+}
+
 // TODO: HTMLDocument
 type FocusOptions = {preventScroll?: boolean, ...};
 
@@ -244,6 +258,7 @@ declare class HTMLElement extends Element {
   ontimeupdate: ?Function;
   ontoggle: ?Function;
   onbeforetoggle: ?Function;
+  oncommand: ?Function;
   onvolumechange: ?Function;
   onwaiting: ?Function;
   properties: any;
@@ -1141,6 +1156,8 @@ declare class HTMLButtonElement extends HTMLElement {
   setCustomValidity(error: string): void;
   popoverTargetElement: Element | null;
   popoverTargetAction: 'toggle' | 'show' | 'hide';
+  commandForElement: Element | null;
+  command: string;
 }
 
 // https://w3c.github.io/html/sec-forms.html#the-textarea-element

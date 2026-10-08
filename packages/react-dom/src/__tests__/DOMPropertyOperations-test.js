@@ -1374,6 +1374,51 @@ describe('DOMPropertyOperations', () => {
         );
       });
     });
+
+    it('sets commandFor attribute on button', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <button commandFor="demo-popover" command="show-popover">
+            show-popover
+          </button>,
+        );
+      });
+
+      const button = container.querySelector('button');
+      expect(button.getAttribute('commandfor')).toBe('demo-popover');
+      expect(button.getAttribute('command')).toBe('show-popover');
+    });
+
+    it('warns when using commandFor={HTMLElement}', async () => {
+      const commandTarget = document.createElement('div');
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <button key="one" commandFor={commandTarget}>
+            Invoke command
+          </button>,
+        );
+      });
+
+      assertConsoleErrorDev([
+        'The `commandFor` prop expects the ID of an Element as a string. Received HTMLDivElement {} instead.\n' +
+          '    in button (at **)',
+      ]);
+
+      // Dedupe warning
+      await act(() => {
+        root.render(
+          <button key="two" commandFor={commandTarget}>
+            Invoke command
+          </button>,
+        );
+      });
+    });
   });
 
   describe('deleteValueForProperty', () => {
