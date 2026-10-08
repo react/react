@@ -4578,4 +4578,3 @@ function beginWork(
 }
 
 export {beginWork};
-
