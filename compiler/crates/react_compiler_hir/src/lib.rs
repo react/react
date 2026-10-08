@@ -154,6 +154,9 @@ pub fn format_js_number(n: f64) -> String {
 // Core HIR types
 // =============================================================================
 
+/// Directives that opt a function out of memoization
+pub const OPT_OUT_DIRECTIVES: &[&str] = &["use no forget", "use no memo"];
+
 /// A function lowered to HIR form
 #[derive(Debug, Clone)]
 pub struct HirFunction {
