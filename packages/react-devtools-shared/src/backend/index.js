@@ -7,6 +7,7 @@
  * @flow
  */
 
+// Note: Handle null AST nodes in hook name parser (#37261)
 import Agent from './agent';
 
 import type {DevToolsHook, RendererID, RendererInterface} from './types';
