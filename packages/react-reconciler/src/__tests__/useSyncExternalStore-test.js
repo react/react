@@ -141,6 +141,31 @@ describe('useSyncExternalStore', () => {
     };
   }
 
+  it('does not check for updates when unsubscribe calls the listener', async () => {
+    let currentValue = 'A';
+    const getSnapshot = jest.fn(() => currentValue);
+    const subscribe = listener => {
+      return () => {
+        currentValue = 'B';
+        listener();
+      };
+    };
+
+    function App() {
+      const value = useSyncExternalStore(subscribe, getSnapshot);
+      return <Text text={value} />;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => root.render(<App />));
+    assertLog(['A']);
+
+    getSnapshot.mockClear();
+    await act(() => root.render(null));
+
+    expect(getSnapshot).not.toHaveBeenCalled();
+  });
+
   it(
     'detects interleaved mutations during a concurrent read before ' +
       'layout effects fire',
