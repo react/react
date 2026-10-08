@@ -1320,8 +1320,14 @@ export function attach(
             state: null,
           };
         } else {
-          const prevHooks = inspectHooks(prevFiber);
-          const nextHooks = inspectHooks(nextFiber);
+          // A MemoComponent (e.g. memo(forwardRef(...)) or memo(Component, areEqual))
+          // doesn't own hooks. They live on the inner Fiber it wraps.
+          const hasHooks =
+            nextFiber.tag === FunctionComponent ||
+            nextFiber.tag === SimpleMemoComponent ||
+            nextFiber.tag === ForwardRef;
+          const prevHooks = hasHooks ? inspectHooks(prevFiber) : null;
+          const nextHooks = hasHooks ? inspectHooks(nextFiber) : null;
           const indices = getChangedHooksIndices(prevHooks, nextHooks);
           const data: ChangeDescription = {
             context: getContextChanged(prevFiber, nextFiber),
