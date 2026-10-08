@@ -129,6 +129,7 @@ import {
   mayResourceSuspendCommit,
   preloadInstance,
   preloadResource,
+  isSuspenseInstanceFallback,
 } from './ReactFiberConfig';
 import {
   getRootHostContainer,
@@ -1036,6 +1037,18 @@ function completeDehydratedSuspenseBoundary(
       // If something suspended, schedule an effect to attach retry listeners.
       // So we might as well always mark this.
       workInProgress.flags |= Update;
+      if (
+        nextState !== null &&
+        nextState.dehydrated !== null &&
+        isSuspenseInstanceFallback(nextState.dehydrated)
+      ) {
+        // We're keeping the server fallback while the client rendered content
+        // is suspended. Like any other boundary showing its fallback, this
+        // might need an immediate retry, e.g. to prerender skipped siblings or
+        // to wait for suspensey resources such as stylesheets.
+        const retryQueue: RetryQueue | null = workInProgress.updateQueue as any;
+        scheduleRetryEffect(workInProgress, retryQueue);
+      }
       bubbleProperties(workInProgress);
       if (enableProfilerTimer) {
         if ((workInProgress.mode & ProfileMode) !== NoMode) {
