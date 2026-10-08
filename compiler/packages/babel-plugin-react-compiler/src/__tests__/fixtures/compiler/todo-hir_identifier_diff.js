@@ -12,9 +12,6 @@ jest.mock('RouterRootContextFactory.react', () => {
     children: React.Node,
     routeInfo: {},
   }) {
-    return (
-      <RouterRenderTypeContext.Provider
-        value={{}}></RouterRenderTypeContext.Provider>
-    );
+    return <div>{props.children}</div>;
   };
 });
