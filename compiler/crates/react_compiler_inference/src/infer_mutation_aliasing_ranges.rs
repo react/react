@@ -253,6 +253,10 @@ impl AliasingState {
             transitive: bool,
             direction: Direction,
             kind: MutationKind,
+            // Whether a function value reached here may be called by this
+            // mutation. Calling a function only calls the functions it
+            // captures if its own effects mutate them.
+            maybe_called: bool,
         }
         #[derive(Clone, Copy, PartialEq)]
         enum Direction {
@@ -266,6 +270,7 @@ impl AliasingState {
             transitive,
             direction: Direction::Backwards,
             kind: start_kind,
+            maybe_called: true,
         }];
 
         while let Some(entry) = queue.pop() {
@@ -294,7 +299,7 @@ impl AliasingState {
             }
 
             if let NodeValue::Function { function_id } = &node.value {
-                if node.transitive.is_none() && node.local.is_none() {
+                if entry.maybe_called && node.transitive.is_none() && node.local.is_none() {
                     if should_record_errors {
                         append_function_errors(env, *function_id);
                     }
@@ -338,6 +343,10 @@ impl AliasingState {
             // Forward edges: Capture a -> b, Alias a -> b: mutate(a) => mutate(b)
             // Collect edges to avoid borrow conflict
             let edges: Vec<Edge> = node.edges.clone();
+            let node_function_id = match &node.value {
+                NodeValue::Function { function_id } => Some(*function_id),
+                _ => None,
+            };
             let node_value_kind = match &node.value {
                 NodeValue::Phi => "Phi",
                 _ => "Other",
@@ -365,6 +374,7 @@ impl AliasingState {
                     } else {
                         entry.kind
                     },
+                    maybe_called: entry.maybe_called,
                 });
             }
 
@@ -377,6 +387,7 @@ impl AliasingState {
                     transitive: true,
                     direction: Direction::Backwards,
                     kind: entry.kind,
+                    maybe_called: entry.maybe_called,
                 });
             }
 
@@ -391,6 +402,7 @@ impl AliasingState {
                         transitive: entry.transitive,
                         direction: Direction::Backwards,
                         kind: entry.kind,
+                        maybe_called: entry.maybe_called,
                     });
                 }
                 // MaybeAlias backward edges (downgrade to conditional)
@@ -403,6 +415,7 @@ impl AliasingState {
                         transitive: entry.transitive,
                         direction: Direction::Backwards,
                         kind: MutationKind::Conditional,
+                        maybe_called: entry.maybe_called,
                     });
                 }
             }
@@ -413,11 +426,17 @@ impl AliasingState {
                     if *when >= index {
                         continue;
                     }
+                    let maybe_called = entry.maybe_called
+                        && match node_function_id {
+                            Some(function_id) => function_may_mutate(env, function_id, *capture),
+                            None => true,
+                        };
                     queue.push(QueueEntry {
                         place: *capture,
                         transitive: entry.transitive,
                         direction: Direction::Backwards,
                         kind: entry.kind,
+                        maybe_called,
                     });
                 }
             }
@@ -428,6 +447,22 @@ impl AliasingState {
 // =============================================================================
 // Helper: append function errors
 // =============================================================================
+
+fn function_may_mutate(env: &Environment, function_id: FunctionId, value: IdentifierId) -> bool {
+    let func = &env.functions[function_id.0 as usize];
+    match &func.aliasing_effects {
+        None => true,
+        Some(effects) => effects.iter().any(|effect| match effect {
+            AliasingEffect::Mutate { value: place, .. }
+            | AliasingEffect::MutateConditionally { value: place }
+            | AliasingEffect::MutateTransitive { value: place }
+            | AliasingEffect::MutateTransitiveConditionally { value: place } => {
+                place.identifier == value
+            }
+            _ => false,
+        }),
+    }
+}
 
 fn append_function_errors(env: &mut Environment, function_id: FunctionId) {
     let func = &env.functions[function_id.0 as usize];
