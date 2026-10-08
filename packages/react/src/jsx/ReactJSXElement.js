@@ -50,7 +50,10 @@ function getTaskName(type) {
 function getOwner() {
   if (__DEV__) {
     const dispatcher = ReactSharedInternals.A;
-    if (dispatcher === null) {
+    if (dispatcher === null || typeof dispatcher.getOwner !== 'function') {
+      // The current dispatcher may have been installed by a production-built
+      // renderer (e.g. a precompiled react-reconciler embedded in a library),
+      // which does not implement DEV-only methods. The owner is unknown.
       return null;
     }
     return dispatcher.getOwner();
