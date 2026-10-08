@@ -17,6 +17,9 @@
 // user-facing. `render-comment.js` turns this JSON into the pull request comment
 // from a trusted checkout. See `.github/workflows/runtime_sizebot_comment.yml`
 // for why the two halves are separate.
+//
+// This comment exists to give the demonstration pull request a non-empty
+// diff. It should be removed when the demonstration closes.
 
 const {promisify} = require('util');
 const glob = promisify(require('glob'));
