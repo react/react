@@ -26,6 +26,7 @@ import {
   ReactiveValue,
   ScopeId,
   SourceLocation,
+  isStableType,
 } from '../HIR';
 import {Environment} from '../HIR/Environment';
 import {printIdentifier, printManualMemoDependency} from '../HIR/PrintHIR';
@@ -233,6 +234,9 @@ function validateInferredDep(
   env: Environment,
   memoLocation: SourceLocation,
 ): void {
+  if (!dep.reactive && dep.path.length === 0 && isStableType(dep.identifier)) {
+    return;
+  }
   let normalizedDep: ManualMemoDependency;
   const maybeNormalizedRoot = temporaries.get(dep.identifier.id);
   if (maybeNormalizedRoot != null) {
