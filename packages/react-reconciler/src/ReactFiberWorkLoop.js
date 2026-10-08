@@ -746,6 +746,13 @@ let pendingSuspendedCommitReason: SuspendedCommitReason = null; // Profiling-onl
 let pendingDelayedCommitReason: DelayedCommitReason = IMMEDIATE_COMMIT; // Profiling-only
 let pendingSuspendedViewTransitionReason: null | string = null; // Profiling-only
 
+// The root that completeRoot is about to commit while it flushes pending
+// effects. Those effects can render the same root synchronously (e.g. an
+// update from another root's passive effects). That render starts over from
+// root.current and reuses the finished tree as its work-in-progress, so the
+// commit is stale. prepareFreshStack clears this when it starts such a render.
+let rootCommittingAfterFlushingEffects: FiberRoot | null = null;
+
 // Use these to prevent an infinite loop of nested updates
 const NESTED_UPDATE_LIMIT = 50;
 let nestedUpdateCount: number = 0;
@@ -2257,6 +2264,11 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
     root.cancelPendingCommit = null;
     cancelPendingCommit();
   }
+  if (root === rootCommittingAfterFlushingEffects) {
+    // completeRoot is flushing effects before committing this root, and this
+    // render will reuse the tree it was about to commit. Cancel that commit.
+    rootCommittingAfterFlushingEffects = null;
+  }
 
   pendingEffectsLanes = NoLanes;
 
@@ -3536,6 +3548,9 @@ function completeRoot(
 ): void {
   root.cancelPendingCommit = null;
 
+  const prevRootCommittingAfterFlushingEffects =
+    rootCommittingAfterFlushingEffects;
+  rootCommittingAfterFlushingEffects = root;
   do {
     // `flushPassiveEffects` will call `flushSyncUpdateQueue` at the end, which
     // means `flushPassiveEffects` will sometimes result in additional
@@ -3545,10 +3560,22 @@ function completeRoot(
     // flush synchronous work at the end, to avoid factoring hazards like this.
     flushPendingEffects();
   } while (pendingEffectsStatus !== NO_PENDING_EFFECTS);
+  // prepareFreshStack clears this if flushing the effects started a new render
+  // of this root.
+  const didRenderRootWhileFlushingEffects =
+    rootCommittingAfterFlushingEffects !== root;
+  rootCommittingAfterFlushingEffects = prevRootCommittingAfterFlushingEffects;
   flushRenderPhaseStrictModeWarningsInDEV();
 
   if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
     throw new Error('Should not already be working.');
+  }
+
+  if (didRenderRootWhileFlushingEffects) {
+    // The new render reused the tree we were about to commit as its
+    // work-in-progress, so this commit is stale. That render has committed, or
+    // will, in its place.
+    return;
   }
 
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
