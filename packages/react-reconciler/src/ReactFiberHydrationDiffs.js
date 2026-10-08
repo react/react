@@ -29,6 +29,7 @@ import {enableSrcObject} from 'shared/ReactFeatureFlags';
 import {REACT_ELEMENT_TYPE} from 'shared/ReactSymbols';
 import assign from 'shared/assign';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
+import hasOwnProperty from 'shared/hasOwnProperty';
 
 import isArray from 'shared/isArray';
 
@@ -206,7 +207,7 @@ function describeValue(value: mixed, maxLength: number): string {
         let properties = '';
         maxLength -= 2;
         for (let propName in value) {
-          if (!value.hasOwnProperty(propName)) {
+          if (!hasOwnProperty.call(value, propName)) {
             continue;
           }
           const jsonPropName = JSON.stringify(propName);
@@ -268,7 +269,7 @@ function describeCollapsedElement(
   let content = '';
 
   for (const propName in props) {
-    if (!props.hasOwnProperty(propName)) {
+    if (!hasOwnProperty.call(props, propName)) {
       continue;
     }
     if (propName === 'children') {
@@ -303,7 +304,7 @@ function describeExpandedElement(
   const properties = [];
 
   for (const propName in props) {
-    if (!props.hasOwnProperty(propName)) {
+    if (!hasOwnProperty.call(props, propName)) {
       continue;
     }
     if (propName === 'children') {
@@ -346,14 +347,14 @@ function describePropertiesDiff(
   let properties = '';
   const remainingServerProperties = assign({}, serverObject);
   for (const propName in clientObject) {
-    if (!clientObject.hasOwnProperty(propName)) {
+    if (!hasOwnProperty.call(clientObject, propName)) {
       continue;
     }
     delete remainingServerProperties[propName];
     const maxLength = maxRowLength - indent * 2 - propName.length - 2;
     const clientValue = clientObject[propName];
     const clientPropValue = describeValue(clientValue, maxLength);
-    if (serverObject.hasOwnProperty(propName)) {
+    if (hasOwnProperty.call(serverObject, propName)) {
       const serverValue = serverObject[propName];
       const serverPropValue = describeValue(serverValue, maxLength);
       properties += added(indent) + propName + ': ' + clientPropValue + '\n';
@@ -363,7 +364,7 @@ function describePropertiesDiff(
     }
   }
   for (const propName in remainingServerProperties) {
-    if (!remainingServerProperties.hasOwnProperty(propName)) {
+    if (!hasOwnProperty.call(remainingServerProperties, propName)) {
       continue;
     }
     const maxLength = maxRowLength - indent * 2 - propName.length - 2;
@@ -386,7 +387,7 @@ function describeElementDiff(
   const serverPropNames: Map<string, string> = new Map();
 
   for (const propName in serverProps) {
-    if (!serverProps.hasOwnProperty(propName)) {
+    if (!hasOwnProperty.call(serverProps, propName)) {
       continue;
     }
     serverPropNames.set(propName.toLowerCase(), propName);
@@ -396,7 +397,7 @@ function describeElementDiff(
     content += describeExpandedElement(type, clientProps, indentation(indent));
   } else {
     for (const propName in clientProps) {
-      if (!clientProps.hasOwnProperty(propName)) {
+      if (!hasOwnProperty.call(clientProps, propName)) {
         continue;
       }
       if (propName === 'children') {
