@@ -185,6 +185,19 @@ export function addValueToProperties(
               : objectName;
           break;
         }
+        if (objectName === 'Window' || objectName === 'global') {
+          // Browser globals like a `window` (e.g. the return value of
+          // window.open() or an iframe's contentWindow) are highly
+          // self-referential: their own enumerable properties include
+          // `window`, `self`, `frames`, `top` and `parent`, so recursing
+          // into them fans out across the entire global surface at every
+          // level of the depth limit. `opener`/`parent` can even cross into
+          // another document and serialize that page's globals. Showing the
+          // type is more useful than enumerating them (which is also
+          // prohibitively slow, see issue #37330).
+          desc = objectName;
+          break;
+        }
         if (objectName === 'Array') {
           const array: Array<any> = value as any;
           const didTruncate = array.length > OBJECT_WIDTH_LIMIT;
