@@ -7,4 +7,6 @@
  * @flow
  */
 
-export {useMemoCache as c} from './ReactHooks';
+import {useMemoCache} from './ReactHooks';
+
+export const c: (size: number) => Array<mixed> = useMemoCache;
