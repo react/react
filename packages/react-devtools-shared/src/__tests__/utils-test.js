@@ -180,6 +180,30 @@ describe('utils', () => {
         formatConsoleArgumentsToSingleString('%o', Object.create(null)),
       ).toEqual('%o [object Object]');
     });
+
+    it('should leave unmatched %s specifiers as literals', () => {
+      expect(
+        formatConsoleArgumentsToSingleString('%s %s', 'value'),
+      ).toEqual('value %s');
+    });
+
+    it('should leave unmatched %d specifiers as literals', () => {
+      expect(formatConsoleArgumentsToSingleString('%d %d', 1)).toEqual(
+        '1 %d',
+      );
+    });
+
+    it('should leave unmatched %f specifiers as literals', () => {
+      expect(formatConsoleArgumentsToSingleString('%f %f', 3.14)).toEqual(
+        '3.14 %f',
+      );
+    });
+
+    it('should leave all specifiers literal when no args provided', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %d %f')).toEqual(
+        '%s %d %f',
+      );
+    });
   });
 
   describe('formatWithStyles', () => {
