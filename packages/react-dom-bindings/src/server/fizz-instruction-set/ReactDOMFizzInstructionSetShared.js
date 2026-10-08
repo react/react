@@ -589,17 +589,37 @@ export function completeBoundaryWithStyles(
 export function completeSegment(containerID, placeholderID) {
   const segmentContainer = document.getElementById(containerID);
   const placeholderNode = document.getElementById(placeholderID);
-  // We always expect both nodes to exist here because, while we might
-  // have navigated away from the main tree, we still expect the detached
-  // tree to exist.
-  segmentContainer.parentNode.removeChild(segmentContainer);
+
+  // This segment may already be gone if hydration finished or the user
+  // navigated away before the server completed streaming this part of the
+  // tree. In those cases both the detached container and its placeholder
+  // might have been removed. We can safely bail because there is nothing
+  // left to reveal, and any nested boundaries would already be handled
+  // by their parent boundary.
+  if (!segmentContainer || !placeholderNode) {
+    return;
+  }
+
+  const containerParent = segmentContainer.parentNode;
+  const placeholderParent = placeholderNode.parentNode;
+
+  // If either parent is missing, the segment is no longer attached to a
+  // live subtree. Removing or inserting children at this point would cause
+  // DOM exceptions, so we skip reveal logic and allow hydration to recover.
+  if (!containerParent || !placeholderParent) {
+    return;
+  }
+
+  containerParent.removeChild(segmentContainer);
+
   while (segmentContainer.firstChild) {
-    placeholderNode.parentNode.insertBefore(
+    placeholderParent.insertBefore(
       segmentContainer.firstChild,
       placeholderNode,
     );
   }
-  placeholderNode.parentNode.removeChild(placeholderNode);
+
+  placeholderParent.removeChild(placeholderNode);
 }
 
 // This is the exact URL string we expect that Fizz renders if we provide a function action.
