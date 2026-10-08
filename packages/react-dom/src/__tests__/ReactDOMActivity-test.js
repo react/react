@@ -54,6 +54,30 @@ describe('ReactDOMActivity', () => {
     return <span prop={props.text}>{props.children}</span>;
   }
 
+  it('restores styles without a prototype when revealing an Activity', async () => {
+    const styles = Object.create(null);
+    styles.display = 'inline';
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(
+        <Activity mode="hidden">
+          <span style={styles}>Child</span>
+        </Activity>,
+      );
+    });
+    expect(container.firstChild.style.display).toBe('none');
+
+    await act(() => {
+      root.render(
+        <Activity mode="visible">
+          <span style={styles}>Child</span>
+        </Activity>,
+      );
+    });
+    expect(container.firstChild.style.display).toBe('inline');
+  });
+
   it(
     'hiding an Activity boundary also hides the direct children of any ' +
       'portals it contains, regardless of how deeply nested they are',
