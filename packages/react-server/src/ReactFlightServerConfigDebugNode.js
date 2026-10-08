@@ -28,14 +28,14 @@ import {
 import {resolveOwner} from './flight/ReactFlightCurrentOwner';
 import {resolveRequest, isAwaitInUserspace} from './ReactFlightServer';
 import {createHook, executionAsyncId, AsyncResource} from 'async_hooks';
-import {enableAsyncDebugInfo} from 'shared/ReactFeatureFlags';
 import {parseStackTracePrivate} from './ReactFlightServerConfig';
 
 // $FlowFixMe[method-unbinding]
 const getAsyncId = AsyncResource.prototype.asyncId;
 
-const pendingOperations: Map<number, AsyncSequence> =
-  __DEV__ && enableAsyncDebugInfo ? new Map() : (null as any);
+const pendingOperations: Map<number, AsyncSequence> = __DEV__
+  ? new Map()
+  : (null as any);
 
 // Keep the last resolved await as a workaround for async functions missing data.
 let lastRanAwait: null | AwaitNode = null;
@@ -60,7 +60,7 @@ const emptyStack: ReactStackTrace = [];
 // In theory we could enable and disable using a ref count of active requests
 // but given that typically this is just a live server, it doesn't really matter.
 export function initAsyncDebugInfo(): void {
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     createHook({
       init(
         asyncId: number,
@@ -341,7 +341,7 @@ export function initAsyncDebugInfo(): void {
 }
 
 export function markAsyncSequenceRootTask(): void {
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // Whatever Task we're running now is spawned by React itself to perform render work.
     // Don't track any cause beyond this task. We may still track I/O that was started outside
     // React but just not the cause of entering the render.
@@ -350,7 +350,7 @@ export function markAsyncSequenceRootTask(): void {
 }
 
 export function getCurrentAsyncSequence(): null | AsyncSequence {
-  if (!__DEV__ || !enableAsyncDebugInfo) {
+  if (!__DEV__) {
     return null;
   }
   const currentNode = pendingOperations.get(executionAsyncId());
@@ -364,7 +364,7 @@ export function getCurrentAsyncSequence(): null | AsyncSequence {
 export function getAsyncSequenceFromPromise(
   promise: any,
 ): null | AsyncSequence {
-  if (!__DEV__ || !enableAsyncDebugInfo) {
+  if (!__DEV__) {
     return null;
   }
   // A Promise is conceptually an AsyncResource but doesn't have its own methods.

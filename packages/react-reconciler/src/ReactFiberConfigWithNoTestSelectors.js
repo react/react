@@ -19,7 +19,7 @@ function shim(...args: any): empty {
 }
 
 // Test selectors (when unsupported)
-export const supportsTestSelectors = false;
+export const supportsTestSelectors: boolean = false;
 export const findFiberRoot = shim;
 export const getBoundingRect = shim;
 export const getTextContent = shim;

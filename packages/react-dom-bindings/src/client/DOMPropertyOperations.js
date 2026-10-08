@@ -8,7 +8,6 @@
  */
 
 import isAttributeNameSafe from '../shared/isAttributeNameSafe';
-import {enableTrustedTypesIntegration} from 'shared/ReactFeatureFlags';
 import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
 import {getFiberCurrentPropsFromNode} from './ReactDOMComponentTree';
 import {trackHostMutation} from 'react-reconciler/src/ReactFiberMutationTracking';
@@ -132,10 +131,7 @@ export function setValueForAttribute(
     if (__DEV__) {
       checkAttributeStringCoercion(value, name);
     }
-    node.setAttribute(
-      name,
-      enableTrustedTypesIntegration ? (value as any) : '' + (value as any),
-    );
+    node.setAttribute(name, value as any);
   }
 }
 
@@ -160,10 +156,7 @@ export function setValueForKnownAttribute(
   if (__DEV__) {
     checkAttributeStringCoercion(value, name);
   }
-  node.setAttribute(
-    name,
-    enableTrustedTypesIntegration ? (value as any) : '' + (value as any),
-  );
+  node.setAttribute(name, value as any);
 }
 
 export function setValueForNamespacedAttribute(
@@ -188,11 +181,7 @@ export function setValueForNamespacedAttribute(
   if (__DEV__) {
     checkAttributeStringCoercion(value, name);
   }
-  node.setAttributeNS(
-    namespace,
-    name,
-    enableTrustedTypesIntegration ? (value as any) : '' + (value as any),
-  );
+  node.setAttributeNS(namespace, name, value as any);
 }
 
 export function setValueForPropertyOnCustomComponent(

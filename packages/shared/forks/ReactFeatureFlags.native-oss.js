@@ -24,13 +24,11 @@ export const disableLegacyContextForFunctionComponents: boolean = true;
 export const disableLegacyMode: boolean = false;
 export const disableSchedulerTimeoutInWorkLoop: boolean = false;
 export const disableTextareaChildren: boolean = false;
-export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
 export const enableFlightObjectReferences: boolean = false;
 export const enableCPUSuspense: boolean = false;
 export const enableCreateEventHandleAPI: boolean = false;
-export const enableBrowserAPI: boolean = true;
 export const enableMoveBefore: boolean = true;
 export const enableFizzExternalRuntime: boolean = true;
 export const enableInfiniteRenderLoopDetection: boolean = false;
@@ -48,12 +46,10 @@ export const enablePerformanceIssueReporting: boolean = false;
 export const enableSchedulingProfiler: boolean =
   !enableComponentPerformanceTrack && __PROFILE__;
 export const enableScopeAPI: boolean = false;
-export const enableEffectEventMutationPhase: boolean = true;
 export const enableSuspenseAvoidThisFallback: boolean = false;
 export const enableSuspenseCallback: boolean = false;
 export const enableTaint: boolean = true;
 export const enableTransitionTracing: boolean = false;
-export const enableTrustedTypesIntegration: boolean = true;
 export const passChildrenWhenCloningPersistedNodes: boolean = false;
 export const retryLaneExpirationMs = 5000;
 export const syncLaneExpirationMs = 250;
@@ -74,9 +70,6 @@ export const enableHydrationChangeEvent: boolean = false;
 export const enableDefaultTransitionIndicator: boolean = false;
 export const ownerStackLimit = 1e4;
 
-export const enableFragmentRefsInstanceHandles: boolean = true;
-export const enableFragmentRefsTextNodes: boolean = true;
-
 export const enableInternalInstanceMap: boolean = false;
 
 export const enableOptimisticKey: boolean = false;
@@ -86,7 +79,6 @@ export const enableProfilerTimer: boolean = __PROFILE__;
 export const enableProfilerCommitHooks: boolean = __PROFILE__;
 export const enableProfilerNestedUpdatePhase: boolean = __PROFILE__;
 export const enableUpdaterTracking: boolean = __PROFILE__;
-export const enableParallelTransitions: boolean = true;
 
 export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
 export const eprh_enableVerboseNoSetStateInEffectCompilerLint: boolean = false;
