@@ -1535,6 +1535,75 @@ describe('ReactIncrementalErrorHandling', () => {
     }
   });
 
+  it('error boundaries capture thrown objects with a hostile `then` getter', async () => {
+    spyOnProd(console, 'error').mockImplementation(() => {});
+    spyOnDev(console, 'error').mockImplementation(() => {});
+
+    class ErrorBoundary extends React.Component {
+      state = {error: null};
+      componentDidCatch(error) {
+        Scheduler.log('componentDidCatch');
+        this.setState({error});
+      }
+      render() {
+        if (this.state.error) {
+          Scheduler.log('ErrorBoundary (catch)');
+          return <span prop={`Caught: ${this.state.error.reason}`} />;
+        }
+        Scheduler.log('ErrorBoundary (try)');
+        return this.props.children;
+      }
+    }
+
+    // React inspects thrown values to decide whether the component suspended.
+    // A throwing `then` getter must not escape that inspection: it would blow
+    // through the error-handling machinery mid-render, leaving the work loop's
+    // executionContext permanently flagged as rendering (see #37323).
+    const hostileValue = {
+      reason: 'oops',
+      get then() {
+        throw new Error('hostile then getter');
+      },
+    };
+    function BadRender({unused}) {
+      Scheduler.log('BadRender');
+      throw hostileValue;
+    }
+
+    ReactNoop.render(
+      <ErrorBoundary>
+        <BadRender />
+      </ErrorBoundary>,
+    );
+
+    await waitForAll([
+      'ErrorBoundary (try)',
+      'BadRender',
+
+      // React retries one more time
+      'ErrorBoundary (try)',
+      'BadRender',
+
+      // Errored again on retry. Now handle it.
+      'componentDidCatch',
+      'ErrorBoundary (catch)',
+    ]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Caught: oops" />);
+
+    if (__DEV__) {
+      expect(console.error).toHaveBeenCalledTimes(1);
+      expect(console.error.mock.calls[0][1]).toBe(hostileValue);
+    } else {
+      expect(console.error).toHaveBeenCalledTimes(1);
+      expect(console.error.mock.calls[0][0]).toBe(hostileValue);
+    }
+
+    // The work loop is not left in a broken state: unrelated updates render.
+    ReactNoop.render(<span prop="after" />);
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="after" />);
+  });
+
   // TODO: Error boundary does not catch promises
 
   it('continues working on siblings of a component that throws', async () => {
