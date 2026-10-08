@@ -110,9 +110,18 @@ export function Set_intersect<T>(sets: Array<ReadonlySet<T>>): Set<T> {
   }
   const result: Set<T> = new Set();
   const first = sets[0];
+  /*
+   * Check the remaining sets smallest-first so that non-members short
+   * circuit against the cheapest set to query, instead of always probing
+   * the sets in their supplied order (which may check large sets before
+   * ruling an element out via a much smaller one). This does not change
+   * `result`'s contents or insertion order, which are still driven solely
+   * by iterating `first`.
+   */
+  const rest = sets.slice(1).sort((a, b) => a.size - b.size);
   outer: for (const e of first) {
-    for (let i = 1; i < sets.length; i++) {
-      if (!sets[i].has(e)) {
+    for (const set of rest) {
+      if (!set.has(e)) {
         continue outer;
       }
     }
