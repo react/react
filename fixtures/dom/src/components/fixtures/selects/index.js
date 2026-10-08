@@ -3,6 +3,28 @@ import TestCase from '../../TestCase';
 
 const React = window.React;
 const ReactDOM = window.ReactDOM;
+const ReactDOMClient = window.ReactDOMClient;
+
+class ControlledSelect extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {value: 'bar'};
+  }
+
+  handleChange = event => {
+    this.setState({value: event.target.value});
+  };
+
+  render() {
+    return (
+      <select value={this.state.value} onChange={this.handleChange}>
+        <option value="foo">foo</option>
+        <option value="bar">bar</option>
+        <option value="baz">baz</option>
+      </select>
+    );
+  }
+}
 
 class SelectFixture extends React.Component {
   state = {value: ''};
@@ -33,15 +55,24 @@ class SelectFixture extends React.Component {
   }
 
   _renderNestedSelect() {
-    ReactDOM.render(
+    const element = (
       <select value={this.state.value} onChange={this.onChange}>
         <option value="">Select a color</option>
         <option value="red">Red</option>
         <option value="blue">Blue</option>
         <option value="green">Green</option>
-      </select>,
-      this._nestedDOMNode
+      </select>
     );
+    const container = this._nestedDOMNode;
+    if (ReactDOMClient === undefined) {
+      ReactDOM.render(element, container);
+    } else {
+      const root = ReactDOMClient.createRoot(container);
+      // eslint-disable-next-line no-undef -- queueMicrotask is supported in modern browsers
+      queueMicrotask(
+        ReactDOM.flushSync.bind(null, root.render.bind(root, element))
+      );
+    }
   }
 
   render() {
@@ -228,6 +259,32 @@ class SelectFixture extends React.Component {
           <p className="footnote">
             This was introduced in React 16.0.0 when options were added before
             select attribute assignment.
+          </p>
+        </TestCase>
+
+        <TestCase
+          title="A controlled select should keep its value on form reset"
+          relatedIssues="30580"
+          introducedIn="?">
+          <TestCase.ExpectedResult>
+            No options should be selected.
+          </TestCase.ExpectedResult>
+
+          <div className="test-fixture">
+            <form>
+              <ControlledSelect />
+              <input type="reset" />
+            </form>
+          </div>
+
+          <p className="footnote">
+            <b>Notes:</b> <code>form.reset()</code> resets each associated form
+            element to its default value. For HTMLInputElement that's the value
+            attribute. For HTMLSELECTElement it's option with defaultSelected
+            set to true.
+          </p>
+          <p className="footnote">
+            Bug became more pressing when React introduced automatic form reset.
           </p>
         </TestCase>
       </FixtureSet>
