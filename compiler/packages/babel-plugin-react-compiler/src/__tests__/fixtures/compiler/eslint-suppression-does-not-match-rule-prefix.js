@@ -1,0 +1,16 @@
+// @eslintSuppressionRules:["react-hooks/rules-of-hooks"]
+
+// The configured suppression rule is `react-hooks/rules-of-hooks`. A comment
+// that disables a *different* rule which merely shares this as a prefix
+// (`react-hooks/rules-of-hooks-extra`) must not be treated as a suppression
+// of the configured rule.
+function Component(props) {
+  'use forget';
+  // eslint-disable-next-line react-hooks/rules-of-hooks-extra
+  return <div>{props.text}</div>;
+}
+
+export const FIXTURE_ENTRYPOINT = {
+  fn: Component,
+  params: [{text: 'Hello'}],
+};
