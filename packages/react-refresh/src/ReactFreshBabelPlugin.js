@@ -304,6 +304,12 @@ export default function (babel, opts = {}) {
           if (callee.object.type === 'Identifier') {
             bindingName = callee.object.name;
           }
+          if (
+            callee.object.type === 'MemberExpression' &&
+            callee.object.object.type === 'Identifier'
+          ) {
+            bindingName = callee.object.object.name;
+          }
           break;
         case 'Identifier':
           bindingName = callee.name;
