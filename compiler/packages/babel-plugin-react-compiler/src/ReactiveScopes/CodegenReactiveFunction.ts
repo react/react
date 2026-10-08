@@ -1648,7 +1648,8 @@ function codegenInstructionValue(
                   key,
                   value,
                   property.key.kind === 'computed',
-                  key.type === 'Identifier' &&
+                  property.key.kind !== 'computed' &&
+                    key.type === 'Identifier' &&
                     value.type === 'Identifier' &&
                     value.name === key.name,
                 ),
@@ -2339,7 +2340,8 @@ function codegenLValue(
               key,
               value,
               property.key.kind === 'computed',
-              key.type === 'Identifier' &&
+              property.key.kind !== 'computed' &&
+                key.type === 'Identifier' &&
                 value.type === 'Identifier' &&
                 value.name === key.name,
             );

@@ -3145,7 +3145,7 @@ describe('ReactFlight', () => {
       expect(getDebugInfo(result)).toEqual(
         __DEV__
           ? [
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 22 : 20},
+              {time: 22},
               {
                 name: 'ServerComponent',
                 env: 'Server',
@@ -3155,7 +3155,7 @@ describe('ReactFlight', () => {
                   transport: expect.arrayContaining([]),
                 },
               },
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 53 : 21},
+              {time: 53},
             ]
           : undefined,
       );
@@ -3165,7 +3165,7 @@ describe('ReactFlight', () => {
       expect(getDebugInfo(await thirdPartyChildren[0])).toEqual(
         __DEV__
           ? [
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22}, // Clamped to the start
+              {time: 54}, // Clamped to the start
               {
                 name: 'ThirdPartyComponent',
                 env: 'third-party',
@@ -3173,15 +3173,15 @@ describe('ReactFlight', () => {
                 stack: '    in Object.<anonymous> (at **)',
                 props: {},
               },
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22},
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 55 : 23}, // This last one is when the promise resolved into the first party.
+              {time: 54},
+              {time: 55}, // This last one is when the promise resolved into the first party.
             ]
           : undefined,
       );
       expect(getDebugInfo(thirdPartyChildren[1])).toEqual(
         __DEV__
           ? [
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22}, // Clamped to the start
+              {time: 54}, // Clamped to the start
               {
                 name: 'ThirdPartyLazyComponent',
                 env: 'third-party',
@@ -3189,7 +3189,7 @@ describe('ReactFlight', () => {
                 stack: '    in myLazy (at **)\n    in lazyInitializer (at **)',
                 props: {},
               },
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22},
+              {time: 54},
             ]
           : undefined,
       );
@@ -3197,7 +3197,7 @@ describe('ReactFlight', () => {
       expect(getDebugInfo(fragment)).toEqual(
         __DEV__
           ? [
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22},
+              {time: 54},
               {
                 name: 'ThirdPartyFragmentComponent',
                 env: 'third-party',
@@ -3205,7 +3205,7 @@ describe('ReactFlight', () => {
                 stack: '    in Object.<anonymous> (at **)',
                 props: {},
               },
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 54 : 22},
+              {time: 54},
             ]
           : undefined,
       );
@@ -3435,7 +3435,7 @@ describe('ReactFlight', () => {
                 props: {},
               },
               {time: 16},
-              {time: gate(flags => flags.enableAsyncDebugInfo) ? 24 : 17},
+              {time: 24},
             ]
           : undefined,
       );
@@ -3783,6 +3783,53 @@ describe('ReactFlight', () => {
     const cyclic2 = mockConsoleLog.mock.calls[0][1].cyclic;
     expect(cyclic2).not.toBe(cyclic); // Was serialized and therefore cloned
     expect(cyclic2.cycle).toBe(cyclic2);
+  });
+
+  // @gate __DEV__
+  it('replays logs with errors that have no stack frames', async () => {
+    const error = new Error('inner');
+    error.stack = 'Error: inner';
+
+    function ServerComponent() {
+      console.log('hi', new AggregateError([error], 'aggregate'));
+      return null;
+    }
+
+    function App() {
+      return ReactServer.createElement(ServerComponent);
+    }
+
+    // These tests are specifically testing console.log.
+    // Assign to `mockConsoleLog` so we can still inspect it when `console.log`
+    // is overridden by the test modules. The original function will be restored
+    // after this test finishes by `jest.restoreAllMocks()`.
+    const mockConsoleLog = spyOnDevAndProd(console, 'log').mockImplementation(
+      () => {},
+    );
+
+    // Reset the modules so that we get a new overridden console on top of the
+    // one installed by expect. This ensures that we still emit console.error
+    // calls.
+    jest.resetModules();
+    jest.mock('react', () => require('react/react.react-server'));
+    ReactServer = require('react');
+    ReactNoopFlightServer = require('react-noop-renderer/flight-server');
+    const transport = ReactNoopFlightServer.render({
+      root: ReactServer.createElement(App),
+    });
+
+    expect(mockConsoleLog).toHaveBeenCalledTimes(1);
+    mockConsoleLog.mockClear();
+
+    await ReactNoopFlightClient.read(transport);
+
+    expect(mockConsoleLog).toHaveBeenCalledTimes(1);
+    expect(mockConsoleLog.mock.calls[0][0]).toBe('hi');
+    const aggregateError = mockConsoleLog.mock.calls[0][1];
+    expect(aggregateError).toBeInstanceOf(AggregateError);
+    expect(aggregateError.message).toBe('aggregate');
+    expect(aggregateError.errors).toHaveLength(1);
+    expect(aggregateError.errors[0].message).toBe('inner');
   });
 
   // @gate __DEV__
@@ -4501,5 +4548,16 @@ describe('ReactFlight', () => {
         <span />
       </div>,
     );
+  });
+
+  it('preserves leading U+FEFF in text rows', async () => {
+    const text = '\uFEFF' + 'x'.repeat(1024);
+    const transport = ReactNoopFlightServer.render(text);
+    expect(await ReactNoopFlightClient.read(transport)).toBe(text);
+
+    const chunks = transport.flatMap(chunk =>
+      Array.from(chunk, byte => new Uint8Array([byte])),
+    );
+    expect(await ReactNoopFlightClient.read(chunks)).toBe(text);
   });
 });

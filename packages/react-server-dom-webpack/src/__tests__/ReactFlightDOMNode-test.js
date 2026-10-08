@@ -829,8 +829,7 @@ describe('ReactFlightDOMNode', () => {
     if (__DEV__) {
       expect(normalizeCodeLocInfo(componentStack)).toBe(
         '\n' +
-          '    in Component' +
-          (gate(flags => flags.enableAsyncDebugInfo) ? ' (at **)\n' : '\n') +
+          '    in Component (at **)\n' +
           '    in Suspense\n' +
           '    in body\n' +
           '    in html\n' +
@@ -847,13 +846,9 @@ describe('ReactFlightDOMNode', () => {
     }
 
     if (__DEV__) {
-      if (gate(flags => flags.enableAsyncDebugInfo)) {
-        expect(normalizeCodeLocInfo(ownerStack)).toBe(
-          '\n    in Component (at **)\n    in App (at **)',
-        );
-      } else {
-        expect(normalizeCodeLocInfo(ownerStack)).toBe('\n    in App (at **)');
-      }
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '\n    in Component (at **)\n    in App (at **)',
+      );
     } else {
       expect(ownerStack).toBeNull();
     }
@@ -980,9 +975,7 @@ describe('ReactFlightDOMNode', () => {
       expect(normalizeCodeLocInfo(componentStack)).toBe(
         '\n' +
           '    in SharedComponent (at **)\n' +
-          '    in ServerComponent' +
-          (gate(flags => flags.enableAsyncDebugInfo) ? ' (at **)' : '') +
-          '\n' +
+          '    in ServerComponent (at **)\n' +
           '    in Suspense\n' +
           '    in body\n' +
           '    in html\n' +
@@ -1002,15 +995,12 @@ describe('ReactFlightDOMNode', () => {
 
     if (__DEV__) {
       expect(ignoreListStack(ownerStack)).toBe(
-        // eslint-disable-next-line react-internal/safe-string-coercion
         '' +
           // The concrete location may change as this test is updated.
           // Just make sure they still point at React.use(p2)
-          (gate(flags => flags.enableAsyncDebugInfo)
-            ? '\n    at SharedComponent (./ReactFlightDOMNode-test.js:865:7)'
-            : '') +
-          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:887:26)' +
-          '\n    at App (file://./ReactFlightDOMNode-test.js:904:25)',
+          '\n    at SharedComponent (./ReactFlightDOMNode-test.js:860:7)' +
+          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:882:26)' +
+          '\n    at App (file://./ReactFlightDOMNode-test.js:899:25)',
       );
     } else {
       expect(ownerStack).toBeNull();
@@ -1139,8 +1129,7 @@ describe('ReactFlightDOMNode', () => {
     if (__DEV__) {
       expect(normalizeCodeLocInfo(componentStack)).toBe(
         '\n' +
-          '    in Component' +
-          (gate(flags => flags.enableAsyncDebugInfo) ? ' (at **)\n' : '\n') +
+          '    in Component (at **)\n' +
           '    in Suspense\n' +
           '    in body\n' +
           '    in html\n' +
@@ -1157,18 +1146,12 @@ describe('ReactFlightDOMNode', () => {
     }
 
     if (__DEV__) {
-      if (gate(flags => flags.enableAsyncDebugInfo)) {
-        expect(normalizeCodeLocInfo(ownerStack)).toBe(
-          '' +
-            '\n    in getData (at **)' +
-            '\n    in Component (at **)' +
-            '\n    in App (at **)',
-        );
-      } else {
-        expect(normalizeCodeLocInfo(ownerStack)).toBe(
-          '' + '\n    in App (at **)',
-        );
-      }
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '' +
+          '\n    in getData (at **)' +
+          '\n    in Component (at **)' +
+          '\n    in App (at **)',
+      );
     } else {
       expect(ownerStack).toBeNull();
     }
@@ -1592,14 +1575,11 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in Dynamic' +
-            (gate(flags => flags.enableAsyncDebugInfo)
-              ? ' (file://ReactFlightDOMNode-test.js:1468:27)\n'
-              : '\n') +
+            '    in Dynamic (file://ReactFlightDOMNode-test.js:1451:27)\n' +
             '    in body\n' +
             '    in html\n' +
-            '    in App (file://ReactFlightDOMNode-test.js:1481:25)\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1556:16)',
+            '    in App (file://ReactFlightDOMNode-test.js:1464:25)\n' +
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1539:16)',
         );
       } else {
         expect(
@@ -1608,28 +1588,16 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in body\n' +
             '    in html\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1556:16)',
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1539:16)',
         );
       }
 
       if (__DEV__) {
-        if (gate(flags => flags.enableAsyncDebugInfo)) {
-          expect(
-            normalizeCodeLocInfo(ownerStack, {preserveLocation: true}),
-          ).toBe(
-            '\n' +
-              '    in Dynamic (file://ReactFlightDOMNode-test.js:1468:27)\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1481:25)',
-          );
-        } else {
-          expect(
-            normalizeCodeLocInfo(ownerStack, {preserveLocation: true}),
-          ).toBe(
-            '' +
-              '\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1481:25)',
-          );
-        }
+        expect(normalizeCodeLocInfo(ownerStack, {preserveLocation: true})).toBe(
+          '\n' +
+            '    in Dynamic (file://ReactFlightDOMNode-test.js:1451:27)\n' +
+            '    in App (file://ReactFlightDOMNode-test.js:1464:25)',
+        );
       } else {
         expect(ownerStack).toBeNull();
       }
@@ -1784,7 +1752,7 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in ClientDynamic (ReactFlightDOMNode-test.js:1731:9)\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1699:9)\n' +
             '    in Suspense\n' +
             '    in body\n' +
             '    in html\n' +
@@ -1795,7 +1763,7 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in ClientDynamic (ReactFlightDOMNode-test.js:1731:9)\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1699:9)\n' +
             '    in Suspense\n' +
             '    in body\n' +
             '    in html\n' +
@@ -1806,12 +1774,8 @@ describe('ReactFlightDOMNode', () => {
       if (__DEV__) {
         expect(ignoreListStack(ownerStack)).toBe(
           '\n' +
-            gate(flags =>
-              flags.enableAsyncDebugInfo
-                ? '    at ClientDynamic (./ReactFlightDOMNode-test.js:1732:9)\n'
-                : '',
-            ) +
-            '    at ClientRoot (./ReactFlightDOMNode-test.js:1745:21)',
+            '    at ClientDynamic (./ReactFlightDOMNode-test.js:1700:9)\n' +
+            '    at ClientRoot (./ReactFlightDOMNode-test.js:1713:21)',
         );
       } else {
         expect(ownerStack).toBeNull();
@@ -2093,13 +2057,7 @@ describe('ReactFlightDOMNode', () => {
           '    in ClientRoot (at **)',
       );
       expect(normalizeCodeLocInfo(ownerStack)).toBe(
-        '\n' +
-          gate(flags =>
-            flags.enableAsyncDebugInfo
-              ? '    in Dynamic (at **)\n'
-              : '    in section\n',
-          ) +
-          '    in App (at **)',
+        '\n    in Dynamic (at **)\n    in App (at **)',
       );
 
       expect(result).toContain(
@@ -2248,11 +2206,8 @@ describe('ReactFlightDOMNode', () => {
       expect(caughtError).toBe(flightError);
       expect(normalizeCodeLocInfo(ownerStack)).toBe(
         '\n' +
-          gate(flags =>
-            flags.enableAsyncDebugInfo
-              ? '    in loadInitialData (at **)\n' + '    in Dynamic (at **)\n'
-              : '',
-          ) +
+          '    in loadInitialData (at **)\n' +
+          '    in Dynamic (at **)\n' +
           '    in App (at **)',
       );
     });
@@ -2698,5 +2653,74 @@ describe('ReactFlightDOMNode', () => {
       asyncServerElementLazy._payload,
     );
     expect(asyncServerElement.props.ClientModule).toEqual({label: 'module'});
+  });
+
+  it.each([false, true])(
+    'preserves leading U+FEFF in outlined text rows (split chunks: %s)',
+    async splitChunks => {
+      const model = {
+        inline: '\uFEFFshort',
+        outlined: '\uFEFF' + 'x'.repeat(1024),
+        repeated: '\uFEFF\uFEFF' + 'y'.repeat(1024),
+      };
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(model),
+      );
+      const readable = new Stream.Transform({
+        transform(chunk, encoding, callback) {
+          if (splitChunks) {
+            for (let i = 0; i < chunk.length; i++) {
+              this.push(chunk.subarray(i, i + 1));
+            }
+          } else {
+            this.push(chunk);
+          }
+          callback();
+        },
+      });
+      const response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: webpackModuleLoading,
+      });
+      stream.pipe(readable);
+
+      const result = await response;
+      expect(result).toEqual(model);
+    },
+  );
+
+  // @gate __DEV__
+  it('consumes a leading byte order mark on the debug channel', async () => {
+    let resolveModel;
+    const model = new Promise(resolve => {
+      resolveModel = resolve;
+    });
+    const onError = jest.fn();
+    const debugChannel = new ReadableStream({
+      start(controller) {
+        const bytes = new TextEncoder().encode('\uFEFFQ:0\n');
+        for (let i = 0; i < bytes.length; i++) {
+          controller.enqueue(bytes.subarray(i, i + 1));
+        }
+        controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap, {
+        debugChannel: {readable: debugChannel},
+        onError,
+      }),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    await serverAct(() => resolveModel('hello'));
+    expect(await response).toBe('hello');
+    expect(onError).not.toHaveBeenCalled();
+    expect(debugChannel.locked).toBe(true);
   });
 });

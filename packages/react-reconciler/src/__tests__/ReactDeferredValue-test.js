@@ -420,13 +420,6 @@ describe('ReactDeferredValue', () => {
         // The initial value suspended, so we attempt the final value, which
         // also suspends.
         'Suspend! [Final]',
-        ...(gate('enableParallelTransitions')
-          ? []
-          : [
-              // Existing bug: Unnecessary pre-warm.
-              'Suspend! [Loading...]',
-              'Suspend! [Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -440,6 +433,63 @@ describe('ReactDeferredValue', () => {
       await act(() => resolveText('Loading...'));
       assertLog([]);
       expect(root).toMatchRenderedOutput('Final');
+    },
+  );
+
+  it(
+    'if the deferred task errors while the original task is suspended in the ' +
+      'shell, commits the error boundary (no Suspense boundary)',
+    async () => {
+      class ErrorBoundary extends React.Component {
+        state = {error: null};
+        static getDerivedStateFromError(error) {
+          return {error};
+        }
+        render() {
+          if (this.state.error !== null) {
+            return <Text text={'Caught: ' + this.state.error.message} />;
+          }
+          return this.props.children;
+        }
+      }
+
+      function Final() {
+        throw new Error('Oops');
+      }
+
+      function App() {
+        const text = useDeferredValue('Final', 'Loading...');
+        return text === 'Final' ? <Final /> : <AsyncText text={text} />;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<Text text="Previous" />));
+      assertLog(['Previous']);
+
+      // The initial value suspends in the shell, so the transition can't
+      // finish. The deferred value throws. React retries the render
+      // synchronously before committing the error boundary, and the retry
+      // suspends on the initial value again. That must not prevent the error
+      // boundary from committing.
+      await act(() =>
+        startTransition(() =>
+          root.render(
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>,
+          ),
+        ),
+      );
+      assertLog([
+        'Suspend! [Loading...]',
+        'Caught: Oops',
+        // The synchronous retry suspends on the initial value again.
+        'Suspend! [Loading...]',
+        // Error recovery is now disabled, so the next attempt commits the
+        // error boundary.
+        'Caught: Oops',
+      ]);
+      expect(root).toMatchRenderedOutput('Caught: Oops');
     },
   );
 
@@ -465,17 +515,6 @@ describe('ReactDeferredValue', () => {
         // also suspends.
         'Suspend! [Final]',
         'Suspend! [Sibling: Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : [
-              'Suspend! [Loading...]',
-              'Suspend! [Sibling: Loading...]',
-              'Suspend! [Final]',
-              'Suspend! [Sibling: Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -493,17 +532,6 @@ describe('ReactDeferredValue', () => {
         'Suspend! [Sibling: Loading...]',
         'Final',
         'Suspend! [Sibling: Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : [
-              'Loading...',
-              'Suspend! [Sibling: Loading...]',
-              'Final',
-              'Suspend! [Sibling: Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -545,17 +573,6 @@ describe('ReactDeferredValue', () => {
         // also suspends.
         'Suspend! [Final]',
         'Suspend! [Sibling: Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : [
-              'Suspend! [Loading...]',
-              'Suspend! [Sibling: Loading...]',
-              'Suspend! [Final]',
-              'Suspend! [Sibling: Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -573,17 +590,6 @@ describe('ReactDeferredValue', () => {
         'Suspend! [Sibling: Loading...]',
         'Final',
         'Suspend! [Sibling: Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : [
-              'Loading...',
-              'Suspend! [Sibling: Loading...]',
-              'Final',
-              'Suspend! [Sibling: Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -631,12 +637,6 @@ describe('ReactDeferredValue', () => {
         // The initial value suspended, so we attempt the final value, which
         // also suspends.
         'Suspend! [Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : ['Suspend! [Loading...]', 'Suspend! [Final]']),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -711,12 +711,6 @@ describe('ReactDeferredValue', () => {
         // The initial value suspended, so we attempt the final value, which
         // also suspends.
         'Suspend! [Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : ['Suspend! [Loading...]', 'Suspend! [Final]']),
       ]);
       expect(root).toMatchRenderedOutput(null);
 

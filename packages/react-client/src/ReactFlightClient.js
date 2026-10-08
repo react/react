@@ -45,7 +45,6 @@ import type {TemporaryReferenceSet} from './ReactFlightTemporaryReferences';
 import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
-  enableAsyncDebugInfo,
   enableFlightWeakThenables,
   enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
@@ -301,7 +300,7 @@ function reactPromiseThen<T>(
       initializeModuleChunk(chunk);
       break;
   }
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // Because only native Promises get picked up when we're awaiting we need to wrap
     // this in a native Promise in DEV. This means that these callbacks are no longer sync
     // but the lazy initialization is still sync and the .value can be inspected after,
@@ -3077,7 +3076,8 @@ function ResponseInstance(
   this._encodeFormAction = encodeFormAction;
   this._nonce = nonce;
   this._chunks = chunks;
-  this._stringDecoder = createStringDecoder();
+  // Preserve a leading U+FEFF instead of consuming it as an encoding signature.
+  this._stringDecoder = createStringDecoder(true);
   this._closed = false;
   this._closedReason = null;
   this._allowPartialStream = allowPartialStream;
@@ -3122,18 +3122,16 @@ function ResponseInstance(
         '"use ' + rootEnv.toLowerCase() + '"',
       );
     }
-    if (enableAsyncDebugInfo) {
-      // Track the start of the fetch to the best of our knowledge.
-      // Note: createFromFetch allows this to be marked at the start of the fetch
-      // where as if you use createFromReadableStream from the body of the fetch
-      // then the start time is when the headers resolved.
-      this._debugStartTime =
-        debugStartTime == null ? performance.now() : debugStartTime;
-      this._debugIOStarted = false;
-      // We consider everything before the first setTimeout task to be cached data
-      // and is not considered I/O required to load the stream.
-      setTimeout(markIOStarted.bind(this), 0);
-    }
+    // Track the start of the fetch to the best of our knowledge.
+    // Note: createFromFetch allows this to be marked at the start of the fetch
+    // where as if you use createFromReadableStream from the body of the fetch
+    // then the start time is when the headers resolved.
+    this._debugStartTime =
+      debugStartTime == null ? performance.now() : debugStartTime;
+    this._debugIOStarted = false;
+    // We consider everything before the first setTimeout task to be cached data
+    // and is not considered I/O required to load the stream.
+    setTimeout(markIOStarted.bind(this), 0);
     this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
     this._debugFindSourceMapURL = findSourceMapURL;
     this._debugChannel = debugChannel;
@@ -3229,7 +3227,7 @@ export function createStreamState(
     _rowLength: 0,
     _buffer: [],
   } as Omit<StreamState, '_debugInfo' | '_debugTargetChunkSize'> as any;
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     const response = unwrapWeakResponse(weakResponse);
     // Create an entry for the I/O to load the stream itself.
     const debugValuePromise = Promise.resolve(streamDebugValue);
@@ -3264,7 +3262,7 @@ function incrementChunkDebugInfo(
   streamState: StreamState,
   chunkLength: number,
 ): void {
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     const debugInfo: ReactIOInfo = streamState._debugInfo;
     const endTime = performance.now();
     const previousEndTime = debugInfo.end;
@@ -3332,7 +3330,7 @@ function resolveChunkDebugInfo(
   streamState: StreamState,
   chunk: SomeChunk<any>,
 ): void {
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // Only include stream information after a macrotask. Any chunk processed
     // before that is considered cached data.
     if (response._debugIOStarted) {
@@ -5299,10 +5297,7 @@ function processFullStringRow(
       return;
     }
     case 78 /* "N" */: {
-      if (
-        enableProfilerTimer &&
-        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ) {
+      if (enableProfilerTimer) {
         // Track the time origin for future debug info. We track it relative
         // to the current environment's time space.
         const timeOrigin: number = +row;
@@ -5322,7 +5317,7 @@ function processFullStringRow(
       // Fallthrough to share the error with Console entries.
     }
     case 74 /* "J" */: {
-      if (enableProfilerTimer && enableAsyncDebugInfo) {
+      if (enableProfilerTimer) {
         resolveIOInfo(response, id, row);
         return;
       }

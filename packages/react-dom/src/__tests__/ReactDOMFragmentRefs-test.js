@@ -119,7 +119,6 @@ describe('FragmentRefs', () => {
     await act(() => root.render(<Test />));
   });
 
-  // @gate enableFragmentRefsInstanceHandles
   it('attaches fragment handles to nodes', async () => {
     const fragmentParentRef = React.createRef();
     const fragmentRef = React.createRef();
@@ -1186,7 +1185,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['registered']);
       });
 
-      // @gate enableFragmentRefsTextNodes
       it('adds an event listener to a newly added text child', async () => {
         const fragmentRef = React.createRef();
         const parentRef = React.createRef();
@@ -1229,7 +1227,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['fragment']);
       });
 
-      // @gate enableFragmentRefsTextNodes
       it('removes event listeners from a deleted text child', async () => {
         const fragmentRef = React.createRef();
         const parentRef = React.createRef();
@@ -1672,7 +1669,6 @@ describe('FragmentRefs', () => {
           expect(logs).toEqual(['clicked 2', 'clicked 1']);
         });
 
-        // @gate enableFragmentRefsTextNodes
         it('does not dispatch fragment events from text children while hidden', async () => {
           const parentRef = React.createRef();
           const fragmentRef = React.createRef();
@@ -2140,7 +2136,6 @@ describe('FragmentRefs', () => {
       ]);
     });
 
-    // @gate enableFragmentRefsInstanceHandles
     it('attaches handles to observed elements to allow caching of observers', async () => {
       const targetToCallbackMap = new WeakMap();
       let cachedObserver = null;
@@ -3677,7 +3672,6 @@ describe('FragmentRefs', () => {
   });
 
   describe('with text nodes', () => {
-    // @gate enableFragmentRefsTextNodes
     it('getClientRects includes text node bounds', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 0, y: 0, width: 80, height: 16},
@@ -3699,7 +3693,6 @@ describe('FragmentRefs', () => {
       restoreRange();
     });
 
-    // @gate enableFragmentRefsTextNodes
     it('getClientRects includes both text and element bounds', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 0, y: 0, width: 60, height: 16},
@@ -3782,7 +3775,6 @@ describe('FragmentRefs', () => {
       fragmentRef.current.focusLast();
     });
 
-    // @gate enableFragmentRefsTextNodes || !__DEV__
     it('warns when observeUsing is called on text-only fragment', async () => {
       mockIntersectionObserver();
       const fragmentRef = React.createRef();
@@ -3807,7 +3799,6 @@ describe('FragmentRefs', () => {
       );
     });
 
-    // @gate enableFragmentRefsTextNodes
     it('scrollIntoView works on text-only fragment using Range API', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 100, y: 200, width: 80, height: 16},
@@ -3837,7 +3828,6 @@ describe('FragmentRefs', () => {
       restoreRange();
     });
 
-    // @gate enableFragmentRefsTextNodes
     it('scrollIntoView scrolls to text siblings of an empty fragment using the Range API', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 100, y: 200, width: 80, height: 16},

@@ -7,7 +7,7 @@ export default defineConfig({
   testDir: '__tests__/__e2e__',
   fullyParallel: true,
   // Fail the build on CI if you accidentally left test.only in the source code.
-  forbidOnly: !isCI,
+  forbidOnly: isCI,
   retries: isCI ? 2 : 0,
   // Opt out of parallel tests on CI.
   workers: isCI ? 1 : undefined,

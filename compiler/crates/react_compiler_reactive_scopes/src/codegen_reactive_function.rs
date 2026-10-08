@@ -2879,7 +2879,10 @@ fn codegen_object_expression(
                 match obj_prop.property_type {
                     ObjectPropertyType::Property => {
                         let value = codegen_place_to_expression(cx, &obj_prop.place)?;
-                        let is_shorthand = matches!(&key, Expression::Identifier(k_id)
+                        let is_shorthand = matches!(
+                            obj_prop.key,
+                            ObjectPropertyKey::Identifier { .. }
+                        ) && matches!(&key, Expression::Identifier(k_id)
                             if matches!(&value, Expression::Identifier(v_id) if v_id.name == k_id.name));
                         ast_properties.push(ast_expr::ObjectExpressionProperty::ObjectProperty(
                             ast_expr::ObjectProperty {
@@ -3388,8 +3391,9 @@ fn codegen_object_pattern(
             ObjectPropertyOrSpread::Property(obj_prop) => {
                 let key = codegen_object_property_key(cx, &obj_prop.key)?;
                 let value = codegen_lvalue(cx, &LvalueRef::Place(&obj_prop.place))?;
-                let is_shorthand = matches!(&key, Expression::Identifier(k_id)
-                    if matches!(&value, PatternLike::Identifier(v_id) if v_id.name == k_id.name));
+                let is_shorthand = matches!(obj_prop.key, ObjectPropertyKey::Identifier { .. })
+                    && matches!(&key, Expression::Identifier(k_id)
+                        if matches!(&value, PatternLike::Identifier(v_id) if v_id.name == k_id.name));
                 Ok(ObjectPatternProperty::ObjectProperty(ObjectPatternProp {
                     base: BaseNode::typed("ObjectProperty"),
                     key: Box::new(key),

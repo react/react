@@ -22,7 +22,7 @@ export type HoistableRoot = mixed;
 export type Resource = mixed;
 
 // Resources (when unsupported)
-export const supportsResources = false;
+export const supportsResources: boolean = false;
 export const isHostHoistableType = shim;
 export const getHoistableRoot = shim;
 export const getResource = shim;
