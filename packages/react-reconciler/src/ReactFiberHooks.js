@@ -156,7 +156,11 @@ import {
   peekEntangledActionThenable,
   chainThenableValue,
 } from './ReactFiberAsyncAction';
-import {requestTransitionLane} from './ReactFiberRootScheduler';
+import {
+  requestTransitionLane,
+  requestOptimisticTransitionLane,
+  peekOptimisticTransitionLane,
+} from './ReactFiberRootScheduler';
 import {isCurrentTreeHidden} from './ReactFiberHiddenContext';
 import {requestCurrentTransition} from './ReactFiberTransition';
 
@@ -3114,6 +3118,29 @@ function releaseAsyncTransition() {
   }
 }
 
+function dispatchSetStateWithoutEntangling<S, A>(
+  fiber: Fiber,
+  queue: UpdateQueue<S, A>,
+  action: A,
+  lane: Lane,
+): void {
+  // Skip entangleTransitionUpdate so an independent optimistic finish lane is
+  // not blocked by an outer async action scope's suspended transition lane.
+  const update: Update<S, A> = {
+    lane,
+    revertLane: NoLane,
+    gesture: null,
+    action,
+    hasEagerState: false,
+    eagerState: null,
+    next: null as any,
+  };
+  const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
+  if (root !== null) {
+    scheduleUpdateOnFiber(root, fiber, lane);
+  }
+}
+
 function startTransition<S>(
   fiber: Fiber,
   queue: UpdateQueue<S | Thenable<S>, BasicStateAction<S | Thenable<S>>>,
@@ -3189,23 +3216,49 @@ function startTransition<S>(
       }
       // Create a thenable that resolves to `finishedState` once the async
       // action has completed.
-      const thenableForFinishedState = chainThenableValue(
-        thenable,
-        finishedState,
-      );
-      dispatchSetStateInternal(
-        fiber,
-        queue,
-        thenableForFinishedState as any,
-        requestUpdateLane(fiber),
-      );
+      const optimisticLane = peekOptimisticTransitionLane(currentTransition);
+      if (optimisticLane !== null) {
+        // Finish on the independent optimistic lane without entangling into
+        // an outer async action scope.
+        const thenableForFinishedState = chainThenableValue(
+          thenable,
+          finishedState,
+        );
+        dispatchSetStateWithoutEntangling(
+          fiber,
+          queue,
+          thenableForFinishedState as any,
+          optimisticLane,
+        );
+      } else {
+        const thenableForFinishedState = chainThenableValue(
+          thenable,
+          finishedState,
+        );
+        dispatchSetStateInternal(
+          fiber,
+          queue,
+          thenableForFinishedState as any,
+          requestUpdateLane(fiber),
+        );
+      }
     } else {
-      dispatchSetStateInternal(
-        fiber,
-        queue,
-        finishedState,
-        requestUpdateLane(fiber),
-      );
+      const optimisticLane = peekOptimisticTransitionLane(currentTransition);
+      if (optimisticLane !== null) {
+        dispatchSetStateWithoutEntangling(
+          fiber,
+          queue,
+          finishedState,
+          optimisticLane,
+        );
+      } else {
+        dispatchSetStateInternal(
+          fiber,
+          queue,
+          finishedState,
+          requestUpdateLane(fiber),
+        );
+      }
     }
   } catch (error) {
     // This is a trick to get the `useTransition` hook to rethrow the error.
@@ -3780,7 +3833,9 @@ function dispatchOptimisticSetState<S, A>(
     lane: lane,
     // After committing, the optimistic update is "reverted" using the same
     // lane as the transition it's associated with.
-    revertLane: requestTransitionLane(transition),
+    revertLane: throwIfDuringRender
+      ? requestOptimisticTransitionLane(transition)
+      : requestTransitionLane(transition),
     gesture: null,
     action,
     hasEagerState: false,
