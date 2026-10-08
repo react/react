@@ -807,16 +807,18 @@ export function shouldAttemptEagerTransition(): boolean {
 
 let schedulerEvent: void | Event = undefined;
 export function trackSchedulerEvent(): void {
-  schedulerEvent = window.event;
+  // Scheduler tasks can run after a test environment tears down `window`
+  // (e.g. per-file jsdom in Jest/Vitest). Profiling attribution is best-effort.
+  schedulerEvent = typeof window !== 'undefined' ? window.event : undefined;
 }
 
 export function resolveEventType(): null | string {
-  const event = window.event;
+  const event = typeof window !== 'undefined' ? window.event : undefined;
   return event && event !== schedulerEvent ? event.type : null;
 }
 
 export function resolveEventTimeStamp(): number {
-  const event = window.event;
+  const event = typeof window !== 'undefined' ? window.event : undefined;
   return event && event !== schedulerEvent ? event.timeStamp : -1.1;
 }
 
