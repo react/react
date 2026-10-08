@@ -116,9 +116,12 @@ export function findProgramSuppressions(
       disableNextLinePattern != null &&
       disableNextLinePattern.test(comment.value)
     ) {
-      disableComment = comment;
-      enableComment = comment;
-      source = 'Eslint';
+      suppressionRanges.push({
+        disableComment: comment,
+        enableComment: comment,
+        source: 'Eslint',
+      });
+      continue;
     }
 
     if (
@@ -126,34 +129,47 @@ export function findProgramSuppressions(
       disableComment == null &&
       flowSuppressionPattern.test(comment.value)
     ) {
-      disableComment = comment;
-      enableComment = comment;
-      source = 'Flow';
-    }
-
-    if (disablePattern != null && disablePattern.test(comment.value)) {
-      disableComment = comment;
-      source = 'Eslint';
+      suppressionRanges.push({
+        disableComment: comment,
+        enableComment: comment,
+        source: 'Flow',
+      });
+      continue;
     }
 
     if (
+      disableComment === null &&
+      disablePattern != null &&
+      disablePattern.test(comment.value)
+    ) {
+      disableComment = comment;
+      source = 'Eslint';
+      continue;
+    }
+
+    if (
+      disableComment !== null &&
       enablePattern != null &&
       enablePattern.test(comment.value) &&
       source === 'Eslint'
     ) {
       enableComment = comment;
-    }
-
-    if (disableComment != null && source != null) {
       suppressionRanges.push({
-        disableComment: disableComment,
-        enableComment: enableComment,
-        source,
+        disableComment,
+        enableComment,
+        source: 'Eslint',
       });
       disableComment = null;
       enableComment = null;
       source = null;
     }
+  }
+  if (disableComment !== null && source !== null) {
+    suppressionRanges.push({
+      disableComment,
+      enableComment: null,
+      source,
+    });
   }
   return suppressionRanges;
 }
