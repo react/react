@@ -190,6 +190,7 @@ fn important_statement_type(stmt: &Statement) -> Option<&'static str> {
         Statement::ExpressionStatement(_) => Some("ExpressionStatement"),
         Statement::BreakStatement(_) => Some("BreakStatement"),
         Statement::ContinueStatement(_) => Some("ContinueStatement"),
+        Statement::DebuggerStatement(_) => Some("DebuggerStatement"),
         Statement::ReturnStatement(_) => Some("ReturnStatement"),
         Statement::ThrowStatement(_) => Some("ThrowStatement"),
         Statement::TryStatement(_) => Some("TryStatement"),

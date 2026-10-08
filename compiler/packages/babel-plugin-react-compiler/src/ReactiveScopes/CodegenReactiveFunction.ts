@@ -1173,7 +1173,7 @@ function codegenInstructionNullable(
   ) {
     return null;
   } else if (instr.value.kind === 'Debugger') {
-    return t.debuggerStatement();
+    return createDebuggerStatement(instr.loc);
   } else if (instr.value.kind === 'ObjectMethod') {
     CompilerError.invariant(instr.lvalue, {
       reason: 'Expected object methods to have a temp lvalue',
@@ -1323,6 +1323,7 @@ const createTryStatement = withLoc(t.tryStatement);
 const createBreakStatement = withLoc(t.breakStatement);
 const createContinueStatement = withLoc(t.continueStatement);
 const createReturnStatement = withLoc(t.returnStatement);
+const createDebuggerStatement = withLoc(t.debuggerStatement);
 
 function createVariableDeclarator(
   id: t.LVal,
