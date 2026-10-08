@@ -1136,17 +1136,25 @@ fn validate_no_ref_access_in_render_impl(
                             nullish = true;
                         }
 
+                        // A binary operator such as `===` or `!==` never invokes a
+                        // function operand, so a value that merely *reads* a ref when
+                        // called (RefAccessType::Structure with read_ref_effect) is not
+                        // itself a ref access here. Only flag a direct ref value, e.g.
+                        // `ref.current === other`. Using the broader
+                        // validate_no_ref_value_access would flag comparisons like
+                        // `someCallback !== previousCallback` even though comparing
+                        // function identity never reads `.current`.
                         if let Some(ref_id) = found_ref_id {
                             if nullish {
                                 ref_env
                                     .set(instr.lvalue.identifier, RefAccessType::Guard { ref_id });
                             } else {
-                                validate_no_ref_value_access(errors, ref_env, left);
-                                validate_no_ref_value_access(errors, ref_env, right);
+                                validate_no_direct_ref_value_access(errors, left, ref_env);
+                                validate_no_direct_ref_value_access(errors, right, ref_env);
                             }
                         } else {
-                            validate_no_ref_value_access(errors, ref_env, left);
-                            validate_no_ref_value_access(errors, ref_env, right);
+                            validate_no_direct_ref_value_access(errors, left, ref_env);
+                            validate_no_direct_ref_value_access(errors, right, ref_env);
                         }
                     }
                     _ => {
