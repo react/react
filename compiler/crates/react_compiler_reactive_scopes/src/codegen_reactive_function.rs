@@ -1580,6 +1580,20 @@ fn codegen_for_init(
     init: &ReactiveValue,
 ) -> Result<Option<ForInit>, CompilerError> {
     if let ReactiveValue::SequenceExpression { instructions, .. } = init {
+        // An omitted initializer is represented by a synthetic `undefined`
+        // instruction so the HIR block is not empty.
+        if instructions.len() == 1
+            && matches!(
+                &instructions[0].value,
+                ReactiveValue::Instruction(InstructionValue::Primitive {
+                    value: PrimitiveValue::Undefined,
+                    ..
+                })
+            )
+        {
+            return Ok(None);
+        }
+
         let block_items: Vec<ReactiveStatement> = instructions
             .iter()
             .map(|i| ReactiveStatement::Instruction(i.clone()))
