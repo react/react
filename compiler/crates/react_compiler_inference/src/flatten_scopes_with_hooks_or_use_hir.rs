@@ -28,7 +28,8 @@
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::Environment;
-use react_compiler_hir::{BlockId, HirFunction, InstructionValue, Terminal, Type};
+use react_compiler_hir::type_config::ValueKind;
+use react_compiler_hir::{BlockId, Effect, HirFunction, InstructionValue, Terminal, Type};
 
 /// Flattens reactive scopes that contain hook calls or `use()` calls.
 ///
@@ -59,6 +60,12 @@ pub fn flatten_scopes_with_hooks_or_use_hir(
                         &env.types[env.identifiers[callee.identifier.0 as usize].type_.0 as usize];
                     if is_hook_or_use(env, callee_ty)? {
                         // All active scopes must be pruned
+                        prune.extend(active_scopes.iter().map(|s| s.block));
+                        active_scopes.clear();
+                    }
+                }
+                InstructionValue::TaggedTemplateExpression { tag, .. } => {
+                    if !is_known_pure_tagged_template(env, tag)? {
                         prune.extend(active_scopes.iter().map(|s| s.block));
                         active_scopes.clear();
                     }
@@ -134,6 +141,22 @@ pub fn flatten_scopes_with_hooks_or_use_hir(
         block_mut.terminal = new_terminal;
     }
     Ok(())
+}
+
+fn is_known_pure_tagged_template(
+    env: &Environment,
+    tag: &react_compiler_hir::Place,
+) -> Result<bool, CompilerDiagnostic> {
+    let ty = &env.types[env.identifiers[tag.identifier.0 as usize].type_.0 as usize];
+    let Some(signature) = env.get_function_signature(ty)? else {
+        return Ok(false);
+    };
+    Ok(signature.callee_effect == Effect::Read
+        && !signature.impure
+        && matches!(
+            signature.return_value_kind,
+            ValueKind::Frozen | ValueKind::Primitive
+        ))
 }
 
 struct ActiveScope {

@@ -1046,7 +1046,8 @@ export type InstructionValue =
   | {
       kind: 'TaggedTemplateExpression';
       tag: Place;
-      value: {raw: string; cooked?: string};
+      subexprs: Array<Place>;
+      quasis: Array<{raw: string; cooked?: string}>;
       loc: SourceLocation;
     }
   | {
