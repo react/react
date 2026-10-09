@@ -11,8 +11,10 @@ import type {
   Input,
   InputThenableReader,
   InputSequenceReader,
+  InputAsyncIterableReader,
 } from './ReactFlightResultSerializationServer';
 import type {ReactClientValue} from './ReactFlightResultServer';
+import type {AsyncIterableController} from 'shared/ReactFlightResultAsyncIterable';
 import type {ResultStreamController} from 'shared/ReactFlightResultReadableStream';
 import type {ErrorReference, Result} from 'shared/ReactFlightResult';
 import type {HintQueue} from 'shared/ReactFlightResult';
@@ -26,6 +28,7 @@ import {
   getErrorReference,
   getValueReference,
   getCollectionEntries,
+  getAsyncIterable,
   getReadableStream,
   getIteratorEntries,
   getServerReference,
@@ -113,6 +116,16 @@ export function createInput(result: Result<ReactClientValue>): Input {
             isByteStream: source.isByteStream,
             subscribe: reader =>
               subscribeToSequence(result, value, source, reader),
+          };
+    },
+    getAsyncIterable(value) {
+      const source = getAsyncIterable(result, value);
+      return source === undefined
+        ? undefined
+        : {
+            isIterator: source.isIterator,
+            subscribe: reader =>
+              subscribeToAsyncIterable(result, value, source, reader),
           };
     },
     getIteratorEntries: value => getIteratorEntries(result, value),
@@ -277,4 +290,18 @@ function subscribeToSequence(
     unsubscribeSource();
   }
   return detach;
+}
+
+function subscribeToAsyncIterable(
+  result: Result<any>,
+  model: Object,
+  source: AsyncIterableController<any>,
+  reader: InputAsyncIterableReader,
+): () => void {
+  return source.subscribe({
+    enqueue: reader.enqueue,
+    close: reader.close,
+    error: reason => reader.error(reason, getErrorReference(result, model)),
+    halt: reader.halt,
+  });
 }

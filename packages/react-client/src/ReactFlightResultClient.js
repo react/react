@@ -28,6 +28,7 @@ import type {
   StreamReader,
 } from 'shared/ReactFlightResultReadableStream';
 import {closeReadableStream} from 'shared/ReactFlightResultReadableStream';
+import type {AsyncIterableController} from 'shared/ReactFlightResultAsyncIterable';
 import type {ReactElement} from 'shared/ReactElementType';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {ReactComponentInfo, Wakeable, Thenable} from 'shared/ReactTypes';
@@ -40,6 +41,7 @@ import type {
 } from './ReactFlightClientConfig';
 import {
   getTemporaryReference,
+  getAsyncIterable,
   getReadableStream,
   getIteratorEntries,
   getServerReference,
@@ -58,7 +60,11 @@ import {
   waitForHints,
 } from 'shared/ReactFlightResult';
 import {getResultModelStatus} from 'shared/ReactFlightResultModel';
-import {REACT_ELEMENT_TYPE, REACT_LAZY_TYPE} from 'shared/ReactSymbols';
+import {
+  REACT_ELEMENT_TYPE,
+  REACT_LAZY_TYPE,
+  ASYNC_ITERATOR,
+} from 'shared/ReactSymbols';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import isArray from 'shared/isArray';
 import getPrototypeOf from 'shared/getPrototypeOf';
@@ -1438,6 +1444,9 @@ function scanModelFields(
       if (getReadableStream(response._result, value) !== undefined) {
         return false;
       }
+      if (getAsyncIterable(response._result, value) !== undefined) {
+        return false;
+      }
       const entries = getIteratorEntries(response._result, value);
       if (entries !== undefined) {
         scanModel(response, entries, state, chunks);
@@ -1722,6 +1731,10 @@ function readSpecialModel(response: Response, value: any): any {
     const readableStream = getReadableStream(response._result, value);
     if (readableStream !== undefined) {
       return readReadableStream(response, value, readableStream);
+    }
+    const asyncIterable = getAsyncIterable(response._result, value);
+    if (asyncIterable !== undefined) {
+      return readAsyncIterable(response, value, asyncIterable);
     }
     const iteratorEntries = getIteratorEntries(response._result, value);
     if (iteratorEntries !== undefined) {
@@ -2077,4 +2090,218 @@ function readReadableStream<T>(
     unsubscribe();
   }
   return stream;
+}
+
+function asyncIterator(this: $AsyncIterator<any, any, void>) {
+  return this;
+}
+
+function readAsyncIterable<T>(
+  response: Response,
+  model: Object,
+  source: AsyncIterableController<T>,
+): $AsyncIterable<T, T, void> {
+  const buffer: Array<SomeChunk<IteratorResult<T, T>>> = [];
+  let closed = false;
+  let nextWriteIndex = 0;
+  let unsubscribe = noop;
+  let unregisterError = noop;
+  const subscriptions: Set<ModelSubscription> = new Set();
+
+  function release(): void {
+    if (closed && subscriptions.size === 0) {
+      unsubscribe();
+      unregisterError();
+    }
+  }
+
+  function rejectEntry(
+    chunk: SomeChunk<IteratorResult<T, T>>,
+    error: mixed,
+  ): void {
+    triggerErrorOnChunk(chunk, error);
+    release();
+  }
+
+  function resolveIteratorResult(
+    chunk: SomeChunk<IteratorResult<T, T>>,
+    entry: IteratorResult<T, T>,
+  ): void {
+    if (chunk.status !== PENDING) {
+      return;
+    }
+    const blockedChunk: BlockedChunk<IteratorResult<T, T>> = chunk as any;
+    blockedChunk.status = BLOCKED;
+    function initialize(): void {
+      if (chunk.status !== BLOCKED) {
+        return;
+      }
+      try {
+        const value = entry.done
+          ? readOutlinedModel(response, entry.value)
+          : readModel(response, entry.value);
+        freezeCompletedElements(response);
+        initializeChunk(
+          chunk,
+          entry.done ? {done: true, value} : {done: false, value},
+        );
+      } catch (error) {
+        triggerErrorOnChunk(chunk, error);
+      }
+      release();
+    }
+    try {
+      const pending = preloadModel(response, entry.value, !!entry.done);
+      if (pending === null) {
+        initialize();
+      } else {
+        subscribeToModel(
+          response,
+          pending,
+          initialize,
+          error => rejectEntry(chunk, error),
+          subscriptions,
+        );
+      }
+    } catch (error) {
+      rejectEntry(chunk, error);
+    }
+  }
+
+  function enqueue(entry: Promise<T>, done: boolean): void {
+    if (closed) {
+      return;
+    }
+    if (nextWriteIndex === buffer.length) {
+      buffer[nextWriteIndex] = createPendingChunk();
+    }
+    const chunk = buffer[nextWriteIndex++];
+    if (isHaltedModel(response, entry)) {
+      triggerErrorOnChunk(chunk, getClosedReason(response));
+      return;
+    }
+    subscribeToModel(
+      response,
+      entry,
+      value =>
+        resolveIteratorResult(
+          chunk,
+          done ? {done: true, value} : {done: false, value},
+        ),
+      reason => rejectEntry(chunk, resolveError(response, entry, reason)),
+      subscriptions,
+    );
+  }
+
+  function close(): void {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    while (nextWriteIndex < buffer.length) {
+      initializeChunk(buffer[nextWriteIndex++], {done: true, value: undefined});
+    }
+    release();
+  }
+
+  function errorIterable(reason: mixed): void {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    if (nextWriteIndex === buffer.length) {
+      buffer[nextWriteIndex] = createPendingChunk();
+    }
+    const error = resolveError(response, model, reason);
+    while (nextWriteIndex < buffer.length) {
+      triggerErrorOnChunk(buffer[nextWriteIndex++], error);
+    }
+    release();
+  }
+
+  function halt(): void {
+    if (response._allowPartialStream) {
+      close();
+    } else {
+      errorIterable(getClosedReason(response));
+    }
+  }
+
+  function getIterator(): $AsyncIterator<T, T, void> {
+    let nextReadIndex = 0;
+    const iterator: any = {
+      next(arg: void) {
+        if (arg !== undefined) {
+          throw new Error(
+            'Values cannot be passed to next() of AsyncIterables passed to Client Components.',
+          );
+        }
+        if (nextReadIndex === buffer.length) {
+          if (closed) {
+            // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors.
+            return new ReactPromise(
+              INITIALIZED,
+              {done: true, value: undefined},
+              null,
+            );
+          }
+          buffer[nextReadIndex] = createPendingChunk();
+        }
+        return buffer[nextReadIndex++];
+      },
+    };
+    iterator[ASYNC_ITERATOR] = asyncIterator;
+    return iterator;
+  }
+
+  const iterable: any = source.isIterator
+    ? getIterator()
+    : {[ASYNC_ITERATOR]: getIterator};
+  response._models.set(model, iterable);
+  if (response._closed) {
+    errorIterable(getClosedReason(response));
+  } else {
+    unregisterError = registerStreamError(response, error => {
+      unsubscribe();
+      subscriptions.forEach(detachModelSubscription);
+      for (let i = 0; i < buffer.length; i++) {
+        if (buffer[i].status === PENDING || buffer[i].status === BLOCKED) {
+          triggerErrorOnChunk(buffer[i], error);
+        }
+      }
+      errorIterable(error);
+    });
+    unsubscribe = source.subscribe({
+      enqueue,
+      close,
+      error: errorIterable,
+      halt,
+    });
+    if (closed) {
+      unsubscribe();
+    }
+  }
+  return iterable;
+}
+
+function readOutlinedModel(response: Response, model: any): any {
+  while (isLazyModel(response, model)) {
+    const lazy = model;
+    try {
+      model = lazy._init(lazy._payload);
+    } catch (error) {
+      throw resolveError(response, lazy._payload, error);
+    }
+  }
+  let value = readModel(response, model);
+  if (isElementModel(response, model)) {
+    while (value.$$typeof === REACT_LAZY_TYPE) {
+      const initializingElement = value._payload._initializingElement;
+      if (initializingElement !== undefined) {
+        return initializingElement;
+      }
+      value = value._init(value._payload);
+    }
+  }
+  return value;
 }

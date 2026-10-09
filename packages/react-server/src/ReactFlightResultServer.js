@@ -9,6 +9,7 @@
 
 import type {ReactElement} from 'shared/ReactElementType';
 import type {Result, ModelReference} from 'shared/ReactFlightResult';
+import {createAsyncIterable} from 'shared/ReactFlightResultAsyncIterable';
 import {createReadableStream} from 'shared/ReactFlightResultReadableStream';
 import type {ResultModel} from 'shared/ReactFlightResultModel';
 import type {TemporaryReferenceSet} from './ReactFlightServerTemporaryReferences';
@@ -40,6 +41,7 @@ import {
   REACT_FORWARD_REF_TYPE,
   REACT_MEMO_TYPE,
   getIteratorFn,
+  ASYNC_ITERATOR,
   REACT_FRAGMENT_TYPE,
   REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
@@ -63,6 +65,7 @@ import {
   createValueReference,
   getValueReference,
   markFormDataWithBlobs,
+  setAsyncIterable,
   setReadableStream,
   setIteratorEntries,
   getIteratorEntries,
@@ -462,6 +465,17 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
       result = {
         [Symbol.iterator]: function () {
           return iteratorFn.call(iterableChild) as any;
+        },
+      };
+    } else if (
+      typeof (result as any)[ASYNC_ITERATOR] === 'function' &&
+      (typeof ReadableStream !== 'function' ||
+        !(result instanceof ReadableStream))
+    ) {
+      const iterableChild: any = result;
+      result = {
+        [ASYNC_ITERATOR]: function () {
+          return iterableChild[ASYNC_ITERATOR]();
         },
       };
     }
@@ -1254,6 +1268,16 @@ function renderModelDestructive(
       renderReadableStream(request, task, value),
     );
   }
+  const getAsyncIterator = (value as any)[ASYNC_ITERATOR];
+  if (typeof getAsyncIterator === 'function') {
+    const model = renderAsyncFragment(
+      request,
+      task,
+      value as any,
+      getAsyncIterator,
+    );
+    return renderModelReference(task, model);
+  }
   if (Object.getPrototypeOf(value) !== ObjectPrototype) {
     throw new Error('Not implemented.');
   }
@@ -1706,7 +1730,8 @@ function getRenderedModels(
       isArray(value) ||
       (!(value instanceof Map) &&
         !(value instanceof Set) &&
-        getIteratorFn(value) !== null))
+        (getIteratorFn(value) !== null ||
+          typeof (value as any)[ASYNC_ITERATOR] === 'function')))
   ) {
     let keyedModels = request.renderedKeyedModels;
     if (keyedModels === null) {
@@ -2590,6 +2615,183 @@ function finishAbort(
       cleanupTaintQueue(request);
     }
   }
+}
+
+function renderAsyncIterable(
+  request: Request,
+  task: Task,
+  iterable: $AsyncIterable<ReactClientValue, ReactClientValue, void>,
+  iterator: $AsyncIterator<ReactClientValue, ReactClientValue, void>,
+): ReactClientValue {
+  const controller = createAsyncIterable<ReactClientValue>(
+    iterable === iterator,
+  );
+  const streamTask = createTask(
+    request,
+    task.model,
+    null,
+    false,
+    task.formatContext,
+  );
+  const resolvedIterable = controller.iterable;
+  setRenderedModel(
+    request.modelEntries,
+    iterable as any,
+    resolvedIterable as any,
+  );
+  setAsyncIterable(request.result, controller);
+
+  function progress(entry: IteratorResult<ReactClientValue, ReactClientValue>) {
+    if (streamTask.status !== PENDING) {
+      return;
+    }
+    const entryTask = createTask(
+      request,
+      entry.value,
+      null,
+      false,
+      entry.done ? createRootFormatContext() : streamTask.formatContext,
+    );
+    if (entry.done) {
+      streamTask.status = COMPLETED;
+      request.abortableTasks.delete(streamTask);
+      request.cacheController.signal.removeEventListener(
+        'abort',
+        abortIterable,
+      );
+      controller.close(entryTask.promise as any);
+    } else {
+      controller.enqueue(entryTask.promise as any);
+    }
+    request.pingedTasks.push(entryTask);
+    performWork(request);
+    if (!entry.done && streamTask.status === PENDING) {
+      next();
+    }
+  }
+
+  function throwIntoIterator(reason: mixed): void {
+    if (typeof (iterator as any).throw === 'function') {
+      try {
+        // $FlowFixMe[prop-missing] The optional iterator method accepts the reason.
+        iterator.throw(reason).then(noop, noop);
+      } catch (x) {
+        // The stream already contains the original error.
+      }
+    }
+  }
+
+  function error(reason: mixed): void {
+    if (streamTask.status !== PENDING) {
+      return;
+    }
+    request.cacheController.signal.removeEventListener('abort', abortIterable);
+    try {
+      erroredTask(request, streamTask, reason);
+      copyErrorReference(request.result, resolvedIterable, streamTask.promise);
+      controller.error(reason);
+    } catch (callbackError) {
+      controller.error(callbackError);
+      fatalError(request, callbackError);
+    } finally {
+      throwIntoIterator(reason);
+      scheduleMicrotask(() => performWork(request));
+    }
+  }
+
+  function abortIterable(): void {
+    const signal = request.cacheController.signal;
+    signal.removeEventListener('abort', abortIterable);
+    const reason = signal.reason;
+    if (request.type === PRERENDER) {
+      markHalted(request.result, resolvedIterable);
+      controller.halt();
+    } else {
+      streamTask.promise.then(noop, abortError => {
+        copyErrorReference(
+          request.result,
+          resolvedIterable,
+          streamTask.promise,
+        );
+        controller.error(abortError);
+      });
+    }
+    throwIntoIterator(reason);
+  }
+
+  function next(): void {
+    try {
+      iterator.next().then(progress, error);
+    } catch (x) {
+      error(x);
+    }
+  }
+
+  request.cacheController.signal.addEventListener('abort', abortIterable);
+  next();
+  return resolvedIterable as any;
+}
+
+function renderAsyncFragment(
+  request: Request,
+  task: Task,
+  children: $AsyncIterable<ReactClientValue, ReactClientValue, void>,
+  getAsyncIterator: () => $AsyncIterator<
+    ReactClientValue,
+    ReactClientValue,
+    void,
+  >,
+): ReactClientValue {
+  const keyPath = task.keyPath;
+  const implicitSlot = task.implicitSlot;
+  task.keyPath = null;
+  task.implicitSlot = false;
+  const existingIterable = getRenderedModel(request.modelEntries, children);
+  const resolvedIterable =
+    existingIterable === undefined || existingIterable === task.promise
+      ? renderAsyncIterable(
+          request,
+          task,
+          children,
+          getAsyncIterator.call(children),
+        )
+      : existingIterable;
+  if (keyPath !== null) {
+    const props = {children: resolvedIterable};
+    let fragment: ReactElement;
+    if (__DEV__) {
+      fragment = {
+        $$typeof: REACT_ELEMENT_TYPE,
+        type: REACT_FRAGMENT_TYPE,
+        key: keyPath,
+        props,
+        _owner: null,
+        _store: {validated: 0},
+      } as any;
+      Object.defineProperties(fragment, {
+        ref: {value: null},
+        _debugInfo: {value: null, writable: true},
+        _debugStack: {value: null, writable: true},
+        _debugTask: {value: null, writable: true},
+      });
+    } else {
+      fragment = {
+        $$typeof: REACT_ELEMENT_TYPE,
+        type: REACT_FRAGMENT_TYPE,
+        key: keyPath,
+        ref: null,
+        props,
+      } as any;
+    }
+    const resolvedModel = implicitSlot ? [fragment as any] : (fragment as any);
+    setRenderedModel(
+      getRenderedModels(request, children, keyPath, implicitSlot),
+      children,
+      resolvedModel,
+    );
+    return resolvedModel;
+  }
+  return resolvedIterable;
 }
 
 export function attachAbortSignal(request: Request, signal: AbortSignal): void {

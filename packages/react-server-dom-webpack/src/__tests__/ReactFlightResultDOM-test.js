@@ -3146,7 +3146,7 @@ describe('ReactFlightResultDOM', () => {
     expect(getMeaningfulChildren(container)).toEqual(<div>loading...</div>);
   });
 
-  it.skip('will leave async iterables in an incomplete state when halting', async () => {
+  it('will leave async iterables in an incomplete state when halting', async () => {
     let resolve;
     const wait = new Promise(r => (resolve = r));
     const errors = [];

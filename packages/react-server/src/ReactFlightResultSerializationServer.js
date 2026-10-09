@@ -105,6 +105,13 @@ export type InputSequenceReader = {
   halt: () => void,
 };
 
+export type InputAsyncIterableReader = {
+  enqueue: (Promise<ReactClientValue>, boolean) => void,
+  close: () => void,
+  error: (mixed, void | ErrorReference) => void,
+  halt: () => void,
+};
+
 export type InputThenableReader = {
   halt: () => void,
   resolve: ReactClientValue => void,
@@ -126,6 +133,10 @@ export type Input = {
   getReadableStream: Object => void | {
     isByteStream: boolean,
     subscribe: InputSequenceReader => () => void,
+  },
+  getAsyncIterable: Object => void | {
+    isIterator: boolean,
+    subscribe: InputAsyncIterableReader => () => void,
   },
   getIteratorEntries: Object => void | $ReadOnlyArray<mixed>,
   getServerReference: Object => void | ServerReferenceMetadata,
@@ -423,6 +434,7 @@ function renderModelDestructive(
           ArrayBuffer.isView(value) ||
           (input !== null &&
             (input.getReadableStream(value) !== undefined ||
+              input.getAsyncIterable(value) !== undefined ||
               input.getIteratorEntries(value) !== undefined)) ||
           getPrototypeOf(value) === ObjectPrototype))
     ) {
@@ -545,6 +557,9 @@ function renderModelDestructive(
     }
     if (input !== null && input.getReadableStream(value) !== undefined) {
       return serializeReadableStream(request, task, value);
+    }
+    if (input !== null && input.getAsyncIterable(value) !== undefined) {
+      return serializeAsyncIterable(request, task, value);
     }
     return value as any;
   }
@@ -1491,4 +1506,82 @@ function haltInputTask(request: Request, task: Task): void {
     request.pendingChunks--;
     enqueueFlush(request);
   }
+}
+
+function serializeAsyncIterable(
+  request: Request,
+  task: Task,
+  iterable: Object,
+): string {
+  const input = request.input;
+  const source = input === null ? undefined : input.getAsyncIterable(iterable);
+  if (source === undefined) {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'A Result must record async iterables before serialization.',
+    );
+  }
+  const streamTask = createTask(request, task.model);
+  // The task represents the Stop row. This adds a Start row.
+  request.pendingChunks++;
+  const startStreamRow =
+    streamTask.id.toString(16) + ':' + (source.isIterator ? 'x' : 'X') + '\n';
+  request.writtenObjects.set(iterable, serializeByValueID(streamTask.id));
+  request.completedRegularChunks.push(stringToChunk(startStreamRow));
+
+  function error(reason: mixed, reference: void | ErrorReference): void {
+    if (streamTask.status === PENDING) {
+      try {
+        erroredInputTask(request, streamTask, reason, reference);
+        scheduleMicrotask(() => flushCompletedChunks(request));
+      } catch (fatal) {
+        fatalError(request, fatal);
+      }
+    }
+  }
+
+  subscribeInput(request, detach =>
+    source.subscribe({
+      enqueue(entry, done) {
+        if (streamTask.status !== PENDING) {
+          return;
+        }
+        try {
+          const entryId = serializeThenable(request, entry as any);
+          const reference = serializeByValueID(entryId);
+          if (done) {
+            streamTask.status = COMPLETED;
+            const endStreamRow =
+              streamTask.id.toString(16) +
+              ':C' +
+              JSON.stringify(reference) +
+              '\n';
+            request.completedRegularChunks.push(stringToChunk(endStreamRow));
+            detach();
+          } else {
+            request.pendingChunks++;
+            emitModelChunk(request, streamTask.id, JSON.stringify(reference));
+          }
+          enqueueFlush(request);
+        } catch (reason) {
+          detach();
+          error(reason, undefined);
+        }
+      },
+      close() {
+        detach();
+      },
+      error(reason, reference) {
+        detach();
+        error(reason, reference);
+      },
+      halt() {
+        detach();
+        if (streamTask.status === PENDING) {
+          haltInputTask(request, streamTask);
+        }
+      },
+    }),
+  );
+  return serializeByValueID(streamTask.id);
 }
