@@ -36,6 +36,8 @@ import type {
 import {
   REACT_ELEMENT_TYPE,
   REACT_LAZY_TYPE,
+  REACT_FORWARD_REF_TYPE,
+  REACT_MEMO_TYPE,
   REACT_FRAGMENT_TYPE,
   REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
@@ -507,19 +509,30 @@ function renderElement(
     task.implicitSlot = prevImplicitSlot;
     return resolvedModel;
   }
-  if (
-    type !== null &&
-    typeof type === 'object' &&
-    !isClientReference(type) &&
-    type.$$typeof === REACT_LAZY_TYPE
-  ) {
-    const init = type._init;
-    const payload = type._payload;
-    const wrappedType = init(payload);
-    if (request.status === ABORTING || request.status === CLOSED) {
-      throw request.fatalError;
+  if (type != null && typeof type === 'object' && !isClientReference(type)) {
+    switch (type.$$typeof) {
+      case REACT_LAZY_TYPE: {
+        const init = type._init;
+        const payload = type._payload;
+        const wrappedType = init(payload);
+        if (request.status === ABORTING || request.status === CLOSED) {
+          throw request.fatalError;
+        }
+        return renderElement(request, task, wrappedType, element);
+      }
+      case REACT_FORWARD_REF_TYPE: {
+        return renderFunctionComponent(
+          request,
+          task,
+          type.render,
+          element.props,
+          element,
+        );
+      }
+      case REACT_MEMO_TYPE: {
+        return renderElement(request, task, type.type, element);
+      }
     }
-    return renderElement(request, task, wrappedType, element);
   }
   if (
     typeof type !== 'string' &&
