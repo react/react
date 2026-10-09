@@ -8,6 +8,9 @@
  */
 
 import type {ResultModel} from 'shared/ReactFlightResultModel';
+import type {ErrorReference} from 'shared/ReactFlightResult';
+import type {ReactStackTrace} from 'shared/ReactTypes';
+import {describeObjectForErrorMessage} from 'shared/ReactSerializationErrors';
 import type {
   ReactClientValue,
   ReactClientObject,
@@ -40,7 +43,12 @@ import {
   isClientReference,
   getClientReferenceKey,
   resolveClientReferenceMetadata,
+  parseStackTrace,
+  supportsRequestStorage,
+  cacheStorage,
+  requestStorage,
 } from './ReactFlightServerConfig';
+import {setCurrentCache} from './flight/ReactFlightCurrentCache';
 
 const OPENING = 10;
 const CLOSING = 13;
@@ -55,9 +63,9 @@ type Task = {
   model: ReactClientValue,
   status: 0 | 1 | 4 | 6,
 };
-type InputThenableReader = {
+export type InputThenableReader = {
   resolve: ReactClientValue => void,
-  reject: mixed => void,
+  reject: (mixed, void | ErrorReference) => void,
 };
 
 type ReactJSONValue =
@@ -81,7 +89,7 @@ export type Input = {
   ) => () => void,
 };
 export type Request = {
-  input: Input,
+  input: null | Input,
   destination: null | Destination,
   status: 10 | 13 | 14,
   fatalError: mixed,
@@ -96,12 +104,17 @@ export type Request = {
   writtenModels: WeakMap<Object, number>,
   pingedTasks: Array<Task>,
   inputSubscriptions: Set<() => void>,
+  writtenSymbols: Map<symbol, number>,
+  writtenErrors: WeakMap<ErrorReference, number>,
+  completedErrorChunks: Array<Chunk>,
+  onError: mixed => ?string,
 };
 
 function RequestInstance(
   this: any,
   input: Input,
   bundlerConfig: ClientManifest,
+  onError: void | (mixed => ?string),
 ) {
   this.input = input;
   this.destination = null;
@@ -118,14 +131,23 @@ function RequestInstance(
   this.writtenModels = new WeakMap();
   this.pingedTasks = [];
   this.inputSubscriptions = new Set();
+  this.writtenSymbols = new Map();
+  this.writtenErrors = new WeakMap();
+  this.completedErrorChunks = [];
+  this.onError = onError === undefined ? defaultErrorHandler : onError;
+}
+
+function defaultErrorHandler(error: mixed): void {
+  console['error'](error);
 }
 
 export function createRequest(
   input: Input,
   bundlerConfig: ClientManifest,
+  onError?: mixed => ?string,
 ): Request {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new RequestInstance(input, bundlerConfig);
+  return new RequestInstance(input, bundlerConfig, onError);
 }
 
 function renderClientElement(
@@ -221,6 +243,20 @@ function renderModelDestructive(
   ) {
     return '$';
   }
+  if (typeof value === 'symbol') {
+    const writtenSymbols = request.writtenSymbols;
+    const existingId = writtenSymbols.get(value);
+    if (existingId !== undefined) {
+      return serializeByValueID(existingId);
+    }
+    // $FlowFixMe[incompatible-type] `description` might be undefined
+    const name: string = value.description;
+    request.pendingChunks++;
+    const symbolId = request.nextChunkId++;
+    emitSymbolChunk(request, symbolId, name);
+    writtenSymbols.set(value, symbolId);
+    return serializeByValueID(symbolId);
+  }
   throw new Error('Not implemented.');
 }
 
@@ -313,6 +349,26 @@ function serializePromiseID(id: number): string {
   return '$@' + id.toString(16);
 }
 
+function serializeSymbolReference(name: string): string {
+  return '$S' + name;
+}
+
+function emitSymbolChunk(request: Request, id: number, name: string): void {
+  const symbolReference = serializeSymbolReference(name);
+  const processedChunk = encodeReferenceChunk(request, id, symbolReference);
+  request.completedImportChunks.push(processedChunk);
+}
+
+function encodeReferenceChunk(
+  request: Request,
+  id: number,
+  reference: string,
+): Chunk {
+  const json = JSON.stringify(reference);
+  const row = id.toString(16) + ':' + json + '\n';
+  return stringToChunk(row);
+}
+
 function createTask(request: Request, model: ReactClientValue): Task {
   request.pendingChunks++;
   return {id: request.nextChunkId++, model, status: PENDING};
@@ -334,8 +390,12 @@ function subscribeToThenable(
   task: Task,
   thenable: ResultModel<ReactClientValue>,
 ): void {
+  const input = request.input;
+  if (input === null) {
+    return;
+  }
   subscribeInput(request, detach =>
-    request.input.subscribeToThenable(thenable, {
+    input.subscribeToThenable(thenable, {
       resolve(value) {
         detach();
         if (request.status === OPENING && task.status === PENDING) {
@@ -343,10 +403,16 @@ function subscribeToThenable(
           pingTask(request, task);
         }
       },
-      reject(error) {
+      reject(error, reference) {
         detach();
-        task.status = ERRORED;
-        fatalError(request, error);
+        if (request.status === OPENING && task.status === PENDING) {
+          try {
+            erroredInputTask(request, task, error, reference);
+            enqueueFlush(request);
+          } catch (fatal) {
+            fatalError(request, fatal);
+          }
+        }
       },
     }),
   );
@@ -396,8 +462,11 @@ function retryTask(request: Request, task: Task): void {
     emitModelChunk(request, task.id, json);
     task.status = COMPLETED;
   } catch (error) {
-    task.status = ERRORED;
-    fatalError(request, error);
+    try {
+      erroredTask(request, task, error);
+    } catch (fatal) {
+      fatalError(request, fatal);
+    }
   }
 }
 
@@ -435,25 +504,129 @@ function serializeClientReference(
     }
     return serializeByValueID(existingId);
   }
-  const clientReferenceMetadata: ClientReferenceMetadata =
-    resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
-  const model: ReactClientValue = clientReferenceMetadata as any;
-  const metadata = resolveModel(request, {'': model}, '', model);
-  const json: string = JSON.stringify(metadata);
-  request.pendingChunks++;
-  const importId = request.nextChunkId++;
-  emitImportChunk(request, importId, json);
-  writtenClientReferences.set(clientReferenceKey, importId);
-  if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
-    return serializeLazyID(importId);
+  try {
+    const clientReferenceMetadata: ClientReferenceMetadata =
+      resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+    const model: ReactClientValue = clientReferenceMetadata as any;
+    const metadata = resolveModel(request, {'': model}, '', model);
+    const json: string = JSON.stringify(metadata);
+    request.pendingChunks++;
+    const importId = request.nextChunkId++;
+    emitImportChunk(request, importId, json);
+    writtenClientReferences.set(clientReferenceKey, importId);
+    if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
+      return serializeLazyID(importId);
+    }
+    return serializeByValueID(importId);
+  } catch (error) {
+    request.pendingChunks++;
+    const errorId = request.nextChunkId++;
+    const digest = logRecoverableError(request, error);
+    emitErrorChunk(request, errorId, digest, error);
+    return serializeByValueID(errorId);
   }
-  return serializeByValueID(importId);
 }
 
 function emitImportChunk(request: Request, id: number, json: string): void {
   const row = id.toString(16) + ':I' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedImportChunks.push(processedChunk);
+}
+
+function logRecoverableError(request: Request, error: mixed): string {
+  const prevCache = setCurrentCache(null);
+  let errorDigest;
+  try {
+    const onError = request.onError;
+    // $FlowFixMe[constant-condition]
+    if (supportsRequestStorage) {
+      errorDigest = cacheStorage.run(undefined, () =>
+        requestStorage.run(undefined, onError, error),
+      );
+    } else {
+      errorDigest = onError(error);
+    }
+  } finally {
+    setCurrentCache(prevCache);
+  }
+  if (errorDigest != null && typeof errorDigest !== 'string') {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      `onError returned something with a type other than "string". onError should return a string and may return null or undefined but must not return anything else. It received something of type "${typeof errorDigest}" instead`,
+    );
+  }
+  return errorDigest || '';
+}
+
+function erroredTask(request: Request, task: Task, error: mixed): void {
+  task.status = ERRORED;
+  const digest = logRecoverableError(request, error);
+  emitErrorChunk(request, task.id, digest, error);
+}
+
+function erroredInputTask(
+  request: Request,
+  task: Task,
+  error: mixed,
+  reference: void | ErrorReference,
+): void {
+  if (reference === undefined) {
+    erroredTask(request, task, error);
+    return;
+  }
+  task.status = ERRORED;
+  const existingId = request.writtenErrors.get(reference);
+  if (existingId === undefined) {
+    request.writtenErrors.set(reference, task.id);
+    emitErrorChunk(request, task.id, reference.digest, error);
+  } else {
+    const ref = serializeByValueID(existingId);
+    request.completedErrorChunks.push(
+      encodeReferenceChunk(request, task.id, ref),
+    );
+  }
+}
+
+function emitErrorChunk(
+  request: Request,
+  id: number,
+  digest: string,
+  error: mixed,
+): void {
+  let errorInfo;
+  if (__DEV__) {
+    let name = 'Error';
+    let message;
+    let stack: ReactStackTrace;
+    let env = 'Server';
+    try {
+      if (error instanceof Error) {
+        name = error.name;
+        // eslint-disable-next-line react-internal/safe-string-coercion
+        message = String(error.message);
+        stack = parseStackTrace(error, 0);
+        const errorEnv = (error as any).environmentName;
+        if (typeof errorEnv === 'string') {
+          env = errorEnv;
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        message = describeObjectForErrorMessage(error);
+        stack = [];
+      } else {
+        // eslint-disable-next-line react-internal/safe-string-coercion
+        message = String(error);
+        stack = [];
+      }
+    } catch (x) {
+      message = 'An error occurred but serializing the error message failed.';
+      stack = [];
+    }
+    errorInfo = {digest, name, message, stack, env, owner: null};
+  } else {
+    errorInfo = {digest};
+  }
+  const row = id.toString(16) + ':E' + JSON.stringify(errorInfo) + '\n';
+  request.completedErrorChunks.push(stringToChunk(row));
 }
 
 function emitHintChunk<Code: HintCode>(
@@ -487,13 +660,18 @@ function enqueueFlush(request: Request): void {
 }
 
 function cleanupInput(request: Request): void {
+  request.input = null;
   request.inputSubscriptions.forEach(detach => detach());
   request.inputSubscriptions.clear();
 }
 
 function subscribeHints(request: Request): void {
+  const input = request.input;
+  if (input === null) {
+    return;
+  }
   subscribeInput(request, detach =>
-    request.input.subscribe({
+    input.subscribe({
       hint(code, model) {
         try {
           emitHint(request, code, model);
@@ -564,6 +742,18 @@ function flushCompletedChunks(request: Request): void {
       }
     }
     regularChunks.splice(0, i);
+    const errorChunks = request.completedErrorChunks;
+    i = 0;
+    for (; i < errorChunks.length; i++) {
+      request.pendingChunks--;
+      const keepWriting = writeChunkAndReturn(destination, errorChunks[i]);
+      if (!keepWriting) {
+        request.destination = null;
+        i++;
+        break;
+      }
+    }
+    errorChunks.splice(0, i);
   } finally {
     completeWriting(destination);
   }
@@ -578,12 +768,16 @@ function flushCompletedChunks(request: Request): void {
 }
 
 export function startWork(request: Request): void {
+  const input = request.input;
+  if (input === null) {
+    return;
+  }
   subscribeHints(request);
   if (request.status > OPENING) {
     return;
   }
   const rootTask: Task = {id: 0, model: null, status: PENDING};
-  subscribeToThenable(request, rootTask, request.input.root);
+  subscribeToThenable(request, rootTask, input.root);
 }
 
 export function startFlowing(request: Request, destination: Destination): void {

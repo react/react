@@ -19,14 +19,13 @@ import {
 import {createInput} from 'react-server/src/ReactFlightResultSerialization';
 import {renderToPipeableStream} from './ReactFlightDOMResultSerializationServerNode';
 
+type Options = {onError?: mixed => ?string};
+
 export function renderToResult(
   model: ReactClientValue,
-  options?: mixed,
+  options?: Options,
 ): Result<ReactClientValue> {
-  if (options !== undefined) {
-    throw new Error('Not implemented.');
-  }
-  const request = createRequest(model);
+  const request = createRequest(model, options ? options.onError : undefined);
   startWork(request);
   return getResult(request);
 }
@@ -38,13 +37,14 @@ export function prerenderToResult(model: mixed, options?: mixed): empty {
 export function renderResultToPipeableStream(
   result: Result<ReactClientValue>,
   webpackMap: ClientManifest,
-  options?: mixed,
+  options?: Options,
 ): PipeableStream {
-  if (options !== undefined) {
-    throw new Error('Not implemented.');
-  }
   const input = createInput(result);
-  return renderToPipeableStream(input, webpackMap);
+  return renderToPipeableStream(
+    input,
+    webpackMap,
+    options ? options.onError : undefined,
+  );
 }
 
 export function renderResultToReadableStream(

@@ -40,8 +40,9 @@ function createCancelHandler(request: Request, reason: string) {
 export function renderToPipeableStream(
   input: Input,
   webpackMap: ClientManifest,
+  onError?: mixed => ?string,
 ): PipeableStream {
-  const request = createRequest(input, webpackMap);
+  const request = createRequest(input, webpackMap, onError);
   let hasStartedFlowing = false;
   startWork(request);
   return {

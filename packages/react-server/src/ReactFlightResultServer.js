@@ -26,7 +26,11 @@ import type {
   FormatContext,
 } from './ReactFlightResultServerConfig';
 
-import {REACT_ELEMENT_TYPE, REACT_LAZY_TYPE} from 'shared/ReactSymbols';
+import {
+  REACT_ELEMENT_TYPE,
+  REACT_LAZY_TYPE,
+  REACT_FRAGMENT_TYPE,
+} from 'shared/ReactSymbols';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
   HooksDispatcher,
@@ -41,6 +45,7 @@ import {
   completeResult,
   pushHint,
   closeHints,
+  setErrorDigest,
 } from 'shared/ReactFlightResult';
 import {
   createResultModel,
@@ -70,6 +75,8 @@ const PENDING = 0;
 const COMPLETED = 1;
 const RENDERING = 6;
 const ERRORED = 4;
+const OPENING = 10;
+const CLOSED = 14;
 
 export type ReactClientValue =
   | ReactElement
@@ -98,6 +105,7 @@ type Task = {
   thenableState: ThenableState | null,
 };
 export type Request = {
+  status: 10 | 14,
   result: Result<ReactClientValue>,
   pingedTasks: Array<Task>,
   hints: Hints,
@@ -107,9 +115,18 @@ export type Request = {
   abortableTasks: Set<Task>,
   identifierPrefix: string,
   identifierCount: number,
+  onError: mixed => ?string,
 };
 
-function RequestInstance(this: any, model: ReactClientValue) {
+function defaultErrorHandler(error: mixed): void {
+  console['error'](error);
+}
+
+function RequestInstance(
+  this: any,
+  model: ReactClientValue,
+  onError: void | (mixed => ?string),
+) {
   if (
     ReactSharedInternals.A !== null &&
     ReactSharedInternals.A !== DefaultAsyncDispatcher
@@ -119,6 +136,8 @@ function RequestInstance(this: any, model: ReactClientValue) {
     );
   }
   ReactSharedInternals.A = DefaultAsyncDispatcher;
+  this.status = OPENING;
+  this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.hints = createHints();
   this.cache = new Map();
   this.cacheController = new AbortController();
@@ -154,9 +173,12 @@ export function emitHint<Code: HintCode>(
   pushHint(request.result, code, model);
 }
 
-export function createRequest(model: ReactClientValue): Request {
+export function createRequest(
+  model: ReactClientValue,
+  onError?: mixed => ?string,
+): Request {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new RequestInstance(model);
+  return new RequestInstance(model, onError);
 }
 
 export function getResult(request: Request): Result<ReactClientValue> {
@@ -225,8 +247,18 @@ function renderElement(
   if (typeof type === 'function' && !isClientReference(type)) {
     return renderFunctionComponent(request, task, type, element.props, element);
   }
-  if (typeof type !== 'string' && !isClientReference(type)) {
+  if (type === REACT_FRAGMENT_TYPE) {
+    return renderModelDestructive(request, task, element.props.children);
+  }
+  if (
+    typeof type !== 'string' &&
+    typeof type !== 'symbol' &&
+    !isClientReference(type)
+  ) {
     throw new Error('Not implemented.');
+  }
+  if (typeof type === 'symbol') {
+    validateSymbol(type);
   }
   if (typeof type === 'string') {
     const parentFormatContext = task.formatContext;
@@ -249,6 +281,18 @@ function renderElement(
   return renderClientElement(request, task, type, element);
 }
 
+function validateSymbol(value: symbol): void {
+  // $FlowFixMe[incompatible-type] `description` might be undefined
+  const name: string = value.description;
+  if (Symbol.for(name) !== value) {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'Only global symbols received from Symbol.for(...) can be passed to Client Components. ' +
+        `The symbol Symbol.for(${name}) cannot be found among global symbols.`,
+    );
+  }
+}
+
 function createTask(
   request: Request,
   model: ReactClientValue,
@@ -268,7 +312,7 @@ function createTask(
 }
 
 function pingTask(request: Request, task: Task): void {
-  if (task.status !== PENDING) {
+  if (request.status === CLOSED || task.status !== PENDING) {
     return;
   }
   const pingedTasks = request.pingedTasks;
@@ -330,8 +374,51 @@ function createLazyWrapperAroundWakeable(
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
   task.status = ERRORED;
+  const digest = logRecoverableError(request, error);
+  setErrorDigest(request.result, task.promise, digest);
   request.abortableTasks.delete(task);
   rejectResultModel(task.promise, error);
+}
+
+function logRecoverableError(request: Request, error: mixed): string {
+  const prevCache = setCurrentCache(null);
+  let errorDigest;
+  try {
+    const onError = request.onError;
+    // $FlowFixMe[constant-condition]
+    if (supportsRequestStorage) {
+      errorDigest = cacheStorage.run(undefined, () =>
+        requestStorage.run(undefined, onError, error),
+      );
+    } else {
+      errorDigest = onError(error);
+    }
+  } finally {
+    setCurrentCache(prevCache);
+  }
+  if (errorDigest != null && typeof errorDigest !== 'string') {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      `onError returned something with a type other than "string". onError should return a string and may return null or undefined but must not return anything else. It received something of type "${typeof errorDigest}" instead`,
+    );
+  }
+  return errorDigest || '';
+}
+
+function fatalError(request: Request, error: mixed): void {
+  if (request.status === CLOSED) {
+    return;
+  }
+  request.status = CLOSED;
+  request.abortableTasks.forEach(task => {
+    task.status = ERRORED;
+    rejectResultModel(task.promise, error);
+  });
+  request.abortableTasks.clear();
+  request.pingedTasks = [];
+  closeHints(request.result);
+  completeResult(request.result);
+  request.cacheController.abort(error);
 }
 
 function renderThenable(
@@ -348,7 +435,11 @@ function renderThenable(
       pingTask(request, newTask);
       break;
     case 'rejected':
-      erroredTask(request, newTask, thenable.reason);
+      try {
+        erroredTask(request, newTask, thenable.reason);
+      } catch (error) {
+        fatalError(request, error);
+      }
       break;
     default: {
       if (typeof thenable.status !== 'string') {
@@ -383,7 +474,11 @@ function renderThenable(
         },
         reason => {
           if (newTask.status === PENDING) {
-            erroredTask(request, newTask, reason);
+            try {
+              erroredTask(request, newTask, reason);
+            } catch (error) {
+              fatalError(request, error);
+            }
             scheduleMicrotask(() => performWork(request));
           }
         },
@@ -460,8 +555,11 @@ function renderModelDestructive(
     }
   }
   if (value === null || typeof value !== 'object') {
-    if (typeof value === 'function' || typeof value === 'symbol') {
+    if (typeof value === 'function') {
       throw new Error('Not implemented.');
+    }
+    if (typeof value === 'symbol') {
+      validateSymbol(value);
     }
     return value;
   }
@@ -516,10 +614,7 @@ function renderModel(
       model !== null &&
       typeof model === 'object' &&
       ((model as any).$$typeof === REACT_ELEMENT_TYPE ||
-        (model as any).$$typeof === REACT_LAZY_TYPE) &&
-      error != null &&
-      typeof error === 'object' &&
-      typeof (error as any).then === 'function'
+        (model as any).$$typeof === REACT_LAZY_TYPE)
     ) {
       const newTask = createTask(request, model, task.formatContext);
       const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
@@ -532,9 +627,17 @@ function renderModel(
       ) {
         request.modelEntries.set(value, lazy);
       }
-      newTask.thenableState = getThenableStateAfterSuspending();
-      const ping = newTask.ping;
-      (error as any).then(ping, ping);
+      if (
+        error != null &&
+        typeof error === 'object' &&
+        typeof (error as any).then === 'function'
+      ) {
+        newTask.thenableState = getThenableStateAfterSuspending();
+        const ping = newTask.ping;
+        (error as any).then(ping, ping);
+      } else {
+        erroredTask(request, newTask, error);
+      }
       task.isModelReference = true;
       return lazy;
     }
@@ -585,7 +688,7 @@ function resolveModelFields(
 }
 
 function retryTask(request: Request, task: Task): void {
-  if (task.status !== PENDING) {
+  if (request.status === CLOSED || task.status !== PENDING) {
     return;
   }
   task.status = RENDERING;
@@ -597,6 +700,9 @@ function retryTask(request: Request, task: Task): void {
       task.isModelReference || rendered === null || typeof rendered !== 'object'
         ? rendered
         : resolveModelFields(request, task, rendered);
+    if (request.status === CLOSED) {
+      return;
+    }
     task.model = resolvedModel;
     if (originalModel !== null && typeof originalModel === 'object') {
       const existing = request.modelEntries.get(originalModel);
@@ -616,6 +722,9 @@ function retryTask(request: Request, task: Task): void {
     request.abortableTasks.delete(task);
     fulfillResultModel(task.promise, resolvedModel);
   } catch (thrownValue) {
+    if (request.status === CLOSED) {
+      return;
+    }
     const error =
       thrownValue === SuspenseException ? getSuspendedThenable() : thrownValue;
     if (
@@ -634,6 +743,9 @@ function retryTask(request: Request, task: Task): void {
 }
 
 function performWork(request: Request): void {
+  if (request.status === CLOSED) {
+    return;
+  }
   const prevDispatcher = ReactSharedInternals.H;
   ReactSharedInternals.H = HooksDispatcher;
   const prevCache = setCurrentCache(request);
@@ -644,8 +756,11 @@ function performWork(request: Request): void {
     for (let i = 0; i < pingedTasks.length; i++) {
       retryTask(request, pingedTasks[i]);
     }
+  } catch (error) {
+    fatalError(request, error);
   } finally {
-    if (request.abortableTasks.size === 0) {
+    if (request.status !== CLOSED && request.abortableTasks.size === 0) {
+      request.status = CLOSED;
       closeHints(request.result);
       completeResult(request.result);
       request.cacheController.abort(

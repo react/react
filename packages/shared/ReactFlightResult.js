@@ -15,6 +15,7 @@ import type {
 import noop from './noop';
 
 export type Hint = {+code: HintCode, +model: HintModel<any>};
+export type ErrorReference = {+digest: string};
 export type HintQueue = {
   completedHints: Array<Hint>,
   closed: boolean,
@@ -30,6 +31,7 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   hintsClosed: boolean,
   abortCallback: null | (mixed => void),
   abort: (reason: mixed) => void,
+  errorReferences: WeakMap<Object, ErrorReference>,
 };
 
 function abortResult<T>(result: Result<T>, reason: mixed): void {
@@ -51,9 +53,25 @@ export function createResult<T>(
     hintsClosed: false,
     abortCallback: abort,
     abort: noop,
+    errorReferences: new WeakMap(),
   };
   result.abort = abortResult.bind(null, result);
   return result;
+}
+
+export function setErrorDigest<T>(
+  result: Result<T>,
+  thenable: Object,
+  digest: string,
+): void {
+  result.errorReferences.set(thenable, {digest});
+}
+
+export function getErrorReference<T>(
+  result: Result<T>,
+  thenable: Object,
+): void | ErrorReference {
+  return result.errorReferences.get(thenable);
 }
 
 export function getRoot<T>(result: Result<T>): ResultModel<T> {

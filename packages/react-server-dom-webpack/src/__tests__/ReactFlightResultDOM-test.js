@@ -667,7 +667,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>Async: Module</p>');
   });
 
-  it.skip('should error when a bundler uses async ESM modules with createClientModuleProxy', async () => {
+  it('should error when a bundler uses async ESM modules with createClientModuleProxy', async () => {
     const AsyncModule = Promise.resolve(function AsyncModule() {
       return 'This should not be rendered';
     });
@@ -883,7 +883,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<div><span>from-server</span></div>');
   });
 
-  it.skip('should progressively reveal server components', async () => {
+  it('should progressively reveal server components', async () => {
     let reportedErrors = [];
 
     // Client Components
@@ -1087,7 +1087,7 @@ describe('ReactFlightResultDOM', () => {
     expect(reportedErrors).toEqual([]);
   });
 
-  it.skip('should handle streaming async server components', async () => {
+  it('should handle streaming async server components', async () => {
     const reportedErrors = [];
 
     const Row = async ({current, next}) => {
@@ -1193,7 +1193,7 @@ describe('ReactFlightResultDOM', () => {
     expect(reportedErrors).toEqual([]);
   });
 
-  it.skip('should preserve state of client components on refetch', async () => {
+  it('should preserve state of client components on refetch', async () => {
     // Client
 
     function Page({response}) {
@@ -1334,7 +1334,7 @@ describe('ReactFlightResultDOM', () => {
     expect(reportedErrors).toEqual(['for reasons']);
   });
 
-  it.skip('should be able to recover from a direct reference erroring client-side', async () => {
+  it('should be able to recover from a direct reference erroring client-side', async () => {
     const reportedErrors = [];
 
     const ClientComponent = clientExports(function ({prop}) {
@@ -1381,7 +1381,7 @@ describe('ReactFlightResultDOM', () => {
     expect(reportedErrors).toEqual([]);
   });
 
-  it.skip('should be able to recover from a direct reference erroring client-side async', async () => {
+  it('should be able to recover from a direct reference erroring client-side async', async () => {
     const reportedErrors = [];
 
     const ClientComponent = clientExports(function ({prop}) {
@@ -1440,7 +1440,7 @@ describe('ReactFlightResultDOM', () => {
     expect(reportedErrors).toEqual([]);
   });
 
-  it.skip('should not retain stale error reason after reentrant module chunk initialization', async () => {
+  it('should not retain stale error reason after reentrant module chunk initialization', async () => {
     function MyComponent() {
       return <div>hello from client component</div>;
     }
@@ -1526,7 +1526,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toContain('hello from client component');
   });
 
-  it.skip('should be able to recover from a direct reference erroring server-side', async () => {
+  it('should be able to recover from a direct reference erroring server-side', async () => {
     const reportedErrors = [];
 
     const ClientComponent = clientExports(function ({prop}) {
@@ -1638,7 +1638,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>async hello</p>');
   });
 
-  it.skip('should throw on the client if a passed promise eventually rejects', async () => {
+  it('should throw on the client if a passed promise eventually rejects', async () => {
     const reportedErrors = [];
     const theError = new Error('Server throw');
 
@@ -2282,7 +2282,7 @@ describe('ReactFlightResultDOM', () => {
     }
   });
 
-  it.skip('should be able to render a client reference as return value', async () => {
+  it('should be able to render a client reference as return value', async () => {
     const ClientModule = clientExports({
       text: 'Hello World',
     });
