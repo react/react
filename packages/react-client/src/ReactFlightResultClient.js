@@ -1142,6 +1142,9 @@ function scanModel(
       }
       return false;
     }
+    if (value instanceof Date) {
+      return true;
+    }
     if (
       value.$$typeof === REACT_ELEMENT_TYPE ||
       value.$$typeof === REACT_LAZY_TYPE ||
@@ -1548,6 +1551,9 @@ function readSpecialModel(response: Response, value: any): any {
         subscribeToModel(response, value, resolve, reject);
       }
       return chunk;
+    }
+    if (value instanceof Date) {
+      return value;
     }
     return readObject(response, value);
   }

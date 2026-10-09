@@ -100,6 +100,7 @@ const CLOSED = 14;
 export type ReactClientValue =
   | ReactElement
   | LazyComponent<ReactClientValue, Thenable<ReactClientValue>>
+  | Date
   | Promise<ReactClientValue>
   | ClientReference<any>
   | string
@@ -114,6 +115,33 @@ export type ReactClientValue =
   | ((...args: Array<mixed>) => mixed);
 export type ReactClientObject = {+[key: string]: ReactClientValue};
 const ObjectPrototype = Object.prototype;
+const DatePrototype = Date.prototype;
+// $FlowFixMe[method-unbinding]
+const dateToJSON = DatePrototype.toJSON;
+// $FlowFixMe[method-unbinding]
+const dateToISOString = DatePrototype.toISOString;
+// $FlowFixMe[method-unbinding]
+const dateValueOf = DatePrototype.valueOf;
+const dateToPrimitive = Date.prototype[Symbol.toPrimitive];
+// $FlowFixMe[method-unbinding]
+const dateGetTime = DatePrototype.getTime;
+
+function isSimpleDate(value: Date): boolean {
+  return (
+    getPrototypeOf(value) === DatePrototype &&
+    !hasOwnProperty.call(value, 'toJSON') &&
+    !hasOwnProperty.call(value, 'toISOString') &&
+    !hasOwnProperty.call(value, 'valueOf') &&
+    !hasOwnProperty.call(value, Symbol.toPrimitive) &&
+    // $FlowFixMe[method-unbinding]
+    DatePrototype.toJSON === dateToJSON &&
+    // $FlowFixMe[method-unbinding]
+    DatePrototype.toISOString === dateToISOString &&
+    // $FlowFixMe[method-unbinding]
+    DatePrototype.valueOf === dateValueOf &&
+    Date.prototype[Symbol.toPrimitive] === dateToPrimitive
+  );
+}
 const {getPrototypeOf} = Object;
 type Task = {
   model: ReactClientValue,
@@ -801,14 +829,21 @@ function renderModelDestructive(
     return renderModelReference(task, value);
   }
   if (value === null || typeof value !== 'object') {
+    if (typeof value === 'string') {
+      serializedSize += value.length;
+    }
+    if (
+      typeof value === 'string' &&
+      value[value.length - 1] === 'Z' &&
+      parent[parentPropertyName as any] instanceof Date
+    ) {
+      return renderModelReference(task, new Date(value));
+    }
     if (typeof value === 'function') {
       throw new Error('Not implemented.');
     }
     if (typeof value === 'symbol') {
       validateSymbol(value);
-    }
-    if (typeof value === 'string') {
-      serializedSize += value.length;
     }
     return value;
   }
@@ -992,6 +1027,17 @@ function renderModelDestructive(
   if (isArray(value)) {
     return renderFragment(request, task, value);
   }
+  if (value instanceof Date) {
+    const date: Date = value;
+    return renderModelReference(
+      task,
+      isSimpleDate(date)
+        ? new Date(dateGetTime.call(date))
+        : // Match Flight's '$D' + date.toJSON() coercion, including Symbols.
+          // eslint-disable-next-line react-internal/safe-string-coercion
+          new Date('' + date.toJSON()),
+    );
+  }
   if (Object.getPrototypeOf(value) !== ObjectPrototype) {
     throw new Error('Not implemented.');
   }
@@ -1010,10 +1056,36 @@ function resolveModel(
   parentReference?: null | ModelReference,
   renderedRoot?: ReactClientValue,
 ): ReactClientValue {
+  let jsonValue: ReactClientValue = value;
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as any).toJSON === 'function'
+  ) {
+    if (value instanceof Date && isSimpleDate(value)) {
+      const time = dateGetTime.call(value);
+      return renderModelReference(
+        task,
+        Number.isNaN(time) ? null : new Date(time),
+      );
+    }
+    jsonValue = (value as any).toJSON(key);
+  }
   const rendered =
-    renderedRoot !== undefined
+    renderedRoot !== undefined && jsonValue === value
       ? renderedRoot
-      : renderModel(request, task, parent, key, value, parentReference);
+      : renderModel(request, task, parent, key, jsonValue, parentReference);
+  if (renderedRoot !== undefined) {
+    task.renderedModel = rendered;
+    if (jsonValue !== value) {
+      let outlinedModels = request.outlinedModels;
+      if (outlinedModels === null) {
+        request.outlinedModels = outlinedModels = new WeakMap();
+      }
+      outlinedModels.set(renderedRoot as any, task);
+      request.hasByValueModels = true;
+    }
+  }
   if (
     task.isModelReference ||
     rendered === null ||

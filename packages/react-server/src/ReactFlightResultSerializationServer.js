@@ -330,6 +330,9 @@ function renderModelDestructive(
     if (typeof (value as any).then === 'function') {
       return serializePromiseID(serializeThenable(request, value as any));
     }
+    if (value instanceof Date) {
+      return serializeDate(value);
+    }
     if (
       kind === MODEL_ELEMENT ||
       (value as any).$$typeof === REACT_ELEMENT_TYPE
@@ -383,6 +386,12 @@ function renderModelDestructive(
     return serializeByValueID(symbolId);
   }
   throw new Error('Not implemented.');
+}
+
+function serializeDate(date: Date): string {
+  // JSON.stringify automatically calls Date.prototype.toJSON which calls toISOString.
+  // We need only tack on a $D prefix.
+  return '$D' + date.toJSON();
 }
 
 function resolveModel(
