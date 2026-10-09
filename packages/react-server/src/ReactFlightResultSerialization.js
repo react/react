@@ -23,6 +23,7 @@ import {
   getErrorReference,
   getValueReference,
   getModelInfo,
+  isHalted,
 } from 'shared/ReactFlightResult';
 import noop from 'shared/noop';
 
@@ -31,6 +32,10 @@ function subscribeToThenable(
   thenable: ResultModel<ReactClientValue>,
   reader: InputThenableReader,
 ): () => void {
+  if (isHalted(result, thenable)) {
+    reader.halt();
+    return noop;
+  }
   if (thenable.status === 'fulfilled') {
     reader.resolve(thenable.value as any);
     return noop;
@@ -43,28 +48,44 @@ function subscribeToThenable(
     result: null | Result<ReactClientValue>,
     reader: null | InputThenableReader,
   } = {result, reader};
+  let unsubscribe = noop;
   function detach(): void {
     subscription.result = null;
     subscription.reader = null;
+    unsubscribe();
   }
-  thenable.then(
-    value => {
-      const current = subscription.reader;
-      if (current !== null) {
-        detach();
-        current.resolve(value);
-      }
-    },
-    error => {
-      const current = subscription.reader;
-      const source = subscription.result;
-      if (current !== null && source !== null) {
-        const reference = getErrorReference(source, thenable);
-        detach();
-        current.reject(error, reference);
-      }
-    },
-  );
+  unsubscribe = subscribeToResult(result, () => {
+    const current = subscription.reader;
+    const source = subscription.result;
+    if (current !== null && source !== null && isHalted(source, thenable)) {
+      detach();
+      current.halt();
+    }
+  });
+  if (subscription.reader !== null) {
+    thenable.then(
+      value => {
+        const current = subscription.reader;
+        if (current !== null) {
+          detach();
+          current.resolve(value);
+        }
+      },
+      error => {
+        const current = subscription.reader;
+        const source = subscription.result;
+        if (current !== null && source !== null) {
+          const reference = getErrorReference(source, thenable);
+          detach();
+          if (isHalted(source, thenable)) {
+            current.halt();
+          } else {
+            current.reject(error, reference);
+          }
+        }
+      },
+    );
+  }
   return detach;
 }
 

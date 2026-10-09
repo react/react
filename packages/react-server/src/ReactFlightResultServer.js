@@ -54,6 +54,7 @@ import {
   getValueReference,
   setModelInfo,
   getModelInfo,
+  markHalted,
   MODEL_OBJECT,
   MODEL_ARRAY,
   MODEL_ELEMENT,
@@ -92,6 +93,8 @@ const OPENING = 10;
 const OPEN = 11;
 const ABORTING = 12;
 const ABORTED = 3;
+const RENDER = 20;
+const PRERENDER = 21;
 const CLOSED = 14;
 
 export type ReactClientValue =
@@ -148,6 +151,9 @@ const MAX_ROW_SIZE = 3200;
 const emptyRoot = {};
 
 export type Request = {
+  type: 20 | 21,
+  onAllReady: () => void,
+  onFatalError: mixed => void,
   status: 10 | 11 | 12 | 14,
   fatalError: mixed,
   abortModel: null | ResultModel<ReactClientValue>,
@@ -189,6 +195,9 @@ function RequestInstance(
   this: any,
   model: ReactClientValue,
   onError: void | (mixed => ?string),
+  type: 20 | 21,
+  onAllReady: () => void,
+  onFatalError: mixed => void,
 ) {
   if (
     ReactSharedInternals.A !== null &&
@@ -199,6 +208,9 @@ function RequestInstance(
     );
   }
   ReactSharedInternals.A = DefaultAsyncDispatcher;
+  this.type = type;
+  this.onAllReady = onAllReady;
+  this.onFatalError = onFatalError;
   this.status = OPENING;
   this.fatalError = null;
   this.abortModel = null;
@@ -256,7 +268,7 @@ export function createRequest(
   onError?: mixed => ?string,
 ): Request {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new RequestInstance(model, onError);
+  return new RequestInstance(model, onError, RENDER, noop, noop);
 }
 
 export function getResult(request: Request): Result<ReactClientValue> {
@@ -496,7 +508,7 @@ function pingTask(request: Request, task: Task): void {
   const pingedTasks = request.pingedTasks;
   pingedTasks.push(task);
   if (pingedTasks.length === 1) {
-    if (request.status === OPENING) {
+    if (request.type === PRERENDER || request.status === OPENING) {
       scheduleMicrotask(() => performWork(request));
     } else {
       scheduleWork(() => performWork(request));
@@ -598,6 +610,7 @@ function fatalError(request: Request, error: mixed): void {
   request.fatalError = error;
   request.cacheController.abort(error);
   finishAbort(request, error);
+  request.onFatalError(error);
 }
 
 function renderThenable(
@@ -1492,6 +1505,7 @@ function performWork(request: Request): void {
           'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
         ),
       );
+      request.onAllReady();
     }
     ReactSharedInternals.H = prevDispatcher;
     resetHooksForRequest();
@@ -2139,11 +2153,15 @@ function deferTask(request: Request, task: Task): ReactClientValue {
 
 function abortTask(request: Request, task: Task): void {
   task.status = ABORTED;
-  const abortModel = request.abortModel;
-  if (abortModel !== null) {
-    copyErrorReference(request.result, task.promise, abortModel);
+  if (request.type === PRERENDER) {
+    markHalted(request.result, task.promise);
+  } else {
+    const abortModel = request.abortModel;
+    if (abortModel !== null) {
+      copyErrorReference(request.result, task.promise, abortModel);
+    }
+    task.reject(request.fatalError);
   }
-  task.reject(request.fatalError);
   request.abortableTasks.delete(task);
 }
 
@@ -2155,7 +2173,11 @@ function finishAbort(
   request.abortableTasks.forEach(task => {
     if (preserveRendering) {
       if (task.status !== RENDERING) {
-        abortTask(request, task);
+        if (__DEV__ && request.type === PRERENDER) {
+          task.status = ABORTED;
+        } else {
+          abortTask(request, task);
+        }
       }
     } else {
       task.status = ABORTED;
@@ -2164,6 +2186,15 @@ function finishAbort(
     }
   });
   request.pingedTasks.length = 0;
+  if (
+    __DEV__ &&
+    request.type === PRERENDER &&
+    preserveRendering &&
+    request.abortableTasks.size > 0
+  ) {
+    scheduleWork(() => finishAbortedTasks(request));
+    return;
+  }
   if (request.abortableTasks.size === 0) {
     request.status = CLOSED;
     closeHints(request.result);
@@ -2202,6 +2233,13 @@ export function abort(request: Request, reason: mixed): void {
   try {
     request.status = ABORTING;
     request.cacheController.abort(reason);
+    if (request.type === PRERENDER) {
+      finishAbort(request, reason, true);
+      if (request.status === CLOSED) {
+        request.onAllReady();
+      }
+      return;
+    }
     const error =
       reason === undefined
         ? new Error('The render was aborted by the server without a reason.')
@@ -2219,7 +2257,40 @@ export function abort(request: Request, reason: mixed): void {
       rejectResultModel(abortModel, error);
     }
     finishAbort(request, error, true);
+    if (request.status === CLOSED) {
+      request.onAllReady();
+    }
   } catch (error) {
     fatalError(request, error);
+  }
+}
+
+export function createPrerenderRequest(
+  model: ReactClientValue,
+  onAllReady: () => void,
+  onFatalError: mixed => void,
+  onError?: mixed => ?string,
+): Request {
+  // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
+  return new RequestInstance(
+    model,
+    onError,
+    PRERENDER,
+    onAllReady,
+    onFatalError,
+  );
+}
+
+function finishAbortedTasks(request: Request): void {
+  request.abortableTasks.forEach(task => {
+    if (task.status === ABORTED) {
+      abortTask(request, task);
+    }
+  });
+  if (request.abortableTasks.size === 0 && request.status !== CLOSED) {
+    request.status = CLOSED;
+    closeHints(request.result);
+    completeResult(request.result);
+    request.onAllReady();
   }
 }

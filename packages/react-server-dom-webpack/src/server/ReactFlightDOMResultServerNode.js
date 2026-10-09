@@ -7,12 +7,16 @@
  * @flow
  */
 
-import type {ReactClientValue} from 'react-server/src/ReactFlightResultServer';
+import type {
+  Request,
+  ReactClientValue,
+} from 'react-server/src/ReactFlightResultServer';
 import type {Result} from 'shared/ReactFlightResult';
 import type {PipeableStream} from './ReactFlightDOMResultSerializationServerNode';
 import type {ClientManifest} from './ReactFlightServerConfigWebpackBundler';
 import {
   createRequest,
+  createPrerenderRequest,
   getResult,
   startWork,
   attachAbortSignal,
@@ -34,8 +38,23 @@ export function renderToResult(
   return getResult(request);
 }
 
-export function prerenderToResult(model: mixed, options?: mixed): empty {
-  throw new Error('Not implemented.');
+export function prerenderToResult(
+  model: ReactClientValue,
+  options?: Options,
+): Promise<Result<ReactClientValue>> {
+  return new Promise((resolve, reject) => {
+    const request: Request = createPrerenderRequest(
+      model,
+      () => resolve(getResult(request)),
+      reject,
+      options ? options.onError : undefined,
+    );
+    startWork(request);
+    const signal = options ? options.signal : undefined;
+    if (signal) {
+      attachAbortSignal(request, signal);
+    }
+  });
 }
 
 export function renderResultToPipeableStream(

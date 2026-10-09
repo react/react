@@ -62,6 +62,7 @@ const CLOSED = 14;
 const PENDING = 0;
 const COMPLETED = 1;
 const ERRORED = 4;
+const ABORTED = 3;
 const RENDERING = 6;
 const ObjectPrototype = Object.prototype;
 const {getPrototypeOf} = Object;
@@ -69,9 +70,10 @@ const {getPrototypeOf} = Object;
 type Task = {
   id: number,
   model: ReactClientValue,
-  status: 0 | 1 | 4 | 6,
+  status: 0 | 1 | 3 | 4 | 6,
 };
 export type InputThenableReader = {
+  halt: () => void,
   resolve: ReactClientValue => void,
   reject: (mixed, void | ErrorReference) => void,
 };
@@ -527,6 +529,14 @@ function subscribeToThenable(
   }
   subscribeInput(request, detach =>
     input.subscribeToThenable(thenable, {
+      halt() {
+        detach();
+        if (task.status === PENDING) {
+          task.status = ABORTED;
+          request.pendingChunks--;
+          enqueueFlush(request);
+        }
+      },
       resolve(value) {
         detach();
         if (request.status === OPENING && task.status === PENDING) {

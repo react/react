@@ -26,6 +26,7 @@ import {
   MODEL_ARRAY,
   MODEL_ELEMENT,
   getErrorReference,
+  isHalted,
   getHintQueue,
   waitForHints,
 } from 'shared/ReactFlightResult';
@@ -80,6 +81,7 @@ export type Response = {
   _nonce: void | string,
   _resolveClientReferenceMetadata: Object => null | ClientReferenceMetadata,
   _onError: mixed => ?string,
+  _allowPartialStream: boolean,
   _closed: boolean,
   _disposed: boolean,
   _closedReason: null | Error,
@@ -99,6 +101,7 @@ export function createResponse(
   resolveClientReferenceMetadata: Object => null | ClientReferenceMetadata,
   nonce: void | string,
   onError?: mixed => ?string,
+  allowPartialStream: boolean = false,
 ): Response {
   const response: Response = {
     _result: result,
@@ -107,6 +110,7 @@ export function createResponse(
     _nonce: nonce,
     _resolveClientReferenceMetadata: resolveClientReferenceMetadata,
     _onError: onError === undefined ? defaultErrorHandler : onError,
+    _allowPartialStream: allowPartialStream,
     _closed: false,
     _disposed: false,
     _closedReason: null,
@@ -129,6 +133,10 @@ function getClosedReason(response: Response): Error {
     response._closedReason = error = new Error('Connection closed.');
   }
   return error;
+}
+
+function isHaltedModel(response: Response, model: Object): boolean {
+  return !response._allowPartialStream && isHalted(response._result, model);
 }
 
 type PendingChunk<T> = {
@@ -977,6 +985,9 @@ function scanOutlinedModel(
     try {
       value = lazy._init(lazy._payload);
     } catch (error) {
+      if (isHaltedModel(response, lazy._payload)) {
+        throw getClosedReason(response);
+      }
       if (
         lazy._payload.status !== 'rejected' &&
         error !== null &&
@@ -1371,6 +1382,9 @@ function resolveError(
   thenable: Object,
   error: mixed,
 ): mixed {
+  if (isHaltedModel(response, thenable)) {
+    return getClosedReason(response);
+  }
   const reference = getErrorReference(response._result, thenable);
   if (reference === undefined) {
     return error;
@@ -1476,7 +1490,7 @@ function readSpecialModel(response: Response, value: any): any {
     const source = value._payload;
     const reject = (error: mixed) =>
       triggerErrorOnChunk(chunk, resolveError(response, source, error));
-    if (response._closed) {
+    if (response._closed || isHaltedModel(response, source)) {
       triggerErrorOnChunk(chunk, getClosedReason(response));
     } else if (source.status === INITIALIZED) {
       resolveModelChunk(response, chunk, source.value);
@@ -1497,7 +1511,7 @@ function readSpecialModel(response: Response, value: any): any {
     if (typeof value.then === 'function') {
       const chunk = createPendingChunk<any>(response);
       models.set(value, chunk);
-      if (response._closed) {
+      if (response._closed || isHaltedModel(response, value)) {
         triggerErrorOnChunk(chunk, getClosedReason(response));
         return chunk;
       }

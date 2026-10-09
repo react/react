@@ -35,6 +35,7 @@ type Options = {
   nonce?: string,
   onError?: mixed => ?string,
   signal?: AbortSignal,
+  unstable_allowPartialStream?: boolean,
 };
 
 export function createFromResult<T>(
@@ -58,6 +59,7 @@ export function createFromResult<T>(
     },
     options.nonce,
     options.onError,
+    options.unstable_allowPartialStream === true,
   );
   const signal = options.signal;
   if (signal !== undefined) {

@@ -45,6 +45,7 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   abortCallback: null | (mixed => void),
   abort: (reason: mixed) => void,
   errorReferences: WeakMap<Object, ErrorReference>,
+  haltedModels: null | WeakSet<Object>,
   modelReferences: null | WeakMap<Object, Object>,
   valueReferences: null | WeakSet<Object>,
   modelInfo: null | Map<Object, number>,
@@ -70,6 +71,7 @@ export function createResult<T>(
     abortCallback: abort,
     abort: noop,
     errorReferences: new WeakMap(),
+    haltedModels: null,
     modelReferences: null,
     valueReferences: null,
     modelInfo: null,
@@ -245,4 +247,34 @@ export function setModelInfo<T>(
 export function getModelInfo<T>(result: Result<T>, model: Object): number {
   const models = result.modelInfo;
   return models === null ? 0 : models.get(model) || 0;
+}
+
+export function markHalted<T>(result: Result<T>, model: Object): void {
+  let haltedModels = result.haltedModels;
+  if (haltedModels === null) {
+    result.haltedModels = haltedModels = new WeakSet();
+  }
+  haltedModels.add(model);
+}
+
+export function isHalted<T>(result: Result<T>, model: Object): boolean {
+  const haltedModels = result.haltedModels;
+  if (haltedModels === null) {
+    return false;
+  }
+  const references = result.modelReferences;
+  const visited: Set<Object> = new Set();
+  let current = model;
+  while (!visited.has(current)) {
+    if (haltedModels.has(current)) {
+      return true;
+    }
+    visited.add(current);
+    const reference = references === null ? undefined : references.get(current);
+    if (reference === undefined) {
+      return false;
+    }
+    current = reference;
+  }
+  return false;
 }
