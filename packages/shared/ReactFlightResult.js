@@ -48,6 +48,7 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   haltedModels: null | WeakSet<Object>,
   modelReferences: null | WeakMap<Object, Object>,
   valueReferences: null | WeakSet<Object>,
+  formDataWithBlobs: null | WeakSet<FormData>,
   collectionEntries: null | WeakMap<Object, ResultModel<Array<any>>>,
   modelInfo: null | Map<Object, number>,
 };
@@ -75,6 +76,7 @@ export function createResult<T>(
     haltedModels: null,
     modelReferences: null,
     valueReferences: null,
+    formDataWithBlobs: null,
     collectionEntries: null,
     modelInfo: null,
   };
@@ -299,4 +301,23 @@ export function getCollectionEntries<T>(
 ): void | ResultModel<Array<any>> {
   const collections = result.collectionEntries;
   return collections === null ? undefined : collections.get(collection);
+}
+
+export function markFormDataWithBlobs<T>(
+  result: Result<T>,
+  formData: FormData,
+): void {
+  let formDataWithBlobs = result.formDataWithBlobs;
+  if (formDataWithBlobs === null) {
+    result.formDataWithBlobs = formDataWithBlobs = new WeakSet();
+  }
+  formDataWithBlobs.add(formData);
+}
+
+export function hasFormDataBlobs<T>(
+  result: Result<T>,
+  formData: FormData,
+): boolean {
+  const formDataWithBlobs = result.formDataWithBlobs;
+  return formDataWithBlobs !== null && formDataWithBlobs.has(formData);
 }

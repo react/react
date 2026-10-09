@@ -53,6 +53,7 @@ import {
   forwardModelReference,
   createValueReference,
   getValueReference,
+  markFormDataWithBlobs,
   setCollectionEntries,
   setModelInfo,
   getModelInfo,
@@ -1052,6 +1053,13 @@ function renderModelDestructive(
   if (value instanceof Set) {
     return renderModelReference(task, renderSet(request, task, value));
   }
+  if (typeof FormData === 'function' && value instanceof FormData) {
+    return renderModelReference(task, renderFormData(request, task, value));
+  }
+  if (typeof Blob === 'function' && value instanceof Blob) {
+    setRenderedModel(request.modelEntries, value, value);
+    return renderModelReference(task, value);
+  }
   if (Object.getPrototypeOf(value) !== ObjectPrototype) {
     throw new Error('Not implemented.');
   }
@@ -1987,6 +1995,22 @@ function getOutlinedModelDependencies(
     } else if (kind === 0 && value instanceof Set) {
       value.forEach((child: ReactClientValue) => visit(child, record));
     } else {
+      if (kind === 0 && getPrototypeOf(value) !== ObjectPrototype) {
+        if (typeof FormData === 'function' && value instanceof FormData) {
+          const iterator = value.entries();
+          for (
+            let entry = iterator.next();
+            !entry.done;
+            entry = iterator.next()
+          ) {
+            visit(entry.value[1], record);
+          }
+          return;
+        }
+        if (typeof Blob === 'function' && value instanceof Blob) {
+          return;
+        }
+      }
       const keys = Object.keys(value);
       for (let i = 0; i < keys.length; i++) {
         visit(value[keys[i]], record);
@@ -2092,6 +2116,14 @@ function resolveOutlinedModel(
         value.add(resolve(entries[i]));
       }
     } else {
+      if (
+        kind === 0 &&
+        getPrototypeOf(value) !== ObjectPrototype &&
+        ((typeof FormData === 'function' && value instanceof FormData) ||
+          (typeof Blob === 'function' && value instanceof Blob))
+      ) {
+        return value;
+      }
       const keys = Object.keys(value);
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
@@ -2474,4 +2506,69 @@ function renderCollectionEntries(
   setCollectionEntries(request.result, collection, newTask.promise as any);
   retryTask(request, newTask);
   return newTask.promise as any;
+}
+
+function renderFormData(
+  request: Request,
+  task: Task,
+  formData: FormData,
+): FormData {
+  if (task.formatContext !== createRootFormatContext()) {
+    return outlineModel(request, formData) as any;
+  }
+  const entries: Array<[ReactClientValue, ReactClientValue]> = Array.from(
+    formData.entries(),
+  ) as any;
+  let hasBlob = false;
+  let hasOutlinedEntry = false;
+  setRenderedModel(request.modelEntries, formData, formData);
+  task.keyPath = null;
+  task.implicitSlot = false;
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const key = resolveModel(request, task, entry, '0', entry[0]);
+    const value = resolveModel(request, task, entry, '1', entry[1] as any);
+    if (typeof entry[1] !== 'string') {
+      hasBlob = true;
+    }
+    if (key !== entry[0] || value !== entry[1]) {
+      hasOutlinedEntry = true;
+      entry[0] = key;
+      entry[1] = value;
+    }
+  }
+  if (hasBlob) {
+    markFormDataWithBlobs(request.result, formData);
+  }
+  if (hasOutlinedEntry) {
+    blockModelOnDependencies(request, formData, entries);
+  }
+  return formData;
+}
+
+function blockModelOnDependencies(
+  request: Request,
+  model: ReactClientValue,
+  dependencyModel: ReactClientValue,
+): void {
+  const outlinedModels = request.outlinedModels;
+  if (outlinedModels === null) {
+    return;
+  }
+  const dependencies = getOutlinedModelDependencies(
+    request,
+    dependencyModel,
+    outlinedModels,
+  );
+  if (dependencies.size > 0) {
+    const newTask = createTask(
+      request,
+      model,
+      null,
+      false,
+      createRootFormatContext(),
+    );
+    outlinedModels.set(model as any, newTask);
+    blockTask(request, newTask, model, dependencies);
+  }
 }

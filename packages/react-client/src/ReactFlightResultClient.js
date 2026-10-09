@@ -20,6 +20,7 @@ import type {
 import {
   getRoot,
   getValueReference,
+  hasFormDataBlobs,
   getCollectionEntries,
   getModelInfo,
   MODEL_KIND_MASK,
@@ -35,6 +36,7 @@ import {getResultModelStatus} from 'shared/ReactFlightResultModel';
 import {REACT_ELEMENT_TYPE, REACT_LAZY_TYPE} from 'shared/ReactSymbols';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import isArray from 'shared/isArray';
+import getPrototypeOf from 'shared/getPrototypeOf';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import noop from 'shared/noop';
 import {describeObjectForErrorMessage} from 'shared/ReactSerializationErrors';
@@ -45,6 +47,8 @@ import {
   requireModule,
   dispatchHint,
 } from './ReactFlightClientConfig';
+
+const ObjectPrototype = Object.prototype;
 
 type ModelPreload = {
   model: Object,
@@ -1363,6 +1367,14 @@ function scanModelFields(
       }
     }
   } else {
+    if (kind === 0 && getPrototypeOf(value) !== ObjectPrototype) {
+      if (typeof FormData === 'function' && value instanceof FormData) {
+        return !hasFormDataBlobs(response._result, value);
+      }
+      if (typeof Blob === 'function' && value instanceof Blob) {
+        return false;
+      }
+    }
     const object: {[key: string]: any} = value;
     const keys = Object.keys(object);
     for (let i = 0; i < keys.length; i++) {
@@ -1627,6 +1639,25 @@ function readSpecialModel(response: Response, value: any): any {
       value.forEach((child: any) => {
         copy.add(readModel(response, child));
       });
+      return copy;
+    }
+    if (typeof FormData === 'function' && value instanceof FormData) {
+      if (!hasFormDataBlobs(response._result, value)) {
+        return value;
+      }
+      const formData: FormData = value;
+      const entries = Array.from(formData.entries());
+      const copy = new FormData();
+      models.set(value, copy);
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        copy.append(entry[0], readModel(response, entry[1]));
+      }
+      return copy;
+    }
+    if (typeof Blob === 'function' && value instanceof Blob) {
+      const copy = new Blob([value], {type: value.type});
+      models.set(value, copy);
       return copy;
     }
     return readObject(response, value);

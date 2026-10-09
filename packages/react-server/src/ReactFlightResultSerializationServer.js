@@ -316,6 +316,8 @@ function renderModelDestructive(
           (value as any).$$typeof === REACT_ELEMENT_TYPE ||
           value instanceof Map ||
           value instanceof Set ||
+          (typeof FormData === 'function' && value instanceof FormData) ||
+          (typeof Blob === 'function' && value instanceof Blob) ||
           value instanceof ArrayBuffer ||
           ArrayBuffer.isView(value) ||
           getPrototypeOf(value) === ObjectPrototype))
@@ -417,6 +419,12 @@ function renderModelDestructive(
     }
     if (value instanceof DataView) {
       return serializeTypedArray(request, 'V', value);
+    }
+    if (typeof FormData === 'function' && value instanceof FormData) {
+      return serializeFormData(request, value);
+    }
+    if (typeof Blob === 'function' && value instanceof Blob) {
+      return serializeBlob(request, value);
     }
     return value as any;
   }
@@ -923,6 +931,7 @@ function subscribeHints(request: Request): void {
 }
 
 function fatalError(request: Request, error: mixed): void {
+  request.fatalError = error;
   cleanupInput(request);
   const destination = request.destination;
   if (destination !== null) {
@@ -930,7 +939,6 @@ function fatalError(request: Request, error: mixed): void {
     closeWithError(destination, error);
   } else {
     request.status = CLOSING;
-    request.fatalError = error;
   }
 }
 
@@ -1124,4 +1132,53 @@ function emitTypedArrayChunk(
     stringToChunk(row),
     binaryChunk,
   );
+}
+
+function serializeFormData(request: Request, formData: FormData): string {
+  const entries = Array.from(formData.entries());
+  const id = outlineModel(request, entries as any);
+  return '$K' + id.toString(16);
+}
+
+function serializeBlob(request: Request, blob: Blob): string {
+  const model: Array<string | Uint8Array> = [blob.type];
+  const reader = blob.stream().getReader();
+  const newTask = createTask(request, model);
+  function progress(entry: {
+    done: boolean,
+    value: any,
+    ...
+  }): Promise<void> | void {
+    if (newTask.status !== PENDING) {
+      return;
+    }
+    if (entry.done) {
+      request.inputSubscriptions.delete(cancel);
+      pingTask(request, newTask);
+      return;
+    }
+    model.push(entry.value);
+    return reader.read().then(progress).catch(error);
+  }
+  function error(reason: mixed): void {
+    if (newTask.status !== PENDING) {
+      return;
+    }
+    request.inputSubscriptions.delete(cancel);
+    erroredTask(request, newTask, reason);
+    enqueueFlush(request);
+    // $FlowFixMe[incompatible-type] should be able to pass mixed
+    reader.cancel(reason).then(noop, noop);
+  }
+  function cancel(): void {
+    if (newTask.status !== PENDING) {
+      return;
+    }
+    newTask.status = ABORTED;
+    // $FlowFixMe[incompatible-type] should be able to pass mixed
+    reader.cancel(request.fatalError).then(noop, noop);
+  }
+  request.inputSubscriptions.add(cancel);
+  reader.read().then(progress).catch(error);
+  return '$B' + newTask.id.toString(16);
 }
