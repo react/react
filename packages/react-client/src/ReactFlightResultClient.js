@@ -20,6 +20,7 @@ import type {
 import {
   getRoot,
   getValueReference,
+  getCollectionEntries,
   getModelInfo,
   MODEL_KIND_MASK,
   MODEL_OBJECT,
@@ -1319,6 +1320,18 @@ function scanModelFields(
     scanModelReference(response, value, reference, state, chunks);
     return false;
   }
+  const collection =
+    kind === 0 ? getCollectionEntries(response._result, value) : undefined;
+  if (collection !== undefined) {
+    scanModelReference(
+      response,
+      value,
+      {root: collection, parent: null, key: ''},
+      state,
+      chunks,
+    );
+    return false;
+  }
   if (kind === MODEL_ARRAY || (kind === 0 && isArray(value))) {
     for (let i = 0; i < value.length; i++) {
       if (hasOwnProperty.call(value, i)) {
@@ -1326,6 +1339,23 @@ function scanModelFields(
           passThrough = false;
         }
       } else {
+        passThrough = false;
+      }
+    }
+  } else if (kind === 0 && value instanceof Map) {
+    const iterator = value.entries();
+    for (let entry = iterator.next(); !entry.done; entry = iterator.next()) {
+      if (!scanModel(response, entry.value[0], state, chunks)) {
+        passThrough = false;
+      }
+      if (!scanModel(response, entry.value[1], state, chunks)) {
+        passThrough = false;
+      }
+    }
+  } else if (kind === 0 && value instanceof Set) {
+    const iterator = value.values();
+    for (let entry = iterator.next(); !entry.done; entry = iterator.next()) {
+      if (!scanModel(response, entry.value, state, chunks)) {
         passThrough = false;
       }
     }
@@ -1554,6 +1584,44 @@ function readSpecialModel(response: Response, value: any): any {
     }
     if (value instanceof Date) {
       return value;
+    }
+    if (value instanceof Map) {
+      const copy: Map<any, any> = new Map();
+      models.set(value, copy);
+      const model = getCollectionEntries(response._result, value);
+      if (model !== undefined) {
+        const entries = readModel(
+          response,
+          readModelReference(response, {root: model, parent: null, key: ''}),
+        );
+        for (let i = 0; i < entries.length; i++) {
+          copy.set(entries[i][0], entries[i][1]);
+        }
+        return copy;
+      }
+      value.forEach((child: any, key: any) => {
+        copy.set(readModel(response, key), readModel(response, child));
+      });
+      return copy;
+    }
+    if (value instanceof Set) {
+      const copy: Set<any> = new Set();
+      models.set(value, copy);
+      const model = getCollectionEntries(response._result, value);
+      if (model !== undefined) {
+        const entries = readModel(
+          response,
+          readModelReference(response, {root: model, parent: null, key: ''}),
+        );
+        for (let i = 0; i < entries.length; i++) {
+          copy.add(entries[i]);
+        }
+        return copy;
+      }
+      value.forEach((child: any) => {
+        copy.add(readModel(response, child));
+      });
+      return copy;
     }
     return readObject(response, value);
   }

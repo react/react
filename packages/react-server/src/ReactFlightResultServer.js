@@ -10,7 +10,8 @@
 import type {ReactElement} from 'shared/ReactElementType';
 import type {Result, ModelReference} from 'shared/ReactFlightResult';
 import type {ResultModel} from 'shared/ReactFlightResultModel';
-import type {ClientReference} from './ReactFlightServerConfig';
+import type {ReactClientValue} from './ReactFlightServer';
+export type {ReactClientValue} from './ReactFlightServer';
 import type {ThenableState} from './ReactFlightThenable';
 import type {
   Thenable,
@@ -52,6 +53,7 @@ import {
   forwardModelReference,
   createValueReference,
   getValueReference,
+  setCollectionEntries,
   setModelInfo,
   getModelInfo,
   markHalted,
@@ -97,22 +99,6 @@ const RENDER = 20;
 const PRERENDER = 21;
 const CLOSED = 14;
 
-export type ReactClientValue =
-  | ReactElement
-  | LazyComponent<ReactClientValue, Thenable<ReactClientValue>>
-  | Date
-  | Promise<ReactClientValue>
-  | ClientReference<any>
-  | string
-  | boolean
-  | number
-  | symbol
-  | bigint
-  | null
-  | void
-  | Array<ReactClientValue>
-  | ReactClientObject
-  | ((...args: Array<mixed>) => mixed);
 export type ReactClientObject = {+[key: string]: ReactClientValue};
 const ObjectPrototype = Object.prototype;
 const DatePrototype = Date.prototype;
@@ -574,6 +560,23 @@ function outlineModelWithFormatContext(
   return model;
 }
 
+function outlineModel(
+  request: Request,
+  value: ReactClientValue,
+): ReactClientValue {
+  if (value !== null && typeof value === 'object') {
+    const existingModel = getRenderedModel(request.modelEntries, value);
+    if (existingModel !== undefined) {
+      return existingModel === UNDEFINED_MODEL ? undefined : existingModel;
+    }
+  }
+  return outlineModelWithFormatContext(
+    request,
+    value,
+    createRootFormatContext(),
+  );
+}
+
 function readThenable<T>(thenable: Thenable<T>): T {
   if (thenable.status === 'fulfilled') {
     return thenable.value;
@@ -860,6 +863,8 @@ function renderModelDestructive(
     elementType === REACT_ELEMENT_TYPE
       ? task.keyPath === null && !task.implicitSlot
       : (isArray(value) && task.keyPath === null) ||
+        value instanceof Map ||
+        value instanceof Set ||
         getPrototypeOf(value) === ObjectPrototype;
   const referenceEntry = canReference
     ? renderedModels === request.modelEntries
@@ -1037,6 +1042,12 @@ function renderModelDestructive(
           // eslint-disable-next-line react-internal/safe-string-coercion
           new Date('' + date.toJSON()),
     );
+  }
+  if (value instanceof Map) {
+    return renderModelReference(task, renderMap(request, task, value));
+  }
+  if (value instanceof Set) {
+    return renderModelReference(task, renderSet(request, task, value));
   }
   if (Object.getPrototypeOf(value) !== ObjectPrototype) {
     throw new Error('Not implemented.');
@@ -1454,7 +1465,7 @@ function retryTask(request: Request, task: Task): void {
 
 function getRenderedModels(
   request: Request,
-  value: ReactClientValue,
+  value: ReactClientValue | ReactElement,
   keyPath: ReactKey,
   implicitSlot: boolean,
 ): WeakMap<Reference, ModelEntry> {
@@ -1961,6 +1972,13 @@ function getOutlinedModelDependencies(
       for (let i = 0; i < value.length; i++) {
         visit(value[i], record);
       }
+    } else if (kind === 0 && value instanceof Map) {
+      value.forEach((child: ReactClientValue, key: ReactClientValue) => {
+        visit(key, record);
+        visit(child, record);
+      });
+    } else if (kind === 0 && value instanceof Set) {
+      value.forEach((child: ReactClientValue) => visit(child, record));
     } else {
       const keys = Object.keys(value);
       for (let i = 0; i < keys.length; i++) {
@@ -2049,6 +2067,18 @@ function resolveOutlinedModel(
             value[i] = child;
           }
         }
+      }
+    } else if (kind === 0 && value instanceof Map) {
+      const entries: Array<[any, any]> = Array.from(value);
+      value.clear();
+      for (let i = 0; i < entries.length; i++) {
+        value.set(resolve(entries[i][0]), resolve(entries[i][1]));
+      }
+    } else if (kind === 0 && value instanceof Set) {
+      const entries: Array<any> = Array.from(value);
+      value.clear();
+      for (let i = 0; i < entries.length; i++) {
+        value.add(resolve(entries[i]));
       }
     } else {
       const keys = Object.keys(value);
@@ -2365,4 +2395,72 @@ function finishAbortedTasks(request: Request): void {
     completeResult(request.result);
     request.onAllReady();
   }
+}
+
+function renderMap(
+  request: Request,
+  task: Task,
+  map: Map<ReactClientValue, ReactClientValue>,
+): Map<ReactClientValue, ReactClientValue> {
+  if (task.formatContext !== createRootFormatContext()) {
+    return outlineModel(request, map) as any;
+  }
+  const entries = Array.from(map);
+  const copy: Map<ReactClientValue, ReactClientValue> = new Map();
+  setRenderedModel(request.modelEntries, map, copy);
+  const model = renderCollectionEntries(request, task, copy, entries);
+  const populate = (values: Array<[ReactClientValue, ReactClientValue]>) => {
+    for (let i = 0; i < values.length; i++) {
+      copy.set(values[i][0], values[i][1]);
+    }
+  };
+  const values = model.value;
+  if (model.status === 'fulfilled' && values !== undefined) {
+    populate(values);
+  } else {
+    model.then(populate, noop);
+  }
+  return copy;
+}
+
+function renderSet(
+  request: Request,
+  task: Task,
+  set: Set<ReactClientValue>,
+): Set<ReactClientValue> {
+  if (task.formatContext !== createRootFormatContext()) {
+    return outlineModel(request, set) as any;
+  }
+  const entries = Array.from(set);
+  const copy: Set<ReactClientValue> = new Set();
+  setRenderedModel(request.modelEntries, set, copy);
+  const model = renderCollectionEntries(request, task, copy, entries);
+  const populate = (values: Array<ReactClientValue>) => {
+    for (let i = 0; i < values.length; i++) {
+      copy.add(values[i]);
+    }
+  };
+  const values = model.value;
+  if (model.status === 'fulfilled' && values !== undefined) {
+    populate(values);
+  } else {
+    model.then(populate, noop);
+  }
+  return copy;
+}
+
+function renderCollectionEntries(
+  request: Request,
+  task: Task,
+  collection: Object,
+  entries: Array<any>,
+): ResultModel<Array<any>> {
+  const reference = task.currentReference;
+  if (reference !== null) {
+    setModelReference(request, collection, reference);
+  }
+  const newTask = createTask(request, entries, null, false, task.formatContext);
+  setCollectionEntries(request.result, collection, newTask.promise as any);
+  retryTask(request, newTask);
+  return newTask.promise as any;
 }

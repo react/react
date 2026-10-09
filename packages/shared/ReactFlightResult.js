@@ -48,6 +48,7 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   haltedModels: null | WeakSet<Object>,
   modelReferences: null | WeakMap<Object, Object>,
   valueReferences: null | WeakSet<Object>,
+  collectionEntries: null | WeakMap<Object, ResultModel<Array<any>>>,
   modelInfo: null | Map<Object, number>,
 };
 
@@ -74,6 +75,7 @@ export function createResult<T>(
     haltedModels: null,
     modelReferences: null,
     valueReferences: null,
+    collectionEntries: null,
     modelInfo: null,
   };
   result.abort = abortResult.bind(null, result);
@@ -277,4 +279,24 @@ export function isHalted<T>(result: Result<T>, model: Object): boolean {
     current = reference;
   }
   return false;
+}
+
+export function setCollectionEntries<T>(
+  result: Result<T>,
+  collection: Object,
+  entries: ResultModel<Array<any>>,
+): void {
+  let collections = result.collectionEntries;
+  if (collections === null) {
+    result.collectionEntries = collections = new WeakMap();
+  }
+  collections.set(collection, entries);
+}
+
+export function getCollectionEntries<T>(
+  result: Result<T>,
+  collection: Object,
+): void | ResultModel<Array<any>> {
+  const collections = result.collectionEntries;
+  return collections === null ? undefined : collections.get(collection);
 }

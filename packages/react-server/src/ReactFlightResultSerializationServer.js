@@ -91,6 +91,7 @@ export type Input = {
   +root: ResultModel<ReactClientValue>,
   getValueReference: Object => void | ModelReference,
   getModelInfo: Object => number,
+  getCollectionEntries: Object => void | ResultModel<Array<any>>,
   subscribe: ({
     hint: (HintCode, HintModel<any>) => void,
     complete: () => void,
@@ -307,6 +308,8 @@ function renderModelDestructive(
       (kind === 0 &&
         (isArray(value) ||
           (value as any).$$typeof === REACT_ELEMENT_TYPE ||
+          value instanceof Map ||
+          value instanceof Set ||
           getPrototypeOf(value) === ObjectPrototype))
     ) {
       const objectReference = renderObjectReference(
@@ -349,6 +352,12 @@ function renderModelDestructive(
         request.writtenObjects.set(tuple as any, elementReference);
       }
       return tuple;
+    }
+    if (value instanceof Map) {
+      return serializeMap(request, value);
+    }
+    if (value instanceof Set) {
+      return serializeSet(request, value);
     }
     return value as any;
   }
@@ -964,4 +973,31 @@ export function abort(request: Request, reason: mixed): void {
   if (request.status !== CLOSED) {
     fatalError(request, reason);
   }
+}
+
+function serializeMap(
+  request: Request,
+  map: Map<ReactClientValue, ReactClientValue>,
+): string {
+  const input = request.input;
+  const model = input === null ? undefined : input.getCollectionEntries(map);
+  if (model !== undefined) {
+    const id = serializeThenable(request, model as any);
+    return '$Q' + id.toString(16);
+  }
+  const entries = Array.from(map);
+  const id = outlineModel(request, entries);
+  return '$Q' + id.toString(16);
+}
+
+function serializeSet(request: Request, set: Set<ReactClientValue>): string {
+  const input = request.input;
+  const model = input === null ? undefined : input.getCollectionEntries(set);
+  if (model !== undefined) {
+    const id = serializeThenable(request, model as any);
+    return '$W' + id.toString(16);
+  }
+  const entries = Array.from(set);
+  const id = outlineModel(request, entries);
+  return '$W' + id.toString(16);
 }
