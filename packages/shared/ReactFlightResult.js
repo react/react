@@ -59,6 +59,7 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   temporaryReferences: null | WeakMap<Object, string>,
   serverReferences: null | WeakMap<Object, ServerReferenceMetadata>,
   formDataWithBlobs: null | WeakSet<FormData>,
+  iteratorEntries: null | WeakMap<Object, $ReadOnlyArray<mixed>>,
   collectionEntries: null | WeakMap<Object, ResultModel<Array<any>>>,
   modelInfo: null | Map<Object, number>,
 };
@@ -91,6 +92,7 @@ export function createResult<T>(
     temporaryReferences: null,
     serverReferences: null,
     formDataWithBlobs: null,
+    iteratorEntries: null,
     collectionEntries: null,
     modelInfo: null,
   };
@@ -382,4 +384,24 @@ export function getTemporaryReferenceSet<T>(
   result: Result<T>,
 ): void | TemporaryReferenceSet {
   return result.temporaryReferenceSet;
+}
+
+export function setIteratorEntries<T>(
+  result: Result<T>,
+  iterator: Object,
+  entries: $ReadOnlyArray<mixed>,
+): void {
+  let iteratorEntries = result.iteratorEntries;
+  if (iteratorEntries === null) {
+    result.iteratorEntries = iteratorEntries = new WeakMap();
+  }
+  iteratorEntries.set(iterator, entries);
+}
+
+export function getIteratorEntries<T>(
+  result: Result<T>,
+  iterator: Object,
+): void | $ReadOnlyArray<mixed> {
+  const iteratorEntries = result.iteratorEntries;
+  return iteratorEntries === null ? undefined : iteratorEntries.get(iterator);
 }

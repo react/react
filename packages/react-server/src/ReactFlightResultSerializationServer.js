@@ -49,7 +49,11 @@ import {
   stringToChunk,
   scheduleWork,
 } from './ReactServerStreamConfig';
-import {REACT_ELEMENT_TYPE, REACT_LAZY_TYPE} from 'shared/ReactSymbols';
+import {
+  REACT_ELEMENT_TYPE,
+  REACT_LAZY_TYPE,
+  getIteratorFn,
+} from 'shared/ReactSymbols';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import isArray from 'shared/isArray';
 import hasOwnProperty from 'shared/hasOwnProperty';
@@ -110,6 +114,7 @@ type ModelParent = ReactClientObject | $ReadOnlyArray<ReactClientValue>;
 export type Input = {
   +root: ResultModel<ReactClientValue>,
   temporaryReferences: void | TemporaryReferenceSet,
+  getIteratorEntries: Object => void | $ReadOnlyArray<mixed>,
   getServerReference: Object => void | ServerReferenceMetadata,
   getValueReference: Object => void | ModelReference,
   getModelInfo: Object => number,
@@ -508,6 +513,19 @@ function renderModelDestructive(
     }
     if (typeof Blob === 'function' && value instanceof Blob) {
       return serializeBlob(request, value);
+    }
+    if (isArray(value)) {
+      return value as any;
+    }
+    const iteratorFn = getIteratorFn(value);
+    if (iteratorFn) {
+      const entries =
+        input === null ? undefined : input.getIteratorEntries(value);
+      if (entries === undefined) {
+        // eslint-disable-next-line react-internal/prod-error-codes
+        throw new Error('A Result must record iterators before serialization.');
+      }
+      return serializeIterator(request, entries as any);
     }
     return value as any;
   }
@@ -1332,4 +1350,12 @@ function serializeServerReferenceID(id: number): string {
 
 function serializeServerObjectReferenceID(id: number): string {
   return '$H' + id.toString(16);
+}
+
+function serializeIterator(
+  request: Request,
+  entries: $ReadOnlyArray<ReactClientValue>,
+): string {
+  const id = outlineModel(request, entries);
+  return '$i' + id.toString(16);
 }

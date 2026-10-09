@@ -23,6 +23,7 @@ import {
   getErrorReference,
   getValueReference,
   getCollectionEntries,
+  getIteratorEntries,
   getServerReference,
   getTemporaryReferenceSet,
   getModelInfo,
@@ -96,6 +97,7 @@ export function createInput(result: Result<ReactClientValue>): Input {
   return {
     root: getRoot(result),
     temporaryReferences: getTemporaryReferenceSet(result),
+    getIteratorEntries: value => getIteratorEntries(result, value),
     getServerReference: value => getServerReference(result, value),
     getValueReference: value => getValueReference(result, value),
     getModelInfo: value => getModelInfo(result, value),

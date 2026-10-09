@@ -35,6 +35,7 @@ import type {
 } from './ReactFlightClientConfig';
 import {
   getTemporaryReference,
+  getIteratorEntries,
   getServerReference,
   getRoot,
   getValueReference,
@@ -1419,6 +1420,11 @@ function scanModelFields(
     }
   } else {
     if (kind === 0 && getPrototypeOf(value) !== ObjectPrototype) {
+      const entries = getIteratorEntries(response._result, value);
+      if (entries !== undefined) {
+        scanModel(response, entries, state, chunks);
+        return false;
+      }
       if (typeof FormData === 'function' && value instanceof FormData) {
         return !hasFormDataBlobs(response._result, value);
       }
@@ -1694,6 +1700,16 @@ function readSpecialModel(response: Response, value: any): any {
         copy.add(readModel(response, child));
       });
       return copy;
+    }
+    const iteratorEntries = getIteratorEntries(response._result, value);
+    if (iteratorEntries !== undefined) {
+      const copy: Array<any> = [];
+      const iterator = copy.values();
+      models.set(value, iterator);
+      for (let i = 0; i < iteratorEntries.length; i++) {
+        copy[i] = readModel(response, iteratorEntries[i]);
+      }
+      return iterator;
     }
     if (typeof FormData === 'function' && value instanceof FormData) {
       if (!hasFormDataBlobs(response._result, value)) {
