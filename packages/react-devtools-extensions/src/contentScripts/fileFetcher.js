@@ -1,12 +1,13 @@
 /* global chrome */
 
-function fetchResource(url) {
+function fetchResource(url, requestID) {
   const reject = value => {
     chrome.runtime.sendMessage({
       source: 'react-devtools-fetch-resource-content-script',
       payload: {
         type: 'fetch-file-with-cache-error',
         url,
+        requestID,
         value,
       },
     });
@@ -18,6 +19,7 @@ function fetchResource(url) {
       payload: {
         type: 'fetch-file-with-cache-complete',
         url,
+        requestID,
         value,
       },
     });
@@ -43,6 +45,6 @@ chrome.runtime.onMessage.addListener(message => {
     message?.source === 'devtools-page' &&
     message?.payload?.type === 'fetch-file-with-cache'
   ) {
-    fetchResource(message.payload.url);
+    fetchResource(message.payload.url, message.payload.requestID);
   }
 });

@@ -24,13 +24,15 @@ import styles from './InspectedElementSourcePanel.css';
 import formatLocationForDisplay from './formatLocationForDisplay';
 
 type Props = {
+  elementID?: number | null,
   source: ReactFunctionLocation,
-  symbolicatedSourcePromise: Promise<SourceMappedLocation | null>,
+  symbolicatedSource: SourceMappedLocation | null,
 };
 
 function InspectedElementSourcePanel({
+  elementID,
   source,
-  symbolicatedSourcePromise,
+  symbolicatedSource,
 }: Props): React.Node {
   return (
     <div>
@@ -45,7 +47,7 @@ function InspectedElementSourcePanel({
           }>
           <CopySourceButton
             source={source}
-            symbolicatedSourcePromise={symbolicatedSourcePromise}
+            symbolicatedSource={symbolicatedSource}
           />
         </React.Suspense>
       </div>
@@ -57,16 +59,16 @@ function InspectedElementSourcePanel({
           </div>
         }>
         <FormattedSourceString
+          elementID={elementID}
           source={source}
-          symbolicatedSourcePromise={symbolicatedSourcePromise}
+          symbolicatedSource={symbolicatedSource}
         />
       </React.Suspense>
     </div>
   );
 }
 
-function CopySourceButton({source, symbolicatedSourcePromise}: Props) {
-  const symbolicatedSource = React.use(symbolicatedSourcePromise);
+function CopySourceButton({source, symbolicatedSource}: Props) {
   if (symbolicatedSource == null) {
     const [, sourceURL, line, column] = source;
     const handleCopy = withPermissionsCheck(
@@ -94,12 +96,11 @@ function CopySourceButton({source, symbolicatedSourcePromise}: Props) {
   );
 }
 
-function FormattedSourceString({source, symbolicatedSourcePromise}: Props) {
-  const symbolicatedSource = React.use(symbolicatedSourcePromise);
-
+function FormattedSourceString({source, symbolicatedSource, elementID}: Props) {
   const [linkIsEnabled, viewSource] = useOpenResource(
     source,
     symbolicatedSource == null ? null : symbolicatedSource.location,
+    elementID,
   );
 
   const [, sourceURL, line, column] =

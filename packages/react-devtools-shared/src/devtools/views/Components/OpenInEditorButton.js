@@ -20,16 +20,14 @@ import {checkConditions} from '../Editor/utils';
 type Props = {
   editorURL: string,
   source: ReactFunctionLocation,
-  symbolicatedSourcePromise: Promise<SourceMappedLocation | null>,
+  symbolicatedSource: SourceMappedLocation | null,
 };
 
 function OpenSymbolicatedSourceInEditorButton({
   editorURL,
   source,
-  symbolicatedSourcePromise,
+  symbolicatedSource,
 }: Props): React.Node {
-  const symbolicatedSource = React.use(symbolicatedSourcePromise);
-
   const {url, shouldDisableButton} = checkConditions(
     editorURL,
     symbolicatedSource ? symbolicatedSource.location : source,
