@@ -131,6 +131,7 @@ export type Response = {
   _modules: Map<Object, SomeChunk<any>>,
   _chunks: Set<SomeChunk<any>>,
   _subscriptions: null | Set<ModelSubscription>,
+  _weakSubscriptions: null | Array<WeakSubscription>,
   _streamErrors: null | Array<(Error) => void>,
   _cleanups: null | Set<() => void>,
   _completedElements: Array<ReactElement>, // DEV-only
@@ -169,6 +170,7 @@ export function createResponse(
     _modules: new Map(),
     _chunks: new Set(),
     _subscriptions: null,
+    _weakSubscriptions: null,
     _streamErrors: null,
     _cleanups: null,
   } as any;
@@ -191,12 +193,25 @@ function isHaltedModel(response: Response, model: Object): boolean {
 }
 
 type PendingChunk<T> = {
-  status: 'pending',
+  status: 'pending' | 'pending_weak',
   value: null | Array<(T) => mixed>,
   reason: null | Array<(mixed) => mixed>,
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
   // DEV-only
   _initializingElement?: ReactElement,
+};
+
+type HaltedChunk<T> = {
+  status: 'halted',
+  value: null,
+  reason: null,
+  then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
+};
+
+type WeakSubscription = {
+  response: null | Response,
+  chunk: null | SomeChunk<any>,
+  source: any,
 };
 
 type BlockedChunk<T> = {
@@ -233,6 +248,7 @@ type ResolvedModelChunk<T> = {
 };
 
 type SomeChunk<T> =
+  | HaltedChunk<T>
   | PendingChunk<T>
   | BlockedChunk<T>
   | InitializedChunk<T>
@@ -241,6 +257,8 @@ type SomeChunk<T> =
   | ResolvedModuleChunk<T>;
 
 const PENDING = 'pending';
+const PENDING_WEAK = 'pending_weak';
+const HALTED = 'halted';
 const BLOCKED = 'blocked';
 const RESOLVED_MODEL = 'resolved_model';
 const RESOLVED_MODULE = 'resolved_module';
@@ -272,6 +290,7 @@ function reactPromiseThen<T>(
       }
       break;
     case PENDING:
+    case PENDING_WEAK:
     case BLOCKED:
       if (typeof resolve === 'function') {
         if (chunk.value === null) {
@@ -285,6 +304,8 @@ function reactPromiseThen<T>(
         }
         chunk.reason.push(reject);
       }
+      break;
+    case HALTED:
       break;
     default:
       if (typeof reject === 'function') {
@@ -301,13 +322,23 @@ Object.defineProperty(ReactPromise.prototype, 'then', {
   value: reactPromiseThen,
 });
 
-function createPendingChunk<T>(response: null | Response = null): SomeChunk<T> {
+function createPendingChunk<T>(
+  response: null | Response = null,
+  weak: boolean = false,
+): SomeChunk<T> {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  const chunk = new ReactPromise(PENDING, null, null);
+  const chunk = new ReactPromise(weak ? PENDING_WEAK : PENDING, null, null);
   if (response !== null) {
     response._chunks.add(chunk);
   }
   return chunk;
+}
+
+function haltChunk<T>(chunk: SomeChunk<T>): void {
+  const haltedChunk: HaltedChunk<T> = chunk as any;
+  haltedChunk.status = HALTED;
+  haltedChunk.value = null;
+  haltedChunk.reason = null;
 }
 
 function createBlockedChunk<T>(response: Response): SomeChunk<T> {
@@ -351,6 +382,7 @@ function wakeChunkIfInitialized<T>(
       }
       break;
     case PENDING:
+    case PENDING_WEAK:
     case BLOCKED:
       if (resolveListeners !== null) {
         if (chunk.value === null) {
@@ -375,7 +407,11 @@ function wakeChunkIfInitialized<T>(
 }
 
 function initializeChunk<T>(chunk: SomeChunk<T>, value: T): void {
-  if (chunk.status !== PENDING && chunk.status !== BLOCKED) {
+  if (
+    chunk.status !== PENDING &&
+    chunk.status !== PENDING_WEAK &&
+    chunk.status !== BLOCKED
+  ) {
     return;
   }
   const resolveListeners = chunk.value;
@@ -388,7 +424,11 @@ function initializeChunk<T>(chunk: SomeChunk<T>, value: T): void {
 }
 
 function triggerErrorOnChunk<T>(chunk: SomeChunk<T>, error: mixed): void {
-  if (chunk.status !== PENDING && chunk.status !== BLOCKED) {
+  if (
+    chunk.status !== PENDING &&
+    chunk.status !== PENDING_WEAK &&
+    chunk.status !== BLOCKED
+  ) {
     return;
   }
   const listeners = chunk.reason;
@@ -407,6 +447,7 @@ function reportGlobalError(response: Response, error: Error): void {
   }
   response._closed = true;
   response._closedReason = error;
+  closeWeakSubscriptions(response);
   const streamErrors = response._streamErrors;
   response._streamErrors = null;
   if (streamErrors !== null) {
@@ -417,6 +458,8 @@ function reportGlobalError(response: Response, error: Error): void {
   response._chunks.forEach(chunk => {
     if (chunk.status === PENDING) {
       triggerErrorOnChunk(chunk, error);
+    } else if (chunk.status === PENDING_WEAK) {
+      haltChunk(chunk);
     }
   });
 }
@@ -533,6 +576,8 @@ function readChunk<T>(chunk: SomeChunk<T>): T {
     case INITIALIZED:
       return chunk.value;
     case PENDING:
+    case PENDING_WEAK:
+    case HALTED:
     case BLOCKED:
       throw chunk;
     default:
@@ -576,7 +621,11 @@ function resolveModuleChunk<T>(
   chunk: SomeChunk<T>,
   clientReference: ClientReference<T>,
 ): void {
-  if (chunk.status !== PENDING && chunk.status !== BLOCKED) {
+  if (
+    chunk.status !== PENDING &&
+    chunk.status !== PENDING_WEAK &&
+    chunk.status !== BLOCKED
+  ) {
     return;
   }
   const resolveListeners = chunk.value;
@@ -862,7 +911,7 @@ function resolveModelChunk<T>(
   chunk: SomeChunk<T>,
   model: T,
 ): void {
-  if (chunk.status !== PENDING) {
+  if (chunk.status !== PENDING && chunk.status !== PENDING_WEAK) {
     return;
   }
   const resolveListeners = chunk.value;
@@ -1585,6 +1634,8 @@ export function readResult<T>(
         subscribeToModel(response, waitForHints(hints), flushHints, error =>
           stopReading(response, error),
         );
+      } else {
+        closeWeakSubscriptions(response);
       }
     } catch (error) {
       reportGlobalError(response, error);
@@ -1644,10 +1695,26 @@ function readSpecialModel(response: Response, value: any): any {
     return readArray(response, value);
   } else {
     if (typeof value.then === 'function') {
-      const chunk = createPendingChunk<any>(response);
+      const thenable: {status?: string, ...} = value;
+      const chunk = createPendingChunk<any>(
+        response,
+        thenable.status === PENDING_WEAK,
+      );
       models.set(value, chunk);
+      if (chunk.status === PENDING_WEAK && isHalted(response._result, value)) {
+        haltChunk(chunk);
+        return chunk;
+      }
       if (response._closed || isHaltedModel(response, value)) {
-        triggerErrorOnChunk(chunk, getClosedReason(response));
+        if (chunk.status === PENDING_WEAK) {
+          haltChunk(chunk);
+        } else {
+          triggerErrorOnChunk(chunk, getClosedReason(response));
+        }
+        return chunk;
+      }
+      if (chunk.status === PENDING_WEAK) {
+        subscribeWeakModel(response, chunk, value);
         return chunk;
       }
       const resolve = (model: any): void => {
@@ -2304,4 +2371,64 @@ function readOutlinedModel(response: Response, model: any): any {
     }
   }
   return value;
+}
+
+function closeWeakSubscriptions(response: Response): void {
+  const subscriptions = response._weakSubscriptions;
+  response._weakSubscriptions = null;
+  if (subscriptions !== null) {
+    for (let i = 0; i < subscriptions.length; i++) {
+      const subscription = subscriptions[i];
+      const chunk = subscription.chunk;
+      if (
+        chunk !== null &&
+        (response._closed || isHalted(response._result, subscription.source))
+      ) {
+        if (chunk.status === PENDING_WEAK) {
+          haltChunk(chunk);
+        }
+        subscription.response = null;
+        subscription.chunk = null;
+      }
+    }
+  }
+}
+
+function subscribeWeakModel(
+  response: Response,
+  chunk: SomeChunk<any>,
+  source: any,
+): void {
+  const subscription: WeakSubscription = {response, chunk, source};
+  let subscriptions = response._weakSubscriptions;
+  if (subscriptions === null) {
+    response._weakSubscriptions = subscriptions = [];
+  }
+  subscriptions.push(subscription);
+  source.then(
+    (model: any) => {
+      const target = subscription.response;
+      const pending = subscription.chunk;
+      subscription.response = null;
+      subscription.chunk = null;
+      if (target !== null && pending !== null && !target._closed) {
+        resolveModelChunk(target, pending, model);
+        if (pending.status === RESOLVED_MODEL) {
+          initializeResolvedModelChunk(pending as any);
+        }
+      }
+    },
+    (error: mixed) => {
+      const target = subscription.response;
+      const pending = subscription.chunk;
+      subscription.response = null;
+      subscription.chunk = null;
+      if (target !== null && pending !== null) {
+        triggerErrorOnChunk(
+          pending,
+          resolveError(target, subscription.source, error),
+        );
+      }
+    },
+  );
 }

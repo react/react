@@ -62,6 +62,7 @@ import noop from 'shared/noop';
 import type {TemporaryReferenceSet} from './ReactFlightServerTemporaryReferences';
 import {resolveTemporaryReference} from './ReactFlightServerTemporaryReferences';
 import {
+  enableFlightWeakThenables,
   enableTaint,
   enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
@@ -457,7 +458,11 @@ function renderModelDestructive(
       return serializeLazyID(serializeThenable(request, lazy._payload));
     }
     if (typeof (value as any).then === 'function') {
-      return serializePromiseID(serializeThenable(request, value as any));
+      const id = serializeThenable(request, value as any);
+      return enableFlightWeakThenables &&
+        (value as any).status === 'pending_weak'
+        ? serializeWeakPromiseID(id)
+        : serializePromiseID(id);
     }
     if (value instanceof Date) {
       return serializeDate(value);
@@ -1481,6 +1486,10 @@ function serializeReadableStream(
     }),
   );
   return serializeByValueID(streamTask.id);
+}
+
+function serializeWeakPromiseID(id: number): string {
+  return '$w' + id.toString(16);
 }
 
 function tryStreamTask(request: Request, task: Task): void {

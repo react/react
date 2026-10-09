@@ -13,7 +13,7 @@ const RESULT_MODEL_TYPE = Symbol.for('react.result.model');
 type Outcome<T> = {+value: T};
 
 export opaque type ResultModel<T>: Promise<T> & {
-  +status: 'pending' | 'fulfilled' | 'rejected',
+  +status: 'pending' | 'pending_weak' | 'fulfilled' | 'rejected',
   +value: void | T,
   +reason: mixed,
   ...
@@ -21,14 +21,14 @@ export opaque type ResultModel<T>: Promise<T> & {
   _promise: Promise<Outcome<T>>,
   _resolve: (Outcome<T>) => void,
   _reject: mixed => void,
-  status: 'pending' | 'fulfilled' | 'rejected',
+  status: 'pending' | 'pending_weak' | 'fulfilled' | 'rejected',
   value: void | T,
   reason: mixed,
 };
 
-function ReactPromise(this: any) {
+function ReactPromise(this: any, weak: boolean) {
   this.$$typeof = RESULT_MODEL_TYPE;
-  this.status = 'pending';
+  this.status = weak ? 'pending_weak' : 'pending';
   this.value = undefined;
   this.reason = undefined;
   this._promise = new Promise((resolve, reject) => {
@@ -56,12 +56,12 @@ Object.defineProperty(ReactPromise.prototype, 'then', {
   value: reactPromiseThen,
 });
 
-export function createResultModel<T>(): ResultModel<T> {
-  return new (ReactPromise as any)();
+export function createResultModel<T>(weak: boolean = false): ResultModel<T> {
+  return new (ReactPromise as any)(weak);
 }
 
 export function fulfillResultModel<T>(model: ResultModel<T>, value: T): void {
-  if (model.status !== 'pending') {
+  if (model.status !== 'pending' && model.status !== 'pending_weak') {
     return;
   }
   model.status = 'fulfilled';
@@ -73,7 +73,7 @@ export function rejectResultModel<T>(
   model: ResultModel<T>,
   error: mixed,
 ): void {
-  if (model.status !== 'pending') {
+  if (model.status !== 'pending' && model.status !== 'pending_weak') {
     return;
   }
   model.status = 'rejected';
@@ -83,6 +83,6 @@ export function rejectResultModel<T>(
 
 export function getResultModelStatus(
   value: Object,
-): null | 'pending' | 'fulfilled' | 'rejected' {
+): null | 'pending' | 'pending_weak' | 'fulfilled' | 'rejected' {
   return value.$$typeof === RESULT_MODEL_TYPE ? value.status : null;
 }

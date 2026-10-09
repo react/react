@@ -91,6 +91,7 @@ import hasOwnProperty from 'shared/hasOwnProperty';
 import isArray from 'shared/isArray';
 import noop from 'shared/noop';
 import {
+  enableFlightWeakThenables,
   enableTaint,
   enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
@@ -224,6 +225,7 @@ export type Request = {
   hasByValueModels: boolean,
   deferredBlobs: null | Array<Task>,
   taintCleanupQueue: Array<string | bigint>,
+  pendingWeakModels: null | Set<Object>,
   abortableTasks: Set<Task>,
   temporaryReferences: void | TemporaryReferenceSet,
   createServerReference: (Function, Promise<Array<any>>) => Function,
@@ -313,6 +315,7 @@ function RequestInstance(
     TaintRegistryPendingRequests.add(cleanupQueue);
   }
   this.taintCleanupQueue = cleanupQueue;
+  this.pendingWeakModels = null;
   this.abortableTasks = new Set();
   this.identifierPrefix = identifierPrefix || '';
   this.temporaryReferences = temporaryReferences;
@@ -785,6 +788,10 @@ function renderThenable(
   value: ReactClientValue,
 ): ReactClientValue {
   const thenable: Thenable<ReactClientValue> = value as any;
+  if (enableFlightWeakThenables && thenable.status === 'pending_weak') {
+    return renderWeakThenable(request, task, thenable);
+  }
+
   const newTask = createTask(
     request,
     value,
@@ -1841,8 +1848,7 @@ function performWork(request: Request): void {
   } finally {
     if (request.status !== CLOSED && request.abortableTasks.size === 0) {
       request.status = CLOSED;
-      closeHints(request.result);
-      completeResult(request.result);
+      closeResult(request);
       if (enableTaint) {
         cleanupTaintQueue(request);
       }
@@ -2609,8 +2615,7 @@ function finishAbort(
   }
   if (request.abortableTasks.size === 0) {
     request.status = CLOSED;
-    closeHints(request.result);
-    completeResult(request.result);
+    closeResult(request);
     if (enableTaint) {
       cleanupTaintQueue(request);
     }
@@ -2887,8 +2892,7 @@ function finishAbortedTasks(request: Request): void {
   });
   if (request.abortableTasks.size === 0 && request.status !== CLOSED) {
     request.status = CLOSED;
-    closeHints(request.result);
-    completeResult(request.result);
+    closeResult(request);
     if (enableTaint) {
       cleanupTaintQueue(request);
     }
@@ -3375,8 +3379,7 @@ function tryStreamTask(request: Request, task: Task): void {
       }
       if (request.status !== CLOSED && request.abortableTasks.size === 0) {
         request.status = CLOSED;
-        closeHints(request.result);
-        completeResult(request.result);
+        closeResult(request);
         if (enableTaint) {
           cleanupTaintQueue(request);
         }
@@ -3394,4 +3397,81 @@ function tryStreamTask(request: Request, task: Task): void {
       setCurrentCache(prevCache);
     }
   }
+}
+
+function renderWeakThenable(
+  request: Request,
+  task: Task,
+  thenable: Thenable<ReactClientValue>,
+): ReactClientValue {
+  const promise = createResultModel<ReactClientValue>(true);
+  let pendingWeakModels = request.pendingWeakModels;
+  if (pendingWeakModels === null) {
+    request.pendingWeakModels = pendingWeakModels = new Set();
+  }
+  pendingWeakModels.add(promise);
+  const weakModels = pendingWeakModels;
+  const keyPath = task.keyPath;
+  const implicitSlot = task.implicitSlot;
+  const formatContext = task.formatContext;
+  setRenderedModel(
+    getRenderedModels(request, thenable as any, keyPath, implicitSlot),
+    thenable as any,
+    promise,
+  );
+  let settled = false;
+  function createThenableTask(model: ReactClientValue): Task {
+    settled = true;
+    weakModels.delete(promise);
+    const newTask = createTask(
+      request,
+      model,
+      keyPath,
+      implicitSlot,
+      formatContext,
+    );
+    newTask.promise.then(
+      value => {
+        fulfillResultModel(promise, value);
+      },
+      error => {
+        copyErrorReference(request.result, promise, newTask.promise);
+        rejectResultModel(promise, error);
+      },
+    );
+    return newTask;
+  }
+  thenable.then(
+    value => {
+      if (settled || request.status > OPEN) {
+        return;
+      }
+      const newTask = createThenableTask(value);
+      pingTask(request, newTask);
+    },
+    reason => {
+      if (settled || request.status > OPEN) {
+        return;
+      }
+      const newTask = createThenableTask(thenable as any);
+      try {
+        erroredTask(request, newTask, reason);
+      } catch (error) {
+        fatalError(request, error);
+      }
+      scheduleMicrotask(() => performWork(request));
+    },
+  );
+  return promise;
+}
+
+function closeResult(request: Request): void {
+  const pendingWeakModels = request.pendingWeakModels;
+  if (pendingWeakModels !== null) {
+    pendingWeakModels.forEach(model => markHalted(request.result, model));
+    pendingWeakModels.clear();
+    request.pendingWeakModels = null;
+  }
+  closeHints(request.result);
+  completeResult(request.result);
 }
