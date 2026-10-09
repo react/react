@@ -80,3 +80,9 @@ export function rejectResultModel<T>(
   model.reason = error;
   model._reject(error);
 }
+
+export function getResultModelStatus(
+  value: Object,
+): null | 'pending' | 'fulfilled' | 'rejected' {
+  return value.$$typeof === RESULT_MODEL_TYPE ? value.status : null;
+}
