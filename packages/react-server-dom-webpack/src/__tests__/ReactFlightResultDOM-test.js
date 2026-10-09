@@ -268,7 +268,7 @@ describe('ReactFlightResultDOM', () => {
         : children;
   }
 
-  it.skip('should resolve HTML using Node streams', async () => {
+  it('should resolve HTML using Node streams', async () => {
     function Text({children}) {
       return <span>{children}</span>;
     }
@@ -305,7 +305,7 @@ describe('ReactFlightResultDOM', () => {
     });
   });
 
-  it.skip('should resolve the root', async () => {
+  it('should resolve the root', async () => {
     // Model
     function Text({children}) {
       return <span>{children}</span>;
@@ -353,7 +353,7 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('should not get confused by $', async () => {
+  it('should not get confused by $', async () => {
     // Model
     function RootModel() {
       return {text: '$1'};
@@ -386,7 +386,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>$1</p>');
   });
 
-  it.skip('should not get confused by @', async () => {
+  it('should not get confused by @', async () => {
     // Model
     function RootModel() {
       return {text: '@div'};
