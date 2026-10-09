@@ -17,6 +17,7 @@ import type {
   PendingThenable,
   FulfilledThenable,
   RejectedThenable,
+  ReactKey,
 } from 'shared/ReactTypes';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {
@@ -30,6 +31,7 @@ import {
   REACT_ELEMENT_TYPE,
   REACT_LAZY_TYPE,
   REACT_FRAGMENT_TYPE,
+  REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
@@ -103,6 +105,8 @@ type Task = {
   isModelReference: boolean,
   ping: () => void,
   thenableState: ThenableState | null,
+  keyPath: ReactKey,
+  implicitSlot: boolean,
 };
 export type Request = {
   status: 10 | 14,
@@ -112,6 +116,14 @@ export type Request = {
   cache: Map<Function, mixed>,
   cacheController: AbortController,
   modelEntries: WeakMap<Object, ReactClientValue>,
+  renderedImplicitModels: WeakMap<Object, ReactClientValue>,
+  renderedKeyedModels: null | Map<
+    ReactKey,
+    {
+      explicit: WeakMap<Object, ReactClientValue>,
+      implicit: WeakMap<Object, ReactClientValue>,
+    },
+  >,
   abortableTasks: Set<Task>,
   identifierPrefix: string,
   identifierCount: number,
@@ -142,10 +154,18 @@ function RequestInstance(
   this.cache = new Map();
   this.cacheController = new AbortController();
   this.modelEntries = new WeakMap();
+  this.renderedImplicitModels = new WeakMap();
+  this.renderedKeyedModels = null;
   this.abortableTasks = new Set();
   this.identifierPrefix = '';
   this.identifierCount = 1;
-  const rootTask = createTask(this, model, createRootFormatContext());
+  const rootTask = createTask(
+    this,
+    model,
+    null,
+    false,
+    createRootFormatContext(),
+  );
   const root = rootTask.promise;
   this.result = createResult(root, () => {
     throw new Error('Not implemented.');
@@ -192,10 +212,28 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   props: Props,
   element: ReactElement,
 ): ReactClientValue {
+  const renderedModels = getRenderedModels(
+    request,
+    element,
+    task.keyPath,
+    task.implicitSlot,
+  );
   const prevThenableState = task.thenableState;
   task.thenableState = null;
   prepareToUseHooksForComponent(prevThenableState, null);
   const result = Component(props, undefined);
+  const prevKeyPath = task.keyPath;
+  const prevImplicitSlot = task.implicitSlot;
+  const key = element.key;
+  if (key !== null) {
+    if (key === REACT_OPTIMISTIC_KEY || prevKeyPath === REACT_OPTIMISTIC_KEY) {
+      task.keyPath = REACT_OPTIMISTIC_KEY;
+    } else {
+      task.keyPath = prevKeyPath === null ? key : prevKeyPath + ',' + key;
+    }
+  } else if (prevKeyPath === null) {
+    task.implicitSlot = true;
+  }
   if (
     result !== null &&
     typeof result === 'object' &&
@@ -220,7 +258,9 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
       result,
     ) as any;
     const resolvedModel = createLazyWrapperAroundWakeable(expandedThenable);
-    request.modelEntries.set(element, resolvedModel);
+    renderedModels.set(element, resolvedModel);
+    task.keyPath = prevKeyPath;
+    task.implicitSlot = prevImplicitSlot;
     task.isModelReference = true;
     return resolvedModel;
   }
@@ -232,7 +272,14 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   ) {
     (result as any)._store.validated = 1;
   }
-  return renderModelDestructive(request, task, result);
+  const resolvedModel = renderModelDestructive(request, task, result);
+  renderedModels.set(
+    element,
+    resolvedModel === undefined ? UNDEFINED_MODEL : resolvedModel,
+  );
+  task.keyPath = prevKeyPath;
+  task.implicitSlot = prevImplicitSlot;
+  return resolvedModel;
 }
 
 function renderElement(
@@ -241,14 +288,34 @@ function renderElement(
   type: any,
   element: ReactElement,
 ): ReactClientValue {
-  if (element.key !== null || element.props.ref != null) {
+  if (element.props.ref != null) {
     throw new Error('Not implemented.');
   }
   if (typeof type === 'function' && !isClientReference(type)) {
     return renderFunctionComponent(request, task, type, element.props, element);
   }
-  if (type === REACT_FRAGMENT_TYPE) {
-    return renderModelDestructive(request, task, element.props.children);
+  if (type === REACT_FRAGMENT_TYPE && element.key === null) {
+    const renderedModels = getRenderedModels(
+      request,
+      element,
+      task.keyPath,
+      task.implicitSlot,
+    );
+    const prevImplicitSlot = task.implicitSlot;
+    if (task.keyPath === null) {
+      task.implicitSlot = true;
+    }
+    const resolvedModel = renderModelDestructive(
+      request,
+      task,
+      element.props.children,
+    );
+    renderedModels.set(
+      element,
+      resolvedModel === undefined ? UNDEFINED_MODEL : resolvedModel,
+    );
+    task.implicitSlot = prevImplicitSlot;
+    return resolvedModel;
   }
   if (
     typeof type !== 'string' &&
@@ -296,6 +363,8 @@ function validateSymbol(value: symbol): void {
 function createTask(
   request: Request,
   model: ReactClientValue,
+  keyPath: ReactKey,
+  implicitSlot: boolean,
   formatContext: FormatContext,
 ): Task {
   const task: Task = {
@@ -306,6 +375,8 @@ function createTask(
     isModelReference: false,
     ping: () => pingTask(request, task),
     thenableState: null,
+    keyPath,
+    implicitSlot,
   };
   request.abortableTasks.add(task);
   return task;
@@ -327,7 +398,7 @@ function outlineModelWithFormatContext(
   value: ReactClientValue,
   formatContext: FormatContext,
 ): ReactClientValue {
-  const newTask = createTask(request, value, formatContext);
+  const newTask = createTask(request, value, null, false, formatContext);
   retryTask(request, newTask);
   if (newTask.status !== COMPLETED) {
     if (newTask.status === PENDING) {
@@ -427,8 +498,17 @@ function renderThenable(
   value: ReactClientValue,
 ): ReactClientValue {
   const thenable: Thenable<ReactClientValue> = value as any;
-  const newTask = createTask(request, value, task.formatContext);
-  request.modelEntries.set(thenable, newTask.promise);
+  const newTask = createTask(
+    request,
+    value,
+    task.keyPath,
+    task.implicitSlot,
+    task.formatContext,
+  );
+  getRenderedModels(request, value, task.keyPath, task.implicitSlot).set(
+    thenable,
+    newTask.promise,
+  );
   switch (thenable.status) {
     case 'fulfilled':
       newTask.model = thenable.value;
@@ -495,12 +575,26 @@ function renderClientElement(
   type: any,
   element: ReactElement,
 ): ReactClientValue {
+  let key = element.key;
+  const keyPath = task.keyPath;
+  if (key === null) {
+    key = keyPath;
+  } else if (keyPath !== null) {
+    if (keyPath === REACT_OPTIMISTIC_KEY || key === REACT_OPTIMISTIC_KEY) {
+      key = REACT_OPTIMISTIC_KEY;
+    } else {
+      key = keyPath + ',' + key;
+    }
+  }
+  if (__DEV__ && task.implicitSlot) {
+    element._store.validated = 1;
+  }
   let resolvedElement: ReactElement;
   if (__DEV__) {
     resolvedElement = {
       $$typeof: REACT_ELEMENT_TYPE,
       type,
-      key: element.key,
+      key,
       props: element.props,
       _owner: null,
       _store: element._store,
@@ -515,12 +609,30 @@ function renderClientElement(
     resolvedElement = {
       $$typeof: REACT_ELEMENT_TYPE,
       type,
-      key: element.key,
+      key,
       ref: null,
       props: element.props,
     } as any;
   }
-  return resolvedElement;
+  const renderedModels = getRenderedModels(
+    request,
+    element,
+    keyPath,
+    task.implicitSlot,
+  );
+  let resolvedModel: ReactClientValue = resolvedElement;
+  if (task.implicitSlot && key !== null) {
+    const children: Array<ReactClientValue> = [resolvedElement];
+    const copy: Array<ReactClientValue> = [];
+    request.modelEntries.set(children, copy);
+    task.model = children;
+    resolvedModel = copy;
+  }
+  renderedModels.set(element, resolvedModel);
+  task.keyPath = null;
+  task.implicitSlot = false;
+  task.isModelReference = false;
+  return resolvedModel;
 }
 
 function renderModelDestructive(
@@ -539,7 +651,12 @@ function renderModelDestructive(
     return value;
   }
   if (value !== null && typeof value === 'object') {
-    const existingModel = request.modelEntries.get(value);
+    const existingModel = getRenderedModels(
+      request,
+      value,
+      task.keyPath,
+      task.implicitSlot,
+    ).get(value);
     if (
       existingModel !== undefined &&
       existingModel !== task.promise &&
@@ -575,7 +692,7 @@ function renderModelDestructive(
     return renderThenable(request, task, value);
   }
   if (isArray(value)) {
-    return [];
+    return renderFragment(request, task, value);
   }
   if (Object.getPrototypeOf(value) !== ObjectPrototype) {
     throw new Error('Not implemented.');
@@ -604,6 +721,8 @@ function renderModel(
   task: Task,
   value: ReactClientValue,
 ): ReactClientValue {
+  const prevKeyPath = task.keyPath;
+  const prevImplicitSlot = task.implicitSlot;
   try {
     return renderModelDestructive(request, task, value);
   } catch (thrownValue) {
@@ -616,16 +735,28 @@ function renderModel(
       ((model as any).$$typeof === REACT_ELEMENT_TYPE ||
         (model as any).$$typeof === REACT_LAZY_TYPE)
     ) {
-      const newTask = createTask(request, model, task.formatContext);
+      const newTask = createTask(
+        request,
+        model,
+        task.keyPath,
+        task.implicitSlot,
+        task.formatContext,
+      );
       const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
-      request.modelEntries.set(model, lazy);
+      getRenderedModels(request, model, task.keyPath, task.implicitSlot).set(
+        model,
+        lazy,
+      );
       if (
         value !== model &&
         value !== null &&
         typeof value === 'object' &&
         (value as any).$$typeof === REACT_ELEMENT_TYPE
       ) {
-        request.modelEntries.set(value, lazy);
+        getRenderedModels(request, value, prevKeyPath, prevImplicitSlot).set(
+          value,
+          lazy,
+        );
       }
       if (
         error != null &&
@@ -638,6 +769,8 @@ function renderModel(
       } else {
         erroredTask(request, newTask, error);
       }
+      task.keyPath = prevKeyPath;
+      task.implicitSlot = prevImplicitSlot;
       task.isModelReference = true;
       return lazy;
     }
@@ -651,6 +784,8 @@ function resolveModelFields(
   rendered: ReactClientValue,
 ): ReactClientValue {
   const model = task.model;
+  task.keyPath = null;
+  task.implicitSlot = false;
   if ((rendered as any).$$typeof === REACT_ELEMENT_TYPE) {
     const element: ReactElement = rendered as any;
     element.props = resolveModel(request, task, element.props);
@@ -693,6 +828,8 @@ function retryTask(request: Request, task: Task): void {
   }
   task.status = RENDERING;
   const originalModel = task.model;
+  const originalKeyPath = task.keyPath;
+  const originalImplicitSlot = task.implicitSlot;
   try {
     const model = task.model;
     const rendered = renderModelDestructive(request, task, model);
@@ -705,14 +842,20 @@ function retryTask(request: Request, task: Task): void {
     }
     task.model = resolvedModel;
     if (originalModel !== null && typeof originalModel === 'object') {
-      const existing = request.modelEntries.get(originalModel);
+      const renderedModels = getRenderedModels(
+        request,
+        originalModel,
+        originalKeyPath,
+        originalImplicitSlot,
+      );
+      const existing = renderedModels.get(originalModel);
       if (
         existing !== null &&
         typeof existing === 'object' &&
         (existing as any).$$typeof === REACT_LAZY_TYPE &&
         (existing as any)._payload === task.promise
       ) {
-        request.modelEntries.set(
+        renderedModels.set(
           originalModel,
           resolvedModel === undefined ? UNDEFINED_MODEL : resolvedModel,
         );
@@ -740,6 +883,101 @@ function retryTask(request: Request, task: Task): void {
     }
     erroredTask(request, task, error);
   }
+}
+
+function getRenderedModels(
+  request: Request,
+  value: ReactClientValue,
+  keyPath: ReactKey,
+  implicitSlot: boolean,
+): WeakMap<Object, ReactClientValue> {
+  if (
+    keyPath !== null &&
+    value !== null &&
+    typeof value === 'object' &&
+    ((value as any).$$typeof === REACT_ELEMENT_TYPE ||
+      typeof (value as any).then === 'function' ||
+      isArray(value))
+  ) {
+    let keyedModels = request.renderedKeyedModels;
+    if (keyedModels === null) {
+      request.renderedKeyedModels = keyedModels = new Map();
+    }
+    let models = keyedModels.get(keyPath);
+    if (models === undefined) {
+      models = {explicit: new WeakMap(), implicit: new WeakMap()};
+      keyedModels.set(keyPath, models);
+    }
+    return implicitSlot ? models.implicit : models.explicit;
+  }
+  if (
+    implicitSlot &&
+    value !== null &&
+    typeof value === 'object' &&
+    (((value as any).$$typeof === REACT_ELEMENT_TYPE &&
+      (value as any).key !== null) ||
+      typeof (value as any).then === 'function')
+  ) {
+    return request.renderedImplicitModels;
+  }
+  return request.modelEntries;
+}
+
+function renderFragment(
+  request: Request,
+  task: Task,
+  children: Array<ReactClientValue>,
+): ReactClientValue {
+  const keyPath = task.keyPath;
+  let resolvedModel: ReactClientValue;
+  if (keyPath !== null) {
+    const props = {children};
+    let fragment: ReactElement;
+    if (__DEV__) {
+      fragment = {
+        $$typeof: REACT_ELEMENT_TYPE,
+        type: REACT_FRAGMENT_TYPE,
+        key: keyPath,
+        props,
+        _owner: null,
+        _store: {validated: 0},
+      } as any;
+      Object.defineProperties(fragment, {
+        ref: {value: null},
+        _debugInfo: {value: null, writable: true},
+        _debugStack: {value: null, writable: true},
+        _debugTask: {value: null, writable: true},
+      });
+    } else {
+      fragment = {
+        $$typeof: REACT_ELEMENT_TYPE,
+        type: REACT_FRAGMENT_TYPE,
+        key: keyPath,
+        ref: null,
+        props,
+      } as any;
+    }
+    if (task.implicitSlot) {
+      const wrappedChildren: Array<ReactClientValue> = [fragment];
+      const copy: Array<ReactClientValue> = [];
+      request.modelEntries.set(wrappedChildren, copy);
+      task.model = wrappedChildren;
+      resolvedModel = copy;
+    } else {
+      resolvedModel = fragment;
+    }
+    getRenderedModels(request, children, keyPath, task.implicitSlot).set(
+      children,
+      resolvedModel,
+    );
+  } else {
+    const copy: Array<ReactClientValue> = new Array(children.length);
+    request.modelEntries.set(children, copy);
+    task.model = children;
+    resolvedModel = copy;
+  }
+  task.isModelReference = false;
+  return resolvedModel;
 }
 
 function performWork(request: Request): void {

@@ -9,7 +9,7 @@
 
 import type {ResultModel} from 'shared/ReactFlightResultModel';
 import type {ErrorReference} from 'shared/ReactFlightResult';
-import type {ReactStackTrace} from 'shared/ReactTypes';
+import type {ReactStackTrace, ReactKey} from 'shared/ReactTypes';
 import {describeObjectForErrorMessage} from 'shared/ReactSerializationErrors';
 import type {
   ReactClientValue,
@@ -152,7 +152,7 @@ export function createRequest(
 
 function renderClientElement(
   type: any,
-  key: null | string,
+  key: ReactKey,
   props: ReactClientValue,
   validated: number,
 ): ReactJSONValue {

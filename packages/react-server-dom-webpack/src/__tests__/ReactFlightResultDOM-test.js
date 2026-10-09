@@ -758,7 +758,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>and then</p>');
   });
 
-  it.skip('throws when accessing a member below the client exports', () => {
+  it('throws when accessing a member below the client exports', () => {
     const ClientModule = clientExports({
       Component: {deep: 'thing'},
     });
@@ -772,7 +772,7 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('throws when await a client module prop of client exports', async () => {
+  it('throws when await a client module prop of client exports', async () => {
     const ClientModule = clientExports({
       Component: {deep: 'thing'},
     });
@@ -786,7 +786,7 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('throws when accessing a symbol prop from client exports', () => {
+  it('throws when accessing a symbol prop from client exports', () => {
     const symbol = Symbol('test');
     const ClientModule = clientExports({
       Component: {deep: 'thing'},
@@ -800,7 +800,7 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('does not throw when toString:ing client exports', () => {
+  it('does not throw when toString:ing client exports', () => {
     const ClientModule = clientExports({
       Component: {deep: 'thing'},
     });
@@ -812,14 +812,14 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('does not throw when React inspects any deep props', () => {
+  it('does not throw when React inspects any deep props', () => {
     const ClientModule = clientExports({
       Component: function () {},
     });
     <ClientModule.Component key="this adds instrumentation" />;
   });
 
-  it.skip('does not throw when accessing a Context.Provider from client exports', () => {
+  it('does not throw when accessing a Context.Provider from client exports', () => {
     const Context = React.createContext();
     const ClientModule = clientExports({
       Context,
@@ -1703,7 +1703,7 @@ describe('ReactFlightResultDOM', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  it.skip('should support float methods when rendering in Fiber', async () => {
+  it('should support float methods when rendering in Fiber', async () => {
     function Component() {
       return <p>hello world</p>;
     }
@@ -1829,7 +1829,7 @@ describe('ReactFlightResultDOM', () => {
     expect(getMeaningfulChildren(container)).toEqual(<p>hello world</p>);
   });
 
-  it.skip('should support float methods when rendering in Fizz', async () => {
+  it('should support float methods when rendering in Fizz', async () => {
     function Component() {
       return <p>hello world</p>;
     }
@@ -1958,7 +1958,7 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('supports Float hints from concurrent Flight -> Fizz renders', async () => {
+  it('supports Float hints from concurrent Flight -> Fizz renders', async () => {
     function Component() {
       return <p>hello world</p>;
     }
@@ -2074,7 +2074,7 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('supports deduping hints by Float key', async () => {
+  it('supports deduping hints by Float key', async () => {
     function Component() {
       return <p>hello world</p>;
     }
