@@ -9,20 +9,13 @@
 
 import type {AsyncDispatcher} from 'react-reconciler/src/ReactInternalTypes';
 
-import {resolveRequest, getCache} from '../ReactFlightServer';
+import {resolveCache} from './ReactFlightCurrentCache';
 import {resolveOwner} from './ReactFlightCurrentOwner';
-
-function resolveCache(): Map<Function, mixed> {
-  const request = resolveRequest();
-  if (request) {
-    return getCache(request);
-  }
-  return new Map();
-}
 
 export const DefaultAsyncDispatcher: AsyncDispatcher = {
   getCacheForType<T>(resourceType: () => T): T {
-    const cache = resolveCache();
+    const context = resolveCache();
+    const cache = context ? context.cache : new Map();
     let entry: T | void = cache.get(resourceType) as any;
     if (entry === undefined) {
       entry = resourceType();
@@ -32,9 +25,9 @@ export const DefaultAsyncDispatcher: AsyncDispatcher = {
     return entry;
   },
   cacheSignal(): null | AbortSignal {
-    const request = resolveRequest();
-    if (request) {
-      return request.cacheController.signal;
+    const context = resolveCache();
+    if (context) {
+      return context.cacheController.signal;
     }
     return null;
   },

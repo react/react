@@ -87,6 +87,7 @@ import {
   isServerReference,
   supportsRequestStorage,
   requestStorage,
+  cacheStorage,
   createHints,
   createRootFormatContext,
   getChildFormatContext,
@@ -115,6 +116,7 @@ import {
   resetHooksForRequest,
 } from './ReactFlightHooks';
 import {DefaultAsyncDispatcher} from './flight/ReactFlightAsyncDispatcher';
+import {setCurrentCache} from './flight/ReactFlightCurrentCache';
 
 import {resolveOwner, setCurrentOwner} from './flight/ReactFlightCurrentOwner';
 
@@ -530,6 +532,8 @@ export type ReactClientValue =
   | Map<ReactClientValue, ReactClientValue>
   | Set<ReactClientValue>
   | FormData
+  | Blob
+  | Error
   | $ArrayBufferView
   | ArrayBuffer
   | Date
@@ -1529,10 +1533,6 @@ export function emitHint<Code: HintCode>(
 
 export function getHints(request: Request): Hints {
   return request.hints;
-}
-
-export function getCache(request: Request): Map<Function, mixed> {
-  return request.cache;
 }
 
 function readThenable<T>(thenable: Thenable<T>): T {
@@ -4391,19 +4391,22 @@ function logRecoverableError(
   // We clear the request context so that console.logs inside the callback doesn't
   // get forwarded to the client.
   currentRequest = null;
+  const prevCache = setCurrentCache(null);
   let errorDigest;
   try {
     const onError = request.onError;
     if (__DEV__ && task !== null) {
       // $FlowFixMe[constant-condition]
       if (supportsRequestStorage) {
-        errorDigest = requestStorage.run(
-          undefined,
-          callWithDebugContextInDEV,
-          request,
-          task,
-          onError,
-          error,
+        errorDigest = cacheStorage.run(undefined, () =>
+          requestStorage.run(
+            undefined,
+            callWithDebugContextInDEV,
+            request,
+            task,
+            onError,
+            error,
+          ),
         );
       } else {
         errorDigest = callWithDebugContextInDEV(request, task, onError, error);
@@ -4411,12 +4414,15 @@ function logRecoverableError(
       // $FlowFixMe[constant-condition]
     } else if (supportsRequestStorage) {
       // Exit the request context while running callbacks.
-      errorDigest = requestStorage.run(undefined, onError, error);
+      errorDigest = cacheStorage.run(undefined, () =>
+        requestStorage.run(undefined, onError, error),
+      );
     } else {
       errorDigest = onError(error);
     }
   } finally {
     currentRequest = prevRequest;
+    setCurrentCache(prevCache);
   }
   if (errorDigest != null && typeof errorDigest !== 'string') {
     // eslint-disable-next-line react-internal/prod-error-codes
@@ -6411,6 +6417,7 @@ function performWork(request: Request): void {
   ReactSharedInternals.H = HooksDispatcher;
   const prevRequest = currentRequest;
   currentRequest = request;
+  const prevCache = setCurrentCache(request);
   prepareToUseHooksForRequest(request);
 
   try {
@@ -6428,6 +6435,7 @@ function performWork(request: Request): void {
     ReactSharedInternals.H = prevDispatcher;
     resetHooksForRequest();
     currentRequest = prevRequest;
+    setCurrentCache(prevCache);
   }
 }
 
@@ -6723,7 +6731,9 @@ export function startWork(request: Request): void {
   // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     scheduleMicrotask(() => {
-      requestStorage.run(request, performWork, request);
+      cacheStorage.run(request, () =>
+        requestStorage.run(request, performWork, request),
+      );
     });
   } else {
     scheduleMicrotask(() => performWork(request));
