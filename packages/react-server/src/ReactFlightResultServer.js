@@ -64,7 +64,7 @@ import {
   fulfillResultModel,
   rejectResultModel,
 } from 'shared/ReactFlightResultModel';
-import {scheduleMicrotask} from './ReactServerStreamConfig';
+import {scheduleWork, scheduleMicrotask} from './ReactServerStreamConfig';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import isArray from 'shared/isArray';
 import noop from 'shared/noop';
@@ -89,6 +89,9 @@ const RENDERING = 5;
 const BLOCKED = 6;
 const ERRORED = 4;
 const OPENING = 10;
+const OPEN = 11;
+const ABORTING = 12;
+const ABORTED = 3;
 const CLOSED = 14;
 
 export type ReactClientValue =
@@ -112,7 +115,7 @@ const {getPrototypeOf} = Object;
 type Task = {
   model: ReactClientValue,
   promise: ResultModel<ReactClientValue>,
-  status: 0 | 1 | 4 | 5 | 6,
+  status: 0 | 1 | 3 | 4 | 5 | 6,
   renderedModel: ReactClientValue,
   modelDependencies: null | Set<ResultModel<ReactClientValue>>,
   reference: ModelReference,
@@ -145,7 +148,9 @@ const MAX_ROW_SIZE = 3200;
 const emptyRoot = {};
 
 export type Request = {
-  status: 10 | 14,
+  status: 10 | 11 | 12 | 14,
+  fatalError: mixed,
+  abortModel: null | ResultModel<ReactClientValue>,
   result: Result<ReactClientValue>,
   pingedTasks: Array<Task>,
   hints: Hints,
@@ -195,6 +200,8 @@ function RequestInstance(
   }
   ReactSharedInternals.A = DefaultAsyncDispatcher;
   this.status = OPENING;
+  this.fatalError = null;
+  this.abortModel = null;
   this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.hints = createHints();
   this.cache = new Map();
@@ -220,9 +227,7 @@ function RequestInstance(
     createRootFormatContext(),
   );
   const root = rootTask.promise;
-  this.result = createResult(root, () => {
-    throw new Error('Not implemented.');
-  });
+  this.result = createResult(root, reason => abort(this, reason));
   this.pingedTasks = [rootTask];
 }
 
@@ -275,6 +280,17 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   task.thenableState = null;
   prepareToUseHooksForComponent(prevThenableState, null);
   const result = Component(props, undefined);
+  if (request.status === ABORTING || request.status === CLOSED) {
+    if (
+      result !== null &&
+      typeof result === 'object' &&
+      !isClientReference(result) &&
+      typeof (result as any).then === 'function'
+    ) {
+      (result as any).then(noop, noop);
+    }
+    throw request.fatalError;
+  }
   const prevKeyPath = task.keyPath;
   const prevImplicitSlot = task.implicitSlot;
   const key = element.key;
@@ -383,6 +399,20 @@ function renderElement(
     return resolvedModel;
   }
   if (
+    type !== null &&
+    typeof type === 'object' &&
+    !isClientReference(type) &&
+    type.$$typeof === REACT_LAZY_TYPE
+  ) {
+    const init = type._init;
+    const payload = type._payload;
+    const wrappedType = init(payload);
+    if (request.status === ABORTING || request.status === CLOSED) {
+      throw request.fatalError;
+    }
+    return renderElement(request, task, wrappedType, element);
+  }
+  if (
     typeof type !== 'string' &&
     typeof type !== 'symbol' &&
     !isClientReference(type)
@@ -466,7 +496,11 @@ function pingTask(request: Request, task: Task): void {
   const pingedTasks = request.pingedTasks;
   pingedTasks.push(task);
   if (pingedTasks.length === 1) {
-    scheduleMicrotask(() => performWork(request));
+    if (request.status === OPENING) {
+      scheduleMicrotask(() => performWork(request));
+    } else {
+      scheduleWork(() => performWork(request));
+    }
   }
 }
 
@@ -560,16 +594,10 @@ function fatalError(request: Request, error: mixed): void {
   if (request.status === CLOSED) {
     return;
   }
-  request.status = CLOSED;
-  request.abortableTasks.forEach(task => {
-    task.status = ERRORED;
-    task.reject(error);
-  });
-  request.abortableTasks.clear();
-  request.pingedTasks = [];
-  closeHints(request.result);
-  completeResult(request.result);
+  request.status = ABORTING;
+  request.fatalError = error;
   request.cacheController.abort(error);
+  finishAbort(request, error);
 }
 
 function renderThenable(
@@ -603,6 +631,10 @@ function renderThenable(
       }
       break;
     default: {
+      if (request.status === ABORTING) {
+        abortTask(request, newTask);
+        return newTask.promise;
+      }
       if (typeof thenable.status !== 'string') {
         const pendingThenable: PendingThenable<ReactClientValue> =
           thenable as any;
@@ -646,7 +678,6 @@ function renderThenable(
       );
     }
   }
-  task.isModelReference = true;
   return newTask.promise;
 }
 
@@ -926,17 +957,24 @@ function renderModelDestructive(
       return deferTask(request, task);
     }
     const lazy: LazyComponent<ReactClientValue, any> = value as any;
+    task.thenableState = null;
+    const init = lazy._init;
+    const payload = lazy._payload;
+    const resolvedModel = init(payload);
+    if (request.status === ABORTING || request.status === CLOSED) {
+      throw request.fatalError;
+    }
     return renderModelDestructive(
       request,
       task,
       parent,
       parentPropertyName,
-      lazy._init(lazy._payload),
+      resolvedModel,
       parentReference,
     );
   }
   if (typeof (value as any).then === 'function') {
-    return renderThenable(request, task, value);
+    return renderModelReference(task, renderThenable(request, task, value));
   }
   if (isArray(value)) {
     return renderFragment(request, task, value);
@@ -1009,8 +1047,15 @@ function renderModel(
       parentReference,
     );
   } catch (thrownValue) {
+    if (request.status === CLOSED) {
+      throw request.fatalError;
+    }
     const error =
-      thrownValue === SuspenseException ? getSuspendedThenable() : thrownValue;
+      request.status === ABORTING
+        ? request.fatalError
+        : thrownValue === SuspenseException
+          ? getSuspendedThenable()
+          : thrownValue;
     const model = task.model;
     if (
       model !== null &&
@@ -1052,7 +1097,9 @@ function renderModel(
       }
       task.keyPath = prevKeyPath;
       task.implicitSlot = prevImplicitSlot;
-      if (
+      if (request.status === ABORTING) {
+        abortTask(request, newTask);
+      } else if (
         error != null &&
         typeof error === 'object' &&
         typeof (error as any).then === 'function'
@@ -1092,7 +1139,9 @@ function renderModel(
     request.hasByValueModels = true;
     addModelDependency(task, newTask.promise);
     markErroredModel(request, newTask, value, prevKeyPath, prevImplicitSlot);
-    if (
+    if (request.status === ABORTING) {
+      abortTask(request, newTask);
+    } else if (
       error != null &&
       typeof error === 'object' &&
       typeof (error as any).then === 'function'
@@ -1284,7 +1333,10 @@ function retryTask(request: Request, task: Task): void {
     }
     completeTask(request, task, resolvedModel);
   } catch (thrownValue) {
-    if (request.status === CLOSED) {
+    if (request.status >= ABORTING) {
+      if (request.status === ABORTING) {
+        abortTask(request, task);
+      }
       return;
     }
     const error =
@@ -1458,6 +1510,11 @@ export function startWork(request: Request): void {
   } else {
     scheduleMicrotask(() => performWork(request));
   }
+  scheduleWork(() => {
+    if (request.status === OPENING) {
+      request.status = OPEN;
+    }
+  });
 }
 
 function createModelEntry(
@@ -1983,6 +2040,10 @@ function blockTask(
 ): void {
   task.model = model;
   task.status = BLOCKED;
+  if (request.status === ABORTING) {
+    abortTask(request, task);
+    return;
+  }
   let remaining = dependencies.size;
   dependencies.forEach(dependency => {
     const resolve = () => {
@@ -2074,4 +2135,91 @@ function deferTask(request: Request, task: Task): ReactClientValue {
   }
   pingTask(request, newTask);
   return renderModelReference(task, lazy);
+}
+
+function abortTask(request: Request, task: Task): void {
+  task.status = ABORTED;
+  const abortModel = request.abortModel;
+  if (abortModel !== null) {
+    copyErrorReference(request.result, task.promise, abortModel);
+  }
+  task.reject(request.fatalError);
+  request.abortableTasks.delete(task);
+}
+
+function finishAbort(
+  request: Request,
+  error: mixed,
+  preserveRendering: boolean = false,
+): void {
+  request.abortableTasks.forEach(task => {
+    if (preserveRendering) {
+      if (task.status !== RENDERING) {
+        abortTask(request, task);
+      }
+    } else {
+      task.status = ABORTED;
+      task.reject(error);
+      request.abortableTasks.delete(task);
+    }
+  });
+  request.pingedTasks.length = 0;
+  if (request.abortableTasks.size === 0) {
+    request.status = CLOSED;
+    closeHints(request.result);
+    completeResult(request.result);
+  }
+}
+
+export function attachAbortSignal(request: Request, signal: AbortSignal): void {
+  if (signal.aborted) {
+    abort(request, signal.reason);
+    return;
+  }
+  const cacheSignal = request.cacheController.signal;
+  if (cacheSignal.aborted) {
+    return;
+  }
+  const subscription: {request: null | Request} = {request};
+  function onAbort(): void {
+    const current = subscription.request;
+    if (current !== null) {
+      abort(current, signal.reason);
+    }
+  }
+  function detach(): void {
+    subscription.request = null;
+    signal.removeEventListener('abort', onAbort);
+  }
+  signal.addEventListener('abort', onAbort);
+  cacheSignal.addEventListener('abort', detach, {once: true});
+}
+
+export function abort(request: Request, reason: mixed): void {
+  if (request.status > OPEN) {
+    return;
+  }
+  try {
+    request.status = ABORTING;
+    request.cacheController.abort(reason);
+    const error =
+      reason === undefined
+        ? new Error('The render was aborted by the server without a reason.')
+        : typeof reason === 'object' &&
+            reason !== null &&
+            typeof (reason as any).then === 'function'
+          ? new Error('The render was aborted by the server with a promise.')
+          : reason;
+    request.fatalError = error;
+    if (request.abortableTasks.size > 0) {
+      const digest = logRecoverableError(request, error);
+      const abortModel = createResultModel<ReactClientValue>();
+      request.abortModel = abortModel;
+      setErrorDigest(request.result, abortModel, digest);
+      rejectResultModel(abortModel, error);
+    }
+    finishAbort(request, error, true);
+  } catch (error) {
+    fatalError(request, error);
+  }
 }

@@ -15,11 +15,12 @@ import {
   createRequest,
   getResult,
   startWork,
+  attachAbortSignal,
 } from 'react-server/src/ReactFlightResultServer';
 import {createInput} from 'react-server/src/ReactFlightResultSerialization';
 import {renderToPipeableStream} from './ReactFlightDOMResultSerializationServerNode';
 
-type Options = {onError?: mixed => ?string};
+type Options = {onError?: mixed => ?string, signal?: AbortSignal};
 
 export function renderToResult(
   model: ReactClientValue,
@@ -27,6 +28,9 @@ export function renderToResult(
 ): Result<ReactClientValue> {
   const request = createRequest(model, options ? options.onError : undefined);
   startWork(request);
+  if (options && options.signal) {
+    attachAbortSignal(request, options.signal);
+  }
   return getResult(request);
 }
 
