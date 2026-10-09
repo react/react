@@ -34,7 +34,7 @@ import {
   REACT_FRAGMENT_TYPE,
   REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
-import ReactSharedInternals from 'shared/ReactSharedInternals';
+import ReactSharedInternals from './ReactSharedInternalsServer';
 import {
   HooksDispatcher,
   prepareToUseHooksForRequest,
@@ -72,6 +72,8 @@ import {scheduleWork, scheduleMicrotask} from './ReactServerStreamConfig';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import isArray from 'shared/isArray';
 import noop from 'shared/noop';
+import {enableTaint} from 'shared/ReactFeatureFlags';
+import binaryToComparableString from 'shared/binaryToComparableString';
 import {
   createHints,
   createRootFormatContext,
@@ -196,6 +198,8 @@ export type Request = {
   resolvingModelStack: Array<Reference>,
   resolvingModels: null | Set<Reference>,
   hasByValueModels: boolean,
+  deferredBlobs: null | Array<Task>,
+  taintCleanupQueue: Array<string | bigint>,
   abortableTasks: Set<Task>,
   identifierPrefix: string,
   identifierCount: number,
@@ -204,6 +208,35 @@ export type Request = {
 
 function defaultErrorHandler(error: mixed): void {
   console['error'](error);
+}
+
+const {
+  TaintRegistryObjects,
+  TaintRegistryValues,
+  TaintRegistryByteLengths,
+  TaintRegistryPendingRequests,
+} = ReactSharedInternals;
+
+function throwTaintViolation(message: string) {
+  // eslint-disable-next-line react-internal/prod-error-codes
+  throw new Error(message);
+}
+
+function cleanupTaintQueue(request: Request): void {
+  const cleanupQueue = request.taintCleanupQueue;
+  TaintRegistryPendingRequests.delete(cleanupQueue);
+  for (let i = 0; i < cleanupQueue.length; i++) {
+    const entryValue = cleanupQueue[i];
+    const entry = TaintRegistryValues.get(entryValue);
+    if (entry !== undefined) {
+      if (entry.count === 1) {
+        TaintRegistryValues.delete(entryValue);
+      } else {
+        entry.count--;
+      }
+    }
+  }
+  cleanupQueue.length = 0;
 }
 
 function RequestInstance(
@@ -243,6 +276,14 @@ function RequestInstance(
   this.resolvingModelStack = [];
   this.resolvingModels = null;
   this.hasByValueModels = false;
+  if (enableTaint) {
+    this.deferredBlobs = null;
+  }
+  const cleanupQueue: Array<string | bigint> = [];
+  if (enableTaint) {
+    TaintRegistryPendingRequests.add(cleanupQueue);
+  }
+  this.taintCleanupQueue = cleanupQueue;
   this.abortableTasks = new Set();
   this.identifierPrefix = '';
   this.identifierCount = 1;
@@ -832,6 +873,24 @@ function renderModelDestructive(
   ) {
     return renderModelReference(task, value);
   }
+  if (enableTaint) {
+    // Check the source before copying it. A copy does not carry its taint mark.
+    if (typeof value === 'string' || typeof value === 'bigint') {
+      const tainted = TaintRegistryValues.get(value);
+      if (tainted !== undefined) {
+        throwTaintViolation(tainted.message);
+      }
+    } else if (
+      value !== null &&
+      (typeof value === 'object' || typeof value === 'function')
+    ) {
+      const tainted = TaintRegistryObjects.get(value);
+      if (tainted !== undefined) {
+        throwTaintViolation(tainted);
+      }
+    }
+  }
+
   if (value === null || typeof value !== 'object') {
     if (typeof value === 'string') {
       serializedSize += value.length;
@@ -1045,6 +1104,18 @@ function renderModelDestructive(
     );
   }
   if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    if (enableTaint) {
+      const typedArray: $ArrayBufferView =
+        value instanceof ArrayBuffer ? new Uint8Array(value) : (value as any);
+      if (TaintRegistryByteLengths.has(typedArray.byteLength)) {
+        const tainted = TaintRegistryValues.get(
+          binaryToComparableString(typedArray),
+        );
+        if (tainted !== undefined) {
+          throwTaintViolation(tainted.message);
+        }
+      }
+    }
     return renderModelReference(task, value);
   }
   if (value instanceof Map) {
@@ -1057,8 +1128,7 @@ function renderModelDestructive(
     return renderModelReference(task, renderFormData(request, task, value));
   }
   if (typeof Blob === 'function' && value instanceof Blob) {
-    setRenderedModel(request.modelEntries, value, value);
-    return renderModelReference(task, value);
+    return renderModelReference(task, renderBlob(request, task, value));
   }
   if (Object.getPrototypeOf(value) !== ObjectPrototype) {
     throw new Error('Not implemented.');
@@ -1084,8 +1154,20 @@ function resolveModel(
     typeof value === 'object' &&
     typeof (value as any).toJSON === 'function'
   ) {
+    if (enableTaint) {
+      const tainted = TaintRegistryObjects.get(value);
+      if (tainted !== undefined) {
+        throwTaintViolation(tainted);
+      }
+    }
     if (value instanceof Date && isSimpleDate(value)) {
       const time = dateGetTime.call(value);
+      if (enableTaint && !Number.isNaN(time)) {
+        const tainted = TaintRegistryValues.get(dateToISOString.call(value));
+        if (tainted !== undefined) {
+          throwTaintViolation(tainted.message);
+        }
+      }
       return renderModelReference(
         task,
         Number.isNaN(time) ? null : new Date(time),
@@ -1431,6 +1513,9 @@ function retryTask(request: Request, task: Task): void {
     if (request.status === CLOSED) {
       return;
     }
+    if (enableTaint) {
+      validateDeferredBlobs(request);
+    }
     const outlinedModels = request.outlinedModels;
     if (
       outlinedModels !== null &&
@@ -1470,7 +1555,14 @@ function retryTask(request: Request, task: Task): void {
     );
     erroredTask(request, task, error);
   } finally {
-    serializedSize = parentSerializedSize;
+    try {
+      if (enableTaint) {
+        // A sibling may throw after registering a Blob validation task.
+        validateDeferredBlobs(request);
+      }
+    } finally {
+      serializedSize = parentSerializedSize;
+    }
   }
 }
 
@@ -1594,6 +1686,9 @@ function performWork(request: Request): void {
       request.status = CLOSED;
       closeHints(request.result);
       completeResult(request.result);
+      if (enableTaint) {
+        cleanupTaintQueue(request);
+      }
       request.cacheController.abort(
         new Error(
           'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
@@ -2344,6 +2439,9 @@ function finishAbort(
     request.status = CLOSED;
     closeHints(request.result);
     completeResult(request.result);
+    if (enableTaint) {
+      cleanupTaintQueue(request);
+    }
   }
 }
 
@@ -2436,6 +2534,9 @@ function finishAbortedTasks(request: Request): void {
     request.status = CLOSED;
     closeHints(request.result);
     completeResult(request.result);
+    if (enableTaint) {
+      cleanupTaintQueue(request);
+    }
     request.onAllReady();
   }
 }
@@ -2570,5 +2671,110 @@ function blockModelOnDependencies(
     );
     outlinedModels.set(model as any, newTask);
     blockTask(request, newTask, model, dependencies);
+  }
+}
+
+function renderBlob(request: Request, task: Task, blob: Blob): Blob {
+  setRenderedModel(request.modelEntries, blob, blob);
+  if (enableTaint) {
+    const newTask = createTask(
+      request,
+      blob,
+      null,
+      false,
+      createRootFormatContext(),
+    );
+    let outlinedModels = request.outlinedModels;
+    if (outlinedModels === null) {
+      request.outlinedModels = outlinedModels = new WeakMap();
+    }
+    outlinedModels.set(blob, newTask);
+    request.hasByValueModels = true;
+    addModelDependency(task, newTask.promise);
+    const deferredBlobs = request.deferredBlobs;
+    if (deferredBlobs === null) {
+      request.deferredBlobs = [newTask];
+    } else {
+      deferredBlobs.push(newTask);
+    }
+  }
+  return blob;
+}
+
+function validateBlob(request: Request, newTask: Task): void {
+  if (newTask.status !== PENDING) {
+    return;
+  }
+  const blob: Blob = newTask.model as any;
+  try {
+    const taintedType = TaintRegistryValues.get(blob.type);
+    if (taintedType !== undefined) {
+      throwTaintViolation(taintedType.message);
+    }
+    if (TaintRegistryByteLengths.size === 0) {
+      completeTask(request, newTask, blob);
+      return;
+    }
+  } catch (x) {
+    erroredTask(request, newTask, x);
+    return;
+  }
+  const copy = new Blob([blob], {type: blob.type});
+  const reader = copy.stream().getReader();
+
+  function progress(entry: {
+    done: boolean,
+    value: any,
+    ...
+  }): Promise<void> | void {
+    if (newTask.status !== PENDING) {
+      return;
+    }
+    if (entry.done) {
+      request.cacheController.signal.removeEventListener('abort', abortBlob);
+      scheduleMicrotask(() => performWork(request));
+      completeTask(request, newTask, blob);
+      return;
+    }
+    const chunk: Uint8Array = entry.value;
+    if (TaintRegistryByteLengths.has(chunk.byteLength)) {
+      const tainted = TaintRegistryValues.get(binaryToComparableString(chunk));
+      if (tainted !== undefined) {
+        throwTaintViolation(tainted.message);
+      }
+    }
+    return reader.read().then(progress).catch(error);
+  }
+  function error(reason: mixed): void {
+    if (newTask.status !== PENDING) {
+      return;
+    }
+    request.cacheController.signal.removeEventListener('abort', abortBlob);
+    scheduleMicrotask(() => performWork(request));
+    try {
+      erroredTask(request, newTask, reason);
+    } catch (callbackError) {
+      fatalError(request, callbackError);
+    } finally {
+      // $FlowFixMe[incompatible-type] Stream cancellation accepts any reason.
+      reader.cancel(reason).then(noop, noop);
+    }
+  }
+  function abortBlob(): void {
+    const signal = request.cacheController.signal;
+    signal.removeEventListener('abort', abortBlob);
+    reader.cancel(signal.reason).then(noop, noop);
+  }
+  request.cacheController.signal.addEventListener('abort', abortBlob);
+  reader.read().then(progress).catch(error);
+}
+
+function validateDeferredBlobs(request: Request): void {
+  const deferredBlobs = request.deferredBlobs;
+  request.deferredBlobs = null;
+  if (deferredBlobs !== null) {
+    for (let i = 0; i < deferredBlobs.length; i++) {
+      validateBlob(request, deferredBlobs[i]);
+    }
   }
 }

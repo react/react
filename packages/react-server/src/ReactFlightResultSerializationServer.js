@@ -48,6 +48,9 @@ import type {LazyComponent} from 'react/src/ReactLazy';
 import isArray from 'shared/isArray';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import noop from 'shared/noop';
+import {enableTaint} from 'shared/ReactFeatureFlags';
+import ReactSharedInternals from './ReactSharedInternalsServer';
+import binaryToComparableString from 'shared/binaryToComparableString';
 import {
   isClientReference,
   getClientReferenceKey,
@@ -128,7 +131,37 @@ export type Request = {
   writtenErrors: WeakMap<ErrorReference, number>,
   completedErrorChunks: Array<Chunk>,
   onError: mixed => ?string,
+  taintCleanupQueue: Array<string | bigint>,
 };
+
+const {
+  TaintRegistryObjects,
+  TaintRegistryValues,
+  TaintRegistryByteLengths,
+  TaintRegistryPendingRequests,
+} = ReactSharedInternals;
+
+function throwTaintViolation(message: string) {
+  // eslint-disable-next-line react-internal/prod-error-codes
+  throw new Error(message);
+}
+
+function cleanupTaintQueue(request: Request): void {
+  const cleanupQueue = request.taintCleanupQueue;
+  TaintRegistryPendingRequests.delete(cleanupQueue);
+  for (let i = 0; i < cleanupQueue.length; i++) {
+    const entryValue = cleanupQueue[i];
+    const entry = TaintRegistryValues.get(entryValue);
+    if (entry !== undefined) {
+      if (entry.count === 1) {
+        TaintRegistryValues.delete(entryValue);
+      } else {
+        entry.count--;
+      }
+    }
+  }
+  cleanupQueue.length = 0;
+}
 
 function RequestInstance(
   this: any,
@@ -136,6 +169,11 @@ function RequestInstance(
   bundlerConfig: ClientManifest,
   onError: void | (mixed => ?string),
 ) {
+  const cleanupQueue: Array<string | bigint> = [];
+  if (enableTaint) {
+    TaintRegistryPendingRequests.add(cleanupQueue);
+  }
+  this.taintCleanupQueue = cleanupQueue;
   this.input = input;
   this.destination = null;
   this.status = OPENING;
@@ -286,6 +324,12 @@ function renderModelDestructive(
     return null;
   }
   if (typeof value === 'object') {
+    if (enableTaint) {
+      const tainted = TaintRegistryObjects.get(value);
+      if (tainted !== undefined) {
+        throwTaintViolation(tainted);
+      }
+    }
     const input = request.input;
     const reference =
       input === null ? undefined : input.getValueReference(value);
@@ -429,6 +473,12 @@ function renderModelDestructive(
     return value as any;
   }
   if (typeof value === 'string') {
+    if (enableTaint) {
+      const tainted = TaintRegistryValues.get(value);
+      if (tainted !== undefined) {
+        throwTaintViolation(tainted.message);
+      }
+    }
     return value[0] === '$' ? '$' + value : value;
   }
   if (typeof value === 'boolean') {
@@ -462,6 +512,12 @@ function renderModelDestructive(
     return serializeByValueID(symbolId);
   }
   if (typeof value === 'bigint') {
+    if (enableTaint) {
+      const tainted = TaintRegistryValues.get(value);
+      if (tainted !== undefined) {
+        throwTaintViolation(tainted.message);
+      }
+    }
     return serializeBigInt(value);
   }
   throw new Error('Not implemented.');
@@ -905,6 +961,9 @@ function cleanupInput(request: Request): void {
   request.input = null;
   request.inputSubscriptions.forEach(detach => detach());
   request.inputSubscriptions.clear();
+  if (enableTaint) {
+    cleanupTaintQueue(request);
+  }
 }
 
 function subscribeHints(request: Request): void {
@@ -1104,9 +1163,9 @@ function serializeTypedArray(
   tag: string,
   typedArray: $ArrayBufferView,
 ): string {
-  request.pendingChunks++;
   const bufferId = request.nextChunkId++;
   emitTypedArrayChunk(request, bufferId, tag, typedArray);
+  request.pendingChunks++;
   return serializeByValueID(bufferId);
 }
 
@@ -1116,6 +1175,18 @@ function emitTypedArrayChunk(
   tag: string,
   typedArray: $ArrayBufferView,
 ): void {
+  if (enableTaint) {
+    if (TaintRegistryByteLengths.has(typedArray.byteLength)) {
+      // If we have had any tainted values of this length, we check
+      // to see if these bytes matches any entries in the registry.
+      const tainted = TaintRegistryValues.get(
+        binaryToComparableString(typedArray),
+      );
+      if (tainted !== undefined) {
+        throwTaintViolation(tainted.message);
+      }
+    }
+  }
   request.pendingChunks++;
   const bytes = new Uint8Array(
     new Uint8Array(
