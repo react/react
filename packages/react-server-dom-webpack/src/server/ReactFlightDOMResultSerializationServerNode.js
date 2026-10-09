@@ -8,6 +8,7 @@
  */
 
 import type {Writable} from 'stream';
+import type {ClientManifest} from './ReactFlightServerConfigWebpackBundler';
 import type {
   Input,
   Request,
@@ -36,8 +37,11 @@ function createCancelHandler(request: Request, reason: string) {
   };
 }
 
-export function renderToPipeableStream(input: Input): PipeableStream {
-  const request = createRequest(input);
+export function renderToPipeableStream(
+  input: Input,
+  webpackMap: ClientManifest,
+): PipeableStream {
+  const request = createRequest(input, webpackMap);
   let hasStartedFlowing = false;
   startWork(request);
   return {

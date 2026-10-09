@@ -10,6 +10,7 @@
 import type {ReactClientValue} from 'react-server/src/ReactFlightResultServer';
 import type {Result} from 'shared/ReactFlightResult';
 import type {PipeableStream} from './ReactFlightDOMResultSerializationServerNode';
+import type {ClientManifest} from './ReactFlightServerConfigWebpackBundler';
 import {
   createRequest,
   getResult,
@@ -36,14 +37,14 @@ export function prerenderToResult(model: mixed, options?: mixed): empty {
 
 export function renderResultToPipeableStream(
   result: Result<ReactClientValue>,
-  webpackMap: mixed,
+  webpackMap: ClientManifest,
   options?: mixed,
 ): PipeableStream {
   if (options !== undefined) {
     throw new Error('Not implemented.');
   }
   const input = createInput(result);
-  return renderToPipeableStream(input);
+  return renderToPipeableStream(input, webpackMap);
 }
 
 export function renderResultToReadableStream(

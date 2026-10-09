@@ -15,6 +15,12 @@ import type {
 import type {ReactElement} from 'shared/ReactElementType';
 import type {Chunk, Destination} from './ReactServerStreamConfig';
 import type {HintCode, HintModel} from './ReactFlightResultServerConfig';
+import type {
+  ClientManifest,
+  ClientReference,
+  ClientReferenceKey,
+  ClientReferenceMetadata,
+} from './ReactFlightServerConfig';
 import {
   beginWriting,
   writeChunkAndReturn,
@@ -29,6 +35,11 @@ import {REACT_ELEMENT_TYPE} from 'shared/ReactSymbols';
 import isArray from 'shared/isArray';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import noop from 'shared/noop';
+import {
+  isClientReference,
+  getClientReferenceKey,
+  resolveClientReferenceMetadata,
+} from './ReactFlightServerConfig';
 
 const OPENING = 10;
 const CLOSING = 13;
@@ -60,9 +71,17 @@ export type Request = {
   completedHintChunks: Array<Chunk>,
   flushScheduled: boolean,
   inputUnsubscribe: () => void,
+  bundlerConfig: ClientManifest,
+  writtenClientReferences: Map<ClientReferenceKey, number>,
+  nextChunkId: number,
+  completedImportChunks: Array<Chunk>,
 };
 
-function RequestInstance(this: any, input: Input) {
+function RequestInstance(
+  this: any,
+  input: Input,
+  bundlerConfig: ClientManifest,
+) {
   this.input = input;
   this.destination = null;
   this.status = OPENING;
@@ -72,15 +91,22 @@ function RequestInstance(this: any, input: Input) {
   this.flushScheduled = false;
   this.inputUnsubscribe = noop;
   this.pendingChunks = 2;
+  this.bundlerConfig = bundlerConfig;
+  this.writtenClientReferences = new Map();
+  this.nextChunkId = 1;
+  this.completedImportChunks = [];
 }
 
-export function createRequest(input: Input): Request {
+export function createRequest(
+  input: Input,
+  bundlerConfig: ClientManifest,
+): Request {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new RequestInstance(input);
+  return new RequestInstance(input, bundlerConfig);
 }
 
 function renderClientElement(
-  type: string,
+  type: any,
   key: null | string,
   props: ReactClientValue,
   validated: number,
@@ -118,6 +144,19 @@ function renderModelDestructive(
   parentPropertyName: string,
   value: ReactClientValue,
 ): ReactJSONValue {
+  if (
+    value !== null &&
+    (typeof value === 'object' || typeof value === 'function') &&
+    isClientReference(value)
+  ) {
+    const clientReference: ClientReference<any> = value as any;
+    return serializeClientReference(
+      request,
+      parent,
+      parentPropertyName,
+      clientReference,
+    );
+  }
   if (value === null) {
     return null;
   }
@@ -232,6 +271,50 @@ function emitModelChunk(request: Request, id: number, json: string): void {
   request.completedRegularChunks.push(processedChunk);
 }
 
+function serializeByValueID(id: number): string {
+  return '$' + id.toString(16);
+}
+
+function serializeLazyID(id: number): string {
+  return '$L' + id.toString(16);
+}
+
+function serializeClientReference(
+  request: Request,
+  parent: ModelParent,
+  parentPropertyName: string,
+  clientReference: ClientReference<any>,
+): string {
+  const clientReferenceKey = getClientReferenceKey(clientReference);
+  const writtenClientReferences = request.writtenClientReferences;
+  const existingId = writtenClientReferences.get(clientReferenceKey);
+  if (existingId !== undefined) {
+    if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
+      return serializeLazyID(existingId);
+    }
+    return serializeByValueID(existingId);
+  }
+  const clientReferenceMetadata: ClientReferenceMetadata =
+    resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+  const model: ReactClientValue = clientReferenceMetadata as any;
+  const metadata = resolveModel(request, {'': model}, '', model);
+  const json: string = JSON.stringify(metadata);
+  request.pendingChunks++;
+  const importId = request.nextChunkId++;
+  emitImportChunk(request, importId, json);
+  writtenClientReferences.set(clientReferenceKey, importId);
+  if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
+    return serializeLazyID(importId);
+  }
+  return serializeByValueID(importId);
+}
+
+function emitImportChunk(request: Request, id: number, json: string): void {
+  const row = id.toString(16) + ':I' + json + '\n';
+  const processedChunk = stringToChunk(row);
+  request.completedImportChunks.push(processedChunk);
+}
+
 function emitHintChunk<Code: HintCode>(
   request: Request,
   code: Code,
@@ -303,8 +386,20 @@ function flushCompletedChunks(request: Request): void {
   }
   beginWriting(destination);
   try {
-    const hintChunks = request.completedHintChunks;
+    const importsChunks = request.completedImportChunks;
     let i = 0;
+    for (; i < importsChunks.length; i++) {
+      request.pendingChunks--;
+      const keepWriting = writeChunkAndReturn(destination, importsChunks[i]);
+      if (!keepWriting) {
+        request.destination = null;
+        i++;
+        break;
+      }
+    }
+    importsChunks.splice(0, i);
+    const hintChunks = request.completedHintChunks;
+    i = 0;
     for (; i < hintChunks.length; i++) {
       const keepWriting = writeChunkAndReturn(destination, hintChunks[i]);
       if (!keepWriting) {

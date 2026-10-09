@@ -10,6 +10,7 @@
 import type {ReactElement} from 'shared/ReactElementType';
 import type {Result} from 'shared/ReactFlightResult';
 import type {ResultModel} from 'shared/ReactFlightResultModel';
+import type {ClientReference} from './ReactFlightServerConfig';
 import type {
   Hints,
   HintCode,
@@ -38,6 +39,7 @@ import {
   getChildFormatContext,
 } from './ReactFlightResultServerConfig';
 import {resolveCache, setCurrentCache} from './flight/ReactFlightCurrentCache';
+import {isClientReference} from './ReactFlightServerConfig';
 
 const UNDEFINED_MODEL = Symbol();
 const PENDING = 0;
@@ -46,6 +48,7 @@ const ERRORED = 4;
 
 export type ReactClientValue =
   | ReactElement
+  | ClientReference<any>
   | string
   | boolean
   | number
@@ -144,30 +147,29 @@ function renderElement(
   if (element.key !== null || element.props.ref != null) {
     throw new Error('Not implemented.');
   }
-  if (typeof type === 'function') {
-    if (type.$$typeof !== undefined) {
-      throw new Error('Not implemented.');
-    }
+  if (typeof type === 'function' && !isClientReference(type)) {
     return renderFunctionComponent(request, task, type, element.props);
   }
-  if (typeof type !== 'string') {
+  if (typeof type !== 'string' && !isClientReference(type)) {
     throw new Error('Not implemented.');
   }
-  const parentFormatContext = task.formatContext;
-  const newFormatContext = getChildFormatContext(
-    parentFormatContext,
-    type,
-    element.props,
-  );
-  if (
-    parentFormatContext !== newFormatContext &&
-    element.props.children != null
-  ) {
-    outlineModelWithFormatContext(
-      request,
-      element.props.children,
-      newFormatContext,
+  if (typeof type === 'string') {
+    const parentFormatContext = task.formatContext;
+    const newFormatContext = getChildFormatContext(
+      parentFormatContext,
+      type,
+      element.props,
     );
+    if (
+      parentFormatContext !== newFormatContext &&
+      element.props.children != null
+    ) {
+      outlineModelWithFormatContext(
+        request,
+        element.props.children,
+        newFormatContext,
+      );
+    }
   }
   return renderClientElement(request, task, type, element);
 }
@@ -209,7 +211,7 @@ function outlineModelWithFormatContext(
 function renderClientElement(
   request: Request,
   task: Task,
-  type: string,
+  type: any,
   element: ReactElement,
 ): ReactClientValue {
   let resolvedElement: ReactElement;
@@ -247,6 +249,14 @@ function renderModelDestructive(
 ): ReactClientValue {
   task.model = value;
   task.isModelReference = false;
+  if (
+    value !== null &&
+    (typeof value === 'object' || typeof value === 'function') &&
+    isClientReference(value)
+  ) {
+    task.isModelReference = true;
+    return value;
+  }
   if (value !== null && typeof value === 'object') {
     const existingModel = request.modelEntries.get(value);
     if (existingModel !== undefined) {

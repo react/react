@@ -419,7 +419,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>@div</p>');
   });
 
-  it.skip('should be able to esm compat test module references', async () => {
+  it('should be able to esm compat test module references', async () => {
     const ESMCompatModule = {
       __esModule: true,
       default: function ({greeting}) {
@@ -467,7 +467,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>Hello World</p>');
   });
 
-  it.skip('should be able to render a named component export', async () => {
+  it('should be able to render a named component export', async () => {
     const Module = {
       Component: function ({greeting}) {
         return greeting + ' World';
@@ -506,7 +506,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>Hello World</p>');
   });
 
-  it.skip('should be able to render a module split named component export', async () => {
+  it('should be able to render a module split named component export', async () => {
     const Module = {
       // This gets split into a separate module from the original one.
       split: function ({greeting}) {
@@ -546,7 +546,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>Hello World</p>');
   });
 
-  it.skip('should unwrap async module references', async () => {
+  it('should unwrap async module references', async () => {
     const AsyncModule = Promise.resolve(function AsyncModule({text}) {
       return 'Async: ' + text;
     });
@@ -625,7 +625,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>Async Text</p>');
   });
 
-  it.skip('should unwrap async ESM module references', async () => {
+  it('should unwrap async ESM module references', async () => {
     const AsyncModule = Promise.resolve(function AsyncModule({text}) {
       return 'Async: ' + text;
     });
@@ -722,7 +722,7 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('should be able to import a name called "then"', async () => {
+  it('should be able to import a name called "then"', async () => {
     const thenExports = {
       then: function then() {
         return 'and then';
@@ -830,7 +830,7 @@ describe('ReactFlightResultDOM', () => {
     expect(dotting).not.toThrow();
   });
 
-  it.skip('can render a client Context.Provider from a server component', async () => {
+  it('can render a client Context.Provider from a server component', async () => {
     // Create a context in a client module
     const TestContext = React.createContext('default');
     const ClientModule = clientExports({
