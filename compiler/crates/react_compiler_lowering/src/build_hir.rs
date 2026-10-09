@@ -6583,7 +6583,7 @@ fn lower_object_property_key(
             name: ident.name.clone(),
         })),
         Expression::NumericLiteral(lit) if !computed => Ok(Some(ObjectPropertyKey::Identifier {
-            name: lit.value.to_string(),
+            name: format_js_number(lit.precise_value()),
         })),
         _ if computed => {
             let place = lower_expression_to_temporary(builder, key)?;
