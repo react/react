@@ -22,6 +22,37 @@ import noop from 'shared/noop';
 export function createInput(result: Result<ReactClientValue>): Input {
   return {
     root: getRoot(result),
+    subscribeToThenable(thenable, reader) {
+      if (thenable.status === 'fulfilled') {
+        reader.resolve(thenable.value as any);
+        return noop;
+      }
+      if (thenable.status === 'rejected') {
+        reader.reject(thenable.reason);
+        return noop;
+      }
+      const subscription: {reader: null | typeof reader} = {reader};
+      function detach(): void {
+        subscription.reader = null;
+      }
+      thenable.then(
+        value => {
+          const current = subscription.reader;
+          if (current !== null) {
+            detach();
+            current.resolve(value);
+          }
+        },
+        error => {
+          const current = subscription.reader;
+          if (current !== null) {
+            detach();
+            current.reject(error);
+          }
+        },
+      );
+      return detach;
+    },
     subscribe(reader) {
       const subscription: {
         queue: null | HintQueue,

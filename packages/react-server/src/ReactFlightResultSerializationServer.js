@@ -31,7 +31,8 @@ import {
   stringToChunk,
   scheduleWork,
 } from './ReactServerStreamConfig';
-import {REACT_ELEMENT_TYPE} from 'shared/ReactSymbols';
+import {REACT_ELEMENT_TYPE, REACT_LAZY_TYPE} from 'shared/ReactSymbols';
+import type {LazyComponent} from 'react/src/ReactLazy';
 import isArray from 'shared/isArray';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import noop from 'shared/noop';
@@ -44,6 +45,20 @@ import {
 const OPENING = 10;
 const CLOSING = 13;
 const CLOSED = 14;
+const PENDING = 0;
+const COMPLETED = 1;
+const ERRORED = 4;
+const RENDERING = 6;
+
+type Task = {
+  id: number,
+  model: ReactClientValue,
+  status: 0 | 1 | 4 | 6,
+};
+type InputThenableReader = {
+  resolve: ReactClientValue => void,
+  reject: mixed => void,
+};
 
 type ReactJSONValue =
   | string
@@ -60,6 +75,10 @@ export type Input = {
     hint: (HintCode, HintModel<any>) => void,
     complete: () => void,
   }) => () => void,
+  subscribeToThenable: (
+    ResultModel<ReactClientValue>,
+    InputThenableReader,
+  ) => () => void,
 };
 export type Request = {
   input: Input,
@@ -70,11 +89,13 @@ export type Request = {
   pendingChunks: number,
   completedHintChunks: Array<Chunk>,
   flushScheduled: boolean,
-  inputUnsubscribe: () => void,
   bundlerConfig: ClientManifest,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   nextChunkId: number,
   completedImportChunks: Array<Chunk>,
+  writtenModels: WeakMap<Object, number>,
+  pingedTasks: Array<Task>,
+  inputSubscriptions: Set<() => void>,
 };
 
 function RequestInstance(
@@ -89,12 +110,14 @@ function RequestInstance(
   this.completedRegularChunks = [];
   this.completedHintChunks = [];
   this.flushScheduled = false;
-  this.inputUnsubscribe = noop;
   this.pendingChunks = 2;
   this.bundlerConfig = bundlerConfig;
   this.writtenClientReferences = new Map();
   this.nextChunkId = 1;
   this.completedImportChunks = [];
+  this.writtenModels = new WeakMap();
+  this.pingedTasks = [];
+  this.inputSubscriptions = new Set();
 }
 
 export function createRequest(
@@ -161,6 +184,13 @@ function renderModelDestructive(
     return null;
   }
   if (typeof value === 'object') {
+    if ((value as any).$$typeof === REACT_LAZY_TYPE) {
+      const lazy: LazyComponent<ReactClientValue, any> = value as any;
+      return serializeLazyID(serializeThenable(request, lazy._payload));
+    }
+    if (typeof (value as any).then === 'function') {
+      return serializePromiseID(serializeThenable(request, value as any));
+    }
     if ((value as any).$$typeof === REACT_ELEMENT_TYPE) {
       const element: ReactElement = value as any;
       return renderClientElement(
@@ -279,6 +309,117 @@ function serializeLazyID(id: number): string {
   return '$L' + id.toString(16);
 }
 
+function serializePromiseID(id: number): string {
+  return '$@' + id.toString(16);
+}
+
+function createTask(request: Request, model: ReactClientValue): Task {
+  request.pendingChunks++;
+  return {id: request.nextChunkId++, model, status: PENDING};
+}
+
+function pingTask(request: Request, task: Task): void {
+  if (request.status === CLOSED || task.status !== PENDING) {
+    return;
+  }
+  const pingedTasks = request.pingedTasks;
+  pingedTasks.push(task);
+  if (pingedTasks.length === 1) {
+    scheduleWork(() => performWork(request));
+  }
+}
+
+function subscribeToThenable(
+  request: Request,
+  task: Task,
+  thenable: ResultModel<ReactClientValue>,
+): void {
+  subscribeInput(request, detach =>
+    request.input.subscribeToThenable(thenable, {
+      resolve(value) {
+        detach();
+        if (request.status === OPENING && task.status === PENDING) {
+          task.model = value;
+          pingTask(request, task);
+        }
+      },
+      reject(error) {
+        detach();
+        task.status = ERRORED;
+        fatalError(request, error);
+      },
+    }),
+  );
+}
+
+function subscribeInput(
+  request: Request,
+  subscribe: (detach: () => void) => () => void,
+): void {
+  let unsubscribe = noop;
+  let active = true;
+  function detach(): void {
+    active = false;
+    request.inputSubscriptions.delete(detach);
+    unsubscribe();
+  }
+  request.inputSubscriptions.add(detach);
+  unsubscribe = subscribe(detach);
+  if (!active || request.status > OPENING) {
+    detach();
+  }
+}
+
+function serializeThenable(
+  request: Request,
+  thenable: ResultModel<ReactClientValue>,
+): number {
+  const existingId = request.writtenModels.get(thenable);
+  if (existingId !== undefined) {
+    return existingId;
+  }
+  const newTask = createTask(request, null);
+  request.writtenModels.set(thenable, newTask.id);
+  subscribeToThenable(request, newTask, thenable);
+  return newTask.id;
+}
+
+function retryTask(request: Request, task: Task): void {
+  if (task.status !== PENDING) {
+    return;
+  }
+  task.status = RENDERING;
+  try {
+    const model = task.model;
+    const resolvedModel = resolveModel(request, {'': model}, '', model);
+    const json = JSON.stringify(resolvedModel);
+    emitModelChunk(request, task.id, json);
+    task.status = COMPLETED;
+  } catch (error) {
+    task.status = ERRORED;
+    fatalError(request, error);
+  }
+}
+
+function performWork(request: Request): void {
+  if (request.status === CLOSED || request.status === CLOSING) {
+    return;
+  }
+  const pingedTasks = request.pingedTasks;
+  request.pingedTasks = [];
+  for (let i = 0; i < pingedTasks.length; i++) {
+    retryTask(request, pingedTasks[i]);
+    if (request.status === CLOSED || request.status === CLOSING) {
+      return;
+    }
+  }
+  try {
+    flushCompletedChunks(request);
+  } catch (error) {
+    fatalError(request, error);
+  }
+}
+
 function serializeClientReference(
   request: Request,
   parent: ModelParent,
@@ -346,25 +487,27 @@ function enqueueFlush(request: Request): void {
 }
 
 function cleanupInput(request: Request): void {
-  const unsubscribe = request.inputUnsubscribe;
-  request.inputUnsubscribe = noop;
-  unsubscribe();
+  request.inputSubscriptions.forEach(detach => detach());
+  request.inputSubscriptions.clear();
 }
 
-function subscribeInput(request: Request): void {
-  request.inputUnsubscribe = request.input.subscribe({
-    hint(code, model) {
-      try {
-        emitHint(request, code, model);
-      } catch (error) {
-        fatalError(request, error);
-      }
-    },
-    complete() {
-      request.pendingChunks--;
-      enqueueFlush(request);
-    },
-  });
+function subscribeHints(request: Request): void {
+  subscribeInput(request, detach =>
+    request.input.subscribe({
+      hint(code, model) {
+        try {
+          emitHint(request, code, model);
+        } catch (error) {
+          fatalError(request, error);
+        }
+      },
+      complete() {
+        detach();
+        request.pendingChunks--;
+        enqueueFlush(request);
+      },
+    }),
+  );
 }
 
 function fatalError(request: Request, error: mixed): void {
@@ -435,23 +578,12 @@ function flushCompletedChunks(request: Request): void {
 }
 
 export function startWork(request: Request): void {
-  subscribeInput(request);
-  request.input.root.then(
-    model => {
-      if (request.status === CLOSED) {
-        return;
-      }
-      try {
-        const resolvedModel = resolveModel(request, {'': model}, '', model);
-        const json = JSON.stringify(resolvedModel);
-        emitModelChunk(request, 0, json);
-        flushCompletedChunks(request);
-      } catch (error) {
-        fatalError(request, error);
-      }
-    },
-    error => fatalError(request, error),
-  );
+  subscribeHints(request);
+  if (request.status > OPENING) {
+    return;
+  }
+  const rootTask: Task = {id: 0, model: null, status: PENDING};
+  subscribeToThenable(request, rootTask, request.input.root);
 }
 
 export function startFlowing(request: Request, destination: Destination): void {

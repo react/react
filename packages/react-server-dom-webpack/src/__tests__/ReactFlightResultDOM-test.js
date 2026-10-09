@@ -1594,7 +1594,7 @@ describe('ReactFlightResultDOM', () => {
     expect(reportedErrors).toEqual(['bug in the bundler']);
   });
 
-  it.skip('should pass a Promise through props and be able use() it on the client', async () => {
+  it('should pass a Promise through props and be able use() it on the client', async () => {
     async function getData() {
       return 'async hello';
     }
