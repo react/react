@@ -7,6 +7,6 @@
  * @flow
  */
 
-export * from './ReactFlightDOMClientNode';
-
-export {createFromResult} from './ReactFlightDOMResultClientNode';
+export function createFromResult(result: mixed, options: mixed): empty {
+  throw new Error('Not implemented.');
+}
