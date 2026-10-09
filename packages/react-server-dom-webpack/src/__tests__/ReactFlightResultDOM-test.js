@@ -588,7 +588,7 @@ describe('ReactFlightResultDOM', () => {
     expect(container.innerHTML).toBe('<p>Async: Module</p>');
   });
 
-  it.skip('should unwrap async module references using use', async () => {
+  it('should unwrap async module references using use', async () => {
     const AsyncModule = Promise.resolve('Async Text');
 
     function Print({response}) {

@@ -11,6 +11,7 @@ import type {ReactElement} from 'shared/ReactElementType';
 import type {Result} from 'shared/ReactFlightResult';
 import type {ResultModel} from 'shared/ReactFlightResultModel';
 import type {ClientReference} from './ReactFlightServerConfig';
+import type {ThenableState} from './ReactFlightThenable';
 import type {
   Hints,
   HintCode,
@@ -19,6 +20,15 @@ import type {
 } from './ReactFlightResultServerConfig';
 
 import {REACT_ELEMENT_TYPE} from 'shared/ReactSymbols';
+import ReactSharedInternals from 'shared/ReactSharedInternals';
+import {
+  HooksDispatcher,
+  prepareToUseHooksForRequest,
+  resetHooksForRequest,
+  prepareToUseHooksForComponent,
+  getThenableStateAfterSuspending,
+} from './ReactFlightResultHooks';
+import {SuspenseException, getSuspendedThenable} from './ReactFlightThenable';
 import {
   createResult,
   completeResult,
@@ -44,6 +54,7 @@ import {isClientReference} from './ReactFlightServerConfig';
 const UNDEFINED_MODEL = Symbol();
 const PENDING = 0;
 const COMPLETED = 1;
+const RENDERING = 6;
 const ERRORED = 4;
 
 export type ReactClientValue =
@@ -64,9 +75,11 @@ const ObjectPrototype = Object.prototype;
 type Task = {
   model: ReactClientValue,
   promise: ResultModel<ReactClientValue>,
-  status: 0 | 1 | 4,
+  status: 0 | 1 | 4 | 6,
   formatContext: FormatContext,
   isModelReference: boolean,
+  ping: () => void,
+  thenableState: ThenableState | null,
 };
 export type Request = {
   result: Result<ReactClientValue>,
@@ -75,6 +88,9 @@ export type Request = {
   cache: Map<Function, mixed>,
   cacheController: AbortController,
   modelEntries: WeakMap<Object, ReactClientValue>,
+  abortableTasks: Set<Task>,
+  identifierPrefix: string,
+  identifierCount: number,
 };
 
 function RequestInstance(this: any, model: ReactClientValue) {
@@ -82,6 +98,9 @@ function RequestInstance(this: any, model: ReactClientValue) {
   this.cache = new Map();
   this.cacheController = new AbortController();
   this.modelEntries = new WeakMap();
+  this.abortableTasks = new Set();
+  this.identifierPrefix = '';
+  this.identifierCount = 1;
   const rootTask = createTask(this, model, createRootFormatContext());
   const root = rootTask.promise;
   this.result = createResult(root, () => {
@@ -125,6 +144,9 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   Component: (p: Props, arg: void) => ReactClientValue,
   props: Props,
 ): ReactClientValue {
+  const prevThenableState = task.thenableState;
+  task.thenableState = null;
+  prepareToUseHooksForComponent(prevThenableState, null);
   const result = Component(props, undefined);
   if (
     __DEV__ &&
@@ -179,13 +201,28 @@ function createTask(
   model: ReactClientValue,
   formatContext: FormatContext,
 ): Task {
-  return {
+  const task: Task = {
     model,
     promise: createResultModel<ReactClientValue>(),
     status: PENDING,
     formatContext,
     isModelReference: false,
+    ping: () => pingTask(request, task),
+    thenableState: null,
   };
+  request.abortableTasks.add(task);
+  return task;
+}
+
+function pingTask(request: Request, task: Task): void {
+  if (task.status !== PENDING) {
+    return;
+  }
+  const pingedTasks = request.pingedTasks;
+  pingedTasks.push(task);
+  if (pingedTasks.length === 1) {
+    scheduleMicrotask(() => performWork(request));
+  }
 }
 
 function outlineModelWithFormatContext(
@@ -196,6 +233,11 @@ function outlineModelWithFormatContext(
   const newTask = createTask(request, value, formatContext);
   retryTask(request, newTask);
   if (newTask.status !== COMPLETED) {
+    if (newTask.status === PENDING) {
+      newTask.status = ERRORED;
+      request.abortableTasks.delete(newTask);
+      rejectResultModel(newTask.promise, new Error('Not implemented.'));
+    }
     throw newTask.promise.reason;
   }
   const model = newTask.model;
@@ -342,19 +384,46 @@ function resolveModelFields(
 }
 
 function retryTask(request: Request, task: Task): void {
+  if (task.status !== PENDING) {
+    return;
+  }
+  const originalModel = task.model;
+  task.status = RENDERING;
   try {
     const resolvedModel = resolveModel(request, task, task.model);
     task.model = resolvedModel;
     task.status = COMPLETED;
+    request.abortableTasks.delete(task);
     fulfillResultModel(task.promise, resolvedModel);
-  } catch (error) {
+  } catch (thrownValue) {
+    let error =
+      thrownValue === SuspenseException ? getSuspendedThenable() : thrownValue;
+    if (
+      error != null &&
+      typeof error === 'object' &&
+      typeof (error as any).then === 'function'
+    ) {
+      const thenableState = getThenableStateAfterSuspending();
+      if (task.model === originalModel) {
+        task.status = PENDING;
+        task.thenableState = thenableState;
+        const ping = task.ping;
+        (error as any).then(ping, ping);
+        return;
+      }
+      error = new Error('Not implemented.');
+    }
     task.status = ERRORED;
+    request.abortableTasks.delete(task);
     rejectResultModel(task.promise, error);
   }
 }
 
 function performWork(request: Request): void {
+  const prevDispatcher = ReactSharedInternals.H;
+  ReactSharedInternals.H = HooksDispatcher;
   const prevCache = setCurrentCache(request);
+  prepareToUseHooksForRequest(request);
   try {
     const pingedTasks = request.pingedTasks;
     request.pingedTasks = [];
@@ -362,8 +431,12 @@ function performWork(request: Request): void {
       retryTask(request, pingedTasks[i]);
     }
   } finally {
-    closeHints(request.result);
-    completeResult(request.result);
+    if (request.abortableTasks.size === 0) {
+      closeHints(request.result);
+      completeResult(request.result);
+    }
+    ReactSharedInternals.H = prevDispatcher;
+    resetHooksForRequest();
     setCurrentCache(prevCache);
   }
 }
