@@ -5,16 +5,7 @@
 // @enablePreserveExistingMemoizationGuarantees:false
 import fbt from 'fbt';
 
-/**
- * Similar to error.todo-multiple-fbt-plural
- *
- * Evaluator error:
- *   Found differences in evaluator results
- *   Non-forget (expected):
- *   (kind: ok) <div>1 apple and 2 bananas</div>
- *   Forget:
- *   (kind: ok) <div>1 apples and 2 bananas</div>
- */
+// Each plural count must select its own singular or plural form.
 
 function useFoo({apples, bananas}) {
   return fbt(
@@ -39,16 +30,7 @@ export const FIXTURE_ENTRYPOINT = {
 import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false
 import fbt from "fbt";
 
-/**
- * Similar to error.todo-multiple-fbt-plural
- *
- * Evaluator error:
- *   Found differences in evaluator results
- *   Non-forget (expected):
- *   (kind: ok) <div>1 apple and 2 bananas</div>
- *   Forget:
- *   (kind: ok) <div>1 apples and 2 bananas</div>
- */
+// Each plural count must select its own singular or plural form.
 
 function useFoo(t0) {
   const $ = _c(3);
@@ -59,8 +41,12 @@ function useFoo(t0) {
       {
         "*": {
           "*": "{number of apples} apples and {number of bananas} bananas",
+          _1: "{number of apples} apples and {number of bananas} banana",
         },
-        _1: { _1: "{number of apples} apple and {number of bananas} banana" },
+        _1: {
+          "*": "{number of apples} apple and {number of bananas} bananas",
+          _1: "{number of apples} apple and {number of bananas} banana",
+        },
       },
       [
         fbt._plural(apples),
@@ -68,7 +54,7 @@ function useFoo(t0) {
         fbt._param("number of apples", apples),
         fbt._param("number of bananas", bananas),
       ],
-      { hk: "3vKunl" },
+      { hk: "1mGnhr" },
     );
     $[0] = apples;
     $[1] = bananas;
@@ -86,3 +72,5 @@ export const FIXTURE_ENTRYPOINT = {
 
 ```
       
+### Eval output
+(kind: ok) 1 apple and 2 bananas

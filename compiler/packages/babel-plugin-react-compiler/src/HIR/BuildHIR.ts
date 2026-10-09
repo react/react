@@ -930,9 +930,16 @@ function lowerStatement(
         const init = declaration.get('init');
         if (hasNode(init)) {
           const value = lowerExpressionToTemporary(builder, init);
-          lowerAssignment(
+          /*
+           * The instruction emits the declaration statement; its value
+           * represents this declarator, independently of optimized operands.
+           */
+          lowerAssignmentAt(
             builder,
-            stmt.node.loc ?? GeneratedSource,
+            {
+              instructionLoc: stmt.node.loc ?? GeneratedSource,
+              valueLoc: declaration.node.loc ?? GeneratedSource,
+            },
             kind,
             id,
             value,
@@ -3680,17 +3687,18 @@ function lowerExpressionToTemporary(
 export function lowerValueToTemporary(
   builder: HIRBuilder,
   value: InstructionValue,
+  loc: SourceLocation = value.loc,
 ): Place {
   if (value.kind === 'LoadLocal' && value.place.identifier.name === null) {
     return value.place;
   }
-  const place: Place = buildTemporaryPlace(builder, value.loc);
+  const place: Place = buildTemporaryPlace(builder, loc);
   builder.push({
     id: makeInstructionId(0),
     lvalue: {...place},
     value: value,
     effects: null,
-    loc: value.loc,
+    loc,
   });
   return place;
 }
@@ -3824,6 +3832,11 @@ function lowerIdentifierForAssignment(
   return place;
 }
 
+type AssignmentSource = {
+  instructionLoc: SourceLocation;
+  valueLoc: SourceLocation;
+};
+
 function lowerAssignment(
   builder: HIRBuilder,
   loc: SourceLocation,
@@ -3832,6 +3845,25 @@ function lowerAssignment(
   value: Place,
   assignmentKind: 'Destructure' | 'Assignment',
 ): InstructionValue {
+  return lowerAssignmentAt(
+    builder,
+    {instructionLoc: loc, valueLoc: loc},
+    kind,
+    lvaluePath,
+    value,
+    assignmentKind,
+  );
+}
+
+function lowerAssignmentAt(
+  builder: HIRBuilder,
+  source: AssignmentSource,
+  kind: InstructionKind,
+  lvaluePath: NodePath<t.LVal>,
+  value: Place,
+  assignmentKind: 'Destructure' | 'Assignment',
+): InstructionValue {
+  const loc = source.instructionLoc;
   const lvalueNode = lvaluePath.node;
   switch (lvalueNode.type) {
     case 'Identifier': {
@@ -3889,12 +3921,16 @@ function lowerAssignment(
             loc: lvalueNode.loc ?? GeneratedSource,
           });
         } else {
-          temporary = lowerValueToTemporary(builder, {
-            kind: 'StoreContext',
-            lvalue: {place: {...place}, kind},
-            value,
+          temporary = lowerValueToTemporary(
+            builder,
+            {
+              kind: 'StoreContext',
+              lvalue: {place: {...place}, kind},
+              value,
+              loc: source.valueLoc,
+            },
             loc,
-          });
+          );
         }
       } else {
         const typeAnnotation = lvalue.get('typeAnnotation');
@@ -3908,13 +3944,17 @@ function lowerAssignment(
         } else {
           type = null;
         }
-        temporary = lowerValueToTemporary(builder, {
-          kind: 'StoreLocal',
-          lvalue: {place: {...place}, kind},
-          value,
-          type,
+        temporary = lowerValueToTemporary(
+          builder,
+          {
+            kind: 'StoreLocal',
+            lvalue: {place: {...place}, kind},
+            value,
+            type,
+            loc: source.valueLoc,
+          },
           loc,
-        });
+        );
       }
       return {kind: 'LoadLocal', place: temporary, loc: temporary.loc};
     }
@@ -4090,19 +4130,23 @@ function lowerAssignment(
           followups.push({place: temp, path: element as NodePath<t.LVal>}); // TODO remove type cast
         }
       }
-      const temporary = lowerValueToTemporary(builder, {
-        kind: 'Destructure',
-        lvalue: {
-          kind,
-          pattern: {
-            kind: 'ArrayPattern',
-            items,
-            loc: lvalue.node.loc ?? GeneratedSource,
+      const temporary = lowerValueToTemporary(
+        builder,
+        {
+          kind: 'Destructure',
+          lvalue: {
+            kind,
+            pattern: {
+              kind: 'ArrayPattern',
+              items,
+              loc: lvalue.node.loc ?? GeneratedSource,
+            },
           },
+          value,
+          loc: source.valueLoc,
         },
-        value,
         loc,
-      });
+      );
       for (const {place, path} of followups) {
         lowerAssignment(
           builder,
@@ -4280,19 +4324,23 @@ function lowerAssignment(
           }
         }
       }
-      const temporary = lowerValueToTemporary(builder, {
-        kind: 'Destructure',
-        lvalue: {
-          kind,
-          pattern: {
-            kind: 'ObjectPattern',
-            properties,
-            loc: lvalue.node.loc ?? GeneratedSource,
+      const temporary = lowerValueToTemporary(
+        builder,
+        {
+          kind: 'Destructure',
+          lvalue: {
+            kind,
+            pattern: {
+              kind: 'ObjectPattern',
+              properties,
+              loc: lvalue.node.loc ?? GeneratedSource,
+            },
           },
+          value,
+          loc: source.valueLoc,
         },
-        value,
         loc,
-      });
+      );
       for (const {place, path} of followups) {
         lowerAssignment(
           builder,

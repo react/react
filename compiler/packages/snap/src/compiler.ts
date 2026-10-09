@@ -30,6 +30,10 @@ import path from 'path';
 import prettier from 'prettier';
 import SproutTodoFilter from './SproutTodoFilter';
 import {isExpectError} from './fixture-utils';
+import {
+  assertSourceLocations,
+  collectSourceLocations,
+} from './source-locations';
 import {makeSharedRuntimeTypeProvider} from './sprout/shared-runtime-type-provider';
 
 export function parseLanguage(source: string): 'flow' | 'typescript' {
@@ -237,6 +241,9 @@ export async function transformFixtureInput(
   const filename =
     path.basename(fixturePath) + (language === 'typescript' ? '.ts' : '');
   const inputAst = parseInput(input, filename, language, sourceType);
+  const sourceLocations = fixturePath.startsWith('source-locations/')
+    ? collectSourceLocations(inputAst)
+    : null;
   // Give babel transforms an absolute path as relative paths get prefixed
   // with `cwd`, which is different across machines
   const virtualFilepath = '/' + filename;
@@ -269,8 +276,8 @@ export async function transformFixtureInput(
       'babel-plugin-idx',
     ],
     sourceType: 'module',
-    ast: includeEvaluator,
-    cloneInputAst: includeEvaluator,
+    ast: includeEvaluator || sourceLocations !== null,
+    cloneInputAst: includeEvaluator || sourceLocations !== null,
     configFile: false,
     babelrc: false,
   });
@@ -278,6 +285,14 @@ export async function transformFixtureInput(
     forgetResult?.code != null,
     'Expected BabelPluginReactForget to codegen successfully.',
   );
+  if (sourceLocations !== null) {
+    invariant(
+      logs.some(log => log.event.kind === 'CompileSuccess'),
+      'Expected a successful compilation before checking source locations.',
+    );
+    invariant(forgetResult.ast != null, 'Expected the compiled AST.');
+    assertSourceLocations(sourceLocations, forgetResult.ast);
+  }
   const forgetCode = forgetResult.code;
   let evaluatorCode = null;
 

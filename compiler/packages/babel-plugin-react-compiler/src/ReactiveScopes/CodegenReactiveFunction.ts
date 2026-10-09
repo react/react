@@ -116,6 +116,12 @@ export function codegenFunction(
     fbtOperands: Set<IdentifierId>;
   },
 ): CodegenFunction {
+  const sourceNodes = new Map<t.SourceLocation, t.Node>();
+  t.traverseFast(fn.env.parentFunction.node, node => {
+    if (node.loc != null) {
+      sourceNodes.set(node.loc, node);
+    }
+  });
   const cx = new Context(
     fn.env,
     fn.id ?? '[[ anonymous ]]',
@@ -326,6 +332,35 @@ export function codegenFunction(
     outlined.push({fn: codegen, type});
   }
   compiled.outlined = outlined;
+
+  const applySourceOffsets = (node: t.Node): void => {
+    if (node.loc == null) {
+      return;
+    }
+    const source = sourceNodes.get(node.loc);
+    if (source != null) {
+      if (source.start === undefined) {
+        delete node.start;
+      } else {
+        node.start = source.start;
+      }
+      if (source.end === undefined) {
+        delete node.end;
+      } else {
+        node.end = source.end;
+      }
+    }
+  };
+  const applyFunctionOffsets = (fn: CodegenFunction): void => {
+    for (const param of fn.params) {
+      t.traverseFast(param, applySourceOffsets);
+    }
+    t.traverseFast(fn.body, applySourceOffsets);
+  };
+  applyFunctionOffsets(compiled);
+  for (const {fn} of outlined) {
+    applyFunctionOffsets(fn);
+  }
 
   return compiled;
 }
@@ -623,7 +658,9 @@ function codegenReactiveScope(
     const name = convertIdentifier(identifier);
     if (!cx.hasDeclared(identifier)) {
       statements.push(
-        t.variableDeclaration('let', [createVariableDeclarator(name, null)]),
+        t.variableDeclaration('let', [
+          createVariableDeclarator(name.loc, name, null),
+        ]),
       );
     }
     cacheLoads.push({name, index, value: name});
@@ -1089,7 +1126,11 @@ function codegenInstructionNullable(
           loc: instr.value.loc,
         });
         return createVariableDeclaration(instr.loc, 'const', [
-          createVariableDeclarator(codegenLValue(cx, lvalue), value),
+          createVariableDeclarator(
+            instr.value.loc,
+            codegenLValue(cx, lvalue),
+            value,
+          ),
         ]);
       }
       case InstructionKind.Function: {
@@ -1123,7 +1164,11 @@ function codegenInstructionNullable(
           loc: instr.value.loc,
         });
         return createVariableDeclaration(instr.loc, 'let', [
-          createVariableDeclarator(codegenLValue(cx, lvalue), value),
+          createVariableDeclarator(
+            instr.value.loc,
+            codegenLValue(cx, lvalue),
+            value,
+          ),
         ]);
       }
       case InstructionKind.Reassign: {
@@ -1296,6 +1341,7 @@ const createBinaryExpression = withLoc(t.binaryExpression);
 const createExpressionStatement = withLoc(t.expressionStatement);
 const _createLabelledStatement = withLoc(t.labeledStatement);
 const createVariableDeclaration = withLoc(t.variableDeclaration);
+const createVariableDeclarator = withLoc(t.variableDeclarator);
 const createFunctionDeclaration = withLoc(t.functionDeclaration);
 const createWhileStatement = withLoc(t.whileStatement);
 const createDoWhileStatement = withLoc(t.doWhileStatement);
@@ -1323,31 +1369,6 @@ const createTryStatement = withLoc(t.tryStatement);
 const createBreakStatement = withLoc(t.breakStatement);
 const createContinueStatement = withLoc(t.continueStatement);
 const createReturnStatement = withLoc(t.returnStatement);
-
-function createVariableDeclarator(
-  id: t.LVal,
-  init?: t.Expression | null,
-): t.VariableDeclarator {
-  const node = t.variableDeclarator(id, init);
-
-  /*
-   * The variable declarator location is not preserved in HIR, however, we can use the
-   * start location of the id and the end location of the init to recreate the
-   * exact original variable declarator location.
-   *
-   * Or if init is null, we likely have a declaration without an initializer, so we can use the id.loc.end as the end location.
-   */
-  if (id.loc && (init === null || init?.loc)) {
-    node.loc = {
-      start: id.loc.start,
-      end: init?.loc?.end ?? id.loc.end,
-      filename: id.loc.filename,
-      identifierName: undefined,
-    };
-  }
-
-  return node;
-}
 
 function createHookGuard(
   guard: ExternalFunction,
@@ -1457,6 +1478,7 @@ function codegenInstruction(
     } else {
       return createVariableDeclaration(instr.loc, 'const', [
         createVariableDeclarator(
+          instr.loc,
           convertIdentifier(instr.lvalue.identifier),
           expressionValue,
         ),
