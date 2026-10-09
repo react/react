@@ -8,7 +8,11 @@
  */
 
 import type {ResultModel} from 'shared/ReactFlightResultModel';
-import type {ErrorReference, ModelReference} from 'shared/ReactFlightResult';
+import type {
+  ServerReferenceMetadata,
+  ErrorReference,
+  ModelReference,
+} from 'shared/ReactFlightResult';
 import type {ReactStackTrace, ReactKey} from 'shared/ReactTypes';
 import {
   MODEL_KIND_MASK,
@@ -29,6 +33,8 @@ import type {
   ClientReference,
   ClientReferenceKey,
   ClientReferenceMetadata,
+  ServerReference,
+  ServerReferenceId,
 } from './ReactFlightServerConfig';
 import {
   beginWriting,
@@ -48,11 +54,18 @@ import type {LazyComponent} from 'react/src/ReactLazy';
 import isArray from 'shared/isArray';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import noop from 'shared/noop';
-import {enableTaint} from 'shared/ReactFeatureFlags';
+import type {TemporaryReferenceSet} from './ReactFlightServerTemporaryReferences';
+import {resolveTemporaryReference} from './ReactFlightServerTemporaryReferences';
+import {
+  enableTaint,
+  enableFlightObjectReferences,
+} from 'shared/ReactFeatureFlags';
 import ReactSharedInternals from './ReactSharedInternalsServer';
 import binaryToComparableString from 'shared/binaryToComparableString';
 import {
   isClientReference,
+  isServerReference,
+  getServerReferenceId,
   getClientReferenceKey,
   resolveClientReferenceMetadata,
   parseStackTrace,
@@ -96,6 +109,8 @@ type ModelParent = ReactClientObject | $ReadOnlyArray<ReactClientValue>;
 
 export type Input = {
   +root: ResultModel<ReactClientValue>,
+  temporaryReferences: void | TemporaryReferenceSet,
+  getServerReference: Object => void | ServerReferenceMetadata,
   getValueReference: Object => void | ModelReference,
   getModelInfo: Object => number,
   getCollectionEntries: Object => void | ResultModel<Array<any>>,
@@ -121,6 +136,8 @@ export type Request = {
   flushScheduled: boolean,
   bundlerConfig: ClientManifest,
   writtenClientReferences: Map<ClientReferenceKey, number>,
+  writtenServerReferences: Map<ServerReference<any>, number>,
+  temporaryReferences: void | TemporaryReferenceSet,
   nextChunkId: number,
   completedImportChunks: Array<Chunk>,
   writtenModels: WeakMap<Object, number>,
@@ -174,6 +191,8 @@ function RequestInstance(
     TaintRegistryPendingRequests.add(cleanupQueue);
   }
   this.taintCleanupQueue = cleanupQueue;
+  this.temporaryReferences = input.temporaryReferences;
+  this.writtenServerReferences = new Map();
   this.input = input;
   this.destination = null;
   this.status = OPENING;
@@ -319,6 +338,26 @@ function renderModelDestructive(
       parentPropertyName,
       clientReference,
     );
+  }
+  if (
+    value !== null &&
+    (typeof value === 'object' || typeof value === 'function')
+  ) {
+    if (
+      (typeof value === 'function' || enableFlightObjectReferences) &&
+      isServerReference(value)
+    ) {
+      return serializeServerReference(request, value as any);
+    }
+    if (request.temporaryReferences !== undefined) {
+      const reference = resolveTemporaryReference(
+        request.temporaryReferences,
+        value as any,
+      );
+      if (reference !== undefined) {
+        return '$T' + reference;
+      }
+    }
   }
   if (value === null) {
     return null;
@@ -1252,4 +1291,45 @@ function serializeBlob(request: Request, blob: Blob): string {
   request.inputSubscriptions.add(cancel);
   reader.read().then(progress).catch(error);
   return '$B' + newTask.id.toString(16);
+}
+
+function serializeServerReference(
+  request: Request,
+  reference: ServerReference<any>,
+): string {
+  const objectReference =
+    enableFlightObjectReferences && typeof reference === 'object';
+  const existingId = request.writtenServerReferences.get(reference);
+  if (existingId !== undefined) {
+    return objectReference
+      ? serializeServerObjectReferenceID(existingId)
+      : serializeServerReferenceID(existingId);
+  }
+  const id: ServerReferenceId = getServerReferenceId(
+    request.bundlerConfig,
+    reference,
+  );
+  const input = request.input;
+  const metadata =
+    input === null ? undefined : input.getServerReference(reference);
+  if (metadata === undefined) {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'A Result must record server references before serialization.',
+    );
+  }
+  const value = objectReference ? {id} : {id, bound: metadata.bound};
+  const metadataId = outlineModel(request, value);
+  request.writtenServerReferences.set(reference, metadataId);
+  return objectReference
+    ? serializeServerObjectReferenceID(metadataId)
+    : serializeServerReferenceID(metadataId);
+}
+
+function serializeServerReferenceID(id: number): string {
+  return '$h' + id.toString(16);
+}
+
+function serializeServerObjectReferenceID(id: number): string {
+  return '$H' + id.toString(16);
 }

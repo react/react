@@ -7,6 +7,7 @@
  * @flow
  */
 
+import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 import type {ResultModel} from './ReactFlightResultModel';
 import type {Thenable} from './ReactTypes';
 import type {
@@ -27,6 +28,12 @@ export type ModelReference = {
   ...
 };
 
+export type ServerReferenceMetadata = {
+  +id: string,
+  +bound: null | Promise<Array<any>>,
+  +isObjectReference: boolean,
+};
+
 export type Hint = {+code: HintCode, +model: HintModel<any>};
 export type ErrorReference = {+digest: string};
 export type HintQueue = {
@@ -38,6 +45,7 @@ export type HintQueue = {
 
 export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   +root: ResultModel<T>,
+  +temporaryReferenceSet: void | TemporaryReferenceSet,
   closed: boolean,
   completionListeners: null | Set<() => void>,
   hintQueue: null | HintQueue,
@@ -48,6 +56,8 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   haltedModels: null | WeakSet<Object>,
   modelReferences: null | WeakMap<Object, Object>,
   valueReferences: null | WeakSet<Object>,
+  temporaryReferences: null | WeakMap<Object, string>,
+  serverReferences: null | WeakMap<Object, ServerReferenceMetadata>,
   formDataWithBlobs: null | WeakSet<FormData>,
   collectionEntries: null | WeakMap<Object, ResultModel<Array<any>>>,
   modelInfo: null | Map<Object, number>,
@@ -63,9 +73,11 @@ function abortResult<T>(result: Result<T>, reason: mixed): void {
 export function createResult<T>(
   root: ResultModel<T>,
   abort: (reason: mixed) => void,
+  temporaryReferenceSet: void | TemporaryReferenceSet,
 ): Result<T> {
   const result: Result<T> = {
     root,
+    temporaryReferenceSet,
     closed: false,
     completionListeners: null,
     hintQueue: null,
@@ -76,6 +88,8 @@ export function createResult<T>(
     haltedModels: null,
     modelReferences: null,
     valueReferences: null,
+    temporaryReferences: null,
+    serverReferences: null,
     formDataWithBlobs: null,
     collectionEntries: null,
     modelInfo: null,
@@ -320,4 +334,52 @@ export function hasFormDataBlobs<T>(
 ): boolean {
   const formDataWithBlobs = result.formDataWithBlobs;
   return formDataWithBlobs !== null && formDataWithBlobs.has(formData);
+}
+
+export function setServerReference<T>(
+  result: Result<T>,
+  value: Object,
+  metadata: ServerReferenceMetadata,
+): void {
+  let serverReferences = result.serverReferences;
+  if (serverReferences === null) {
+    result.serverReferences = serverReferences = new WeakMap();
+  }
+  serverReferences.set(value, metadata);
+}
+
+export function getServerReference<T>(
+  result: Result<T>,
+  value: Object,
+): void | ServerReferenceMetadata {
+  const serverReferences = result.serverReferences;
+  return serverReferences === null ? undefined : serverReferences.get(value);
+}
+
+export function setTemporaryReference<T>(
+  result: Result<T>,
+  value: Object,
+  reference: string,
+): void {
+  let temporaryReferences = result.temporaryReferences;
+  if (temporaryReferences === null) {
+    result.temporaryReferences = temporaryReferences = new WeakMap();
+  }
+  temporaryReferences.set(value, reference);
+}
+
+export function getTemporaryReference<T>(
+  result: Result<T>,
+  value: Object,
+): void | string {
+  const temporaryReferences = result.temporaryReferences;
+  return temporaryReferences === null
+    ? undefined
+    : temporaryReferences.get(value);
+}
+
+export function getTemporaryReferenceSet<T>(
+  result: Result<T>,
+): void | TemporaryReferenceSet {
+  return result.temporaryReferenceSet;
 }

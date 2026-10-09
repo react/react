@@ -11,6 +11,9 @@ import type {
   Request,
   ReactClientValue,
 } from 'react-server/src/ReactFlightResultServer';
+import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
+import {registerServerReference} from '../ReactFlightWebpackReferences';
+import noop from 'shared/noop';
 import type {Result} from 'shared/ReactFlightResult';
 import type {PipeableStream} from './ReactFlightDOMResultSerializationServerNode';
 import type {ClientManifest} from './ReactFlightServerConfigWebpackBundler';
@@ -24,13 +27,66 @@ import {
 import {createInput} from 'react-server/src/ReactFlightResultSerialization';
 import {renderToPipeableStream} from './ReactFlightDOMResultSerializationServerNode';
 
-type Options = {onError?: mixed => ?string, signal?: AbortSignal};
+// $FlowFixMe[method-unbinding]
+const FunctionBind = Function.prototype.bind;
+// $FlowFixMe[method-unbinding]
+const ArraySlice = Array.prototype.slice;
+
+function createServerReference(
+  reference: Function,
+  bound: Promise<Array<any>>,
+): Function {
+  // $FlowFixMe[incompatible-type]
+  const copy = FunctionBind.call(reference, null);
+  registerServerReference(copy, (reference as any).$$id, null);
+  Object.defineProperties(copy, {
+    $$bound: {value: bound},
+    bind: {value: bindServerReference},
+  });
+  return copy;
+}
+
+function bindServerReference(this: any): Function {
+  if (__DEV__) {
+    if (arguments[0] != null) {
+      console.error(
+        'Cannot bind "this" of a Server Action. Pass null or undefined as the first argument to .bind().',
+      );
+    }
+  }
+  // $FlowFixMe[incompatible-type]
+  const copy = FunctionBind.apply(this, arguments);
+  const args = ArraySlice.call(arguments, 1);
+  const bound = Promise.resolve(this.$$bound).then(values =>
+    values.concat(args),
+  );
+  bound.catch(noop);
+  registerServerReference(copy, this.$$id, null);
+  Object.defineProperties(copy, {
+    $$bound: {value: bound},
+    bind: {value: bindServerReference},
+  });
+  return copy;
+}
+
+type Options = {
+  onError?: mixed => ?string,
+  signal?: AbortSignal,
+  identifierPrefix?: string,
+  temporaryReferences?: TemporaryReferenceSet,
+};
 
 export function renderToResult(
   model: ReactClientValue,
   options?: Options,
 ): Result<ReactClientValue> {
-  const request = createRequest(model, options ? options.onError : undefined);
+  const request = createRequest(
+    model,
+    options ? options.onError : undefined,
+    options ? options.identifierPrefix : undefined,
+    options ? options.temporaryReferences : undefined,
+    createServerReference,
+  );
   startWork(request);
   if (options && options.signal) {
     attachAbortSignal(request, options.signal);
@@ -48,6 +104,9 @@ export function prerenderToResult(
       () => resolve(getResult(request)),
       reject,
       options ? options.onError : undefined,
+      options ? options.identifierPrefix : undefined,
+      options ? options.temporaryReferences : undefined,
+      createServerReference,
     );
     startWork(request);
     const signal = options ? options.signal : undefined;
