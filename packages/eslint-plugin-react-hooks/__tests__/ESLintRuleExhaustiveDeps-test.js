@@ -36,6 +36,236 @@ function normalizeIndent(strings) {
 // ***************************************************
 
 // Tests that are valid/invalid across all parsers
+const optionalChainRegressionTests = [
+  {
+    // Reading the guarded property without ?. must not make its dependency unsafe.
+    code: normalizeIndent`
+      function MyComponent({foo, one}) {
+        useEffect(() => {
+          console.log(one);
+          if (foo?.bar) {
+            console.log(foo.bar);
+          }
+        }, [one]);
+      }
+    `,
+    errors: [
+      {
+        message:
+          "React Hook useEffect has a missing dependency: 'foo?.bar'. " +
+          'Either include it or remove the dependency array.',
+        suggestions: [
+          {
+            desc: 'Update the dependencies array to be: [foo?.bar, one]',
+            output: normalizeIndent`
+              function MyComponent({foo, one}) {
+                useEffect(() => {
+                  console.log(one);
+                  if (foo?.bar) {
+                    console.log(foo.bar);
+                  }
+                }, [foo?.bar, one]);
+              }
+            `,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Fixing an unrelated dependency must preserve an existing optional chain.
+    code: normalizeIndent`
+      function MyComponent({foo, one}) {
+        useEffect(() => {
+          console.log(one);
+          if (foo?.bar) {
+            console.log(foo.bar);
+          }
+        }, [foo?.bar]);
+      }
+    `,
+    errors: [
+      {
+        message:
+          "React Hook useEffect has a missing dependency: 'one'. " +
+          'Either include it or remove the dependency array.',
+        suggestions: [
+          {
+            desc: 'Update the dependencies array to be: [foo?.bar, one]',
+            output: normalizeIndent`
+              function MyComponent({foo, one}) {
+                useEffect(() => {
+                  console.log(one);
+                  if (foo?.bar) {
+                    console.log(foo.bar);
+                  }
+                }, [foo?.bar, one]);
+              }
+            `,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Optional access marks the receiver, including reads of sibling properties.
+    code: normalizeIndent`
+      function MyComponent({foo}) {
+        useEffect(() => {
+          if (foo?.bar) {
+            console.log(foo.baz);
+          }
+        }, []);
+      }
+    `,
+    errors: [
+      {
+        message:
+          "React Hook useEffect has missing dependencies: 'foo?.bar' and 'foo?.baz'. " +
+          'Either include them or remove the dependency array.',
+        suggestions: [
+          {
+            desc: 'Update the dependencies array to be: [foo?.bar, foo?.baz]',
+            output: normalizeIndent`
+              function MyComponent({foo}) {
+                useEffect(() => {
+                  if (foo?.bar) {
+                    console.log(foo.baz);
+                  }
+                }, [foo?.bar, foo?.baz]);
+              }
+            `,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Preserve optional chains that are only present in the dependency array.
+    code: normalizeIndent`
+      function MyComponent({foo, one}) {
+        useEffect(() => {
+          console.log(one);
+        }, [foo?.bar]);
+      }
+    `,
+    errors: [
+      {
+        message:
+          "React Hook useEffect has a missing dependency: 'one'. " +
+          'Either include it or remove the dependency array.',
+        suggestions: [
+          {
+            desc: 'Update the dependencies array to be: [foo?.bar, one]',
+            output: normalizeIndent`
+              function MyComponent({foo, one}) {
+                useEffect(() => {
+                  console.log(one);
+                }, [foo?.bar, one]);
+              }
+            `,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Each nullable receiver in a nested chain must remain optional.
+    code: normalizeIndent`
+      function MyComponent({foo}) {
+        useEffect(() => {
+          if (foo?.bar?.baz) {
+            console.log(foo.bar.qux);
+          }
+        }, []);
+      }
+    `,
+    errors: [
+      {
+        message:
+          "React Hook useEffect has missing dependencies: 'foo?.bar?.baz' and 'foo?.bar?.qux'. " +
+          'Either include them or remove the dependency array.',
+        suggestions: [
+          {
+            desc: 'Update the dependencies array to be: [foo?.bar?.baz, foo?.bar?.qux]',
+            output: normalizeIndent`
+              function MyComponent({foo}) {
+                useEffect(() => {
+                  if (foo?.bar?.baz) {
+                    console.log(foo.bar.qux);
+                  }
+                }, [foo?.bar?.baz, foo?.bar?.qux]);
+              }
+            `,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // An optional chain must not change a disjoint receiver's required access.
+    code: normalizeIndent`
+      function MyComponent({foo, box}) {
+        useEffect(() => {
+          if (foo?.bar?.baz) {
+            console.log(box.value);
+          }
+        }, []);
+      }
+    `,
+    errors: [
+      {
+        message:
+          "React Hook useEffect has missing dependencies: 'box.value' and 'foo?.bar?.baz'. " +
+          'Either include them or remove the dependency array.',
+        suggestions: [
+          {
+            desc: 'Update the dependencies array to be: [box.value, foo?.bar?.baz]',
+            output: normalizeIndent`
+              function MyComponent({foo, box}) {
+                useEffect(() => {
+                  if (foo?.bar?.baz) {
+                    console.log(box.value);
+                  }
+                }, [box.value, foo?.bar?.baz]);
+              }
+            `,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Optional access wins even if a required read is visited first.
+    code: normalizeIndent`
+      function MyComponent({foo}) {
+        useMemo(() => {
+          return foo.bar || foo?.bar;
+        }, []);
+      }
+    `,
+    errors: [
+      {
+        message:
+          "React Hook useMemo has a missing dependency: 'foo?.bar'. " +
+          'Either include it or remove the dependency array.',
+        suggestions: [
+          {
+            desc: 'Update the dependencies array to be: [foo?.bar]',
+            output: normalizeIndent`
+              function MyComponent({foo}) {
+                useMemo(() => {
+                  return foo.bar || foo?.bar;
+                }, [foo?.bar]);
+              }
+            `,
+          },
+        ],
+      },
+    ],
+  },
+];
+
 const tests = {
   valid: [
     {
@@ -1566,6 +1796,7 @@ const tests = {
     },
   ],
   invalid: [
+    ...optionalChainRegressionTests,
     {
       code: normalizeIndent`
         function MyComponent(props) {
@@ -4100,7 +4331,7 @@ const tests = {
       errors: [
         {
           message:
-            "React Hook useEffect has unnecessary dependencies: 'ref1.current' and 'ref2.current'. " +
+            "React Hook useEffect has unnecessary dependencies: 'ref1?.current' and 'ref2?.current'. " +
             'Either exclude them or remove the dependency array. ' +
             "Mutable values like 'ref1.current' aren't valid dependencies " +
             "because mutating them doesn't re-render the component.",
@@ -5160,7 +5391,7 @@ const tests = {
         {
           message:
             'React Hook useCallback has unnecessary dependencies: ' +
-            "'MutableStore.hello.world', 'global.stuff', 'props.foo', 'x', 'y', and 'z'. " +
+            "'MutableStore?.hello?.world', 'global?.stuff', 'props.foo', 'x', 'y', and 'z'. " +
             'Either exclude them or remove the dependency array. ' +
             "Outer scope values like 'MutableStore.hello.world' aren't valid dependencies " +
             "because mutating them doesn't re-render the component.",
@@ -8157,11 +8388,11 @@ const testsTypescript = {
       errors: [
         {
           message:
-            "React Hook useEffect has missing dependencies: 'pizza.crust' and 'pizza?.toppings'. " +
+            "React Hook useEffect has missing dependencies: 'pizza?.crust' and 'pizza?.toppings'. " +
             'Either include them or remove the dependency array.',
           suggestions: [
             {
-              desc: 'Update the dependencies array to be: [pizza.crust, pizza?.toppings]',
+              desc: 'Update the dependencies array to be: [pizza?.crust, pizza?.toppings]',
               output: normalizeIndent`
                 function MyComponent() {
                   const pizza = {};
@@ -8169,7 +8400,7 @@ const testsTypescript = {
                   useEffect(() => ({
                     crust: pizza.crust,
                     toppings: pizza?.toppings,
-                  }), [pizza.crust, pizza?.toppings]);
+                  }), [pizza?.crust, pizza?.toppings]);
                 }
               `,
             },
@@ -8191,11 +8422,11 @@ const testsTypescript = {
       errors: [
         {
           message:
-            "React Hook useEffect has a missing dependency: 'pizza.crust'. " +
+            "React Hook useEffect has a missing dependency: 'pizza?.crust'. " +
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc: 'Update the dependencies array to be: [pizza.crust]',
+              desc: 'Update the dependencies array to be: [pizza?.crust]',
               output: normalizeIndent`
                 function MyComponent() {
                   const pizza = {};
@@ -8203,7 +8434,7 @@ const testsTypescript = {
                   useEffect(() => ({
                     crust: pizza?.crust,
                     density: pizza.crust.density,
-                  }), [pizza.crust]);
+                  }), [pizza?.crust]);
                 }
               `,
             },
@@ -8225,11 +8456,11 @@ const testsTypescript = {
       errors: [
         {
           message:
-            "React Hook useEffect has a missing dependency: 'pizza.crust'. " +
+            "React Hook useEffect has a missing dependency: 'pizza?.crust'. " +
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc: 'Update the dependencies array to be: [pizza.crust]',
+              desc: 'Update the dependencies array to be: [pizza?.crust]',
               output: normalizeIndent`
                 function MyComponent() {
                   const pizza = {};
@@ -8237,7 +8468,7 @@ const testsTypescript = {
                   useEffect(() => ({
                     crust: pizza.crust,
                     density: pizza?.crust.density,
-                  }), [pizza.crust]);
+                  }), [pizza?.crust]);
                 }
               `,
             },
