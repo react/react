@@ -916,7 +916,13 @@ describe('ReactDOMFizzStaticBrowser', () => {
     );
 
     await readIntoContainer(resumed);
-    expect(getVisibleChildren(container)).toEqual(<div>World</div>);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <section>
+          <span>Hello</span>World
+        </section>
+      </div>,
+    );
   });
 
   it('can prerender a preamble', async () => {
