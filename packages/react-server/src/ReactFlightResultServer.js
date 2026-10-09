@@ -8,7 +8,7 @@
  */
 
 import type {ReactElement} from 'shared/ReactElementType';
-import type {Result} from 'shared/ReactFlightResult';
+import type {Result, ModelReference} from 'shared/ReactFlightResult';
 import type {ResultModel} from 'shared/ReactFlightResultModel';
 import type {ClientReference} from './ReactFlightServerConfig';
 import type {ThenableState} from './ReactFlightThenable';
@@ -48,6 +48,16 @@ import {
   pushHint,
   closeHints,
   setErrorDigest,
+  copyErrorReference,
+  forwardModelReference,
+  createValueReference,
+  getValueReference,
+  setModelInfo,
+  getModelInfo,
+  MODEL_OBJECT,
+  MODEL_ARRAY,
+  MODEL_ELEMENT,
+  MODEL_KIND_MASK,
 } from 'shared/ReactFlightResult';
 import {
   createResultModel,
@@ -75,7 +85,8 @@ import {DefaultAsyncDispatcher} from './flight/ReactFlightAsyncDispatcher';
 const UNDEFINED_MODEL = Symbol();
 const PENDING = 0;
 const COMPLETED = 1;
-const RENDERING = 6;
+const RENDERING = 5;
+const BLOCKED = 6;
 const ERRORED = 4;
 const OPENING = 10;
 const CLOSED = 14;
@@ -97,10 +108,18 @@ export type ReactClientValue =
   | ((...args: Array<mixed>) => mixed);
 export type ReactClientObject = {+[key: string]: ReactClientValue};
 const ObjectPrototype = Object.prototype;
+const {getPrototypeOf} = Object;
 type Task = {
   model: ReactClientValue,
   promise: ResultModel<ReactClientValue>,
-  status: 0 | 1 | 4 | 6,
+  status: 0 | 1 | 4 | 5 | 6,
+  renderedModel: ReactClientValue,
+  modelDependencies: null | Set<ResultModel<ReactClientValue>>,
+  reference: ModelReference,
+  currentReference: null | ModelReference,
+  fieldParentReference: void | null | ModelReference,
+  resolve: ReactClientValue => void,
+  reject: mixed => void,
   formatContext: FormatContext,
   isModelReference: boolean,
   ping: () => void,
@@ -108,6 +127,23 @@ type Task = {
   keyPath: ReactKey,
   implicitSlot: boolean,
 };
+interface Reference {}
+type ModelParent = ReactClientObject | $ReadOnlyArray<ReactClientValue>;
+type AddressedModelEntry = {
+  model: ReactClientValue,
+  +root: ResultModel<any>,
+  +parent: null | ModelReference,
+  +key: string,
+};
+type ModelEntry =
+  | AddressedModelEntry
+  | {model: ReactClientValue, +root: void, +parent: null, +key: string};
+
+let modelRoot: null | ReactClientValue = null;
+let serializedSize = 0;
+const MAX_ROW_SIZE = 3200;
+const emptyRoot = {};
+
 export type Request = {
   status: 10 | 14,
   result: Result<ReactClientValue>,
@@ -115,15 +151,25 @@ export type Request = {
   hints: Hints,
   cache: Map<Function, mixed>,
   cacheController: AbortController,
-  modelEntries: WeakMap<Object, ReactClientValue>,
-  renderedImplicitModels: WeakMap<Object, ReactClientValue>,
+  modelEntries: WeakMap<Reference, ModelEntry>,
+  renderedImplicitModels: WeakMap<Reference, ModelEntry>,
   renderedKeyedModels: null | Map<
     ReactKey,
     {
-      explicit: WeakMap<Object, ReactClientValue>,
-      implicit: WeakMap<Object, ReactClientValue>,
+      explicit: WeakMap<Reference, ModelEntry>,
+      implicit: WeakMap<Reference, ModelEntry>,
     },
   >,
+  publishedModelReferences: null | WeakMap<ModelReference, ModelReference>,
+  outlinedModels: null | WeakMap<Reference, Task>,
+  outlinedModelDependencies: null | WeakMap<
+    Reference,
+    null | ResultModel<ReactClientValue>,
+  >,
+  resolvedOutlinedModels: null | WeakMap<Reference, ReactClientValue>,
+  resolvingModelStack: Array<Reference>,
+  resolvingModels: null | Set<Reference>,
+  hasByValueModels: boolean,
   abortableTasks: Set<Task>,
   identifierPrefix: string,
   identifierCount: number,
@@ -156,6 +202,13 @@ function RequestInstance(
   this.modelEntries = new WeakMap();
   this.renderedImplicitModels = new WeakMap();
   this.renderedKeyedModels = null;
+  this.publishedModelReferences = null;
+  this.outlinedModels = null;
+  this.outlinedModelDependencies = null;
+  this.resolvedOutlinedModels = null;
+  this.resolvingModelStack = [];
+  this.resolvingModels = null;
+  this.hasByValueModels = false;
   this.abortableTasks = new Set();
   this.identifierPrefix = '';
   this.identifierCount = 1;
@@ -252,13 +305,15 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
         }
       }, noop);
     }
-    const expandedThenable: Thenable<ReactClientValue> = renderThenable(
+    const expandedThenable: Thenable<ReactClientValue> = renderModelDestructive(
       request,
       task,
+      emptyRoot,
+      '',
       result,
     ) as any;
     const resolvedModel = createLazyWrapperAroundWakeable(expandedThenable);
-    renderedModels.set(element, resolvedModel);
+    setRenderedModel(renderedModels, element, resolvedModel);
     task.keyPath = prevKeyPath;
     task.implicitSlot = prevImplicitSlot;
     task.isModelReference = true;
@@ -272,8 +327,15 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   ) {
     (result as any)._store.validated = 1;
   }
-  const resolvedModel = renderModelDestructive(request, task, result);
-  renderedModels.set(
+  const resolvedModel = renderModelDestructive(
+    request,
+    task,
+    emptyRoot,
+    '',
+    result,
+  );
+  setRenderedModel(
+    renderedModels,
     element,
     resolvedModel === undefined ? UNDEFINED_MODEL : resolvedModel,
   );
@@ -308,9 +370,12 @@ function renderElement(
     const resolvedModel = renderModelDestructive(
       request,
       task,
+      emptyRoot,
+      '',
       element.props.children,
     );
-    renderedModels.set(
+    setRenderedModel(
+      renderedModels,
       element,
       resolvedModel === undefined ? UNDEFINED_MODEL : resolvedModel,
     );
@@ -367,9 +432,21 @@ function createTask(
   implicitSlot: boolean,
   formatContext: FormatContext,
 ): Task {
+  const promise = createResultModel<ReactClientValue>();
+  const reference: ModelReference = {root: promise, parent: null, key: ''};
+  if (model !== null && typeof model === 'object') {
+    setModelReferenceIfAbsent(request, model, reference);
+  }
   const task: Task = {
     model,
-    promise: createResultModel<ReactClientValue>(),
+    promise,
+    reference,
+    currentReference: reference,
+    fieldParentReference: undefined,
+    renderedModel: undefined,
+    modelDependencies: null,
+    resolve: value => fulfillResultModel(promise, value),
+    reject: error => rejectResultModel(promise, error),
     status: PENDING,
     formatContext,
     isModelReference: false,
@@ -399,23 +476,26 @@ function outlineModelWithFormatContext(
   formatContext: FormatContext,
 ): ReactClientValue {
   const newTask = createTask(request, value, null, false, formatContext);
-  retryTask(request, newTask);
-  if (newTask.status !== COMPLETED) {
-    if (newTask.status === PENDING) {
-      const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
-      if (value !== null && typeof value === 'object') {
-        request.modelEntries.set(value, lazy);
-      }
-      return lazy;
-    }
-    throw newTask.promise.reason;
-  }
-  const model = newTask.model;
   if (value !== null && typeof value === 'object') {
-    request.modelEntries.set(
+    setModelReference(request, value, newTask.reference);
+    setRenderedModel(request.modelEntries, value, newTask.promise);
+  }
+  retryTask(request, newTask);
+  const model = newTask.status === COMPLETED ? newTask.model : newTask.promise;
+  if (value !== null && typeof value === 'object') {
+    setRenderedModel(
+      request.modelEntries,
       value,
       model === undefined ? UNDEFINED_MODEL : model,
     );
+  }
+  if (newTask.status !== COMPLETED) {
+    let outlinedModels = request.outlinedModels;
+    if (outlinedModels === null) {
+      request.outlinedModels = outlinedModels = new WeakMap();
+    }
+    outlinedModels.set(newTask.promise, newTask);
+    request.hasByValueModels = true;
   }
   return model;
 }
@@ -448,7 +528,7 @@ function erroredTask(request: Request, task: Task, error: mixed): void {
   const digest = logRecoverableError(request, error);
   setErrorDigest(request.result, task.promise, digest);
   request.abortableTasks.delete(task);
-  rejectResultModel(task.promise, error);
+  task.reject(error);
 }
 
 function logRecoverableError(request: Request, error: mixed): string {
@@ -483,7 +563,7 @@ function fatalError(request: Request, error: mixed): void {
   request.status = CLOSED;
   request.abortableTasks.forEach(task => {
     task.status = ERRORED;
-    rejectResultModel(task.promise, error);
+    task.reject(error);
   });
   request.abortableTasks.clear();
   request.pingedTasks = [];
@@ -505,7 +585,8 @@ function renderThenable(
     task.implicitSlot,
     task.formatContext,
   );
-  getRenderedModels(request, value, task.keyPath, task.implicitSlot).set(
+  setRenderedModel(
+    getRenderedModels(request, value, task.keyPath, task.implicitSlot),
     thenable,
     newTask.promise,
   );
@@ -624,11 +705,27 @@ function renderClientElement(
   if (task.implicitSlot && key !== null) {
     const children: Array<ReactClientValue> = [resolvedElement];
     const copy: Array<ReactClientValue> = [];
-    request.modelEntries.set(children, copy);
+    setRenderedModel(request.modelEntries, children, copy);
+    const reference = task.currentReference;
+    if (reference !== null) {
+      setModelReference(request, children, reference);
+      setModelReference(request, resolvedElement, {
+        root: reference.root,
+        parent: reference,
+        key: '0',
+      });
+    }
     task.model = children;
     resolvedModel = copy;
   }
-  renderedModels.set(element, resolvedModel);
+  setRenderedModel(renderedModels, element, resolvedModel);
+  const reference = task.currentReference;
+  task.fieldParentReference =
+    resolvedModel !== resolvedElement
+      ? undefined
+      : reference === null
+        ? null
+        : {root: reference.root, parent: reference.parent, key: reference.key};
   task.keyPath = null;
   task.implicitSlot = false;
   task.isModelReference = false;
@@ -638,38 +735,26 @@ function renderClientElement(
 function renderModelDestructive(
   request: Request,
   task: Task,
+  parent: ModelParent,
+  parentPropertyName: string,
   value: ReactClientValue,
+  parentReference?: null | ModelReference,
 ): ReactClientValue {
   task.model = value;
   task.isModelReference = false;
   if (
     value !== null &&
+    typeof value === 'object' &&
+    getValueReference(request.result, value) !== undefined
+  ) {
+    return renderModelReference(task, value);
+  }
+  if (
+    value !== null &&
     (typeof value === 'object' || typeof value === 'function') &&
     isClientReference(value)
   ) {
-    task.isModelReference = true;
-    return value;
-  }
-  if (value !== null && typeof value === 'object') {
-    const existingModel = getRenderedModels(
-      request,
-      value,
-      task.keyPath,
-      task.implicitSlot,
-    ).get(value);
-    if (
-      existingModel !== undefined &&
-      existingModel !== task.promise &&
-      !(
-        existingModel !== null &&
-        typeof existingModel === 'object' &&
-        (existingModel as any).$$typeof === REACT_LAZY_TYPE &&
-        (existingModel as any)._payload === task.promise
-      )
-    ) {
-      task.isModelReference = true;
-      return existingModel === UNDEFINED_MODEL ? undefined : existingModel;
-    }
+    return renderModelReference(task, value);
   }
   if (value === null || typeof value !== 'object') {
     if (typeof value === 'function') {
@@ -678,15 +763,177 @@ function renderModelDestructive(
     if (typeof value === 'symbol') {
       validateSymbol(value);
     }
+    if (typeof value === 'string') {
+      serializedSize += value.length;
+    }
     return value;
   }
-  if ((value as any).$$typeof === REACT_ELEMENT_TYPE) {
-    const element: ReactElement = value as any;
-    return renderElement(request, task, element.type, element);
+  const renderedModels = getRenderedModels(
+    request,
+    value,
+    task.keyPath,
+    task.implicitSlot,
+  );
+  let modelEntry = renderedModels.get(value);
+  let existingModel = modelEntry === undefined ? undefined : modelEntry.model;
+  const elementType = (value as any).$$typeof;
+  const canReference =
+    elementType === REACT_ELEMENT_TYPE
+      ? task.keyPath === null && !task.implicitSlot
+      : (isArray(value) && task.keyPath === null) ||
+        getPrototypeOf(value) === ObjectPrototype;
+  const referenceEntry = canReference
+    ? renderedModels === request.modelEntries
+      ? modelEntry
+      : request.modelEntries.get(value)
+    : undefined;
+  let reference = getEntryReference(referenceEntry);
+  if (
+    canReference &&
+    reference !== undefined &&
+    reference.root !== task.promise &&
+    existingModel !== undefined &&
+    typeof (value as any).then !== 'function'
+  ) {
+    return renderModelReference(
+      task,
+      createResultValueReference(request, reference) as any,
+    );
   }
-  if ((value as any).$$typeof === REACT_LAZY_TYPE) {
+  if (existingModel !== undefined) {
+    if (
+      elementType === REACT_ELEMENT_TYPE &&
+      typeof existingModel === 'string' &&
+      modelEntry !== undefined &&
+      modelEntry.root !== undefined &&
+      modelRoot !== value
+    ) {
+      return renderModelReference(
+        task,
+        createResultValueReference(request, modelEntry) as any,
+      );
+    }
+    if (existingModel === UNDEFINED_MODEL) {
+      existingModel = undefined;
+    }
+    if (request.hasByValueModels && existingModel !== task.promise) {
+      const outlinedModels = request.outlinedModels;
+      if (outlinedModels !== null) {
+        const dependency = outlinedModels.get(existingModel as any);
+        if (dependency !== undefined && dependency.status === COMPLETED) {
+          existingModel = dependency.model;
+        } else if (dependency === task && task.status === RENDERING) {
+          existingModel = task.renderedModel;
+        } else {
+          const dependencies = getOutlinedModelDependencies(
+            request,
+            existingModel,
+            outlinedModels,
+          );
+          const iterator = dependencies.values();
+          for (
+            let entry = iterator.next();
+            !entry.done;
+            entry = iterator.next()
+          ) {
+            addModelDependency(task, entry.value);
+          }
+        }
+      }
+    }
+    if (modelRoot === value) {
+      if (
+        existingModel !== task.promise &&
+        !(
+          existingModel !== null &&
+          typeof existingModel === 'object' &&
+          (existingModel as any).$$typeof === REACT_LAZY_TYPE &&
+          (existingModel as any)._payload === task.promise
+        )
+      ) {
+        return renderModelReference(task, existingModel);
+      }
+      modelRoot = null;
+    } else {
+      return renderModelReference(task, existingModel);
+    }
+  }
+
+  if (parentReference === undefined) {
+    parentReference =
+      parent === emptyRoot
+        ? task.currentReference
+        : getModelReference(request, parent);
+  }
+  if (
+    reference === undefined &&
+    parentReference != null &&
+    parentPropertyName.indexOf(':') === -1
+  ) {
+    if (canReference) {
+      const newEntry: AddressedModelEntry = {
+        model: referenceEntry === undefined ? undefined : referenceEntry.model,
+        root: parentReference.root,
+        parent: parent === emptyRoot ? parentReference.parent : parentReference,
+        key: parent === emptyRoot ? parentReference.key : parentPropertyName,
+      };
+      request.modelEntries.set(value, newEntry);
+      reference = newEntry;
+      if (renderedModels === request.modelEntries) {
+        modelEntry = newEntry;
+      }
+    } else {
+      reference =
+        parent === emptyRoot
+          ? parentReference
+          : {
+              root: parentReference.root,
+              parent: parentReference,
+              key: parentPropertyName,
+            };
+    }
+  }
+  task.currentReference = reference === undefined ? null : reference;
+  if (elementType === REACT_ELEMENT_TYPE) {
+    if (serializedSize > MAX_ROW_SIZE) {
+      return deferTask(request, task);
+    }
+    const element: ReactElement = value as any;
+    const rendered = renderElement(request, task, element.type, element);
+    if (typeof rendered === 'string' && reference !== undefined) {
+      const entry = renderedModels.get(value);
+      if (entry !== undefined) {
+        renderedModels.set(value, createModelEntry(entry.model, reference));
+      }
+    }
+    if (
+      rendered !== null &&
+      typeof rendered === 'object' &&
+      reference != null &&
+      (rendered as any).$$typeof === REACT_ELEMENT_TYPE &&
+      task.fieldParentReference === null
+    ) {
+      task.fieldParentReference = {
+        root: reference.root,
+        parent: reference.parent,
+        key: reference.key,
+      };
+    }
+    return rendered;
+  }
+  if (elementType === REACT_LAZY_TYPE) {
+    if (serializedSize > MAX_ROW_SIZE) {
+      return deferTask(request, task);
+    }
     const lazy: LazyComponent<ReactClientValue, any> = value as any;
-    return renderModelDestructive(request, task, lazy._init(lazy._payload));
+    return renderModelDestructive(
+      request,
+      task,
+      parent,
+      parentPropertyName,
+      lazy._init(lazy._payload),
+      parentReference,
+    );
   }
   if (typeof (value as any).then === 'function') {
     return renderThenable(request, task, value);
@@ -697,15 +944,25 @@ function renderModelDestructive(
   if (Object.getPrototypeOf(value) !== ObjectPrototype) {
     throw new Error('Not implemented.');
   }
-  return {};
+  const copy: {[key: string]: ReactClientValue} = {};
+  setRenderedModel(request.modelEntries, value, copy);
+  task.fieldParentReference = undefined;
+  return copy;
 }
 
 function resolveModel(
   request: Request,
   task: Task,
+  parent: ModelParent,
+  key: string,
   value: ReactClientValue,
+  parentReference?: null | ModelReference,
+  renderedRoot?: ReactClientValue,
 ): ReactClientValue {
-  const rendered = renderModel(request, task, value);
+  const rendered =
+    renderedRoot !== undefined
+      ? renderedRoot
+      : renderModel(request, task, parent, key, value, parentReference);
   if (
     task.isModelReference ||
     rendered === null ||
@@ -713,18 +970,44 @@ function resolveModel(
   ) {
     return rendered;
   }
-  return resolveModelFields(request, task, rendered);
+  const stack = request.resolvingModelStack;
+  stack.push(rendered);
+  if (request.resolvingModels !== null) {
+    request.resolvingModels.add(rendered);
+  }
+  try {
+    return resolveModelFields(request, task, rendered);
+  } finally {
+    stack.pop();
+    if (request.resolvingModels !== null) {
+      request.resolvingModels.delete(rendered);
+    }
+  }
 }
 
 function renderModel(
   request: Request,
   task: Task,
+  parent: ModelParent,
+  parentPropertyName: string,
   value: ReactClientValue,
+  parentReference?: null | ModelReference,
 ): ReactClientValue {
+  serializedSize +=
+    (parent as any).$$typeof === REACT_ELEMENT_TYPE
+      ? 1
+      : parentPropertyName.length;
   const prevKeyPath = task.keyPath;
   const prevImplicitSlot = task.implicitSlot;
   try {
-    return renderModelDestructive(request, task, value);
+    return renderModelDestructive(
+      request,
+      task,
+      parent,
+      parentPropertyName,
+      value,
+      parentReference,
+    );
   } catch (thrownValue) {
     const error =
       thrownValue === SuspenseException ? getSuspendedThenable() : thrownValue;
@@ -743,38 +1026,93 @@ function renderModel(
         task.formatContext,
       );
       const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
-      getRenderedModels(request, model, task.keyPath, task.implicitSlot).set(
-        model,
-        lazy,
-      );
+      setModelReference(request, model, newTask.reference);
+      if ((model as any).$$typeof === REACT_ELEMENT_TYPE) {
+        const renderedModels = getRenderedModels(
+          request,
+          model,
+          task.keyPath,
+          task.implicitSlot,
+        );
+        if (getRenderedModel(renderedModels, model) === undefined) {
+          setRenderedModel(renderedModels, model, lazy);
+        }
+      }
       if (
         value !== model &&
         value !== null &&
         typeof value === 'object' &&
         (value as any).$$typeof === REACT_ELEMENT_TYPE
       ) {
-        getRenderedModels(request, value, prevKeyPath, prevImplicitSlot).set(
+        setRenderedModel(
+          getRenderedModels(request, value, prevKeyPath, prevImplicitSlot),
           value,
           lazy,
         );
       }
+      task.keyPath = prevKeyPath;
+      task.implicitSlot = prevImplicitSlot;
       if (
         error != null &&
         typeof error === 'object' &&
         typeof (error as any).then === 'function'
       ) {
-        newTask.thenableState = getThenableStateAfterSuspending();
         const ping = newTask.ping;
         (error as any).then(ping, ping);
+        newTask.thenableState = getThenableStateAfterSuspending();
       } else {
         erroredTask(request, newTask, error);
       }
-      task.keyPath = prevKeyPath;
-      task.implicitSlot = prevImplicitSlot;
-      task.isModelReference = true;
-      return lazy;
+      return renderModelReference(task, lazy);
     }
-    throw error;
+    task.keyPath = prevKeyPath;
+    task.implicitSlot = prevImplicitSlot;
+    const newTask = createTask(
+      request,
+      model,
+      prevKeyPath,
+      prevImplicitSlot,
+      task.formatContext,
+    );
+    // Binding in the recovery path avoids a captured local in every hot call,
+    // including after a later bundler inlines this helper.
+    newTask.resolve = resolveBoxedModel.bind(null, newTask.resolve);
+    if (model !== null && typeof model === 'object') {
+      setModelReference(request, model, {
+        root: newTask.promise,
+        parent: newTask.reference,
+        key: 'value',
+      });
+    }
+    let outlinedModels = request.outlinedModels;
+    if (outlinedModels === null) {
+      request.outlinedModels = outlinedModels = new WeakMap();
+    }
+    outlinedModels.set(newTask.promise, newTask);
+    request.hasByValueModels = true;
+    addModelDependency(task, newTask.promise);
+    markErroredModel(request, newTask, value, prevKeyPath, prevImplicitSlot);
+    if (
+      error != null &&
+      typeof error === 'object' &&
+      typeof (error as any).then === 'function'
+    ) {
+      newTask.thenableState = getThenableStateAfterSuspending();
+      const ping = newTask.ping;
+      (error as any).then(ping, ping);
+    } else {
+      erroredTask(request, newTask, error);
+    }
+    if (__DEV__) {
+      const reference = createResultValueReference(request, {
+        root: newTask.promise,
+        parent: newTask.reference,
+        key: 'value',
+      });
+      outlinedModels.set(reference, newTask);
+      return renderModelReference(task, reference);
+    }
+    return renderModelReference(task, newTask.promise);
   }
 }
 
@@ -784,42 +1122,116 @@ function resolveModelFields(
   rendered: ReactClientValue,
 ): ReactClientValue {
   const model = task.model;
+  const parentReference = task.fieldParentReference;
+  const prevKeyPath = task.keyPath;
+  const prevImplicitSlot = task.implicitSlot;
   task.keyPath = null;
   task.implicitSlot = false;
   if ((rendered as any).$$typeof === REACT_ELEMENT_TYPE) {
     const element: ReactElement = rendered as any;
-    element.props = resolveModel(request, task, element.props);
-    return element;
+    const prevDependencies = task.modelDependencies;
+    task.modelDependencies = null;
+    try {
+      serializedSize += 2;
+      if (typeof element.key === 'string') {
+        serializedSize += element.key.length;
+      }
+      element.type = resolveModel(
+        request,
+        task,
+        element as any,
+        'type',
+        element.type,
+        parentReference,
+      );
+      element.props = resolveModel(
+        request,
+        task,
+        element as any,
+        'props',
+        element.props,
+        parentReference,
+      );
+      const resolved = renderOutlinedElement(
+        request,
+        task,
+        element,
+        model,
+        prevKeyPath,
+        prevImplicitSlot,
+        task.modelDependencies,
+      );
+      setModelInfo(request.result, element, MODEL_ELEMENT);
+      return resolved;
+    } catch (error) {
+      markErroredModel(
+        request,
+        task,
+        rendered,
+        prevKeyPath,
+        prevImplicitSlot,
+        rendered,
+      );
+      throw error;
+    } finally {
+      task.modelDependencies = prevDependencies;
+    }
   }
   if (isArray(rendered)) {
     const children: Array<ReactClientValue> = model as any;
     const copy: Array<ReactClientValue> = rendered as any;
-    for (let i = 0; i < children.length; i++) {
-      if (i in children) {
-        copy[i] = resolveModel(request, task, children[i]);
+    try {
+      for (let i = 0; i < children.length; i++) {
+        if (i in children) {
+          copy[i] = resolveModel(
+            request,
+            task,
+            children,
+            '' + i,
+            children[i],
+            parentReference,
+          );
+        }
       }
+      copy.length = children.length;
+      setModelInfo(request.result, copy, MODEL_ARRAY);
+      return copy;
+    } catch (error) {
+      markErroredModel(request, task, model, prevKeyPath, prevImplicitSlot);
+      throw error;
     }
-    copy.length = children.length;
-    return copy;
   }
   const object: ReactClientObject = model as any;
   const copy: {[key: string]: ReactClientValue} = rendered as any;
-  for (const key in object) {
-    if (hasOwnProperty.call(object, key)) {
-      const child = resolveModel(request, task, object[key]);
-      if (key === '__proto__') {
-        Object.defineProperty(copy, key, {
-          value: child,
-          enumerable: true,
-          configurable: true,
-          writable: true,
-        });
-      } else {
-        copy[key] = child;
+  try {
+    for (const key in object) {
+      if (hasOwnProperty.call(object, key)) {
+        const child = resolveModel(
+          request,
+          task,
+          object,
+          key,
+          object[key],
+          parentReference,
+        );
+        if (key === '__proto__') {
+          Object.defineProperty(copy, key, {
+            value: child,
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          });
+        } else {
+          copy[key] = child;
+        }
       }
     }
+    setModelInfo(request.result, copy, MODEL_OBJECT);
+    return copy;
+  } catch (error) {
+    markErroredModel(request, task, model, prevKeyPath, prevImplicitSlot);
+    throw error;
   }
-  return copy;
 }
 
 function retryTask(request: Request, task: Task): void {
@@ -830,58 +1242,76 @@ function retryTask(request: Request, task: Task): void {
   const originalModel = task.model;
   const originalKeyPath = task.keyPath;
   const originalImplicitSlot = task.implicitSlot;
+  const parentSerializedSize = serializedSize;
+  task.currentReference = task.reference;
   try {
-    const model = task.model;
-    const rendered = renderModelDestructive(request, task, model);
+    modelRoot = task.model;
+    const rendered = renderModelDestructive(
+      request,
+      task,
+      emptyRoot,
+      '',
+      task.model,
+    );
+    task.renderedModel = rendered;
+    const rootModel =
+      rendered !== null &&
+      typeof rendered === 'object' &&
+      (rendered as any).$$typeof === REACT_ELEMENT_TYPE
+        ? rendered
+        : task.model;
     const resolvedModel =
       task.isModelReference || rendered === null || typeof rendered !== 'object'
         ? rendered
-        : resolveModelFields(request, task, rendered);
+        : resolveModel(
+            request,
+            task,
+            {'': rootModel},
+            '',
+            rootModel,
+            undefined,
+            rendered,
+          );
     if (request.status === CLOSED) {
       return;
     }
-    task.model = resolvedModel;
-    if (originalModel !== null && typeof originalModel === 'object') {
-      const renderedModels = getRenderedModels(
-        request,
-        originalModel,
-        originalKeyPath,
-        originalImplicitSlot,
-      );
-      const existing = renderedModels.get(originalModel);
-      if (
-        existing !== null &&
-        typeof existing === 'object' &&
-        (existing as any).$$typeof === REACT_LAZY_TYPE &&
-        (existing as any)._payload === task.promise
-      ) {
-        renderedModels.set(
-          originalModel,
-          resolvedModel === undefined ? UNDEFINED_MODEL : resolvedModel,
-        );
-      }
+    const outlinedModels = request.outlinedModels;
+    if (
+      outlinedModels !== null &&
+      waitForOutlinedModel(request, task, resolvedModel, outlinedModels)
+    ) {
+      return;
     }
-    task.status = COMPLETED;
-    request.abortableTasks.delete(task);
-    fulfillResultModel(task.promise, resolvedModel);
+    completeTask(request, task, resolvedModel);
   } catch (thrownValue) {
     if (request.status === CLOSED) {
       return;
     }
     const error =
       thrownValue === SuspenseException ? getSuspendedThenable() : thrownValue;
+    const model = task.model;
     if (
       error != null &&
       typeof error === 'object' &&
       typeof (error as any).then === 'function'
     ) {
+      markErroredModel(request, task, model, task.keyPath, task.implicitSlot);
       task.status = PENDING;
       task.thenableState = getThenableStateAfterSuspending();
       const ping = task.ping;
       (error as any).then(ping, ping);
       return;
     }
+    markErroredModel(
+      request,
+      task,
+      originalModel,
+      originalKeyPath,
+      originalImplicitSlot,
+    );
     erroredTask(request, task, error);
+  } finally {
+    serializedSize = parentSerializedSize;
   }
 }
 
@@ -890,7 +1320,7 @@ function getRenderedModels(
   value: ReactClientValue,
   keyPath: ReactKey,
   implicitSlot: boolean,
-): WeakMap<Object, ReactClientValue> {
+): WeakMap<Reference, ModelEntry> {
   if (
     keyPath !== null &&
     value !== null &&
@@ -960,21 +1390,25 @@ function renderFragment(
     if (task.implicitSlot) {
       const wrappedChildren: Array<ReactClientValue> = [fragment];
       const copy: Array<ReactClientValue> = [];
-      request.modelEntries.set(wrappedChildren, copy);
+      setRenderedModel(request.modelEntries, wrappedChildren, copy);
       task.model = wrappedChildren;
       resolvedModel = copy;
+      task.fieldParentReference = null;
     } else {
       resolvedModel = fragment;
+      task.fieldParentReference = null;
     }
-    getRenderedModels(request, children, keyPath, task.implicitSlot).set(
+    setRenderedModel(
+      getRenderedModels(request, children, keyPath, task.implicitSlot),
       children,
       resolvedModel,
     );
   } else {
     const copy: Array<ReactClientValue> = new Array(children.length);
-    request.modelEntries.set(children, copy);
+    setRenderedModel(request.modelEntries, children, copy);
     task.model = children;
     resolvedModel = copy;
+    task.fieldParentReference = undefined;
   }
   task.isModelReference = false;
   return resolvedModel;
@@ -1024,4 +1458,620 @@ export function startWork(request: Request): void {
   } else {
     scheduleMicrotask(() => performWork(request));
   }
+}
+
+function createModelEntry(
+  model: ReactClientValue,
+  reference: void | ModelReference,
+): ModelEntry {
+  return reference === undefined
+    ? {model, root: undefined, parent: null, key: ''}
+    : {
+        model,
+        root: reference.root,
+        parent: reference.parent,
+        key: reference.key,
+      };
+}
+
+function getEntryReference(entry: void | ModelEntry): void | ModelReference {
+  return entry === undefined || entry.root === undefined ? undefined : entry;
+}
+
+function getPublishedModelReference(
+  request: Request,
+  reference: ModelReference,
+): ModelReference {
+  // Escaping paths must not retain memo models after their defining region fails.
+  if (reference.parent === null && !hasOwnProperty.call(reference, 'model')) {
+    return reference;
+  }
+  let publishedReferences = request.publishedModelReferences;
+  if (publishedReferences === null) {
+    request.publishedModelReferences = publishedReferences = new WeakMap();
+  }
+  const cached = publishedReferences.get(reference);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const path = [];
+  let location: ModelReference = reference;
+  let published: ModelReference = reference;
+  while (true) {
+    const parent = location.parent;
+    if (parent === null) {
+      if (hasOwnProperty.call(location, 'model')) {
+        published = {root: location.root, parent: null, key: location.key};
+        publishedReferences.set(location, published);
+      } else {
+        published = location;
+      }
+      break;
+    }
+    path.push(location);
+    location = parent;
+    const cachedParent = publishedReferences.get(location);
+    if (cachedParent !== undefined) {
+      published = cachedParent;
+      break;
+    }
+  }
+  for (let i = path.length - 1; i >= 0; i--) {
+    const source = path[i];
+    if (!hasOwnProperty.call(source, 'model') && source.parent === published) {
+      published = source;
+    } else {
+      published = {
+        root: source.root,
+        parent: published,
+        key: source.key,
+      };
+      publishedReferences.set(source, published);
+    }
+  }
+  return published;
+}
+
+function createResultValueReference(
+  request: Request,
+  reference: ModelReference,
+): Object {
+  return createValueReference(
+    request.result,
+    getPublishedModelReference(request, reference),
+  );
+}
+
+function getRenderedModel(
+  models: WeakMap<Reference, ModelEntry>,
+  value: Reference,
+): ReactClientValue {
+  const entry = models.get(value);
+  return entry === undefined ? undefined : entry.model;
+}
+
+function setRenderedModel(
+  models: WeakMap<Reference, ModelEntry>,
+  value: Reference,
+  model: ReactClientValue,
+): void {
+  const entry = models.get(value);
+  if (entry === undefined) {
+    models.set(value, createModelEntry(model, undefined));
+  } else {
+    entry.model = model;
+  }
+}
+
+function getModelReference(
+  request: Request,
+  value: Reference,
+): void | ModelReference {
+  const entry = request.modelEntries.get(value);
+  return getEntryReference(entry);
+}
+
+function setModelReference(
+  request: Request,
+  value: Reference,
+  reference: ModelReference,
+): void {
+  const entry = request.modelEntries.get(value);
+  request.modelEntries.set(
+    value,
+    createModelEntry(entry === undefined ? undefined : entry.model, reference),
+  );
+}
+
+function setModelReferenceIfAbsent(
+  request: Request,
+  value: Reference,
+  reference: ModelReference,
+): void {
+  const entry = request.modelEntries.get(value);
+  if (entry === undefined) {
+    request.modelEntries.set(value, createModelEntry(undefined, reference));
+  } else if (entry.root === undefined) {
+    request.modelEntries.set(value, createModelEntry(entry.model, reference));
+  }
+}
+
+function resolveBoxedModel(
+  resolve: (model: ReactClientValue) => void,
+  model: ReactClientValue,
+): void {
+  resolve({value: model});
+}
+
+function markErroredModel(
+  request: Request,
+  task: Task,
+  model: ReactClientValue,
+  keyPath: ReactKey,
+  implicitSlot: boolean,
+  rendered: ReactClientValue = undefined,
+): void {
+  if (model === null || typeof model !== 'object') {
+    return;
+  }
+  const models = getRenderedModels(request, model, keyPath, implicitSlot);
+  const copy =
+    rendered === undefined ? getRenderedModel(models, model) : rendered;
+  if (
+    copy !== null &&
+    typeof copy === 'object' &&
+    copy !== task.promise &&
+    (copy as any).$$typeof !== REACT_LAZY_TYPE
+  ) {
+    let outlinedModels = request.outlinedModels;
+    if (outlinedModels === null) {
+      request.outlinedModels = outlinedModels = new WeakMap();
+    }
+    outlinedModels.set(copy, task);
+    request.hasByValueModels = true;
+  }
+  setRenderedModel(
+    models,
+    model,
+    (model as any).$$typeof === REACT_ELEMENT_TYPE
+      ? createLazyWrapperAroundWakeable(task.promise as any)
+      : task.promise,
+  );
+}
+
+function renderModelReference(
+  task: Task,
+  model: ReactClientValue,
+): ReactClientValue {
+  task.isModelReference = true;
+  return model;
+}
+
+function addModelDependency(
+  task: Task,
+  promise: ResultModel<ReactClientValue>,
+): void {
+  let dependencies = task.modelDependencies;
+  if (dependencies === null) {
+    task.modelDependencies = dependencies = new Set();
+  }
+  dependencies.add(promise);
+}
+
+function getOutlinedModelDependencies(
+  request: Request,
+  model: ReactClientValue,
+  outlinedModels: WeakMap<Reference, Task>,
+): Set<ResultModel<ReactClientValue>> {
+  const resolvingModels =
+    request.resolvingModels === null
+      ? new Set(request.resolvingModelStack)
+      : request.resolvingModels;
+  request.resolvingModels = resolvingModels;
+  type Record = {
+    model: Reference,
+    index: number,
+    low: number,
+    active: boolean,
+    stable: boolean,
+    dependencies: Set<ResultModel<ReactClientValue>>,
+    ready: null | ResultModel<ReactClientValue>,
+  };
+  const cache: WeakMap<Reference, null | ResultModel<ReactClientValue>> =
+    request.outlinedModelDependencies === null
+      ? new WeakMap()
+      : request.outlinedModelDependencies;
+  request.outlinedModelDependencies = cache;
+  const records: Map<Reference, Record> = new Map();
+  const stack: Array<Record> = [];
+  let index = 0;
+  function visit(value: any, parent: null | Record): void {
+    if (value === null || typeof value !== 'object') {
+      return;
+    }
+    const outlinedTask = outlinedModels.get(value);
+    if (outlinedTask !== undefined) {
+      if (parent !== null && outlinedTask.status !== COMPLETED) {
+        parent.dependencies.add(outlinedTask.promise);
+      }
+      return;
+    }
+    const cached = cache.get(value);
+    if (cached !== undefined) {
+      if (parent !== null && cached !== null && cached.status !== 'fulfilled') {
+        parent.dependencies.add(cached);
+      }
+      return;
+    }
+    const existing = records.get(value);
+    if (existing !== undefined) {
+      if (parent !== null) {
+        if (existing.active) {
+          parent.low = Math.min(parent.low, existing.index);
+        } else {
+          if (
+            existing.ready !== null &&
+            existing.ready.status !== 'fulfilled'
+          ) {
+            parent.dependencies.add(existing.ready);
+          }
+          parent.stable = parent.stable && existing.stable;
+        }
+      }
+      return;
+    }
+    const record: Record = {
+      model: value,
+      index,
+      low: index++,
+      active: true,
+      stable: !resolvingModels.has(value),
+      dependencies: new Set(),
+      ready: null,
+    };
+    records.set(value, record);
+    stack.push(record);
+    visitFields(value, record);
+    if (record.low === record.index) {
+      const members: Array<Record> = [];
+      let member;
+      do {
+        member = stack[stack.length - 1];
+        stack.length--;
+        members.push(member);
+        member.dependencies.forEach(dependency =>
+          record.dependencies.add(dependency),
+        );
+        record.stable = record.stable && member.stable;
+      } while (member !== record);
+      const dependencies = record.dependencies;
+      dependencies.forEach(dependency => {
+        if (dependency.status === 'fulfilled') {
+          dependencies.delete(dependency);
+        }
+      });
+      if (dependencies.size === 1) {
+        dependencies.forEach(dependency => {
+          record.ready = dependency;
+        });
+      } else if (dependencies.size > 1) {
+        const ready = createResultModel<ReactClientValue>();
+        record.ready = ready;
+        let remaining = dependencies.size;
+        dependencies.forEach(dependency => {
+          dependency.then(
+            () => {
+              if (--remaining === 0) {
+                fulfillResultModel(ready, undefined);
+              }
+            },
+            error => {
+              copyErrorReference(request.result, ready, dependency);
+              rejectResultModel(ready, error);
+            },
+          );
+        });
+      }
+      for (let i = 0; i < members.length; i++) {
+        member = members[i];
+        member.active = false;
+        member.stable = record.stable;
+        member.ready = record.ready;
+        member.dependencies.clear();
+        if (record.stable) {
+          cache.set(member.model, record.ready);
+        }
+      }
+    }
+    if (parent !== null) {
+      if (record.active) {
+        parent.low = Math.min(parent.low, record.low);
+      } else {
+        if (record.ready !== null && record.ready.status !== 'fulfilled') {
+          parent.dependencies.add(record.ready);
+        }
+        parent.stable = parent.stable && record.stable;
+      }
+    }
+  }
+  function visitFields(value: any, record: Record): void {
+    const kind = getModelInfo(request.result, value) & MODEL_KIND_MASK;
+    if (
+      kind === 0 &&
+      (isClientReference(value) ||
+        getValueReference(request.result, value) !== undefined)
+    ) {
+      return;
+    }
+    if (
+      kind === MODEL_ELEMENT ||
+      (kind === 0 && value.$$typeof === REACT_ELEMENT_TYPE)
+    ) {
+      visit(value.type, record);
+      visit(value.props, record);
+    } else if (
+      kind === 0 &&
+      (value.$$typeof === REACT_LAZY_TYPE || typeof value.then === 'function')
+    ) {
+      return;
+    } else if (kind === MODEL_ARRAY || (kind === 0 && isArray(value))) {
+      for (let i = 0; i < value.length; i++) {
+        visit(value[i], record);
+      }
+    } else {
+      const keys = Object.keys(value);
+      for (let i = 0; i < keys.length; i++) {
+        visit(value[keys[i]], record);
+      }
+    }
+  }
+  visit(model, null);
+  const dependencies: Set<ResultModel<ReactClientValue>> = new Set();
+  if (model !== null && typeof model === 'object') {
+    const ownTask = outlinedModels.get(model);
+    if (ownTask !== undefined) {
+      if (ownTask.status !== COMPLETED) {
+        dependencies.add(ownTask.promise);
+      }
+    } else {
+      const record = records.get(model);
+      const ready = record === undefined ? cache.get(model) : record.ready;
+      if (
+        ready !== undefined &&
+        ready !== null &&
+        ready.status !== 'fulfilled'
+      ) {
+        dependencies.add(ready);
+      }
+    }
+  }
+  return dependencies;
+}
+
+function resolveOutlinedModel(
+  request: Request,
+  model: ReactClientValue,
+  outlinedModels: WeakMap<Reference, Task>,
+): ReactClientValue {
+  const visited: WeakMap<Reference, ReactClientValue> =
+    request.resolvedOutlinedModels === null
+      ? new WeakMap()
+      : request.resolvedOutlinedModels;
+  request.resolvedOutlinedModels = visited;
+  function resolve(value: any): any {
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    if (visited.has(value)) {
+      return visited.get(value);
+    }
+    visited.set(value, value);
+    const dependency = outlinedModels.get(value);
+    if (dependency !== undefined && value !== dependency.model) {
+      visited.set(value, dependency.model);
+      const resolved = resolve(dependency.model);
+      visited.set(value, resolved);
+      return resolved;
+    }
+    const kind = getModelInfo(request.result, value) & MODEL_KIND_MASK;
+    if (
+      kind === 0 &&
+      (isClientReference(value) ||
+        getValueReference(request.result, value) !== undefined)
+    ) {
+      return value;
+    }
+    if (
+      kind === MODEL_ELEMENT ||
+      (kind === 0 && value.$$typeof === REACT_ELEMENT_TYPE)
+    ) {
+      const type = resolve(value.type);
+      if (type !== value.type) {
+        value.type = type;
+      }
+      const props = resolve(value.props);
+      if (props !== value.props) {
+        value.props = props;
+      }
+    } else if (
+      kind === 0 &&
+      (value.$$typeof === REACT_LAZY_TYPE || typeof value.then === 'function')
+    ) {
+      return value;
+    } else if (kind === MODEL_ARRAY || (kind === 0 && isArray(value))) {
+      for (let i = 0; i < value.length; i++) {
+        if (hasOwnProperty.call(value, i)) {
+          const child = resolve(value[i]);
+          if (!Object.is(child, value[i])) {
+            value[i] = child;
+          }
+        }
+      }
+    } else {
+      const keys = Object.keys(value);
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        const child = resolve(value[key]);
+        if (!Object.is(child, value[key])) {
+          value[key] = child;
+        }
+      }
+    }
+    return value;
+  }
+  return resolve(model);
+}
+
+function renderOutlinedElement(
+  request: Request,
+  task: Task,
+  element: ReactElement,
+  model: ReactClientValue,
+  keyPath: ReactKey,
+  implicitSlot: boolean,
+  dependencies: null | Set<ResultModel<ReactClientValue>>,
+): ReactClientValue {
+  const outlinedModels = request.outlinedModels;
+  const elementModel: ReactClientValue = element as any;
+  if (outlinedModels !== null && dependencies !== null) {
+    const newTask = createTask(
+      request,
+      elementModel,
+      null,
+      false,
+      task.formatContext,
+    );
+    blockTask(request, newTask, elementModel, dependencies);
+    const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
+    outlinedModels.set(element, newTask);
+    outlinedModels.set(newTask.promise, newTask);
+    if (model !== null && typeof model === 'object') {
+      setRenderedModel(
+        getRenderedModels(request, model, keyPath, implicitSlot),
+        model,
+        lazy,
+      );
+    }
+    return renderModelReference(task, lazy);
+  }
+  return elementModel;
+}
+
+function waitForOutlinedModel(
+  request: Request,
+  task: Task,
+  model: ReactClientValue,
+  outlinedModels: WeakMap<Reference, Task>,
+): boolean {
+  const dependencies = getOutlinedModelDependencies(
+    request,
+    model,
+    outlinedModels,
+  );
+  if (dependencies.size === 0) {
+    return false;
+  }
+  blockTask(request, task, model, dependencies);
+  return true;
+}
+
+function blockTask(
+  request: Request,
+  task: Task,
+  model: ReactClientValue,
+  dependencies: Set<ResultModel<ReactClientValue>>,
+): void {
+  task.model = model;
+  task.status = BLOCKED;
+  let remaining = dependencies.size;
+  dependencies.forEach(dependency => {
+    const resolve = () => {
+      if (task.status !== BLOCKED) {
+        return;
+      }
+      if (--remaining === 0) {
+        const outlinedModels = request.outlinedModels;
+        completeTask(
+          request,
+          task,
+          outlinedModels === null
+            ? model
+            : resolveOutlinedModel(request, model, outlinedModels),
+        );
+        scheduleMicrotask(() => performWork(request));
+      }
+    };
+    const reject = (error: mixed) => {
+      if (task.status !== BLOCKED) {
+        return;
+      }
+      copyErrorReference(request.result, task.promise, dependency);
+      task.status = ERRORED;
+      task.reject(error);
+      request.abortableTasks.delete(task);
+      scheduleMicrotask(() => performWork(request));
+    };
+    if (dependency.status === 'fulfilled') {
+      resolve();
+    } else if (dependency.status === 'rejected') {
+      reject(dependency.reason);
+    } else {
+      dependency.then(resolve, reject);
+    }
+  });
+}
+
+function completeTask(
+  request: Request,
+  task: Task,
+  resolvedModel: ReactClientValue,
+): void {
+  task.model = resolvedModel;
+  task.status = COMPLETED;
+  if (
+    resolvedModel !== null &&
+    typeof resolvedModel === 'object' &&
+    (resolvedModel as any).$$typeof === REACT_LAZY_TYPE &&
+    getModelInfo(request.result, resolvedModel) === 0
+  ) {
+    const lazy: LazyComponent<
+      ReactClientValue,
+      ResultModel<ReactClientValue>,
+    > = resolvedModel as any;
+    const outlinedModels = request.outlinedModels;
+    if (outlinedModels === null || !outlinedModels.has(lazy._payload)) {
+      const source = lazy._payload;
+      forwardModelReference(request.result, task.promise, source);
+      source.then(task.resolve, error => {
+        copyErrorReference(request.result, task.promise, source);
+        task.reject(error);
+      });
+      request.abortableTasks.delete(task);
+      return;
+    }
+  }
+  task.resolve(resolvedModel);
+  request.abortableTasks.delete(task);
+}
+
+function deferTask(request: Request, task: Task): ReactClientValue {
+  const newTask = createTask(
+    request,
+    task.model,
+    task.keyPath,
+    task.implicitSlot,
+    task.formatContext,
+  );
+  const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
+  const model = task.model;
+  if (model !== null && typeof model === 'object') {
+    setModelReference(request, model, newTask.reference);
+    setRenderedModel(
+      getRenderedModels(request, model, task.keyPath, task.implicitSlot),
+      model,
+      lazy,
+    );
+  }
+  pingTask(request, newTask);
+  return renderModelReference(task, lazy);
 }

@@ -21,6 +21,8 @@ import {
   waitForHints,
   subscribeToResult,
   getErrorReference,
+  getValueReference,
+  getModelInfo,
 } from 'shared/ReactFlightResult';
 import noop from 'shared/noop';
 
@@ -69,6 +71,8 @@ function subscribeToThenable(
 export function createInput(result: Result<ReactClientValue>): Input {
   return {
     root: getRoot(result),
+    getValueReference: value => getValueReference(result, value),
+    getModelInfo: value => getModelInfo(result, value),
     subscribeToThenable: (thenable, reader) =>
       subscribeToThenable(result, thenable, reader),
     subscribe(reader) {

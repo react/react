@@ -8,8 +8,14 @@
  */
 
 import type {ResultModel} from 'shared/ReactFlightResultModel';
-import type {ErrorReference} from 'shared/ReactFlightResult';
+import type {ErrorReference, ModelReference} from 'shared/ReactFlightResult';
 import type {ReactStackTrace, ReactKey} from 'shared/ReactTypes';
+import {
+  MODEL_KIND_MASK,
+  MODEL_OBJECT,
+  MODEL_ARRAY,
+  MODEL_ELEMENT,
+} from 'shared/ReactFlightResult';
 import {describeObjectForErrorMessage} from 'shared/ReactSerializationErrors';
 import type {
   ReactClientValue,
@@ -57,6 +63,8 @@ const PENDING = 0;
 const COMPLETED = 1;
 const ERRORED = 4;
 const RENDERING = 6;
+const ObjectPrototype = Object.prototype;
+const {getPrototypeOf} = Object;
 
 type Task = {
   id: number,
@@ -79,6 +87,8 @@ type ModelParent = ReactClientObject | $ReadOnlyArray<ReactClientValue>;
 
 export type Input = {
   +root: ResultModel<ReactClientValue>,
+  getValueReference: Object => void | ModelReference,
+  getModelInfo: Object => number,
   subscribe: ({
     hint: (HintCode, HintModel<any>) => void,
     complete: () => void,
@@ -102,6 +112,7 @@ export type Request = {
   nextChunkId: number,
   completedImportChunks: Array<Chunk>,
   writtenModels: WeakMap<Object, number>,
+  writtenObjects: WeakMap<Object, string>,
   pingedTasks: Array<Task>,
   inputSubscriptions: Set<() => void>,
   writtenSymbols: Map<symbol, number>,
@@ -129,6 +140,7 @@ function RequestInstance(
   this.nextChunkId = 1;
   this.completedImportChunks = [];
   this.writtenModels = new WeakMap();
+  this.writtenObjects = new WeakMap();
   this.pingedTasks = [];
   this.inputSubscriptions = new Set();
   this.writtenSymbols = new Map();
@@ -183,8 +195,66 @@ function serializeUndefined(): string {
   return '$undefined';
 }
 
+let modelRoot: null | ReactClientValue = null;
+
+function outlineModel(request: Request, value: ReactClientValue): number {
+  const task = createTask(request, value);
+  if (value !== null && typeof value === 'object') {
+    request.writtenObjects.set(value, serializeByValueID(task.id));
+  }
+  retryTask(request, task);
+  return task.id;
+}
+
+function renderObjectReference(
+  request: Request,
+  task: Task,
+  parent: ModelParent,
+  key: string,
+  value: Object,
+): null | string {
+  const writtenObjects = request.writtenObjects;
+  const existingReference = writtenObjects.get(value);
+  if (existingReference !== undefined) {
+    if (modelRoot === value) {
+      if (existingReference !== serializeByValueID(task.id)) {
+        return existingReference;
+      }
+      modelRoot = null;
+    } else {
+      return existingReference;
+    }
+  } else if (key.indexOf(':') !== -1) {
+    return serializeByValueID(outlineModel(request, value));
+  } else {
+    const parentReference = writtenObjects.get(parent);
+    if (parentReference !== undefined) {
+      let propertyName = key;
+      if (isArray(parent) && parent[0] === REACT_ELEMENT_TYPE) {
+        switch (key) {
+          case '1':
+            propertyName = 'type';
+            break;
+          case '2':
+            propertyName = 'key';
+            break;
+          case '3':
+            propertyName = 'props';
+            break;
+          case '4':
+            propertyName = '_owner';
+            break;
+        }
+      }
+      writtenObjects.set(value, parentReference + ':' + propertyName);
+    }
+  }
+  return null;
+}
+
 function renderModelDestructive(
   request: Request,
+  task: Task,
   parent: ModelParent,
   parentPropertyName: string,
   value: ReactClientValue,
@@ -197,6 +267,7 @@ function renderModelDestructive(
     const clientReference: ClientReference<any> = value as any;
     return serializeClientReference(
       request,
+      task,
       parent,
       parentPropertyName,
       clientReference,
@@ -206,6 +277,50 @@ function renderModelDestructive(
     return null;
   }
   if (typeof value === 'object') {
+    const input = request.input;
+    const reference =
+      input === null ? undefined : input.getValueReference(value);
+    if (reference !== undefined) {
+      const id = serializeThenable(request, reference.root);
+      const path = [];
+      let location = reference;
+      let ancestor = location.parent;
+      while (ancestor !== null) {
+        path.push(location.key);
+        location = ancestor;
+        ancestor = location.parent;
+      }
+      let name = serializeByValueID(id);
+      for (let i = path.length - 1; i >= 0; i--) {
+        name += ':' + path[i];
+      }
+      return name;
+    }
+    const kind =
+      input === null ? 0 : input.getModelInfo(value) & MODEL_KIND_MASK;
+    if (
+      kind === MODEL_OBJECT ||
+      kind === MODEL_ARRAY ||
+      kind === MODEL_ELEMENT ||
+      (kind === 0 &&
+        (isArray(value) ||
+          (value as any).$$typeof === REACT_ELEMENT_TYPE ||
+          getPrototypeOf(value) === ObjectPrototype))
+    ) {
+      const objectReference = renderObjectReference(
+        request,
+        task,
+        parent,
+        parentPropertyName,
+        value,
+      );
+      if (objectReference !== null) {
+        return objectReference;
+      }
+    }
+    if (kind === MODEL_OBJECT || kind === MODEL_ARRAY) {
+      return value as any;
+    }
     if ((value as any).$$typeof === REACT_LAZY_TYPE) {
       const lazy: LazyComponent<ReactClientValue, any> = value as any;
       return serializeLazyID(serializeThenable(request, lazy._payload));
@@ -213,14 +328,22 @@ function renderModelDestructive(
     if (typeof (value as any).then === 'function') {
       return serializePromiseID(serializeThenable(request, value as any));
     }
-    if ((value as any).$$typeof === REACT_ELEMENT_TYPE) {
+    if (
+      kind === MODEL_ELEMENT ||
+      (value as any).$$typeof === REACT_ELEMENT_TYPE
+    ) {
       const element: ReactElement = value as any;
-      return renderClientElement(
+      const tuple = renderClientElement(
         element.type,
         element.key,
         element.props,
         __DEV__ ? element._store.validated : 0,
       );
+      const elementReference = request.writtenObjects.get(value);
+      if (elementReference !== undefined) {
+        request.writtenObjects.set(tuple as any, elementReference);
+      }
+      return tuple;
     }
     return value as any;
   }
@@ -262,12 +385,14 @@ function renderModelDestructive(
 
 function resolveModel(
   request: Request,
+  task: Task,
   parent: ModelParent,
   parentPropertyName: string,
   value: ReactClientValue,
 ): ReactJSONValue {
   const rendered = renderModelDestructive(
     request,
+    task,
     parent,
     parentPropertyName,
     value,
@@ -279,7 +404,13 @@ function resolveModel(
     let resolved: null | Array<ReactClientValue> = null;
     for (let i = 0; i < rendered.length; i++) {
       const child = rendered[i];
-      const resolvedValue = resolveModel(request, rendered, '' + i, child);
+      const resolvedValue = resolveModel(
+        request,
+        task,
+        rendered,
+        '' + i,
+        child,
+      );
       if (resolved === null && resolvedValue !== child) {
         resolved = i === 0 ? [] : rendered.slice(0, i);
       }
@@ -293,7 +424,7 @@ function resolveModel(
   for (const key in rendered) {
     if (hasOwnProperty.call(rendered, key)) {
       const child = rendered[key];
-      const resolvedValue = resolveModel(request, rendered, key, child);
+      const resolvedValue = resolveModel(request, task, rendered, key, child);
       if (resolved === null && resolvedValue !== child) {
         resolved = {} as {[key: string]: ReactClientValue};
         for (const previousKey in rendered) {
@@ -457,7 +588,15 @@ function retryTask(request: Request, task: Task): void {
   task.status = RENDERING;
   try {
     const model = task.model;
-    const resolvedModel = resolveModel(request, {'': model}, '', model);
+    modelRoot = model;
+    if (
+      model !== null &&
+      typeof model === 'object' &&
+      !request.writtenObjects.has(model)
+    ) {
+      request.writtenObjects.set(model, serializeByValueID(task.id));
+    }
+    const resolvedModel = resolveModel(request, task, {'': model}, '', model);
     const json = JSON.stringify(resolvedModel);
     emitModelChunk(request, task.id, json);
     task.status = COMPLETED;
@@ -491,6 +630,7 @@ function performWork(request: Request): void {
 
 function serializeClientReference(
   request: Request,
+  task: Task,
   parent: ModelParent,
   parentPropertyName: string,
   clientReference: ClientReference<any>,
@@ -508,7 +648,7 @@ function serializeClientReference(
     const clientReferenceMetadata: ClientReferenceMetadata =
       resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
     const model: ReactClientValue = clientReferenceMetadata as any;
-    const metadata = resolveModel(request, {'': model}, '', model);
+    const metadata = resolveModel(request, task, {'': model}, '', model);
     const json: string = JSON.stringify(metadata);
     request.pendingChunks++;
     const importId = request.nextChunkId++;
