@@ -131,7 +131,7 @@ describe('ReactFlightResultTurbopackDOMNode', () => {
     return {delayedStream, resolveDelayedStream};
   }
 
-  it.skip('should allow an alternative module mapping to be used for SSR', async () => {
+  it('should allow an alternative module mapping to be used for SSR', async () => {
     function ClientComponent() {
       return <span>Client Component</span>;
     }

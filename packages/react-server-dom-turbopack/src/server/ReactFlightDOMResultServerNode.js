@@ -7,20 +7,67 @@
  * @flow
  */
 
-export function renderToResult(model: mixed, options?: mixed): empty {
-  throw new Error('Not implemented.');
+import type {
+  Request,
+  ReactClientValue,
+} from 'react-server/src/ReactFlightResultServer';
+import type {Result} from 'shared/ReactFlightResult';
+import type {PipeableStream} from './ReactFlightDOMResultSerializationServerNode';
+import type {ClientManifest} from './ReactFlightServerConfigTurbopackBundler';
+import {
+  createRequest,
+  createPrerenderRequest,
+  getResult,
+  startWork,
+  attachAbortSignal,
+} from 'react-server/src/ReactFlightResultServer';
+import {createInput} from 'react-server/src/ReactFlightResultSerialization';
+import {renderToPipeableStream} from './ReactFlightDOMResultSerializationServerNode';
+
+type Options = {onError?: mixed => ?string, signal?: AbortSignal};
+
+export function renderToResult(
+  model: ReactClientValue,
+  options?: Options,
+): Result<ReactClientValue> {
+  const request = createRequest(model, options ? options.onError : undefined);
+  startWork(request);
+  if (options && options.signal) {
+    attachAbortSignal(request, options.signal);
+  }
+  return getResult(request);
 }
 
-export function prerenderToResult(model: mixed, options?: mixed): empty {
-  throw new Error('Not implemented.');
+export function prerenderToResult(
+  model: ReactClientValue,
+  options?: Options,
+): Promise<Result<ReactClientValue>> {
+  return new Promise((resolve, reject) => {
+    const request: Request = createPrerenderRequest(
+      model,
+      () => resolve(getResult(request)),
+      reject,
+      options ? options.onError : undefined,
+    );
+    startWork(request);
+    const signal = options ? options.signal : undefined;
+    if (signal) {
+      attachAbortSignal(request, signal);
+    }
+  });
 }
 
 export function renderResultToPipeableStream(
-  result: mixed,
-  turbopackMap: mixed,
-  options?: mixed,
-): empty {
-  throw new Error('Not implemented.');
+  result: Result<ReactClientValue>,
+  turbopackMap: ClientManifest,
+  options?: Options,
+): PipeableStream {
+  const input = createInput(result);
+  return renderToPipeableStream(
+    input,
+    turbopackMap,
+    options ? options.onError : undefined,
+  );
 }
 
 export function renderResultToReadableStream(
