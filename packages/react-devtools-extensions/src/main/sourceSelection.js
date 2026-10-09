@@ -12,12 +12,14 @@ export function viewAttributeSource(rendererID, elementID, path) {
   );
 }
 
-export function viewElementSource(rendererID, elementID) {
+export function viewElementSource(rendererID, elementID, onComplete) {
   evalInInspectedWindow(
     'viewElementSource',
     [{rendererID, elementID}],
     (didInspect, evalError) => {
-      if (evalError) {
+      if (onComplete) {
+        onComplete(didInspect === true && !evalError);
+      } else if (evalError) {
         console.error(evalError);
       }
     },
