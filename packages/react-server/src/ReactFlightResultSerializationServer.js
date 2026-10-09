@@ -48,6 +48,7 @@ import {
   closeWithError,
   stringToChunk,
   scheduleWork,
+  scheduleMicrotask,
 } from './ReactServerStreamConfig';
 import {
   REACT_ELEMENT_TYPE,
@@ -96,6 +97,14 @@ type Task = {
   model: ReactClientValue,
   status: 0 | 1 | 3 | 4 | 6,
 };
+export type InputSequenceEntry = {done?: boolean, value: ReactClientValue};
+export type InputSequenceReader = {
+  progress: InputSequenceEntry => void,
+  error: (mixed, void | ErrorReference) => void,
+  rejectEntry: (mixed, void | ErrorReference) => void,
+  halt: () => void,
+};
+
 export type InputThenableReader = {
   halt: () => void,
   resolve: ReactClientValue => void,
@@ -114,6 +123,10 @@ type ModelParent = ReactClientObject | $ReadOnlyArray<ReactClientValue>;
 export type Input = {
   +root: ResultModel<ReactClientValue>,
   temporaryReferences: void | TemporaryReferenceSet,
+  getReadableStream: Object => void | {
+    isByteStream: boolean,
+    subscribe: InputSequenceReader => () => void,
+  },
   getIteratorEntries: Object => void | $ReadOnlyArray<mixed>,
   getServerReference: Object => void | ServerReferenceMetadata,
   getValueReference: Object => void | ModelReference,
@@ -408,6 +421,9 @@ function renderModelDestructive(
           (typeof Blob === 'function' && value instanceof Blob) ||
           value instanceof ArrayBuffer ||
           ArrayBuffer.isView(value) ||
+          (input !== null &&
+            (input.getReadableStream(value) !== undefined ||
+              input.getIteratorEntries(value) !== undefined)) ||
           getPrototypeOf(value) === ObjectPrototype))
     ) {
       const objectReference = renderObjectReference(
@@ -526,6 +542,9 @@ function renderModelDestructive(
         throw new Error('A Result must record iterators before serialization.');
       }
       return serializeIterator(request, entries as any);
+    }
+    if (input !== null && input.getReadableStream(value) !== undefined) {
+      return serializeReadableStream(request, task, value);
     }
     return value as any;
   }
@@ -1358,4 +1377,118 @@ function serializeIterator(
 ): string {
   const id = outlineModel(request, entries);
   return '$i' + id.toString(16);
+}
+
+function serializeReadableStream(
+  request: Request,
+  task: Task,
+  stream: Object,
+): string {
+  const input = request.input;
+  const source = input === null ? undefined : input.getReadableStream(stream);
+  if (source === undefined) {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error('A Result must record streams before serialization.');
+  }
+  const isByteStream = source.isByteStream;
+
+  const streamTask = createTask(request, task.model);
+  // The task represents the Stop row. This adds a Start row.
+  request.pendingChunks++;
+  const startStreamRow =
+    streamTask.id.toString(16) + ':' + (isByteStream ? 'r' : 'R') + '\n';
+  request.writtenObjects.set(stream, serializeByValueID(streamTask.id));
+  request.completedRegularChunks.push(stringToChunk(startStreamRow));
+
+  function progress(entry: InputSequenceEntry): void {
+    if (streamTask.status !== PENDING) {
+      return;
+    }
+    if (entry.done) {
+      streamTask.status = COMPLETED;
+      const endStreamRow = streamTask.id.toString(16) + ':C\n';
+      request.completedRegularChunks.push(stringToChunk(endStreamRow));
+      enqueueFlush(request);
+    } else {
+      request.pendingChunks++;
+      let pendingEntry = true;
+      try {
+        streamTask.model = entry.value;
+        if (isByteStream) {
+          const chunk: Uint8Array = streamTask.model as any;
+          emitTypedArrayChunk(request, streamTask.id, 'b', chunk);
+        } else {
+          tryStreamTask(request, streamTask);
+        }
+        pendingEntry = false;
+        enqueueFlush(request);
+      } catch (reason) {
+        if (pendingEntry) {
+          request.pendingChunks--;
+        }
+        error(reason, undefined);
+      }
+    }
+  }
+  function error(reason: mixed, reference: void | ErrorReference): void {
+    if (streamTask.status === PENDING) {
+      try {
+        erroredInputTask(request, streamTask, reason, reference);
+        scheduleMicrotask(() => flushCompletedChunks(request));
+      } catch (fatal) {
+        fatalError(request, fatal);
+      }
+    }
+  }
+
+  subscribeInput(request, detach =>
+    source.subscribe({
+      progress(entry) {
+        progress(entry);
+        if (streamTask.status !== PENDING) {
+          detach();
+        }
+      },
+      error(reason, reference) {
+        detach();
+        error(reason, reference);
+      },
+      rejectEntry(reason, reference) {
+        detach();
+        error(reason, reference);
+      },
+      halt() {
+        detach();
+        if (streamTask.status === PENDING) {
+          haltInputTask(request, streamTask);
+        }
+      },
+    }),
+  );
+  return serializeByValueID(streamTask.id);
+}
+
+function tryStreamTask(request: Request, task: Task): void {
+  const previousModelRoot = modelRoot;
+  try {
+    modelRoot = null;
+    const resolvedModel = resolveModel(
+      request,
+      task,
+      {'': task.model},
+      '',
+      task.model,
+    );
+    emitModelChunk(request, task.id, JSON.stringify(resolvedModel));
+  } finally {
+    modelRoot = previousModelRoot;
+  }
+}
+
+function haltInputTask(request: Request, task: Task): void {
+  if (task.status === PENDING) {
+    task.status = ABORTED;
+    request.pendingChunks--;
+    enqueueFlush(request);
+  }
 }

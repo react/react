@@ -9,6 +9,7 @@
 
 import type {ReactElement} from 'shared/ReactElementType';
 import type {Result, ModelReference} from 'shared/ReactFlightResult';
+import {createReadableStream} from 'shared/ReactFlightResultReadableStream';
 import type {ResultModel} from 'shared/ReactFlightResultModel';
 import type {TemporaryReferenceSet} from './ReactFlightServerTemporaryReferences';
 import {
@@ -62,6 +63,7 @@ import {
   createValueReference,
   getValueReference,
   markFormDataWithBlobs,
+  setReadableStream,
   setIteratorEntries,
   getIteratorEntries,
   setServerReference,
@@ -1244,6 +1246,12 @@ function renderModelDestructive(
       task,
       Array.from(iterator as any),
       value as any,
+    );
+  }
+  if (typeof ReadableStream === 'function' && value instanceof ReadableStream) {
+    return renderModelReference(
+      task,
+      renderReadableStream(request, task, value),
     );
   }
   if (Object.getPrototypeOf(value) !== ObjectPrototype) {
@@ -2998,4 +3006,190 @@ function renderIterator(
     copy[i] = resolveModel(request, task, entries, '' + i, entries[i]);
   }
   return resolvedIterator;
+}
+
+function renderReadableStream(
+  request: Request,
+  task: Task,
+  stream: ReadableStream,
+): ReactClientValue {
+  // $FlowFixMe[prop-missing] This is a Node.js extension.
+  let supportsBYOB: void | boolean = stream.supportsBYOB;
+  if (supportsBYOB === undefined) {
+    try {
+      // $FlowFixMe[extra-arg] This argument is accepted.
+      stream.getReader({mode: 'byob'}).releaseLock();
+      supportsBYOB = true;
+    } catch (x) {
+      supportsBYOB = false;
+    }
+  }
+  const isByteStream: boolean = supportsBYOB;
+  const reader = stream.getReader();
+  const controller = createReadableStream<ReactClientValue>(isByteStream);
+  const streamTask = createTask(
+    request,
+    task.model,
+    task.keyPath,
+    task.implicitSlot,
+    task.formatContext,
+  );
+  const resolvedStream = controller.stream;
+  setRenderedModel(request.modelEntries, stream, resolvedStream);
+  setReadableStream(request.result, controller);
+
+  function progress(entry: {done: boolean, value: ReactClientValue, ...}) {
+    if (streamTask.status !== PENDING) {
+      return;
+    }
+    if (entry.done) {
+      streamTask.status = COMPLETED;
+      request.abortableTasks.delete(streamTask);
+      request.cacheController.signal.removeEventListener('abort', abortStream);
+      controller.close();
+      scheduleMicrotask(() => performWork(request));
+      return;
+    }
+    let entryTask: Task | null = null;
+    try {
+      streamTask.model = entry.value;
+      if (isByteStream) {
+        const value = renderModelDestructive(
+          request,
+          streamTask,
+          emptyRoot,
+          '',
+          entry.value,
+        );
+        controller.enqueue(Promise.resolve(value));
+      } else {
+        entryTask = createTask(
+          request,
+          entry.value,
+          streamTask.keyPath,
+          streamTask.implicitSlot,
+          streamTask.formatContext,
+        );
+        controller.enqueue(entryTask.promise as any);
+        tryStreamTask(request, entryTask);
+      }
+      if (streamTask.status === PENDING) {
+        reader.read().then(progress, error);
+      }
+    } catch (x) {
+      error(x);
+      if (entryTask !== null && entryTask.status === RENDERING) {
+        copyErrorReference(
+          request.result,
+          entryTask.promise,
+          streamTask.promise,
+        );
+        entryTask.status = ERRORED;
+        entryTask.reject(x);
+        request.abortableTasks.delete(entryTask);
+      }
+    }
+  }
+
+  function cancelReader(reason: mixed): void {
+    // $FlowFixMe[incompatible-type] Stream cancellation accepts any reason.
+    reader.cancel(reason).then(noop, noop);
+  }
+
+  function error(reason: mixed): void {
+    if (streamTask.status !== PENDING) {
+      return;
+    }
+    request.cacheController.signal.removeEventListener('abort', abortStream);
+    try {
+      erroredTask(request, streamTask, reason);
+      copyErrorReference(request.result, resolvedStream, streamTask.promise);
+      controller.error(reason);
+    } catch (callbackError) {
+      controller.error(callbackError);
+      fatalError(request, callbackError);
+    } finally {
+      cancelReader(reason);
+      scheduleMicrotask(() => performWork(request));
+    }
+  }
+
+  function abortStream(): void {
+    const signal = request.cacheController.signal;
+    signal.removeEventListener('abort', abortStream);
+    const reason = signal.reason;
+    if (request.type === PRERENDER) {
+      markHalted(request.result, resolvedStream);
+      controller.halt();
+    } else {
+      streamTask.promise.then(noop, abortError => {
+        copyErrorReference(request.result, resolvedStream, streamTask.promise);
+        controller.error(abortError);
+      });
+    }
+    cancelReader(reason);
+  }
+
+  request.cacheController.signal.addEventListener('abort', abortStream);
+  reader.read().then(progress, error);
+  return resolvedStream;
+}
+
+function tryStreamTask(request: Request, task: Task): void {
+  const parentSerializedSize = serializedSize;
+  const prevDispatcher = ReactSharedInternals.H;
+  ReactSharedInternals.H = HooksDispatcher;
+  const prevCache = setCurrentCache(request);
+  prepareToUseHooksForRequest(request);
+  task.status = RENDERING;
+  try {
+    const value = resolveModel(request, task, emptyRoot, '', task.model);
+    const model = value;
+    if (request.status === CLOSED) {
+      return;
+    }
+    if (enableTaint) {
+      validateDeferredBlobs(request);
+    }
+    const outlinedModels = request.outlinedModels;
+    if (
+      outlinedModels !== null &&
+      waitForOutlinedModel(request, task, model, outlinedModels)
+    ) {
+      return;
+    }
+    completeTask(request, task, model);
+  } catch (error) {
+    if (request.status === ABORTING) {
+      abortTask(request, task);
+      return;
+    }
+    throw error;
+  } finally {
+    modelRoot = null;
+    try {
+      if (enableTaint) {
+        validateDeferredBlobs(request);
+      }
+      if (request.status !== CLOSED && request.abortableTasks.size === 0) {
+        request.status = CLOSED;
+        closeHints(request.result);
+        completeResult(request.result);
+        if (enableTaint) {
+          cleanupTaintQueue(request);
+        }
+        request.cacheController.abort(
+          new Error(
+            'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
+          ),
+        );
+        request.onAllReady();
+      }
+    } finally {
+      serializedSize = parentSerializedSize;
+      ReactSharedInternals.H = prevDispatcher;
+      resetHooksForRequest();
+      setCurrentCache(prevCache);
+    }
+  }
 }

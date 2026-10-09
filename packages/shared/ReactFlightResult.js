@@ -9,6 +9,7 @@
 
 import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 import type {ResultModel} from './ReactFlightResultModel';
+import type {ResultStreamController} from './ReactFlightResultReadableStream';
 import type {Thenable} from './ReactTypes';
 import type {
   HintCode,
@@ -59,6 +60,7 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   temporaryReferences: null | WeakMap<Object, string>,
   serverReferences: null | WeakMap<Object, ServerReferenceMetadata>,
   formDataWithBlobs: null | WeakSet<FormData>,
+  readableStreams: null | WeakMap<Object, ResultStreamController<any>>,
   iteratorEntries: null | WeakMap<Object, $ReadOnlyArray<mixed>>,
   collectionEntries: null | WeakMap<Object, ResultModel<Array<any>>>,
   modelInfo: null | Map<Object, number>,
@@ -92,6 +94,7 @@ export function createResult<T>(
     temporaryReferences: null,
     serverReferences: null,
     formDataWithBlobs: null,
+    readableStreams: null,
     iteratorEntries: null,
     collectionEntries: null,
     modelInfo: null,
@@ -404,4 +407,23 @@ export function getIteratorEntries<T>(
 ): void | $ReadOnlyArray<mixed> {
   const iteratorEntries = result.iteratorEntries;
   return iteratorEntries === null ? undefined : iteratorEntries.get(iterator);
+}
+
+export function setReadableStream<T>(
+  result: Result<T>,
+  controller: ResultStreamController<any>,
+): void {
+  let readableStreams = result.readableStreams;
+  if (readableStreams === null) {
+    result.readableStreams = readableStreams = new WeakMap();
+  }
+  readableStreams.set(controller.stream, controller);
+}
+
+export function getReadableStream<T>(
+  result: Result<T>,
+  stream: Object,
+): void | ResultStreamController<any> {
+  const readableStreams = result.readableStreams;
+  return readableStreams === null ? undefined : readableStreams.get(stream);
 }
