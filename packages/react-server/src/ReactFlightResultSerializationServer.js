@@ -22,7 +22,7 @@ import type {
   ReactClientObject,
 } from './ReactFlightResultServer';
 import type {ReactElement} from 'shared/ReactElementType';
-import type {Chunk, Destination} from './ReactServerStreamConfig';
+import type {Chunk, BinaryChunk, Destination} from './ReactServerStreamConfig';
 import type {HintCode, HintModel} from './ReactFlightResultServerConfig';
 import type {
   ClientManifest,
@@ -32,7 +32,10 @@ import type {
 } from './ReactFlightServerConfig';
 import {
   beginWriting,
+  writeChunk,
   writeChunkAndReturn,
+  typedArrayToBinaryChunk,
+  byteLengthOfBinaryChunk,
   completeWriting,
   flushBuffered,
   close,
@@ -59,6 +62,7 @@ import {setCurrentCache} from './flight/ReactFlightCurrentCache';
 const OPENING = 10;
 const CLOSING = 13;
 const CLOSED = 14;
+const NEXT_TWO_CHUNKS_ARE_ATOMIC: symbol = Symbol();
 const PENDING = 0;
 const COMPLETED = 1;
 const ERRORED = 4;
@@ -106,7 +110,9 @@ export type Request = {
   destination: null | Destination,
   status: 10 | 13 | 14,
   fatalError: mixed,
-  completedRegularChunks: Array<Chunk>,
+  completedRegularChunks: Array<
+    Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
+  >,
   pendingChunks: number,
   completedHintChunks: Array<Chunk>,
   flushScheduled: boolean,
@@ -310,6 +316,8 @@ function renderModelDestructive(
           (value as any).$$typeof === REACT_ELEMENT_TYPE ||
           value instanceof Map ||
           value instanceof Set ||
+          value instanceof ArrayBuffer ||
+          ArrayBuffer.isView(value) ||
           getPrototypeOf(value) === ObjectPrototype))
     ) {
       const objectReference = renderObjectReference(
@@ -359,6 +367,57 @@ function renderModelDestructive(
     if (value instanceof Set) {
       return serializeSet(request, value);
     }
+    if (value instanceof ArrayBuffer) {
+      return serializeTypedArray(request, 'A', new Uint8Array(value));
+    }
+    if (value instanceof Int8Array) {
+      // char
+      return serializeTypedArray(request, 'O', value);
+    }
+    if (value instanceof Uint8Array) {
+      // unsigned char
+      return serializeTypedArray(request, 'o', value);
+    }
+    if (value instanceof Uint8ClampedArray) {
+      // unsigned clamped char
+      return serializeTypedArray(request, 'U', value);
+    }
+    if (value instanceof Int16Array) {
+      // sort
+      return serializeTypedArray(request, 'S', value);
+    }
+    if (value instanceof Uint16Array) {
+      // unsigned short
+      return serializeTypedArray(request, 's', value);
+    }
+    if (value instanceof Int32Array) {
+      // long
+      return serializeTypedArray(request, 'L', value);
+    }
+    if (value instanceof Uint32Array) {
+      // unsigned long
+      return serializeTypedArray(request, 'l', value);
+    }
+    if (value instanceof Float32Array) {
+      // float
+      return serializeTypedArray(request, 'G', value);
+    }
+    if (value instanceof Float64Array) {
+      // double
+      return serializeTypedArray(request, 'g', value);
+    }
+    if (value instanceof BigInt64Array) {
+      // number
+      return serializeTypedArray(request, 'M', value);
+    }
+    if (value instanceof BigUint64Array) {
+      // unsigned number
+      // We use "m" instead of "n" since JSON can start with "null"
+      return serializeTypedArray(request, 'm', value);
+    }
+    if (value instanceof DataView) {
+      return serializeTypedArray(request, 'V', value);
+    }
     return value as any;
   }
   if (typeof value === 'string') {
@@ -394,6 +453,9 @@ function renderModelDestructive(
     writtenSymbols.set(value, symbolId);
     return serializeByValueID(symbolId);
   }
+  if (typeof value === 'bigint') {
+    return serializeBigInt(value);
+  }
   throw new Error('Not implemented.');
 }
 
@@ -401,6 +463,10 @@ function serializeDate(date: Date): string {
   // JSON.stringify automatically calls Date.prototype.toJSON which calls toISOString.
   // We need only tack on a $D prefix.
   return '$D' + date.toJSON();
+}
+
+function serializeBigInt(n: bigint): string {
+  return '$n' + n.toString(10);
 }
 
 function resolveModel(
@@ -901,8 +967,31 @@ function flushCompletedChunks(request: Request): void {
     const regularChunks = request.completedRegularChunks;
     i = 0;
     for (; i < regularChunks.length; i++) {
-      request.pendingChunks--;
-      const keepWriting = writeChunkAndReturn(destination, regularChunks[i]);
+      const item = regularChunks[i];
+      let keepWriting: boolean;
+      if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
+        if (i + 2 >= regularChunks.length) {
+          throw new Error(
+            'A chunk pair is incomplete. This is a bug in React.',
+          );
+        }
+        request.pendingChunks -= 2;
+        writeChunk(
+          destination,
+          regularChunks[i + 1] as any as Chunk | BinaryChunk,
+        );
+        keepWriting = writeChunkAndReturn(
+          destination,
+          regularChunks[i + 2] as any as Chunk | BinaryChunk,
+        );
+        i += 2;
+      } else {
+        request.pendingChunks--;
+        keepWriting = writeChunkAndReturn(
+          destination,
+          item as any as Chunk | BinaryChunk,
+        );
+      }
       if (!keepWriting) {
         request.destination = null;
         i++;
@@ -1000,4 +1089,39 @@ function serializeSet(request: Request, set: Set<ReactClientValue>): string {
   const entries = Array.from(set);
   const id = outlineModel(request, entries);
   return '$W' + id.toString(16);
+}
+
+function serializeTypedArray(
+  request: Request,
+  tag: string,
+  typedArray: $ArrayBufferView,
+): string {
+  request.pendingChunks++;
+  const bufferId = request.nextChunkId++;
+  emitTypedArrayChunk(request, bufferId, tag, typedArray);
+  return serializeByValueID(bufferId);
+}
+
+function emitTypedArrayChunk(
+  request: Request,
+  id: number,
+  tag: string,
+  typedArray: $ArrayBufferView,
+): void {
+  request.pendingChunks++;
+  const bytes = new Uint8Array(
+    new Uint8Array(
+      typedArray.buffer,
+      typedArray.byteOffset,
+      typedArray.byteLength,
+    ),
+  );
+  const binaryChunk = typedArrayToBinaryChunk(bytes);
+  const binaryLength = byteLengthOfBinaryChunk(binaryChunk);
+  const row = id.toString(16) + ':' + tag + binaryLength.toString(16) + ',';
+  request.completedRegularChunks.push(
+    NEXT_TWO_CHUNKS_ARE_ATOMIC,
+    stringToChunk(row),
+    binaryChunk,
+  );
 }

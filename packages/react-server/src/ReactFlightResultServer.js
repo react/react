@@ -1043,6 +1043,9 @@ function renderModelDestructive(
           new Date('' + date.toJSON()),
     );
   }
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    return renderModelReference(task, value);
+  }
   if (value instanceof Map) {
     return renderModelReference(task, renderMap(request, task, value));
   }
@@ -1965,7 +1968,11 @@ function getOutlinedModelDependencies(
       visit(value.props, record);
     } else if (
       kind === 0 &&
-      (value.$$typeof === REACT_LAZY_TYPE || typeof value.then === 'function')
+      (value.$$typeof === REACT_LAZY_TYPE ||
+        typeof value.then === 'function' ||
+        value instanceof Date ||
+        value instanceof ArrayBuffer ||
+        ArrayBuffer.isView(value))
     ) {
       return;
     } else if (kind === MODEL_ARRAY || (kind === 0 && isArray(value))) {
@@ -2056,7 +2063,11 @@ function resolveOutlinedModel(
       }
     } else if (
       kind === 0 &&
-      (value.$$typeof === REACT_LAZY_TYPE || typeof value.then === 'function')
+      (value.$$typeof === REACT_LAZY_TYPE ||
+        typeof value.then === 'function' ||
+        value instanceof Date ||
+        value instanceof ArrayBuffer ||
+        ArrayBuffer.isView(value))
     ) {
       return value;
     } else if (kind === MODEL_ARRAY || (kind === 0 && isArray(value))) {

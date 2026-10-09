@@ -1146,6 +1146,9 @@ function scanModel(
     if (value instanceof Date) {
       return true;
     }
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+      return true;
+    }
     if (
       value.$$typeof === REACT_ELEMENT_TYPE ||
       value.$$typeof === REACT_LAZY_TYPE ||
@@ -1583,6 +1586,9 @@ function readSpecialModel(response: Response, value: any): any {
       return chunk;
     }
     if (value instanceof Date) {
+      return value;
+    }
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
       return value;
     }
     if (value instanceof Map) {
