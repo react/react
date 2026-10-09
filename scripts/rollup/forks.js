@@ -384,6 +384,50 @@ const forks = Object.freeze({
     );
   },
 
+  './packages/react-server/src/ReactFlightResultServerConfig.js': (
+    bundleType,
+    entry,
+    dependencies,
+    moduleType
+  ) => {
+    if (dependencies.indexOf('react-server') !== -1) {
+      return null;
+    }
+    if (moduleType !== RENDERER && moduleType !== RECONCILER) {
+      return null;
+    }
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (let rendererInfo of inlinedHostConfigs) {
+      if (rendererInfo.entryPoints.indexOf(entry) !== -1) {
+        if (!rendererInfo.isServerSupported) {
+          return null;
+        }
+        if (rendererInfo.isFlightSupported === false) {
+          return new Error(
+            `Expected not to use ReactFlightResultServerConfig with "${entry}" entry point ` +
+              'in ./scripts/shared/inlinedHostConfigs.js. Update the renderer config to ' +
+              'activate flight suppport and add a matching fork implementation for ReactFlightResultServerConfig.'
+          );
+        }
+        const foundFork = findNearestExistingForkFile(
+          './packages/react-server/src/forks/ReactFlightResultServerConfig.',
+          rendererInfo.shortName,
+          '.js'
+        );
+        if (foundFork) {
+          return foundFork;
+        }
+        // fall through to error
+        break;
+      }
+    }
+    throw new Error(
+      'Expected ReactFlightResultServerConfig to always be replaced with a shim, but ' +
+        `found no mention of "${entry}" entry point in ./scripts/shared/inlinedHostConfigs.js. ` +
+        'Did you mean to add it there to associate it with a specific renderer?'
+    );
+  },
+
   './packages/react-client/src/ReactFlightClientConfig.js': (
     bundleType,
     entry,

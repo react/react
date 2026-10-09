@@ -10,9 +10,20 @@
 import type {ReactElement} from 'shared/ReactElementType';
 import type {Result} from 'shared/ReactFlightResult';
 import type {ResultModel} from 'shared/ReactFlightResultModel';
+import type {
+  Hints,
+  HintCode,
+  HintModel,
+  FormatContext,
+} from './ReactFlightResultServerConfig';
 
 import {REACT_ELEMENT_TYPE} from 'shared/ReactSymbols';
-import {createResult, completeResult} from 'shared/ReactFlightResult';
+import {
+  createResult,
+  completeResult,
+  pushHint,
+  closeHints,
+} from 'shared/ReactFlightResult';
 import {
   createResultModel,
   fulfillResultModel,
@@ -21,6 +32,17 @@ import {
 import {scheduleMicrotask} from './ReactServerStreamConfig';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import isArray from 'shared/isArray';
+import {
+  createHints,
+  createRootFormatContext,
+  getChildFormatContext,
+} from './ReactFlightResultServerConfig';
+import {resolveCache, setCurrentCache} from './flight/ReactFlightCurrentCache';
+
+const UNDEFINED_MODEL = Symbol();
+const PENDING = 0;
+const COMPLETED = 1;
+const ERRORED = 4;
 
 export type ReactClientValue =
   | ReactElement
@@ -36,18 +58,53 @@ export type ReactClientValue =
   | ((...args: Array<mixed>) => mixed);
 export type ReactClientObject = {+[key: string]: ReactClientValue};
 const ObjectPrototype = Object.prototype;
-type Task = {model: ReactClientValue, promise: ResultModel<ReactClientValue>};
+type Task = {
+  model: ReactClientValue,
+  promise: ResultModel<ReactClientValue>,
+  status: 0 | 1 | 4,
+  formatContext: FormatContext,
+  isModelReference: boolean,
+};
 export type Request = {
   result: Result<ReactClientValue>,
   pingedTasks: Array<Task>,
+  hints: Hints,
+  cache: Map<Function, mixed>,
+  cacheController: AbortController,
+  modelEntries: WeakMap<Object, ReactClientValue>,
 };
 
 function RequestInstance(this: any, model: ReactClientValue) {
-  const root = createResultModel<ReactClientValue>();
+  this.hints = createHints();
+  this.cache = new Map();
+  this.cacheController = new AbortController();
+  this.modelEntries = new WeakMap();
+  const rootTask = createTask(this, model, createRootFormatContext());
+  const root = rootTask.promise;
   this.result = createResult(root, () => {
     throw new Error('Not implemented.');
   });
-  this.pingedTasks = [{model, promise: root}];
+  this.pingedTasks = [rootTask];
+}
+
+export function resolveRequest(): null | Request {
+  const cache = resolveCache();
+  if (cache instanceof RequestInstance) {
+    return cache as any;
+  }
+  return null;
+}
+
+export function getHints(request: Request): Hints {
+  return request.hints;
+}
+
+export function emitHint<Code: HintCode>(
+  request: Request,
+  code: Code,
+  model: HintModel<Code>,
+): void {
+  pushHint(request.result, code, model);
 }
 
 export function createRequest(model: ReactClientValue): Request {
@@ -96,7 +153,57 @@ function renderElement(
   if (typeof type !== 'string') {
     throw new Error('Not implemented.');
   }
+  const parentFormatContext = task.formatContext;
+  const newFormatContext = getChildFormatContext(
+    parentFormatContext,
+    type,
+    element.props,
+  );
+  if (
+    parentFormatContext !== newFormatContext &&
+    element.props.children != null
+  ) {
+    outlineModelWithFormatContext(
+      request,
+      element.props.children,
+      newFormatContext,
+    );
+  }
   return renderClientElement(request, task, type, element);
+}
+
+function createTask(
+  request: Request,
+  model: ReactClientValue,
+  formatContext: FormatContext,
+): Task {
+  return {
+    model,
+    promise: createResultModel<ReactClientValue>(),
+    status: PENDING,
+    formatContext,
+    isModelReference: false,
+  };
+}
+
+function outlineModelWithFormatContext(
+  request: Request,
+  value: ReactClientValue,
+  formatContext: FormatContext,
+): ReactClientValue {
+  const newTask = createTask(request, value, formatContext);
+  retryTask(request, newTask);
+  if (newTask.status !== COMPLETED) {
+    throw newTask.promise.reason;
+  }
+  const model = newTask.model;
+  if (value !== null && typeof value === 'object') {
+    request.modelEntries.set(
+      value,
+      model === undefined ? UNDEFINED_MODEL : model,
+    );
+  }
+  return model;
 }
 
 function renderClientElement(
@@ -139,6 +246,14 @@ function renderModelDestructive(
   value: ReactClientValue,
 ): ReactClientValue {
   task.model = value;
+  task.isModelReference = false;
+  if (value !== null && typeof value === 'object') {
+    const existingModel = request.modelEntries.get(value);
+    if (existingModel !== undefined) {
+      task.isModelReference = true;
+      return existingModel === UNDEFINED_MODEL ? undefined : existingModel;
+    }
+  }
   if (value === null || typeof value !== 'object') {
     if (typeof value === 'function' || typeof value === 'symbol') {
       throw new Error('Not implemented.');
@@ -164,7 +279,11 @@ function resolveModel(
   value: ReactClientValue,
 ): ReactClientValue {
   const rendered = renderModelDestructive(request, task, value);
-  if (rendered === null || typeof rendered !== 'object') {
+  if (
+    task.isModelReference ||
+    rendered === null ||
+    typeof rendered !== 'object'
+  ) {
     return rendered;
   }
   return resolveModelFields(request, task, rendered);
@@ -215,19 +334,28 @@ function resolveModelFields(
 function retryTask(request: Request, task: Task): void {
   try {
     const resolvedModel = resolveModel(request, task, task.model);
+    task.model = resolvedModel;
+    task.status = COMPLETED;
     fulfillResultModel(task.promise, resolvedModel);
   } catch (error) {
+    task.status = ERRORED;
     rejectResultModel(task.promise, error);
   }
 }
 
 function performWork(request: Request): void {
-  const pingedTasks = request.pingedTasks;
-  request.pingedTasks = [];
-  for (let i = 0; i < pingedTasks.length; i++) {
-    retryTask(request, pingedTasks[i]);
+  const prevCache = setCurrentCache(request);
+  try {
+    const pingedTasks = request.pingedTasks;
+    request.pingedTasks = [];
+    for (let i = 0; i < pingedTasks.length; i++) {
+      retryTask(request, pingedTasks[i]);
+    }
+  } finally {
+    closeHints(request.result);
+    completeResult(request.result);
+    setCurrentCache(prevCache);
   }
-  completeResult(request.result);
 }
 
 export function startWork(request: Request): void {

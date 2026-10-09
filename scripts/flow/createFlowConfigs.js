@@ -87,6 +87,11 @@ function writeConfig(
   addFork(forks, serverRenderer, 'react-server/src/ReactServerStreamConfig');
   addFork(forks, serverRenderer, 'react-server/src/ReactFizzConfig');
   addFork(forks, flightRenderer, 'react-server/src/ReactFlightServerConfig');
+  addFork(
+    forks,
+    flightRenderer,
+    'react-server/src/ReactFlightResultServerConfig',
+  );
   addFork(forks, flightRenderer, 'react-client/src/ReactFlightClientConfig');
   forks.set(
     'react-devtools-shared/src/config/DevToolsFeatureFlags.default',

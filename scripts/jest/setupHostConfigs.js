@@ -183,6 +183,7 @@ const configPaths = [
   'react-server/src/ReactServerStreamConfig',
   'react-server/src/ReactFizzConfig',
   'react-server/src/ReactFlightServerConfig',
+  'react-server/src/ReactFlightResultServerConfig',
 ];
 
 function mockAllConfigs(rendererInfo) {

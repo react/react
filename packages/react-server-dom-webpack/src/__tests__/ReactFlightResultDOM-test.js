@@ -2138,7 +2138,7 @@ describe('ReactFlightResultDOM', () => {
     expect(hintRows.length).toEqual(6);
   });
 
-  it.skip('preloads resources without needing to render them', async () => {
+  it('preloads resources without needing to render them', async () => {
     function NoScriptComponent() {
       return (
         <p>

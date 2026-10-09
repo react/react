@@ -14,6 +14,7 @@ import type {
 } from './ReactFlightResultServer';
 import type {ReactElement} from 'shared/ReactElementType';
 import type {Chunk, Destination} from './ReactServerStreamConfig';
+import type {HintCode, HintModel} from './ReactFlightResultServerConfig';
 import {
   beginWriting,
   writeChunkAndReturn,
@@ -22,10 +23,12 @@ import {
   close,
   closeWithError,
   stringToChunk,
+  scheduleWork,
 } from './ReactServerStreamConfig';
 import {REACT_ELEMENT_TYPE} from 'shared/ReactSymbols';
 import isArray from 'shared/isArray';
 import hasOwnProperty from 'shared/hasOwnProperty';
+import noop from 'shared/noop';
 
 const OPENING = 10;
 const CLOSING = 13;
@@ -40,7 +43,13 @@ type ReactJSONValue =
   | ReactClientObject;
 type ModelParent = ReactClientObject | $ReadOnlyArray<ReactClientValue>;
 
-export type Input = {+root: ResultModel<ReactClientValue>};
+export type Input = {
+  +root: ResultModel<ReactClientValue>,
+  subscribe: ({
+    hint: (HintCode, HintModel<any>) => void,
+    complete: () => void,
+  }) => () => void,
+};
 export type Request = {
   input: Input,
   destination: null | Destination,
@@ -48,6 +57,9 @@ export type Request = {
   fatalError: mixed,
   completedRegularChunks: Array<Chunk>,
   pendingChunks: number,
+  completedHintChunks: Array<Chunk>,
+  flushScheduled: boolean,
+  inputUnsubscribe: () => void,
 };
 
 function RequestInstance(this: any, input: Input) {
@@ -56,7 +68,10 @@ function RequestInstance(this: any, input: Input) {
   this.status = OPENING;
   this.fatalError = null;
   this.completedRegularChunks = [];
-  this.pendingChunks = 1;
+  this.completedHintChunks = [];
+  this.flushScheduled = false;
+  this.inputUnsubscribe = noop;
+  this.pendingChunks = 2;
 }
 
 export function createRequest(input: Input): Request {
@@ -217,7 +232,60 @@ function emitModelChunk(request: Request, id: number, json: string): void {
   request.completedRegularChunks.push(processedChunk);
 }
 
+function emitHintChunk<Code: HintCode>(
+  request: Request,
+  code: Code,
+  model: HintModel<Code>,
+): void {
+  const json: string = JSON.stringify(model);
+  const row = ':H' + code + json + '\n';
+  const processedChunk = stringToChunk(row);
+  request.completedHintChunks.push(processedChunk);
+}
+
+function emitHint<Code: HintCode>(
+  request: Request,
+  code: Code,
+  model: HintModel<Code>,
+): void {
+  emitHintChunk(request, code, model);
+  enqueueFlush(request);
+}
+
+function enqueueFlush(request: Request): void {
+  if (!request.flushScheduled && request.destination !== null) {
+    request.flushScheduled = true;
+    scheduleWork(() => {
+      request.flushScheduled = false;
+      flushCompletedChunks(request);
+    });
+  }
+}
+
+function cleanupInput(request: Request): void {
+  const unsubscribe = request.inputUnsubscribe;
+  request.inputUnsubscribe = noop;
+  unsubscribe();
+}
+
+function subscribeInput(request: Request): void {
+  request.inputUnsubscribe = request.input.subscribe({
+    hint(code, model) {
+      try {
+        emitHint(request, code, model);
+      } catch (error) {
+        fatalError(request, error);
+      }
+    },
+    complete() {
+      request.pendingChunks--;
+      enqueueFlush(request);
+    },
+  });
+}
+
 function fatalError(request: Request, error: mixed): void {
+  cleanupInput(request);
   const destination = request.destination;
   if (destination !== null) {
     request.status = CLOSED;
@@ -230,13 +298,24 @@ function fatalError(request: Request, error: mixed): void {
 
 function flushCompletedChunks(request: Request): void {
   const destination = request.destination;
-  if (destination === null) {
+  if (destination === null || request.status === CLOSED) {
     return;
   }
   beginWriting(destination);
   try {
-    const regularChunks = request.completedRegularChunks;
+    const hintChunks = request.completedHintChunks;
     let i = 0;
+    for (; i < hintChunks.length; i++) {
+      const keepWriting = writeChunkAndReturn(destination, hintChunks[i]);
+      if (!keepWriting) {
+        request.destination = null;
+        i++;
+        break;
+      }
+    }
+    hintChunks.splice(0, i);
+    const regularChunks = request.completedRegularChunks;
+    i = 0;
     for (; i < regularChunks.length; i++) {
       request.pendingChunks--;
       const keepWriting = writeChunkAndReturn(destination, regularChunks[i]);
@@ -251,13 +330,17 @@ function flushCompletedChunks(request: Request): void {
     completeWriting(destination);
   }
   flushBuffered(destination);
-  if (request.pendingChunks === 0) {
+  if (request.pendingChunks === 0 && request.destination !== null) {
+    const currentDestination = request.destination;
     request.status = CLOSED;
-    close(destination);
+    cleanupInput(request);
+    request.destination = null;
+    close(currentDestination);
   }
 }
 
 export function startWork(request: Request): void {
+  subscribeInput(request);
   request.input.root.then(
     model => {
       if (request.status === CLOSED) {
