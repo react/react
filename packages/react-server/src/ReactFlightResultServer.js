@@ -444,7 +444,8 @@ function RequestInstance(
   onAllReady: () => void,
   onFatalError: mixed => void,
   environmentName: void | string | (() => string),
-  filterStackFrame: void | ((string, string, number, number) => boolean),
+  filterStackFrame: void | ((string, string) => boolean),
+  debugStartTime: void | number,
 ) {
   if (
     ReactSharedInternals.A !== null &&
@@ -494,7 +495,12 @@ function RequestInstance(
     this.completedElements = [];
     this.didWarnForKey = null;
     this.unkeyedElements = new WeakSet();
-    this.timeOrigin = performance.now();
+    this.timeOrigin =
+      typeof debugStartTime === 'number'
+        ? debugStartTime -
+          // $FlowFixMe[prop-missing]
+          performance.timeOrigin
+        : performance.now();
     this.abortTime = -0.0;
     this.debugIONodes = new WeakMap();
     this.debugThenables = new WeakMap();
@@ -622,7 +628,8 @@ export function createRequest(
   temporaryReferences: void | TemporaryReferenceSet,
   createServerReference: (Function, Promise<Array<any>>) => Function,
   environmentName?: string | (() => string),
-  filterStackFrame?: (string, string, number, number) => boolean,
+  filterStackFrame?: (string, string) => boolean,
+  debugStartTime?: number,
 ): Request {
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -639,6 +646,7 @@ export function createRequest(
     noop,
     environmentName,
     filterStackFrame,
+    debugStartTime,
   );
 }
 
@@ -4521,7 +4529,8 @@ export function createPrerenderRequest(
   temporaryReferences: void | TemporaryReferenceSet,
   createServerReference: (Function, Promise<Array<any>>) => Function,
   environmentName?: string | (() => string),
-  filterStackFrame?: (string, string, number, number) => boolean,
+  filterStackFrame?: (string, string) => boolean,
+  debugStartTime?: number,
 ): Request {
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -4538,6 +4547,7 @@ export function createPrerenderRequest(
     onFatalError,
     environmentName,
     filterStackFrame,
+    debugStartTime,
   );
 }
 

@@ -78,7 +78,8 @@ type Options = {
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
   environmentName?: string | (() => string),
-  filterStackFrame?: (string, string, number, number) => boolean,
+  filterStackFrame?: (url: string, functionName: string) => boolean,
+  startTime?: number,
 };
 
 export function renderToResult(
@@ -93,6 +94,7 @@ export function renderToResult(
     createServerReference,
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
+    __DEV__ && options ? options.startTime : undefined,
   );
   startWork(request);
   if (options && options.signal) {
@@ -116,6 +118,7 @@ export function prerenderToResult(
       createServerReference,
       __DEV__ && options ? options.environmentName : undefined,
       __DEV__ && options ? options.filterStackFrame : undefined,
+      __DEV__ && options ? options.startTime : undefined,
     );
     startWork(request);
     const signal = options ? options.signal : undefined;

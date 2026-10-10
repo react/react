@@ -260,13 +260,17 @@ function RequestInstance(
   input: Input,
   bundlerConfig: ClientManifest,
   onError: void | (mixed => ?string),
+  temporaryReferences: void | TemporaryReferenceSet,
+  debugStartTime: void | number,
+  environmentName: void | string | (() => string),
+  filterStackFrame: void | ((string, string) => boolean),
 ) {
   const cleanupQueue: Array<string | bigint> = [];
   if (enableTaint) {
     TaintRegistryPendingRequests.add(cleanupQueue);
   }
   this.taintCleanupQueue = cleanupQueue;
-  this.temporaryReferences = input.temporaryReferences;
+  this.temporaryReferences = input.temporaryReferences || temporaryReferences;
   this.writtenServerReferences = new Map();
   this.input = input;
   if (__DEV__) {
@@ -274,14 +278,25 @@ function RequestInstance(
     this.pendingDebugChunks = 0;
     this.completedDebugChunks = [];
     this.writtenDebugObjects = new WeakMap();
+    if (debugStartTime === undefined) {
+      debugStartTime = input.debugStartTime;
+    }
     this.timeOrigin =
-      typeof input.debugStartTime === 'number'
-        ? input.debugStartTime -
+      typeof debugStartTime === 'number'
+        ? debugStartTime -
           // $FlowFixMe[prop-missing]
           performance.timeOrigin
         : performance.now();
-    this.environmentName = () => 'Server';
-    this.filterStackFrame = defaultFilterStackFrame;
+    this.environmentName =
+      environmentName === undefined
+        ? () => 'Server'
+        : typeof environmentName !== 'function'
+          ? () => environmentName
+          : environmentName;
+    this.filterStackFrame =
+      filterStackFrame === undefined
+        ? defaultFilterStackFrame
+        : filterStackFrame;
   }
   this.destination = null;
   this.status = OPENING;
@@ -377,9 +392,21 @@ export function createRequest(
   input: Input,
   bundlerConfig: ClientManifest,
   onError?: mixed => ?string,
+  temporaryReferences?: TemporaryReferenceSet,
+  debugStartTime?: number,
+  environmentName?: string | (() => string),
+  filterStackFrame?: (string, string) => boolean,
 ): Request {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new RequestInstance(input, bundlerConfig, onError);
+  return new RequestInstance(
+    input,
+    bundlerConfig,
+    onError,
+    temporaryReferences,
+    debugStartTime,
+    environmentName,
+    filterStackFrame,
+  );
 }
 
 function isTypedArray(value: any): boolean {
