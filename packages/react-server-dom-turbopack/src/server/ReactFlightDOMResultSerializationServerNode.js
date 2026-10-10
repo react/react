@@ -9,6 +9,7 @@
 
 import type {Writable, Duplex} from 'stream';
 import {Readable} from 'stream';
+import {textEncoder} from 'react-server/src/ReactServerStreamConfigNode';
 import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 import type {ClientManifest} from './ReactFlightServerConfigTurbopackBundler';
 import type {
@@ -22,6 +23,7 @@ import {
   startFlowingDebug,
   stopFlowing,
   abort,
+  attachAbortSignal,
   resolveDebugMessage,
   closeDebugChannel,
 } from 'react-server/src/ReactFlightResultSerializationServer';
@@ -212,4 +214,150 @@ function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
       }
     },
   } as any;
+}
+
+export type ReadableStreamOptions = Omit<Options, 'debugChannel'> & {
+  debugChannel?: {readable?: ReadableStream, writable?: WritableStream, ...},
+  signal?: AbortSignal,
+};
+
+function createFakeWritableFromReadableStreamController(
+  controller: ReadableStreamController,
+): Writable {
+  // The current host config expects a Writable so we create
+  // a fake writable for now to push into the Readable.
+  return {
+    write(chunk: string | Uint8Array) {
+      if (typeof chunk === 'string') {
+        chunk = textEncoder.encode(chunk);
+      }
+      controller.enqueue(chunk);
+      // in web streams there is no backpressure so we can always write more
+      return true;
+    },
+    end() {
+      controller.close();
+    },
+    destroy(error) {
+      // $FlowFixMe[method-unbinding]
+      if (typeof controller.error === 'function') {
+        // $FlowFixMe[incompatible-call]: This is an Error object or the destination accepts other types.
+        controller.error(error);
+      } else {
+        controller.close();
+      }
+    },
+  } as any;
+}
+
+function startReadingFromDebugChannelReadableStream(
+  request: Request,
+  stream: ReadableStream,
+): void {
+  const reader = stream.getReader();
+  const stringDecoder = createStringDecoder();
+  let stringBuffer = '';
+  function progress({
+    done,
+    value,
+  }: {
+    done: boolean,
+    value: ?any,
+    ...
+  }): void | Promise<void> {
+    const buffer: Uint8Array = value as any;
+    stringBuffer += done
+      ? readFinalStringChunk(stringDecoder, new Uint8Array(0))
+      : readPartialStringChunk(stringDecoder, buffer);
+    const messages = stringBuffer.split('\n');
+    for (let i = 0; i < messages.length - 1; i++) {
+      resolveDebugMessage(request, messages[i]);
+    }
+    stringBuffer = messages[messages.length - 1];
+    if (done) {
+      closeDebugChannel(request);
+      return;
+    }
+    return reader.read().then(progress).catch(error);
+  }
+  function error(e: any) {
+    abort(
+      request,
+      new Error('Lost connection to the Debug Channel.', {
+        cause: e,
+      }),
+    );
+  }
+  reader.read().then(progress).catch(error);
+}
+
+export function renderToReadableStream(
+  input: Input,
+  turbopackMap: ClientManifest,
+  options?: ReadableStreamOptions,
+): ReadableStream {
+  const debugChannelReadable =
+    __DEV__ && options && options.debugChannel
+      ? options.debugChannel.readable
+      : undefined;
+  const debugChannelWritable =
+    __DEV__ && options && options.debugChannel
+      ? options.debugChannel.writable
+      : undefined;
+  const request = createRequest(
+    input,
+    turbopackMap,
+    options ? options.onError : undefined,
+    options ? options.temporaryReferences : undefined,
+    options ? options.startTime : undefined,
+    __DEV__ && options ? options.environmentName : undefined,
+    __DEV__ && options ? options.filterStackFrame : undefined,
+    debugChannelReadable !== undefined,
+  );
+  if (options && options.signal) {
+    attachAbortSignal(request, options.signal);
+  }
+  if (debugChannelWritable !== undefined) {
+    let debugWritable: Writable;
+    const debugStream = new ReadableStream(
+      {
+        type: 'bytes',
+        start: (controller): ?Promise<void> => {
+          debugWritable =
+            createFakeWritableFromReadableStreamController(controller);
+        },
+        pull: (controller): ?Promise<void> => {
+          startFlowingDebug(request, debugWritable);
+        },
+      },
+      // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+      // $FlowFixMe[incompatible-type]
+      {highWaterMark: 0},
+    );
+    debugStream.pipeTo(debugChannelWritable);
+  }
+  if (debugChannelReadable !== undefined) {
+    startReadingFromDebugChannelReadableStream(request, debugChannelReadable);
+  }
+  let writable: Writable;
+  const stream = new ReadableStream(
+    {
+      type: 'bytes',
+      start: (controller): ?Promise<void> => {
+        writable = createFakeWritableFromReadableStreamController(controller);
+        startWork(request);
+      },
+      pull: (controller): ?Promise<void> => {
+        startFlowing(request, writable);
+      },
+      cancel: (reason): ?Promise<void> => {
+        stopFlowing(request);
+        abort(request, reason);
+      },
+    },
+    // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+    // $FlowFixMe[incompatible-type]
+    {highWaterMark: 0},
+  );
+  return stream;
 }

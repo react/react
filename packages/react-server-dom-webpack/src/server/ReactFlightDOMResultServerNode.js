@@ -15,9 +15,11 @@ import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemp
 import {registerServerReference} from '../ReactFlightWebpackReferences';
 import noop from 'shared/noop';
 import type {Result} from 'shared/ReactFlightResult';
+export type {Result} from 'shared/ReactFlightResult';
 import type {
   Options as SerializationOptions,
   PipeableStream,
+  ReadableStreamOptions,
 } from './ReactFlightDOMResultSerializationServerNode';
 import type {ClientManifest} from './ReactFlightServerConfigWebpackBundler';
 import {
@@ -28,7 +30,10 @@ import {
   attachAbortSignal,
 } from 'react-server/src/ReactFlightResultServer';
 import {createInput} from 'react-server/src/ReactFlightResultSerialization';
-import {renderToPipeableStream} from './ReactFlightDOMResultSerializationServerNode';
+import {
+  renderToPipeableStream,
+  renderToReadableStream,
+} from './ReactFlightDOMResultSerializationServerNode';
 
 // $FlowFixMe[method-unbinding]
 const FunctionBind = Function.prototype.bind;
@@ -138,9 +143,10 @@ export function renderResultToPipeableStream(
 }
 
 export function renderResultToReadableStream(
-  result: mixed,
-  webpackMap: mixed,
-  options?: mixed,
-): empty {
-  throw new Error('Not implemented.');
+  result: Result<ReactClientValue>,
+  webpackMap: ClientManifest,
+  options?: ReadableStreamOptions,
+): ReadableStream {
+  const input = createInput(result);
+  return renderToReadableStream(input, webpackMap, options);
 }
