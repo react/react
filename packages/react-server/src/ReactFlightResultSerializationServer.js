@@ -14,6 +14,7 @@ import type {
   ErrorReference,
   ModelReference,
 } from 'shared/ReactFlightResult';
+import type {ConsoleEntry} from 'shared/ReactFlightResult';
 import type {
   ReactStackTrace,
   ReactCallSite,
@@ -180,6 +181,7 @@ export type Input = {
   getCollectionEntries: Object => void | ResultModel<Array<any>>,
   subscribe: ({
     hint: (HintCode, HintModel<any>) => void,
+    console?: ConsoleEntry => void, // DEV-only
     complete: () => void,
   }) => () => void,
   subscribeToThenable: (
@@ -1654,6 +1656,38 @@ function outlineDebugModel(
   return id;
 }
 
+function emitConsoleChunk(
+  request: Request,
+  methodName: string,
+  owner: null | ReactComponentInfo,
+  env: string,
+  stackTrace: ReactStackTrace,
+  args: Array<any>,
+): void {
+  if (owner != null) {
+    outlineComponentInfo(request, owner);
+  }
+  const payload = [methodName, stackTrace, owner, env];
+  // $FlowFixMe[method-unbinding]
+  payload.push.apply(payload, args);
+  const objectLimit = 500;
+  let json = serializeDebugModel(
+    request,
+    objectLimit + stackTrace.length,
+    payload,
+  );
+  if (json[0] !== '[') {
+    json = serializeDebugModel(request, 10 + stackTrace.length, [
+      methodName,
+      stackTrace,
+      owner,
+      env,
+      'Unknown Value: React could not send it from the server.',
+    ]);
+  }
+  request.completedDebugChunks.push(stringToChunk(':W' + json + '\n'));
+}
+
 function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
   // We emit the time origin once. All ReactTimeInfo timestamps later in the stream
   // are relative to this time origin. This allows for more compact number encoding
@@ -2746,6 +2780,20 @@ function subscribeHints(request: Request): void {
           emitHint(request, code, model);
         } catch (error) {
           fatalError(request, error);
+        }
+      },
+      console(entry) {
+        if (__DEV__) {
+          request.pendingDebugChunks++;
+          emitConsoleChunk(
+            request,
+            entry.methodName,
+            entry.owner,
+            entry.env,
+            entry.stack,
+            entry.args,
+          );
+          enqueueFlush(request);
         }
       },
       complete() {

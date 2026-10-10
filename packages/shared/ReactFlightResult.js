@@ -11,7 +11,12 @@ import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemp
 import type {ResultModel} from './ReactFlightResultModel';
 import type {AsyncIterableController} from './ReactFlightResultAsyncIterable';
 import type {ResultStreamController} from './ReactFlightResultReadableStream';
-import type {Thenable, ReactErrorInfoDev} from './ReactTypes';
+import type {
+  Thenable,
+  ReactErrorInfoDev,
+  ReactComponentInfo,
+  ReactStackTrace,
+} from './ReactTypes';
 import type {
   HintCode,
   HintModel,
@@ -22,6 +27,14 @@ export const MODEL_OBJECT = 1;
 export const MODEL_ARRAY = 2;
 export const MODEL_ELEMENT = 3;
 export const MODEL_KIND_MASK = 3;
+
+export type ConsoleEntry = {
+  +methodName: string,
+  +owner: null | ReactComponentInfo,
+  +env: string,
+  +stack: ReactStackTrace,
+  +args: Array<any>,
+};
 
 export type ModelReference = {
   +root: ResultModel<any>,
@@ -67,6 +80,8 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   iteratorEntries: null | WeakMap<Object, $ReadOnlyArray<mixed>>,
   collectionEntries: null | WeakMap<Object, ResultModel<Array<any>>>,
   modelInfo: null | Map<Object, number>,
+  consoleEntries: Array<ConsoleEntry>, // DEV-only
+  consoleListeners: Set<() => void>, // DEV-only
 };
 
 function abortResult<T>(result: Result<T>, reason: mixed): void {
@@ -81,7 +96,7 @@ export function createResult<T>(
   abort: (reason: mixed) => void,
   temporaryReferenceSet: void | TemporaryReferenceSet,
 ): Result<T> {
-  const result: Result<T> = {
+  const result = {
     root,
     temporaryReferenceSet,
     closed: false,
@@ -103,9 +118,45 @@ export function createResult<T>(
     iteratorEntries: null,
     collectionEntries: null,
     modelInfo: null,
-  };
+  } as Omit<Result<T>, 'consoleEntries' | 'consoleListeners'> as any;
+  if (__DEV__) {
+    result.consoleEntries = [];
+    result.consoleListeners = new Set();
+  }
   result.abort = abortResult.bind(null, result);
   return result;
+}
+
+export function pushConsoleEntry<T>(
+  result: Result<T>,
+  entry: ConsoleEntry,
+): void {
+  if (__DEV__) {
+    result.consoleEntries.push(entry);
+    result.consoleListeners.forEach(listener => listener());
+  }
+}
+
+export function subscribeToConsole<T>(
+  result: Result<T>,
+  callback: ConsoleEntry => void,
+): () => void {
+  if (!__DEV__) {
+    return noop;
+  }
+  let index = 0;
+  let active = true;
+  function flush(): void {
+    while (active && index < result.consoleEntries.length) {
+      callback(result.consoleEntries[index++]);
+    }
+  }
+  result.consoleListeners.add(flush);
+  flush();
+  return () => {
+    active = false;
+    result.consoleListeners.delete(flush);
+  };
 }
 
 export function setErrorDigest<T>(

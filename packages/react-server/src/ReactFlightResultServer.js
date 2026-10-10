@@ -82,6 +82,7 @@ import {
   completeResult,
   subscribeToResult,
   pushHint,
+  pushConsoleEntry,
   closeHints,
   setErrorDigest,
   setErrorInfo,
@@ -154,6 +155,8 @@ import {
   isServerReference,
   getServerReferenceId,
   parseStackTrace,
+  parseStackTracePrivate,
+  unbadgeConsole,
   getAsyncSequenceFromPromise,
   initAsyncDebugInfo,
   getCurrentAsyncSequence,
@@ -536,6 +539,68 @@ export function resolveRequest(): null | Request {
     return cache as any;
   }
   return null;
+}
+
+function patchConsole(consoleInst: typeof console, methodName: string) {
+  const descriptor = Object.getOwnPropertyDescriptor(consoleInst, methodName);
+  if (
+    descriptor &&
+    (descriptor.configurable || descriptor.writable) &&
+    typeof descriptor.value === 'function'
+  ) {
+    const originalMethod = descriptor.value;
+    const originalName = Object.getOwnPropertyDescriptor(
+      // $FlowFixMe[incompatible-type]: We should be able to get descriptors from any function.
+      originalMethod,
+      'name',
+    );
+    const wrapperMethod = function (this: typeof console) {
+      const request = resolveRequest();
+      if (methodName === 'assert' && arguments[0]) {
+      } else if (request !== null) {
+        const stack = filterStackTrace(
+          request,
+          parseStackTracePrivate(new Error('react-stack-top-frame'), 1) || [],
+        );
+        const owner = resolveOwner();
+        const args = Array.from(arguments);
+        let env = unbadgeConsole(methodName, args);
+        if (env === null) {
+          env = (0, request.environmentName)();
+        }
+        pushConsoleEntry(request.result, {methodName, owner, env, stack, args});
+      }
+      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
+      return originalMethod.apply(this, arguments);
+    };
+    if (originalName) {
+      Object.defineProperty(
+        wrapperMethod,
+        // $FlowFixMe[cannot-write] yes it is
+        'name',
+        originalName,
+      );
+    }
+    Object.defineProperty(consoleInst, methodName, {value: wrapperMethod});
+  }
+}
+
+// $FlowFixMe[invalid-compare]
+if (__DEV__ && typeof console === 'object' && console !== null) {
+  patchConsole(console, 'assert');
+  patchConsole(console, 'debug');
+  patchConsole(console, 'dir');
+  patchConsole(console, 'dirxml');
+  patchConsole(console, 'error');
+  patchConsole(console, 'group');
+  patchConsole(console, 'groupCollapsed');
+  patchConsole(console, 'groupEnd');
+  patchConsole(console, 'info');
+  patchConsole(console, 'log');
+  patchConsole(console, 'table');
+  patchConsole(console, 'trace');
+  patchConsole(console, 'warn');
 }
 
 export function getHints(request: Request): Hints {

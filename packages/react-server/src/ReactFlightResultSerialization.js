@@ -28,6 +28,7 @@ import {
   getHintQueue,
   waitForHints,
   subscribeToResult,
+  subscribeToConsole,
   getErrorReference,
   getErrorInfo,
   getValueReference,
@@ -165,10 +166,12 @@ export function createInput(result: Result<ReactClientValue>): Input {
       } = {queue: getHintQueue(result), reader};
       let nextHintIndex = 0;
       let unsubscribe = noop;
+      let unsubscribeConsole = noop;
       function detach(): void {
         subscription.queue = null;
         subscription.reader = null;
         unsubscribe();
+        unsubscribeConsole();
       }
       function flushHints(): void {
         const queue = subscription.queue;
@@ -184,6 +187,9 @@ export function createInput(result: Result<ReactClientValue>): Input {
         if (!queue.closed) {
           waitForHints(queue).then(flushHints);
         }
+      }
+      if (__DEV__ && reader.console !== undefined) {
+        unsubscribeConsole = subscribeToConsole(result, reader.console);
       }
       unsubscribe = subscribeToResult(result, () => {
         const current = subscription.reader;
