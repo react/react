@@ -94,6 +94,7 @@ import {
 } from './ReactFlightClientConfig';
 
 const ObjectPrototype = Object.prototype;
+const supportsCreateTask = __DEV__ && !!(console as any).createTask;
 
 type ModelPreload = {
   model: Object,
@@ -149,6 +150,8 @@ export type Response = {
   _cleanups: null | Set<() => void>,
   _completedElements: Array<ReactElement>, // DEV-only
   _debugFindSourceMapURL: void | ((string, string) => null | string), // DEV-only
+  _debugRootTask?: null | ConsoleTask, // DEV-only
+  _rootEnvironmentName: string, // DEV-only
 };
 
 export function createResponse(
@@ -164,6 +167,7 @@ export function createResponse(
   onError?: mixed => ?string,
   allowPartialStream: boolean = false,
   findSourceMapURL?: (string, string) => null | string,
+  environmentName?: string, // DEV-only
 ): Response {
   const response: Response = {
     _result: result,
@@ -192,6 +196,13 @@ export function createResponse(
   if (__DEV__) {
     response._completedElements = [];
     response._debugFindSourceMapURL = findSourceMapURL;
+    const rootEnv = environmentName === undefined ? 'Server' : environmentName;
+    if (supportsCreateTask) {
+      response._debugRootTask = (console as any).createTask(
+        '"use ' + rootEnv.toLowerCase() + '"',
+      );
+    }
+    response._rootEnvironmentName = rootEnv;
   }
   return response;
 }
@@ -893,6 +904,10 @@ function rejectElementChunk(
     };
     // $FlowFixMe[cannot-write]
     erroredComponent.debugStack = element._debugStack;
+    if (supportsCreateTask) {
+      // $FlowFixMe[cannot-write]
+      erroredComponent.debugTask = element._debugTask;
+    }
     (chunk as any)._debugInfo.push(erroredComponent);
   }
   triggerErrorOnChunk(chunk, error);
@@ -2067,10 +2082,18 @@ function loadServerReference(
     initializeChunk(
       chunk,
       createBoundServerReference(
-        {id: metaData.id, bound},
+        __DEV__
+          ? {
+              id: metaData.id,
+              bound,
+              name: metaData.name,
+              env: metaData.env,
+              location: metaData.location,
+            }
+          : {id: metaData.id, bound},
         response._callServer,
         response._encodeFormAction,
-        undefined,
+        __DEV__ ? response._debugFindSourceMapURL : undefined,
       ),
     );
     return;
@@ -2849,6 +2872,27 @@ function buildFakeCallStack<T>(
   return callStack;
 }
 
+function getRootTask(
+  response: Response,
+  childEnvironmentName: string,
+): null | ConsoleTask {
+  const rootTask = response._debugRootTask;
+  if (!rootTask) {
+    return null;
+  }
+  if (response._rootEnvironmentName !== childEnvironmentName) {
+    // If the root most owner component is itself in a different environment than the requested
+    // environment then we create an extra task to indicate that we're transitioning into it.
+    // Like if one environment just requests another environment.
+    const createTaskFn = (console as any).createTask.bind(
+      console,
+      '"use ' + childEnvironmentName.toLowerCase() + '"',
+    );
+    return rootTask.run(createTaskFn);
+  }
+  return rootTask;
+}
+
 function resolveErrorDev(
   response: Response,
   errorInfo: ReactErrorInfoDev,
@@ -2887,7 +2931,13 @@ function resolveErrorDev(
           errorOptions,
         ),
   );
-  const error = callStack();
+  let error;
+  const rootTask = getRootTask(response, env);
+  if (rootTask != null) {
+    error = rootTask.run(callStack);
+  } else {
+    error = callStack();
+  }
   (error as any).name = name;
   (error as any).environmentName = env;
   return error;

@@ -37,6 +37,7 @@ type Options = {
   },
   nonce?: string,
   findSourceMapURL?: (string, string) => null | string,
+  environmentName?: string, // DEV-only
   encodeFormAction?: EncodeFormActionCallback,
   temporaryReferences?: TemporaryReferenceSet,
   onError?: mixed => ?string,
@@ -71,6 +72,7 @@ export function createFromResult<T>(
     options.onError,
     options.unstable_allowPartialStream === true,
     __DEV__ ? options.findSourceMapURL : undefined,
+    __DEV__ ? options.environmentName : undefined,
   );
   const signal = options.signal;
   if (signal !== undefined) {

@@ -98,7 +98,6 @@ import binaryToComparableString from 'shared/binaryToComparableString';
 import {
   resolveClientReferenceMetadata,
   getServerReferenceId,
-  getServerReferenceLocation,
   getClientReferenceKey,
   isClientReference,
   isServerReference,
@@ -5129,35 +5128,15 @@ function serializeServerReference(
     }
     const bound = metadata.bound;
 
-    let location: null | ReactFunctionLocation = null;
-    if (__DEV__) {
-      const error = getServerReferenceLocation(
-        request.bundlerConfig,
-        serverReference,
-      );
-      // $FlowFixMe[constant-condition]
-      if (error) {
-        const frames = parseStackTrace(error, 1);
-        if (frames.length > 0) {
-          const firstFrame = frames[0];
-          location = [
-            firstFrame[0],
-            firstFrame[1],
-            firstFrame[2], // The line and col of the callsite represents the
-            firstFrame[3], // enclosing line and col of the function.
-          ];
-        }
-      }
-    }
+    const location = __DEV__ ? metadata.location : undefined;
 
     serverReferenceMetadata =
-      __DEV__ && location !== null
+      __DEV__ && location != null
         ? {
             id,
             bound,
-            name:
-              typeof serverReference === 'function' ? serverReference.name : '',
-            env: (0, request.environmentName)(),
+            name: metadata.name,
+            env: metadata.env,
             location,
           }
         : {

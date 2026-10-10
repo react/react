@@ -16,6 +16,7 @@ import type {
   ReactErrorInfoDev,
   ReactComponentInfo,
   ReactStackTrace,
+  ReactFunctionLocation,
 } from './ReactTypes';
 import type {
   HintCode,
@@ -47,6 +48,9 @@ export type ServerReferenceMetadata = {
   +id: string,
   +bound: null | Promise<Array<any>>,
   +isObjectReference: boolean,
+  +name?: string, // DEV-only
+  +env?: string, // DEV-only
+  +location?: ReactFunctionLocation, // DEV-only
 };
 
 export type Hint = {+code: HintCode, +model: HintModel<any>};

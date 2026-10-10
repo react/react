@@ -43,6 +43,7 @@ import type {
   ReactErrorInfoDev,
   ReactStackTrace,
   ReactCallSite,
+  ReactFunctionLocation,
   ReactComponentInfo,
   ReactDebugInfo,
   ReactAsyncInfo,
@@ -154,6 +155,7 @@ import {
   isClientReference,
   isServerReference,
   getServerReferenceId,
+  getServerReferenceLocation,
   parseStackTrace,
   parseStackTracePrivate,
   unbadgeConsole,
@@ -4910,12 +4912,37 @@ function renderServerReference(request: Request, reference: Object): Object {
     null as any,
     reference as any,
   );
+  let location: null | ReactFunctionLocation = null;
+  if (__DEV__) {
+    const error = getServerReferenceLocation(null as any, reference as any);
+    if (error) {
+      const frames = parseStackTrace(error, 1);
+      if (frames.length > 0) {
+        const firstFrame = frames[0];
+        location = [firstFrame[0], firstFrame[1], firstFrame[2], firstFrame[3]];
+      }
+    }
+  }
+  const serverReferenceMetadata: {
+    id: string,
+    bound: null | Promise<Array<any>>,
+    isObjectReference: boolean,
+    name?: string, // DEV-only
+    env?: string, // DEV-only
+    location?: ReactFunctionLocation, // DEV-only
+  } =
+    __DEV__ && location !== null
+      ? {
+          id,
+          bound: null,
+          isObjectReference: false,
+          name: reference.name,
+          env: (0, request.environmentName)(),
+          location,
+        }
+      : {id, bound: null, isObjectReference: false};
   if (boundArgs === null) {
-    setServerReference(request.result, reference, {
-      id,
-      bound: null,
-      isObjectReference: false,
-    });
+    setServerReference(request.result, reference, serverReferenceMetadata);
     setRenderedModel(request.modelEntries, reference, reference);
     return reference;
   }
@@ -4928,11 +4955,8 @@ function renderServerReference(request: Request, reference: Object): Object {
   );
   newTask.promise.then(noop, noop);
   const copy = request.createServerReference(reference, newTask.promise as any);
-  setServerReference(request.result, copy, {
-    id,
-    bound: newTask.promise as any,
-    isObjectReference: false,
-  });
+  serverReferenceMetadata.bound = newTask.promise as any;
+  setServerReference(request.result, copy, serverReferenceMetadata);
   setRenderedModel(request.modelEntries, reference, copy);
   pingTask(request, newTask);
   return copy;
