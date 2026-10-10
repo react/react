@@ -108,6 +108,8 @@ const CONSTRUCTOR_MARKER: symbol = __DEV__ ? Symbol() : (null as any);
 let debugModelRoot: mixed = null;
 let debugNoOutline: mixed = null;
 const OPENING = 10;
+const OPEN = 11;
+const ABORTING = 12;
 const CLOSING = 13;
 const CLOSED = 14;
 const NEXT_TWO_CHUNKS_ARE_ATOMIC: symbol = Symbol();
@@ -192,7 +194,10 @@ export type Input = {
 export type Request = {
   input: null | Input,
   destination: null | Destination,
-  status: 10 | 13 | 14,
+  status: 10 | 11 | 12 | 13 | 14,
+  abortController: AbortController,
+  abortableTasks: Set<Task>,
+  abortTime: number, // DEV-only
   fatalError: mixed,
   completedRegularChunks: Array<
     Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
@@ -273,8 +278,11 @@ function RequestInstance(
   this.temporaryReferences = input.temporaryReferences || temporaryReferences;
   this.writtenServerReferences = new Map();
   this.input = input;
+  this.abortController = new AbortController();
+  this.abortableTasks = new Set();
   if (__DEV__) {
     this.debugDestination = null;
+    this.abortTime = -0.0;
     this.pendingDebugChunks = 0;
     this.completedDebugChunks = [];
     this.writtenDebugObjects = new WeakMap();
@@ -304,10 +312,10 @@ function RequestInstance(
   this.completedRegularChunks = [];
   this.completedHintChunks = [];
   this.flushScheduled = false;
-  this.pendingChunks = 2;
+  this.pendingChunks = 1;
   this.bundlerConfig = bundlerConfig;
   this.writtenClientReferences = new Map();
-  this.nextChunkId = 1;
+  this.nextChunkId = 0;
   this.completedImportChunks = [];
   this.writtenModels = new WeakMap();
   this.writtenObjects = new WeakMap();
@@ -328,6 +336,12 @@ function RequestInstance(
         // $FlowFixMe[prop-missing]
         performance.timeOrigin,
     );
+  }
+  const rootTask = createTask(this, null);
+  this.writtenModels.set(input.root, rootTask.id);
+  subscribeHints(this);
+  if (this.status <= OPEN) {
+    subscribeToThenable(this, rootTask, input.root);
   }
 }
 
@@ -482,25 +496,37 @@ function serializeDebugThenable(
   if (__DEV__ && getResultModelStatus(thenable as any) !== null) {
     const input = request.input;
     if (input !== null) {
-      subscribeInput(request, detach =>
-        input.subscribeToThenable(thenable, {
+      let settled = false;
+      subscribeInput(request, detach => {
+        const unsubscribe = input.subscribeToThenable(thenable, {
           resolve(value) {
+            settled = true;
             detach();
             emitOutlinedDebugModelChunk(request, id, counter, value);
             enqueueFlush(request);
           },
           reject(error) {
+            settled = true;
             detach();
             emitErrorChunk(request, id, '', error, true, null);
             enqueueFlush(request);
           },
           halt() {
+            settled = true;
             detach();
             emitDebugHaltChunk(request, id);
             enqueueFlush(request);
           },
-        }),
-      );
+        });
+        return () => {
+          unsubscribe();
+          if (!settled) {
+            settled = true;
+            emitDebugHaltChunk(request, id);
+            enqueueFlush(request);
+          }
+        };
+      });
       return ref;
     }
   }
@@ -519,7 +545,7 @@ function serializeDebugThenable(
     }
   }
 
-  if (request.status >= CLOSING) {
+  if (request.status >= ABORTING) {
     // Ensure that we have time to emit the halt chunk if we're sync aborting.
     emitDebugHaltChunk(request, id);
     return ref;
@@ -533,7 +559,7 @@ function serializeDebugThenable(
         return;
       }
       cancelled = true;
-      if (request.status >= CLOSING) {
+      if (request.status >= ABORTING) {
         emitDebugHaltChunk(request, id);
         enqueueFlush(request);
         return;
@@ -557,7 +583,7 @@ function serializeDebugThenable(
         return;
       }
       cancelled = true;
-      if (request.status >= CLOSING) {
+      if (request.status >= ABORTING) {
         emitDebugHaltChunk(request, id);
         enqueueFlush(request);
         return;
@@ -1864,6 +1890,9 @@ function markOperationEndTime(request: Request, task: Task, timestamp: number) {
   ) {
     return;
   }
+  if (request.status === ABORTING && timestamp > request.abortTime) {
+    return;
+  }
   if (timestamp > task.time) {
     emitTimingChunk(request, task.id, timestamp);
     task.time = timestamp;
@@ -2450,6 +2479,7 @@ function createTask(request: Request, model: ReactClientValue): Task {
     task.debugOwner = null;
     task.debugStack = null;
   }
+  request.abortableTasks.add(task);
   return task;
 }
 
@@ -2485,6 +2515,7 @@ function subscribeToThenable(
         detach();
         if (task.status === PENDING) {
           task.status = ABORTED;
+          request.abortableTasks.delete(task);
           request.pendingChunks--;
           enqueueFlush(request);
         }
@@ -2494,7 +2525,7 @@ function subscribeToThenable(
           flushInputDebugTime(request, task);
         }
         detach();
-        if (request.status === OPENING && task.status === PENDING) {
+        if (request.status <= OPEN && task.status === PENDING) {
           task.model = value;
           pingTask(request, task);
         }
@@ -2504,7 +2535,7 @@ function subscribeToThenable(
           flushInputDebugTime(request, task);
         }
         detach();
-        if (request.status === OPENING && task.status === PENDING) {
+        if (request.status <= OPEN && task.status === PENDING) {
           try {
             erroredInputTask(request, task, error, reference);
             enqueueFlush(request);
@@ -2530,7 +2561,7 @@ function subscribeInput(
   }
   request.inputSubscriptions.add(detach);
   unsubscribe = subscribe(detach);
-  if (!active || request.status > OPENING) {
+  if (!active || request.status > OPEN) {
     detach();
   }
 }
@@ -2568,7 +2599,16 @@ function retryTask(request: Request, task: Task): void {
     const json = JSON.stringify(resolvedModel);
     emitModelChunk(request, task.id, json);
     task.status = COMPLETED;
+    request.abortableTasks.delete(task);
   } catch (error) {
+    if (request.status === ABORTING) {
+      request.abortableTasks.delete(task);
+      task.status = PENDING;
+      const errorId: number = request.fatalError as any;
+      abortTask(task, request, errorId);
+      finishAbortedTask(task, request, errorId);
+      return;
+    }
     try {
       erroredTask(request, task, error);
     } catch (fatal) {
@@ -2677,6 +2717,7 @@ function logRecoverableError(request: Request, error: mixed): string {
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
   task.status = ERRORED;
+  request.abortableTasks.delete(task);
   const digest = logRecoverableError(request, error);
   emitErrorChunk(request, task.id, digest, error);
 }
@@ -2692,6 +2733,7 @@ function erroredInputTask(
     return;
   }
   task.status = ERRORED;
+  request.abortableTasks.delete(task);
   const existingId = request.writtenErrors.get(reference);
   if (existingId === undefined) {
     request.writtenErrors.set(reference, task.id);
@@ -2835,6 +2877,24 @@ function subscribeHints(request: Request): void {
   if (input === null) {
     return;
   }
+  let sourceComplete = false;
+  function completeInput(): void {
+    if (!sourceComplete) {
+      sourceComplete = true;
+      request.pendingChunks--;
+      enqueueFlush(request);
+    }
+  }
+  request.abortController.signal.addEventListener(
+    'abort',
+    () => {
+      completeInput();
+      request.input = null;
+      request.inputSubscriptions.forEach(detach => detach());
+      request.inputSubscriptions.clear();
+    },
+    {once: true},
+  );
   subscribeInput(request, detach =>
     input.subscribe({
       hint(code, model) {
@@ -2860,8 +2920,7 @@ function subscribeHints(request: Request): void {
       },
       complete() {
         detach();
-        request.pendingChunks--;
-        enqueueFlush(request);
+        completeInput();
       },
     }),
   );
@@ -2869,6 +2928,7 @@ function subscribeHints(request: Request): void {
 
 function fatalError(request: Request, error: mixed): void {
   request.fatalError = error;
+  request.abortController.abort(error);
   cleanupInput(request);
   const destination = request.destination;
   if (__DEV__ && request.debugDestination !== null) {
@@ -3043,6 +3103,7 @@ function flushCompletedChunks(request: Request): void {
   ) {
     const currentDestination = request.destination;
     request.status = CLOSED;
+    request.abortController.abort();
     cleanupInput(request);
     request.destination = null;
     close(currentDestination);
@@ -3054,32 +3115,11 @@ function flushCompletedChunks(request: Request): void {
 }
 
 export function startWork(request: Request): void {
-  const input = request.input;
-  if (input === null) {
-    return;
-  }
-  subscribeHints(request);
-  if (request.status > OPENING) {
-    return;
-  }
-  const rootTask = {id: 0, model: null, status: PENDING} as Omit<
-    Task,
-    | 'timed'
-    | 'time'
-    | 'debugPendingTime'
-    | 'debugInfoRecorded'
-    | 'debugOwner'
-    | 'debugStack',
-  > as any;
-  if (__DEV__) {
-    rootTask.timed = false;
-    rootTask.time = request.timeOrigin;
-    rootTask.debugPendingTime = null;
-    rootTask.debugInfoRecorded = false;
-    rootTask.debugOwner = null;
-    rootTask.debugStack = null;
-  }
-  subscribeToThenable(request, rootTask, input.root);
+  scheduleWork(() => {
+    if (request.status === OPENING) {
+      request.status = OPEN;
+    }
+  });
 }
 
 export function startFlowing(request: Request, destination: Destination): void {
@@ -3127,9 +3167,109 @@ export function stopFlowing(request: Request): void {
   request.destination = null;
 }
 
+function abortTask(task: Task, request: Request, errorId: number): void {
+  if (task.status !== PENDING) {
+    // If this is already completed/errored we don't abort it.
+    // If currently rendering it will be aborted by the render
+    return;
+  }
+  task.status = ABORTED;
+}
+
+function finishAbortedTask(
+  task: Task,
+  request: Request,
+  errorId: number,
+): void {
+  if (task.status !== ABORTED) {
+    return;
+  }
+  if (__DEV__) {
+    flushInputDebugTime(request, task);
+  }
+  // Track when we aborted this task as its end time.
+  if (
+    enableProfilerTimer &&
+    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+  ) {
+    if (task.timed) {
+      markOperationEndTime(request, task, request.abortTime);
+    }
+  }
+  // Instead of emitting an error per task.id, we emit a model that only
+  // has a single value referencing the error.
+  const ref = serializeByValueID(errorId);
+  const processedChunk = encodeReferenceChunk(request, task.id, ref);
+  request.completedErrorChunks.push(processedChunk);
+}
+
+function finishAbort(
+  request: Request,
+  abortedTasks: Set<Task>,
+  errorId: number,
+): void {
+  try {
+    abortedTasks.forEach(task => finishAbortedTask(task, request, errorId));
+    flushCompletedChunks(request);
+  } catch (error) {
+    logRecoverableError(request, error);
+    fatalError(request, error);
+  }
+}
+
+export function attachAbortSignal(request: Request, signal: AbortSignal): void {
+  if (signal.aborted) {
+    abort(request, signal.reason);
+    return;
+  }
+  signal.addEventListener(
+    'abort',
+    () => {
+      abort(request, signal.reason);
+    },
+    {signal: request.abortController.signal},
+  );
+}
+
 export function abort(request: Request, reason: mixed): void {
-  if (request.status !== CLOSED) {
-    fatalError(request, reason);
+  // We define any status below OPEN as OPEN equivalent
+  if (request.status > OPEN) {
+    return;
+  }
+  try {
+    request.status = ABORTING;
+    if (
+      enableProfilerTimer &&
+      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+    ) {
+      request.abortTime = performance.now();
+    }
+    request.abortController.abort(reason);
+    const abortableTasks = request.abortableTasks;
+    if (abortableTasks.size > 0) {
+      const error =
+        reason === undefined
+          ? new Error('The render was aborted by the server without a reason.')
+          : typeof reason === 'object' &&
+              reason !== null &&
+              typeof reason.then === 'function'
+            ? new Error('The render was aborted by the server with a promise.')
+            : reason;
+      const digest = logRecoverableError(request, error);
+      // When rendering we produce a shared error chunk and then
+      // fulfill each task with a reference to that chunk.
+      const errorId = request.nextChunkId++;
+      request.fatalError = errorId;
+      request.pendingChunks++;
+      emitErrorChunk(request, errorId, digest, error, false, null);
+      abortableTasks.forEach(task => abortTask(task, request, errorId));
+      scheduleWork(() => finishAbort(request, abortableTasks, errorId));
+    } else {
+      flushCompletedChunks(request);
+    }
+  } catch (error) {
+    logRecoverableError(request, error);
+    fatalError(request, error);
   }
 }
 
@@ -3222,42 +3362,53 @@ function serializeBlob(request: Request, blob: Blob): string {
   const model: Array<string | Uint8Array> = [blob.type];
   const reader = blob.stream().getReader();
   const newTask = createTask(request, model);
-  function progress(entry: {
-    done: boolean,
-    value: any,
-    ...
-  }): Promise<void> | void {
+
+  function progress(
+    entry: {done: false, value: Uint8Array} | {done: true, value: void},
+  ): Promise<void> | void {
     if (newTask.status !== PENDING) {
       return;
     }
     if (entry.done) {
-      request.inputSubscriptions.delete(cancel);
+      request.abortController.signal.removeEventListener('abort', abortBlob);
       pingTask(request, newTask);
       return;
     }
+    // TODO: Emit the chunk early and refer to it later by dedupe.
     model.push(entry.value);
+    // $FlowFixMe[incompatible-type]
     return reader.read().then(progress).catch(error);
   }
-  function error(reason: mixed): void {
+  function error(reason: mixed) {
     if (newTask.status !== PENDING) {
       return;
     }
-    request.inputSubscriptions.delete(cancel);
+    request.abortController.signal.removeEventListener('abort', abortBlob);
     erroredTask(request, newTask, reason);
     enqueueFlush(request);
     // $FlowFixMe[incompatible-type] should be able to pass mixed
-    reader.cancel(reason).then(noop, noop);
+    // $FlowFixMe[incompatible-use]
+    reader.cancel(reason).then(error, error);
   }
-  function cancel(): void {
+  function abortBlob() {
     if (newTask.status !== PENDING) {
       return;
     }
-    newTask.status = ABORTED;
-    // $FlowFixMe[incompatible-type] should be able to pass mixed
-    reader.cancel(request.fatalError).then(noop, noop);
+    const signal = request.abortController.signal;
+    signal.removeEventListener('abort', abortBlob);
+    const reason = signal.reason;
+    // TODO: Make this use abortTask() instead.
+    erroredTask(request, newTask, reason);
+    enqueueFlush(request);
+    // $FlowFixMe[incompatible-use] should be able to pass mixed
+    reader.cancel(reason).then(error, error);
   }
-  request.inputSubscriptions.add(cancel);
+
+  request.abortController.signal.addEventListener('abort', abortBlob);
+
+  // $FlowFixMe[incompatible-type]
   reader.read().then(progress).catch(error);
+
   return '$B' + newTask.id.toString(16);
 }
 
@@ -3337,6 +3488,7 @@ function serializeReadableStream(
     }
     if (entry.done) {
       streamTask.status = COMPLETED;
+      request.abortableTasks.delete(streamTask);
       const endStreamRow = streamTask.id.toString(16) + ':C\n';
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
       enqueueFlush(request);
@@ -3477,6 +3629,7 @@ function tryStreamTask(request: Request, task: Task): void {
 function haltInputTask(request: Request, task: Task): void {
   if (task.status === PENDING) {
     task.status = ABORTED;
+    request.abortableTasks.delete(task);
     request.pendingChunks--;
     enqueueFlush(request);
   }
@@ -3525,6 +3678,7 @@ function serializeAsyncIterable(
           const reference = serializeByValueID(entryId);
           if (done) {
             streamTask.status = COMPLETED;
+            request.abortableTasks.delete(streamTask);
             const endStreamRow =
               streamTask.id.toString(16) +
               ':C' +
