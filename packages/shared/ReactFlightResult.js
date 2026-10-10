@@ -24,10 +24,43 @@ import type {
 } from 'react-server/src/ReactFlightResultServerConfig';
 import noop from './noop';
 
+export const MODEL_KIND_MASK = 3;
 export const MODEL_OBJECT = 1;
 export const MODEL_ARRAY = 2;
 export const MODEL_ELEMENT = 3;
-export const MODEL_KIND_MASK = 3;
+// Identity in native projection, not JSON/wire readiness.
+export const MODEL_REUSABLE = 4;
+// Positive work for finalized JSON data. Unfinished back edges have no entry.
+export const MODEL_JSON = 8;
+// Finalized ordinary containers; element children stop the ordinary scan.
+// This permits neither identity reuse nor publication.
+export const MODEL_NO_EAGER_DEPENDENCIES = 16;
+export const MAX_JSON_MODEL_WORK = 33554431;
+const MIN_STORED_JSON_MODEL_WORK = 129;
+const MODEL_WORK_SHIFT = 5;
+
+export function packModelInfo(flags: number, jsonWork: number): number {
+  return jsonWork > 0 && jsonWork <= MAX_JSON_MODEL_WORK
+    ? flags | MODEL_JSON | (jsonWork << MODEL_WORK_SHIFT)
+    : flags;
+}
+
+export function getJSONModelWork(info: number): number {
+  return (info & MODEL_JSON) === 0 ? 0 : info >>> MODEL_WORK_SHIFT;
+}
+
+export function getJSONValueWork(value: mixed, info: number): number {
+  if (value === null || typeof value === 'boolean') {
+    return 1;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && !Object.is(value, -0) ? 1 : 0;
+  }
+  if (typeof value === 'string') {
+    return value.length < 1024 && value[0] !== '$' ? 1 + value.length : 0;
+  }
+  return getJSONModelWork(info);
+}
 
 export type ConsoleEntry = {
   +methodName: string,
@@ -84,6 +117,7 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   iteratorEntries: null | WeakMap<Object, $ReadOnlyArray<mixed>>,
   collectionEntries: null | WeakMap<Object, ResultModel<Array<any>>>,
   modelInfo: null | Map<Object, number>,
+  jsonWorkCredit: number,
   consoleEntries: Array<ConsoleEntry>, // DEV-only
   consoleListeners: Set<() => void>, // DEV-only
 };
@@ -122,6 +156,7 @@ export function createResult<T>(
     iteratorEntries: null,
     collectionEntries: null,
     modelInfo: null,
+    jsonWorkCredit: 0,
   } as Omit<Result<T>, 'consoleEntries' | 'consoleListeners'> as any;
   if (__DEV__) {
     result.consoleEntries = [];
@@ -320,6 +355,12 @@ export function setModelInfo<T>(
   model: Object,
   info: number,
 ): void {
+  const work = getJSONModelWork(info);
+  // The immediate parent receives this certificate through the producer task.
+  // Later visits can conservatively classify small JSON containers again.
+  if (work > 0 && work < MIN_STORED_JSON_MODEL_WORK) {
+    return;
+  }
   let models = result.modelInfo;
   if (models === null) {
     result.modelInfo = models = new Map();
@@ -330,6 +371,14 @@ export function setModelInfo<T>(
 export function getModelInfo<T>(result: Result<T>, model: Object): number {
   const models = result.modelInfo;
   return models === null ? 0 : models.get(model) || 0;
+}
+
+export function getJSONWorkCredit<T>(result: Result<T>): number {
+  return result.jsonWorkCredit;
+}
+
+export function addJSONWorkCredit<T>(result: Result<T>, work: number): void {
+  result.jsonWorkCredit += work;
 }
 
 export function markHalted<T>(result: Result<T>, model: Object): void {

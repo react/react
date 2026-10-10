@@ -58,6 +58,8 @@ import {
   getCollectionEntries,
   getModelInfo,
   MODEL_KIND_MASK,
+  MODEL_REUSABLE,
+  MODEL_NO_EAGER_DEPENDENCIES,
   MODEL_OBJECT,
   MODEL_ARRAY,
   MODEL_ELEMENT,
@@ -1060,6 +1062,9 @@ function readModel(response: Response, value: any): any {
   }
 
   const info = getModelInfo(response._result, value);
+  if (!__DEV__ && (info & MODEL_REUSABLE) !== 0) {
+    return value;
+  }
   const models = response._models;
   const existingModel = models.get(value);
   if (existingModel !== undefined) {
@@ -1089,6 +1094,9 @@ function readModel(response: Response, value: any): any {
     }
     models.set(value, model);
     return model;
+  }
+  if (__DEV__ && (info & MODEL_REUSABLE) !== 0) {
+    return isArray(value) ? readArray(response, value) : value;
   }
   switch (info & MODEL_KIND_MASK) {
     case MODEL_OBJECT:
@@ -1214,7 +1222,10 @@ function preloadModel(
   if (
     model === null ||
     (typeof model !== 'object' && typeof model !== 'function') ||
-    response._models.get(model) === model
+    response._models.get(model) === model ||
+    (getModelInfo(response._result, model) &
+      (MODEL_REUSABLE | MODEL_NO_EAGER_DEPENDENCIES)) !==
+      0
   ) {
     return null;
   }
@@ -1304,8 +1315,14 @@ function scanModel(
     return existingModel === value;
   }
   const info = getModelInfo(response._result, value);
+  if ((info & MODEL_REUSABLE) !== 0) {
+    return true;
+  }
   const kind = info & MODEL_KIND_MASK;
   if (kind === MODEL_ELEMENT) {
+    return false;
+  }
+  if ((info & MODEL_NO_EAGER_DEPENDENCIES) !== 0) {
     return false;
   }
   if (kind === 0) {
@@ -1807,10 +1824,12 @@ function readSpecialModel(response: Response, value: any): any {
   if (resolveTemporaryReference(response, value)) {
     return models.get(value);
   }
+
   const moduleChunk = resolveModule(response, value);
   if (moduleChunk !== null) {
     return readChunk(moduleChunk);
   }
+
   if (value.$$typeof === REACT_ELEMENT_TYPE) {
     return readElement(response, value);
   } else if (value.$$typeof === REACT_LAZY_TYPE) {
@@ -1875,11 +1894,7 @@ function readSpecialModel(response: Response, value: any): any {
       if (__DEV__) {
         subscribeChunkDebugInfo(response, chunk, value);
       }
-      if (chunk.status === PENDING_WEAK && isHalted(response._result, value)) {
-        haltChunk(chunk);
-        return chunk;
-      }
-      if (response._closed || isHaltedModel(response, value)) {
+      if (response._closed) {
         if (chunk.status === PENDING_WEAK) {
           haltChunk(chunk);
         } else {
@@ -1887,12 +1902,23 @@ function readSpecialModel(response: Response, value: any): any {
         }
         return chunk;
       }
+      if (chunk.status === PENDING_WEAK && isHalted(response._result, value)) {
+        haltChunk(chunk);
+        return chunk;
+      }
+      if (isHaltedModel(response, value)) {
+        triggerErrorOnChunk(chunk, getClosedReason(response));
+        return chunk;
+      }
       if (chunk.status === PENDING_WEAK) {
         subscribeWeakModel(response, chunk, value);
         return chunk;
       }
       const resolve = (model: any): void => {
-        if (response._closed || chunk.status !== PENDING) {
+        if (
+          response._closed ||
+          (chunk.status !== PENDING && chunk.status !== PENDING_WEAK)
+        ) {
           return;
         }
         const blockedChunk: BlockedChunk<any> = chunk as any;
@@ -1913,12 +1939,13 @@ function readSpecialModel(response: Response, value: any): any {
           triggerErrorOnChunk(chunk, error);
         }
       };
-      const reject = (error: mixed) =>
+      const reject = (error: mixed): void => {
         triggerErrorOnChunk(chunk, resolveError(response, value, error));
-      const status = getResultModelStatus(value);
-      if (status === INITIALIZED) {
+      };
+      const resultModelStatus = getResultModelStatus(value);
+      if (resultModelStatus === INITIALIZED) {
         resolve(value.value);
-      } else if (status === ERRORED) {
+      } else if (resultModelStatus === ERRORED) {
         reject(value.reason);
       } else {
         subscribeToModel(response, value, resolve, reject);
@@ -1969,77 +1996,79 @@ function readSpecialModel(response: Response, value: any): any {
       });
       return copy;
     }
-    const readableStream = getReadableStream(response._result, value);
-    if (readableStream !== undefined) {
-      return readReadableStream(response, value, readableStream);
-    }
-    const asyncIterable = getAsyncIterable(response._result, value);
-    if (asyncIterable !== undefined) {
-      return readAsyncIterable(response, value, asyncIterable);
-    }
-    const iteratorEntries = getIteratorEntries(response._result, value);
-    if (iteratorEntries !== undefined) {
-      const copy: Array<any> = [];
-      const iterator = copy.values();
-      models.set(value, iterator);
-      for (let i = 0; i < iteratorEntries.length; i++) {
-        copy[i] = readModel(response, iteratorEntries[i]);
+    if (getPrototypeOf(value) !== ObjectPrototype) {
+      const readableStream = getReadableStream(response._result, value);
+      if (readableStream !== undefined) {
+        return readReadableStream(response, value, readableStream);
       }
-      return iterator;
-    }
-    if (typeof FormData === 'function' && value instanceof FormData) {
-      if (!hasFormDataBlobs(response._result, value)) {
-        return value;
+      const asyncIterable = getAsyncIterable(response._result, value);
+      if (asyncIterable !== undefined) {
+        return readAsyncIterable(response, value, asyncIterable);
       }
-      const formData: FormData = value;
-      const entries = Array.from(formData.entries());
-      const copy = new FormData();
-      models.set(value, copy);
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        copy.append(entry[0], readModel(response, entry[1]));
-      }
-      return copy;
-    }
-    if (typeof Blob === 'function' && value instanceof Blob) {
-      const copy = new Blob([value], {type: value.type});
-      models.set(value, copy);
-      return copy;
-    }
-    if (value instanceof Error) {
-      let copy;
-      if (__DEV__) {
-        const errorInfo = getErrorInfo(response._result, value);
-        if (errorInfo === undefined) {
-          // eslint-disable-next-line react-internal/prod-error-codes
-          throw new Error(
-            'Expected Error metadata in Result. This is a bug in React.',
-          );
+      const iteratorEntries = getIteratorEntries(response._result, value);
+      if (iteratorEntries !== undefined) {
+        const copy: Array<any> = [];
+        const iterator = copy.values();
+        models.set(value, iterator);
+        for (let i = 0; i < iteratorEntries.length; i++) {
+          copy[i] = readModel(response, iteratorEntries[i]);
         }
-        copy = resolveErrorDev(
-          response,
-          errorInfo,
-          'cause' in value ? {cause: undefined} : undefined,
+        return iterator;
+      }
+      if (typeof FormData === 'function' && value instanceof FormData) {
+        if (!hasFormDataBlobs(response._result, value)) {
+          return value;
+        }
+        const formData: FormData = value;
+        const entries = Array.from(formData.entries());
+        const copy = new FormData();
+        models.set(value, copy);
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          copy.append(entry[0], readModel(response, entry[1]));
+        }
+        return copy;
+      }
+      if (typeof Blob === 'function' && value instanceof Blob) {
+        const copy = new Blob([value], {type: value.type});
+        models.set(value, copy);
+        return copy;
+      }
+      if (value instanceof Error) {
+        let copy;
+        if (__DEV__) {
+          const errorInfo = getErrorInfo(response._result, value);
+          if (errorInfo === undefined) {
+            // eslint-disable-next-line react-internal/prod-error-codes
+            throw new Error(
+              'Expected Error metadata in Result. This is a bug in React.',
+            );
+          }
+          copy = resolveErrorDev(
+            response,
+            errorInfo,
+            'cause' in value ? {cause: undefined} : undefined,
+            typeof AggregateError !== 'undefined' &&
+              value instanceof AggregateError,
+          );
+        } else {
+          copy = resolveErrorProd(response);
+        }
+        models.set(value, copy);
+        if (__DEV__ && 'cause' in value) {
+          copy.cause = readOutlinedModel(response, value.cause);
+        }
+        if (
+          __DEV__ &&
           typeof AggregateError !== 'undefined' &&
-            value instanceof AggregateError,
-        );
-      } else {
-        copy = resolveErrorProd(response);
+          copy instanceof AggregateError
+        ) {
+          copy.errors = new AggregateError(
+            readOutlinedModel(response, value.errors),
+          ).errors;
+        }
+        return copy;
       }
-      models.set(value, copy);
-      if (__DEV__ && 'cause' in value) {
-        copy.cause = readOutlinedModel(response, value.cause);
-      }
-      if (
-        __DEV__ &&
-        typeof AggregateError !== 'undefined' &&
-        copy instanceof AggregateError
-      ) {
-        copy.errors = new AggregateError(
-          readOutlinedModel(response, value.errors),
-        ).errors;
-      }
-      return copy;
     }
     return readObject(response, value);
   }

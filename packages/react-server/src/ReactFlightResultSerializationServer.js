@@ -37,6 +37,7 @@ import {
   MODEL_OBJECT,
   MODEL_ARRAY,
   MODEL_ELEMENT,
+  getJSONModelWork,
 } from 'shared/ReactFlightResult';
 import {
   describeObjectForErrorMessage,
@@ -265,6 +266,7 @@ export type Input = {
   getErrorInfo: Error => void | ReactErrorInfoDev,
   getValueReference: Object => void | ModelReference,
   getModelInfo: Object => number,
+  getJSONWorkCredit: () => number,
   getCollectionEntries: Object => void | ResultModel<Array<any>>,
   subscribeToThenable: (Thenable<any>, InputThenableReader) => () => void,
   subscribe: ({
@@ -283,6 +285,7 @@ export type Request = {
   abortController: AbortController,
   nextChunkId: number,
   pendingChunks: number,
+  jsonWorkSpent: number,
   input: null | Input,
   inputSubscriptions: Set<() => void>,
   writtenModels: WeakMap<Object, number>,
@@ -389,6 +392,7 @@ function RequestInstance(
   this.abortController = new AbortController();
   this.nextChunkId = 0;
   this.pendingChunks = 0;
+  this.jsonWorkSpent = 0;
   this.abortableTasks = abortSet;
   this.pingedTasks = pingedTasks;
   this.completedImportChunks = [] as Array<Chunk>;
@@ -2507,7 +2511,14 @@ function emitChunk(
   // For anything else we need to try to serialize it using JSON.
   // We resolve the model tree first in pure JS to avoid the C++->JS boundary
   // overhead of JSON.stringify's replacer callback.
-  const resolvedModel = resolveModel(request, task, {'': value}, '', value);
+  const resolvedModel = resolveModel(
+    request,
+    task,
+    {'': value},
+    '',
+    value,
+    true,
+  );
   // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
   const json: string = stringify(resolvedModel);
   emitModelChunk(request, task.id, json);
@@ -3292,6 +3303,7 @@ function resolveModel(
     | $ReadOnlyArray<ReactClientValue>,
   parentPropertyName: string,
   value: ReactClientValue,
+  rowRoot: boolean = false,
   parentReference?: null | string,
 ): ReactJSONValue {
   const input = request.input;
@@ -3311,6 +3323,26 @@ function resolveModel(
 
   if (rendered === null || typeof rendered !== 'object') {
     return rendered;
+  }
+
+  // A pure row has no outlining decisions. After the threshold, omitted size
+  // cannot change its truth in this traversal, so a skip adds no serializedSize.
+  if (
+    !__DEV__ &&
+    rendered === value &&
+    (rowRoot || serializedSize > MAX_ROW_SIZE) &&
+    !(enableTaint && TaintRegistryValues.size !== 0)
+  ) {
+    if (input !== null) {
+      const work = getJSONModelWork(modelInfo);
+      if (
+        work !== 0 &&
+        request.jsonWorkSpent + work <= input.getJSONWorkCredit()
+      ) {
+        request.jsonWorkSpent += work;
+        return rendered;
+      }
+    }
   }
 
   if (isArray(rendered)) {
@@ -3514,6 +3546,7 @@ function resolveElementTuple(
     tuple as any,
     '0',
     tuple[0] as any,
+    false,
     tupleReference,
   );
   const type = resolveModel(
@@ -3522,6 +3555,7 @@ function resolveElementTuple(
     tuple as any,
     '1',
     tuple[1] as any,
+    false,
     tupleReference,
   );
   const key = resolveModel(
@@ -3530,6 +3564,7 @@ function resolveElementTuple(
     tuple as any,
     '2',
     tuple[2] as any,
+    false,
     tupleReference,
   );
   const props = resolveModel(
@@ -3538,6 +3573,7 @@ function resolveElementTuple(
     tuple as any,
     '3',
     tuple[3] as any,
+    false,
     tupleReference,
   );
   tuple[0] = marker;

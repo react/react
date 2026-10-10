@@ -107,6 +107,12 @@ import {
   MODEL_ARRAY,
   MODEL_ELEMENT,
   MODEL_KIND_MASK,
+  MODEL_REUSABLE,
+  MODEL_NO_EAGER_DEPENDENCIES,
+  MAX_JSON_MODEL_WORK,
+  packModelInfo,
+  getJSONValueWork,
+  addJSONWorkCredit,
 } from 'shared/ReactFlightResult';
 import {
   createResultModel,
@@ -221,6 +227,7 @@ type Task = {
   promise: ResultModel<ReactClientValue>,
   status: 0 | 1 | 3 | 4 | 5 | 6,
   renderedModel: ReactClientValue,
+  resolvedModelInfo: number,
   modelDependencies: null | Set<ResultModel<ReactClientValue>>,
   reference: ModelReference,
   currentReference: null | ModelReference,
@@ -256,6 +263,7 @@ let modelRoot: null | ReactClientValue = null;
 let canEmitDebugInfo = false;
 let serializedSize = 0;
 const MAX_ROW_SIZE = 3200;
+const __PROTO__ = '__proto__';
 const emptyRoot = {};
 
 export type Request = {
@@ -271,6 +279,7 @@ export type Request = {
   cache: Map<Function, mixed>,
   cacheController: AbortController,
   modelEntries: WeakMap<Reference, ModelEntry>,
+  renderingComponents: Map<Reference, ReactClientValue>,
   renderedImplicitModels: WeakMap<Reference, ModelEntry>,
   renderedKeyedModels: null | Map<
     ReactKey,
@@ -469,6 +478,7 @@ function RequestInstance(
   this.cache = new Map();
   this.cacheController = new AbortController();
   this.modelEntries = new WeakMap();
+  this.renderingComponents = new Map();
   this.renderedImplicitModels = new WeakMap();
   this.renderedKeyedModels = null;
   this.publishedModelReferences = null;
@@ -659,7 +669,8 @@ export function getResult(request: Request): Result<ReactClientValue> {
 function renderFunctionComponent<Props: {[name: string]: mixed}>(
   request: Request,
   task: Task,
-  Component: (p: Props, arg: void) => ReactClientValue,
+  key: ReactKey,
+  Component: (p: Props, arg: void) => any,
   props: Props,
   element: ReactElement,
 ): ReactClientValue {
@@ -668,16 +679,19 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   }
   const renderedModels = getRenderedModels(
     request,
-    element,
+    element as any,
     task.keyPath,
     task.implicitSlot,
   );
+  const isRendering = request.renderingComponents.has(element);
   const prevThenableState = task.thenableState;
-  const key = element.key;
   task.thenableState = null;
+
   let result: ReactClientValue;
   let debugOwner: null | ReactComponentInfo = null;
-  if (__DEV__) {
+  if (isRendering) {
+    result = request.renderingComponents.get(element);
+  } else if (__DEV__) {
     let componentDebugInfo: ReactComponentInfo;
     if (prevThenableState !== null) {
       componentDebugInfo = (prevThenableState as any)._componentDebugInfo;
@@ -685,7 +699,7 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
       componentDebugInfo = {
         name: (Component as any).displayName || Component.name || '',
         env: (0, request.environmentName)(),
-        key: element.key,
+        key,
         owner: task.debugOwner,
         stack:
           task.debugStack === null
@@ -747,9 +761,10 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
     prepareToUseHooksForComponent(prevThenableState, null);
     result = Component(props, undefined);
   }
+
   if (request.status === ABORTING || request.status === CLOSED) {
     if (
-      result !== null &&
+      result != null &&
       typeof result === 'object' &&
       !isClientReference(result) &&
       typeof (result as any).then === 'function'
@@ -758,7 +773,8 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
     }
     throw request.fatalError;
   }
-  if (__DEV__) {
+
+  if (__DEV__ && !isRendering) {
     const trackedThenables = getTrackedThenablesAfterRendering();
     if (trackedThenables !== null) {
       const stacks: Array<Error> = enableAsyncDebugInfo
@@ -777,7 +793,7 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
     }
   }
 
-  if (__DEV__) {
+  if (__DEV__ && !isRendering) {
     if (
       result !== null &&
       typeof result === 'object' &&
@@ -816,6 +832,18 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   } else if (prevKeyPath === null) {
     task.implicitSlot = true;
   }
+  if (isRendering) {
+    const resolvedModel = renderModelDestructive(
+      request,
+      task,
+      emptyRoot,
+      '',
+      result,
+    );
+    task.keyPath = prevKeyPath;
+    task.implicitSlot = prevImplicitSlot;
+    return resolvedModel;
+  }
   if (
     result !== null &&
     typeof result === 'object' &&
@@ -845,8 +873,7 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
     setRenderedModel(renderedModels, element, resolvedModel);
     task.keyPath = prevKeyPath;
     task.implicitSlot = prevImplicitSlot;
-    task.isModelReference = true;
-    return resolvedModel;
+    return renderModelReference(task, resolvedModel);
   }
   if (
     result !== null &&
@@ -860,47 +887,102 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
     const iteratorFn = getIteratorFn(result);
     if (iteratorFn) {
       const iterableChild: any = result;
-      result = {
+      const multiShot = {
         [Symbol.iterator]: function () {
-          return iteratorFn.call(iterableChild) as any;
+          const iterator = iteratorFn.call(iterableChild);
+          if (__DEV__) {
+            if (iterator === iterableChild) {
+              const isGeneratorComponent =
+                // $FlowFixMe[method-unbinding]
+                Object.prototype.toString.call(Component) ===
+                  '[object GeneratorFunction]' &&
+                // $FlowFixMe[method-unbinding]
+                Object.prototype.toString.call(iterableChild) ===
+                  '[object Generator]';
+              if (!isGeneratorComponent) {
+                callWithDebugContextInDEV(
+                  request,
+                  task,
+                  () => {
+                    console.error(
+                      'Returning an Iterator from a Server Component is not supported ' +
+                        'since it cannot be looped over more than once. ',
+                    );
+                  },
+                  undefined,
+                );
+              }
+            }
+          }
+          return iterator as any;
         },
       };
+      if (__DEV__) {
+        (multiShot as any)._debugInfo = iterableChild._debugInfo;
+      }
+      result = multiShot;
     } else if (
       typeof (result as any)[ASYNC_ITERATOR] === 'function' &&
       (typeof ReadableStream !== 'function' ||
         !(result instanceof ReadableStream))
     ) {
       const iterableChild: any = result;
-      result = {
+      const multiShot = {
         [ASYNC_ITERATOR]: function () {
-          return iterableChild[ASYNC_ITERATOR]();
+          const iterator = iterableChild[ASYNC_ITERATOR]();
+          if (__DEV__) {
+            if (iterator === iterableChild) {
+              const isGeneratorComponent =
+                // $FlowFixMe[method-unbinding]
+                Object.prototype.toString.call(Component) ===
+                  '[object AsyncGeneratorFunction]' &&
+                // $FlowFixMe[method-unbinding]
+                Object.prototype.toString.call(iterableChild) ===
+                  '[object AsyncGenerator]';
+              if (!isGeneratorComponent) {
+                callWithDebugContextInDEV(
+                  request,
+                  task,
+                  () => {
+                    console.error(
+                      'Returning an AsyncIterator from a Server Component is not supported ' +
+                        'since it cannot be looped over more than once. ',
+                    );
+                  },
+                  undefined,
+                );
+              }
+            }
+          }
+          return iterator;
         },
       };
+      if (__DEV__) {
+        (multiShot as any)._debugInfo = iterableChild._debugInfo;
+      }
+      result = multiShot;
     }
   }
-  if (
-    __DEV__ &&
-    result !== null &&
-    typeof result === 'object' &&
-    (result as any).$$typeof === REACT_ELEMENT_TYPE
-  ) {
-    (result as any)._store.validated = 1;
+  request.renderingComponents.set(element, result);
+  try {
+    const resolvedModel = renderModelDestructive(
+      request,
+      task,
+      emptyRoot,
+      '',
+      result,
+    );
+    setRenderedModel(
+      renderedModels,
+      element,
+      resolvedModel === undefined ? UNDEFINED_MODEL : resolvedModel,
+    );
+    task.keyPath = prevKeyPath;
+    task.implicitSlot = prevImplicitSlot;
+    return resolvedModel;
+  } finally {
+    request.renderingComponents.delete(element);
   }
-  const resolvedModel = renderModelDestructive(
-    request,
-    task,
-    emptyRoot,
-    '',
-    result,
-  );
-  setRenderedModel(
-    renderedModels,
-    element,
-    resolvedModel === undefined ? UNDEFINED_MODEL : resolvedModel,
-  );
-  task.keyPath = prevKeyPath;
-  task.implicitSlot = prevImplicitSlot;
-  return resolvedModel;
 }
 
 function renderElement(
@@ -922,7 +1004,7 @@ function renderElement(
     !isClientReference(type) &&
     !isOpaqueTemporaryReference(type)
   ) {
-    return renderFunctionComponent(request, task, type, props, element);
+    return renderFunctionComponent(request, task, key, type, props, element);
   }
 
   if (type === REACT_FRAGMENT_TYPE && key === null) {
@@ -991,6 +1073,7 @@ function renderElement(
         return renderFunctionComponent(
           request,
           task,
+          key,
           type.render,
           props,
           element,
@@ -1015,22 +1098,6 @@ function renderElement(
   return renderClientElement(request, task, type, element);
 }
 
-function validateSymbol(
-  value: symbol,
-  parent: ModelParent,
-  parentPropertyName: string,
-): void {
-  // $FlowFixMe[incompatible-type] `description` might be undefined
-  const name: string = value.description;
-  if (Symbol.for(name) !== value) {
-    throw new Error(
-      'Only global symbols received from Symbol.for(...) can be passed to Client Components. ' +
-        `The symbol Symbol.for(${name}) cannot be found among global symbols.` +
-        describeObjectForErrorMessage(parent, parentPropertyName),
-    );
-  }
-}
-
 function createTask(
   request: Request,
   model: ReactClientValue,
@@ -1050,6 +1117,7 @@ function createTask(
     currentReference: reference,
     fieldParentReference: undefined,
     renderedModel: undefined,
+    resolvedModelInfo: 0,
     modelDependencies: null,
     resolve: value => fulfillResultModel(promise, value),
     reject: error => rejectResultModel(promise, error),
@@ -1159,8 +1227,37 @@ function readThenable<T>(thenable: Thenable<T>): T {
 function createLazyWrapperAroundWakeable(
   thenable: Thenable<ReactClientValue>,
 ): ReactClientValue {
-  if (thenable.status === 'fulfilled') {
-    return thenable.value;
+  switch (thenable.status) {
+    case 'fulfilled':
+      return thenable.value;
+    case 'rejected':
+      break;
+    default: {
+      if (typeof thenable.status === 'string') {
+        break;
+      }
+      const pendingThenable: PendingThenable<ReactClientValue> =
+        thenable as any;
+      pendingThenable.status = 'pending';
+      pendingThenable.then(
+        value => {
+          if (thenable.status === 'pending') {
+            const fulfilledThenable: FulfilledThenable<ReactClientValue> =
+              thenable as any;
+            fulfilledThenable.status = 'fulfilled';
+            fulfilledThenable.value = value;
+          }
+        },
+        (error: mixed) => {
+          if (thenable.status === 'pending') {
+            const rejectedThenable: RejectedThenable<ReactClientValue> =
+              thenable as any;
+            rejectedThenable.status = 'rejected';
+            rejectedThenable.reason = error;
+          }
+        },
+      );
+    }
   }
   const lazy: LazyComponent<ReactClientValue, Thenable<ReactClientValue>> = {
     $$typeof: REACT_LAZY_TYPE,
@@ -1286,13 +1383,18 @@ function renderThenable(
   if (enableFlightWeakThenables && thenable.status === 'pending_weak') {
     return renderWeakThenable(request, task, thenable);
   }
-
   const newTask = createTask(
     request,
     value,
     task.keyPath,
     task.implicitSlot,
     task.formatContext,
+  );
+  newTask.promise.then(noop, noop);
+  setRenderedModel(
+    getRenderedModels(request, value, task.keyPath, task.implicitSlot),
+    thenable,
+    newTask.promise,
   );
   if (__DEV__) {
     newTask.environmentName = task.environmentName;
@@ -1302,18 +1404,14 @@ function renderThenable(
     newTask.debugStack = task.debugStack;
     newTask.debugTask = task.debugTask;
   }
-  setRenderedModel(
-    getRenderedModels(request, value, task.keyPath, task.implicitSlot),
-    thenable,
-    newTask.promise,
-  );
   switch (thenable.status) {
-    case 'fulfilled':
+    case 'fulfilled': {
       forwardDebugInfoFromThenable(request, newTask, thenable);
       newTask.model = thenable.value;
       pingTask(request, newTask);
       break;
-    case 'rejected':
+    }
+    case 'rejected': {
       forwardDebugInfoFromThenable(request, newTask, thenable);
       try {
         erroredTask(request, newTask, thenable.reason);
@@ -1321,6 +1419,7 @@ function renderThenable(
         fatalError(request, error);
       }
       break;
+    }
     default: {
       if (request.status === ABORTING) {
         abortTask(request, newTask);
@@ -1477,8 +1576,9 @@ function renderModelDestructive(
   value: ReactClientValue,
   parentReference?: null | ModelReference,
 ): ReactClientValue {
+  // As in Flight, this changes the task's current model. The input stays intact.
   task.model = value;
-  task.isModelReference = false;
+
   if (
     value !== null &&
     typeof value === 'object' &&
@@ -1486,6 +1586,7 @@ function renderModelDestructive(
   ) {
     return renderModelReference(task, value);
   }
+
   if (
     value !== null &&
     (typeof value === 'object' || typeof value === 'function')
@@ -1543,7 +1644,9 @@ function renderModelDestructive(
     if (typeof value === 'function') {
       if (isOpaqueTemporaryReference(value)) {
         throw new Error(
-          'Could not reference an opaque temporary reference. This is likely due to misconfiguring the temporaryReferences options on the server.',
+          'Could not reference an opaque temporary reference. ' +
+            'This is likely due to misconfiguring the temporaryReferences options ' +
+            'on the server.',
         );
       }
       if (/^on[A-Z]/.test(parentPropertyName)) {
@@ -1552,8 +1655,7 @@ function renderModelDestructive(
             describeObjectForErrorMessage(parent, parentPropertyName) +
             '\nIf you need interactivity, consider converting part of this to a Client Component.',
         );
-      }
-      if (
+      } else if (
         __DEV__ &&
         (jsxChildrenParents.has(parent) ||
           (jsxPropsParents.has(parent) && parentPropertyName === 'children'))
@@ -1569,19 +1671,30 @@ function renderModelDestructive(
             'Or maybe you meant to call this function rather than return it.' +
             describeObjectForErrorMessage(parent, parentPropertyName),
         );
+      } else {
+        throw new Error(
+          'Functions cannot be passed directly to Client Components ' +
+            'unless you explicitly expose it by marking it with "use server". ' +
+            'Or maybe you meant to call this function rather than return it.' +
+            describeObjectForErrorMessage(parent, parentPropertyName),
+        );
       }
-      throw new Error(
-        'Functions cannot be passed directly to Client Components ' +
-          'unless you explicitly expose it by marking it with "use server". ' +
-          'Or maybe you meant to call this function rather than return it.' +
-          describeObjectForErrorMessage(parent, parentPropertyName),
-      );
     }
     if (typeof value === 'symbol') {
-      validateSymbol(value, parent, parentPropertyName);
+      // $FlowFixMe[incompatible-type] `description` might be undefined
+      const name: string = value.description;
+      if (Symbol.for(name) !== value) {
+        throw new Error(
+          'Only global symbols received from Symbol.for(...) can be passed to Client Components. ' +
+            `The symbol Symbol.for(${name}) cannot be found among global symbols.` +
+            describeObjectForErrorMessage(parent, parentPropertyName),
+        );
+      }
     }
+    // Strings, numbers, symbols, and other primitives stay native values.
     return value;
   }
+
   const renderedModels = getRenderedModels(
     request,
     value,
@@ -1726,6 +1839,26 @@ function renderModelDestructive(
       task.debugOwner = element._owner;
       task.debugStack = element._debugStack;
       task.debugTask = element._debugTask;
+      if (
+        element._owner === undefined ||
+        element._debugStack === undefined ||
+        element._debugTask === undefined
+      ) {
+        let key = '';
+        if (element.key !== null && element.key !== REACT_OPTIMISTIC_KEY) {
+          key = ' key="' + element.key + '"';
+        }
+        console.error(
+          'Attempted to render <%s%s> without development properties. ' +
+            'This is not supported. It can happen if:' +
+            '\n- The element is created with a production version of React but rendered in development.' +
+            '\n- The element was cloned with a custom function instead of `React.cloneElement`.\n' +
+            'The props of this element may help locate this element: %o',
+          element.type,
+          key,
+          element.props,
+        );
+      }
     }
     const rendered = renderElement(request, task, element.type, element);
     if (typeof rendered === 'string' && reference !== undefined) {
@@ -1737,27 +1870,37 @@ function renderModelDestructive(
     if (
       rendered !== null &&
       typeof rendered === 'object' &&
-      reference != null &&
-      (rendered as any).$$typeof === REACT_ELEMENT_TYPE &&
-      task.fieldParentReference === null
+      reference != null
     ) {
-      task.fieldParentReference = {
-        root: reference.root,
-        parent: reference.parent,
-        key: reference.key,
-      };
+      if (
+        (rendered as any).$$typeof === REACT_ELEMENT_TYPE &&
+        task.fieldParentReference === null
+      ) {
+        task.fieldParentReference = {
+          root: reference.root,
+          parent: reference.parent,
+          key: reference.key,
+        };
+      }
     }
     return rendered;
-  }
-  if (elementType === REACT_LAZY_TYPE) {
+  } else if (elementType === REACT_LAZY_TYPE) {
     if (serializedSize > MAX_ROW_SIZE) {
       return deferTask(request, task);
     }
-    const lazy: LazyComponent<ReactClientValue, any> = value as any;
     task.thenableState = null;
-    const init = lazy._init;
-    const payload = lazy._payload;
-    const resolvedModel = __DEV__ ? callLazyInitInDEV(lazy) : init(payload);
+    const lazy: LazyComponent<ReactClientValue, any> = value as any;
+    let resolvedModel;
+    if (__DEV__) {
+      resolvedModel = callLazyInitInDEV(lazy);
+    } else {
+      const payload = lazy._payload;
+      const init = lazy._init;
+      resolvedModel = init(payload);
+    }
+    if (request.status === ABORTING || request.status === CLOSED) {
+      throw request.fatalError;
+    }
     if (__DEV__) {
       const debugInfo: ?ReactDebugInfo = lazy._debugInfo;
       if (debugInfo) {
@@ -1767,9 +1910,6 @@ function renderModelDestructive(
         forwardDebugInfo(request, task, debugInfo);
       }
     }
-    if (request.status === ABORTING || request.status === CLOSED) {
-      throw request.fatalError;
-    }
     return renderModelDestructive(
       request,
       task,
@@ -1778,8 +1918,7 @@ function renderModelDestructive(
       resolvedModel,
       parentReference,
     );
-  }
-  if (elementType === REACT_LEGACY_ELEMENT_TYPE) {
+  } else if (elementType === REACT_LEGACY_ELEMENT_TYPE) {
     throw new Error(
       'A React Element from an older version of React was rendered. ' +
         'This is not supported. It can happen if:\n' +
@@ -1787,133 +1926,149 @@ function renderModelDestructive(
         '- A library pre-bundled an old copy of "react" or "react/jsx-runtime".\n' +
         '- A compiler tries to "inline" JSX instead of using the runtime.',
     );
-  }
-  if (typeof (value as any).then === 'function') {
-    return renderModelReference(task, renderThenable(request, task, value));
-  }
-  if (isArray(value)) {
-    return renderFragment(request, task, value);
-  }
-  if (value instanceof Date) {
-    const date: Date = value;
-    return renderModelReference(
-      task,
-      isSimpleDate(date)
-        ? new Date(dateGetTime.call(date))
-        : // Match Flight's '$D' + date.toJSON() coercion, including Symbols.
-          // eslint-disable-next-line react-internal/safe-string-coercion
-          new Date('' + date.toJSON()),
-    );
-  }
-  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
-    if (enableTaint) {
-      const typedArray: $ArrayBufferView =
-        value instanceof ArrayBuffer ? new Uint8Array(value) : (value as any);
-      if (TaintRegistryByteLengths.has(typedArray.byteLength)) {
-        const tainted = TaintRegistryValues.get(
-          binaryToComparableString(typedArray),
-        );
-        if (tainted !== undefined) {
-          throwTaintViolation(tainted.message);
-        }
-      }
+  } else if (isArray(value)) {
+    return renderFragment(request, task, value as any);
+  } else {
+    const object: ReactClientObject = value as any;
+    if (typeof (object as any).then === 'function') {
+      return renderModelReference(task, renderThenable(request, task, value));
     }
-    return renderModelReference(task, value);
-  }
-  if (value instanceof Map) {
-    return renderModelReference(task, renderMap(request, task, value));
-  }
-  if (value instanceof Set) {
-    return renderModelReference(task, renderSet(request, task, value));
-  }
-  if (typeof FormData === 'function' && value instanceof FormData) {
-    return renderModelReference(task, renderFormData(request, task, value));
-  }
-  if (value instanceof Error) {
-    return renderModelReference(task, renderErrorValue(request, task, value));
-  }
-  if (typeof Blob === 'function' && value instanceof Blob) {
-    return renderModelReference(task, renderBlob(request, task, value));
-  }
-  const iteratorFn = getIteratorFn(value);
-  if (iteratorFn) {
-    const iterator = iteratorFn.call(value);
-    if (iterator === value) {
+    if (value instanceof Date) {
+      const date: Date = value;
       return renderModelReference(
         task,
-        renderIterator(request, task, iterator as any),
+        isSimpleDate(date)
+          ? new Date(dateGetTime.call(date))
+          : // Match Flight's '$D' + date.toJSON() coercion, including Symbols.
+            // eslint-disable-next-line react-internal/safe-string-coercion
+            new Date('' + date.toJSON()),
       );
     }
-    return renderFragment(
-      request,
-      task,
-      Array.from(iterator as any),
-      value as any,
-    );
-  }
-  if (typeof ReadableStream === 'function' && value instanceof ReadableStream) {
-    return renderModelReference(
-      task,
-      renderReadableStream(request, task, value),
-    );
-  }
-  const getAsyncIterator = (value as any)[ASYNC_ITERATOR];
-  if (typeof getAsyncIterator === 'function') {
-    const model = renderAsyncFragment(
-      request,
-      task,
-      value as any,
-      getAsyncIterator,
-    );
-    return renderModelReference(task, model);
-  }
-  const prototype = getPrototypeOf(value);
-  if (
-    prototype !== ObjectPrototype &&
-    (prototype === null || getPrototypeOf(prototype) !== null)
-  ) {
-    throw new Error(
-      'Only plain objects, and a few built-ins, can be passed to Client Components ' +
-        'from Server Components. Classes or null prototypes are not supported.' +
-        describeObjectForErrorMessage(parent, parentPropertyName),
-    );
-  }
-  if (__DEV__) {
-    if (objectName(value) !== 'Object') {
-      callWithDebugContextInDEV(request, task, () => {
-        console.error(
-          'Only plain objects can be passed to Client Components from Server Components. ' +
-            '%s objects are not supported.%s',
-          objectName(value),
-          describeObjectForErrorMessage(parent, parentPropertyName),
+    if (value instanceof Map) {
+      return renderModelReference(task, renderMap(request, task, value));
+    }
+    if (value instanceof Set) {
+      return renderModelReference(task, renderSet(request, task, value));
+    }
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+      if (enableTaint) {
+        const typedArray: $ArrayBufferView =
+          value instanceof ArrayBuffer ? new Uint8Array(value) : (value as any);
+        if (TaintRegistryByteLengths.has(typedArray.byteLength)) {
+          const tainted = TaintRegistryValues.get(
+            binaryToComparableString(typedArray),
+          );
+          if (tainted !== undefined) {
+            throwTaintViolation(tainted.message);
+          }
+        }
+      }
+      return renderModelReference(task, value);
+    }
+    const prototype = getPrototypeOf(object);
+    if (prototype !== ObjectPrototype) {
+      if (typeof FormData === 'function' && value instanceof FormData) {
+        return renderModelReference(task, renderFormData(request, task, value));
+      }
+      if (value instanceof Error) {
+        return renderModelReference(
+          task,
+          renderErrorValue(request, task, value),
         );
-      });
-    } else if (!isSimpleObject(value)) {
-      callWithDebugContextInDEV(request, task, () => {
-        console.error(
-          'Only plain objects can be passed to Client Components from Server Components. ' +
-            'Classes or other objects with methods are not supported.%s',
-          describeObjectForErrorMessage(parent, parentPropertyName),
+      }
+      if (typeof Blob === 'function' && value instanceof Blob) {
+        return renderModelReference(task, renderBlob(request, task, value));
+      }
+    }
+    const iteratorFn = getIteratorFn(value);
+    if (iteratorFn) {
+      const iterator = iteratorFn.call(value);
+      if (iterator === value) {
+        return renderModelReference(
+          task,
+          renderIterator(request, task, iterator as any),
         );
-      });
-    } else if (Object.getOwnPropertySymbols) {
-      const symbols = Object.getOwnPropertySymbols(value);
-      if (symbols.length > 0) {
+      }
+      return renderFragment(
+        request,
+        task,
+        Array.from(iterator as any),
+        value as any,
+      );
+    }
+    if (
+      typeof ReadableStream === 'function' &&
+      value instanceof ReadableStream
+    ) {
+      return renderModelReference(
+        task,
+        renderReadableStream(request, task, value),
+      );
+    }
+    const getAsyncIterator = (value as any)[ASYNC_ITERATOR];
+    if (typeof getAsyncIterator === 'function') {
+      const model = renderAsyncFragment(
+        request,
+        task,
+        value as any,
+        getAsyncIterator,
+      );
+      return renderModelReference(task, model);
+    }
+    if (
+      prototype !== ObjectPrototype &&
+      (prototype === null || getPrototypeOf(prototype) !== null)
+    ) {
+      throw new Error(
+        'Only plain objects, and a few built-ins, can be passed to Client Components ' +
+          'from Server Components. Classes or null prototypes are not supported.' +
+          describeObjectForErrorMessage(parent, parentPropertyName),
+      );
+    }
+    if (__DEV__) {
+      if (objectName(value) !== 'Object') {
         callWithDebugContextInDEV(request, task, () => {
           console.error(
             'Only plain objects can be passed to Client Components from Server Components. ' +
-              'Objects with symbol properties like %s are not supported.%s',
-            symbols[0].description,
+              '%s objects are not supported.%s',
+            objectName(value),
             describeObjectForErrorMessage(parent, parentPropertyName),
           );
         });
+      } else if (!isSimpleObject(value)) {
+        callWithDebugContextInDEV(request, task, () => {
+          console.error(
+            'Only plain objects can be passed to Client Components from Server Components. ' +
+              'Classes or other objects with methods are not supported.%s',
+            describeObjectForErrorMessage(parent, parentPropertyName),
+          );
+        });
+      } else if (Object.getOwnPropertySymbols) {
+        const symbols = Object.getOwnPropertySymbols(value);
+        if (symbols.length > 0) {
+          callWithDebugContextInDEV(request, task, () => {
+            console.error(
+              'Only plain objects can be passed to Client Components from Server Components. ' +
+                'Objects with symbol properties like %s are not supported.%s',
+              symbols[0].description,
+              describeObjectForErrorMessage(parent, parentPropertyName),
+            );
+          });
+        }
       }
     }
+    const copy: {[key: string]: ReactClientValue} = {};
+    if (renderedModels !== request.modelEntries) {
+      setRenderedModel(request.modelEntries, object, copy);
+    } else if (modelEntry === undefined) {
+      request.modelEntries.set(object, createModelEntry(copy, undefined));
+    } else {
+      modelEntry.model = copy;
+    }
+    task.isModelReference = false;
+    task.fieldParentReference = undefined;
+    return copy;
   }
-  const copy: {[key: string]: ReactClientValue} = {};
-  setRenderedModel(request.modelEntries, value, copy);
-  task.fieldParentReference = undefined;
-  return copy;
 }
 
 function resolveModel(
@@ -1950,6 +2105,7 @@ function resolveModel(
             throwTaintViolation(tainted.message);
           }
         }
+        task.resolvedModelInfo = 0;
         return renderModelReference(
           task,
           Number.isNaN(time) ? null : new Date(time),
@@ -1957,6 +2113,7 @@ function resolveModel(
       }
       jsonValue = (value as any).toJSON(parentPropertyName);
     }
+
     if (__DEV__) {
       const originalValue = parent[parentPropertyName as any];
       if (
@@ -2028,22 +2185,26 @@ function resolveModel(
         request.hasByValueModels = true;
       }
     }
-    if (
-      task.isModelReference ||
-      rendered === null ||
-      typeof rendered !== 'object'
-    ) {
+    if (task.isModelReference) {
+      task.resolvedModelInfo =
+        rendered !== null && typeof rendered === 'object'
+          ? getModelInfo(request.result, rendered)
+          : 0;
       return rendered;
     }
-    const stack = request.resolvingModelStack;
-    stack.push(rendered);
+    if (rendered === null || typeof rendered !== 'object') {
+      task.resolvedModelInfo = 0;
+      return rendered;
+    }
+    const resolvingModelStack = request.resolvingModelStack;
+    resolvingModelStack.push(rendered);
     if (request.resolvingModels !== null) {
       request.resolvingModels.add(rendered);
     }
     try {
       return resolveModelFields(request, task, rendered);
     } finally {
-      stack.pop();
+      resolvingModelStack.pop();
       if (request.resolvingModels !== null) {
         request.resolvingModels.delete(rendered);
       }
@@ -2103,14 +2264,14 @@ function renderModel(
         task.implicitSlot,
         task.formatContext,
       );
+      const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
+      setModelReference(request, model, newTask.reference);
       if (__DEV__) {
         newTask.environmentName = task.environmentName;
         newTask.debugOwner = task.debugOwner;
         newTask.debugStack = task.debugStack;
         newTask.debugTask = task.debugTask;
       }
-      const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
-      setModelReference(request, model, newTask.reference);
       if ((model as any).$$typeof === REACT_ELEMENT_TYPE) {
         const renderedModels = getRenderedModels(
           request,
@@ -2160,11 +2321,6 @@ function renderModel(
       prevImplicitSlot,
       task.formatContext,
     );
-    if (__DEV__) {
-      newTask.debugOwner = task.debugOwner;
-      newTask.debugStack = task.debugStack;
-      newTask.debugTask = task.debugTask;
-    }
     // Binding in the recovery path avoids a captured local in every hot call,
     // including after a later bundler inlines this helper.
     newTask.resolve = resolveBoxedModel.bind(null, newTask.resolve);
@@ -2174,6 +2330,12 @@ function renderModel(
         parent: newTask.reference,
         key: 'value',
       });
+    }
+    if (__DEV__) {
+      newTask.environmentName = task.environmentName;
+      newTask.debugOwner = task.debugOwner;
+      newTask.debugStack = task.debugStack;
+      newTask.debugTask = task.debugTask;
     }
     let outlinedModels = request.outlinedModels;
     if (outlinedModels === null) {
@@ -2218,15 +2380,16 @@ function resolveModelFields(
   const parentReference = task.fieldParentReference;
   const prevKeyPath = task.keyPath;
   const prevImplicitSlot = task.implicitSlot;
-  task.keyPath = null;
-  task.implicitSlot = false;
   if ((rendered as any).$$typeof === REACT_ELEMENT_TYPE) {
     const element: ReactElement = rendered as any;
     const prevDependencies = task.modelDependencies;
     task.modelDependencies = null;
+    task.keyPath = null;
+    task.implicitSlot = false;
     try {
+      // Flight visits the element tuple's marker and key as well as its fields.
       serializedSize += 2;
-      if (typeof element.key === 'string') {
+      if (element.key !== null && typeof element.key === 'string') {
         serializedSize += element.key.length;
       }
       element.type = resolveModel(
@@ -2245,6 +2408,7 @@ function resolveModelFields(
         element.props,
         parentReference,
       );
+      const propsInfo = task.resolvedModelInfo;
       const resolved = renderOutlinedElement(
         request,
         task,
@@ -2254,7 +2418,18 @@ function resolveModelFields(
         prevImplicitSlot,
         task.modelDependencies,
       );
-      setModelInfo(request.result, element, MODEL_ELEMENT);
+      const directlyReusable =
+        !__DEV__ &&
+        resolved === rendered &&
+        (typeof element.type === 'string' ||
+          typeof element.type === 'symbol') &&
+        (element.props === null ||
+          (typeof element.props !== 'object' &&
+            typeof element.props !== 'function') ||
+          (propsInfo & MODEL_REUSABLE) !== 0);
+      const info = MODEL_ELEMENT | (directlyReusable ? MODEL_REUSABLE : 0);
+      setModelInfo(request.result, element, info);
+      task.resolvedModelInfo = resolved === rendered ? info : 0;
       return resolved;
     } catch (error) {
       markErroredModel(
@@ -2273,21 +2448,63 @@ function resolveModelFields(
   if (isArray(rendered)) {
     const children: Array<ReactClientValue> = model as any;
     const copy: Array<ReactClientValue> = rendered as any;
+    task.keyPath = null;
+    task.implicitSlot = false;
     try {
+      let directlyReusable = true;
+      let noEagerDependencies = true;
+      let jsonWork = 1;
+      // Each container earns local credit once; child containers earn their own.
+      let localWork = 1;
       for (let i = 0; i < children.length; i++) {
         if (i in children) {
-          copy[i] = resolveModel(
+          const key = '' + i;
+          const child = resolveModel(
             request,
             task,
             children,
-            '' + i,
+            key,
             children[i],
             parentReference,
           );
+          const info = task.resolvedModelInfo;
+          copy[i] = child;
+          const isObject =
+            child !== null &&
+            (typeof child === 'object' || typeof child === 'function');
+          if (isObject && (info & MODEL_REUSABLE) === 0) {
+            directlyReusable = false;
+          }
+          if (
+            isObject &&
+            (info & (MODEL_REUSABLE | MODEL_NO_EAGER_DEPENDENCIES)) === 0 &&
+            (info & MODEL_KIND_MASK) !== MODEL_ELEMENT
+          ) {
+            noEagerDependencies = false;
+          }
+          const childWork = getJSONValueWork(child, info);
+          localWork += key.length + 1 + (isObject ? 0 : childWork);
+          if (jsonWork !== 0) {
+            jsonWork += key.length + 1 + childWork;
+            if (childWork === 0 || jsonWork > MAX_JSON_MODEL_WORK) {
+              jsonWork = 0;
+            }
+          }
+        } else {
+          directlyReusable = false;
+          jsonWork = 0;
         }
       }
       copy.length = children.length;
-      setModelInfo(request.result, copy, MODEL_ARRAY);
+      const info = packModelInfo(
+        MODEL_ARRAY |
+          (directlyReusable ? MODEL_REUSABLE : 0) |
+          (noEagerDependencies ? MODEL_NO_EAGER_DEPENDENCIES : 0),
+        jsonWork,
+      );
+      setModelInfo(request.result, copy, info);
+      task.resolvedModelInfo = info;
+      addJSONWorkCredit(request.result, localWork);
       return copy;
     } catch (error) {
       markErroredModel(request, task, model, prevKeyPath, prevImplicitSlot);
@@ -2296,7 +2513,14 @@ function resolveModelFields(
   }
   const object: ReactClientObject = model as any;
   const copy: {[key: string]: ReactClientValue} = rendered as any;
+  task.keyPath = null;
+  task.implicitSlot = false;
   try {
+    let directlyReusable = true;
+    let noEagerDependencies = true;
+    let jsonWork = 1;
+    // Recursive JSON work counts shared children again; local credit does not.
+    let localWork = 1;
     for (const key in object) {
       if (hasOwnProperty.call(object, key)) {
         const child = resolveModel(
@@ -2307,19 +2531,49 @@ function resolveModelFields(
           object[key],
           parentReference,
         );
-        if (key === '__proto__') {
+        const info = task.resolvedModelInfo;
+        const isObject =
+          child !== null &&
+          (typeof child === 'object' || typeof child === 'function');
+        if (isObject && (info & MODEL_REUSABLE) === 0) {
+          directlyReusable = false;
+        }
+        if (
+          isObject &&
+          (info & (MODEL_REUSABLE | MODEL_NO_EAGER_DEPENDENCIES)) === 0 &&
+          (info & MODEL_KIND_MASK) !== MODEL_ELEMENT
+        ) {
+          noEagerDependencies = false;
+        }
+        const childWork = getJSONValueWork(child, info);
+        localWork += key.length + 1 + (isObject ? 0 : childWork);
+        if (jsonWork !== 0) {
+          jsonWork += key.length + 1 + childWork;
+          if (childWork === 0 || jsonWork > MAX_JSON_MODEL_WORK) {
+            jsonWork = 0;
+          }
+        }
+        if (key === __PROTO__) {
           Object.defineProperty(copy, key, {
             value: child,
             enumerable: true,
-            configurable: true,
             writable: true,
+            configurable: true,
           });
         } else {
           copy[key] = child;
         }
       }
     }
-    setModelInfo(request.result, copy, MODEL_OBJECT);
+    const info = packModelInfo(
+      MODEL_OBJECT |
+        (directlyReusable ? MODEL_REUSABLE : 0) |
+        (noEagerDependencies ? MODEL_NO_EAGER_DEPENDENCIES : 0),
+      jsonWork,
+    );
+    setModelInfo(request.result, copy, info);
+    task.resolvedModelInfo = info;
+    addJSONWorkCredit(request.result, localWork);
     return copy;
   } catch (error) {
     markErroredModel(request, task, model, prevKeyPath, prevImplicitSlot);
@@ -3214,6 +3468,12 @@ function renderOutlinedElement(
         model,
         lazy,
       );
+    }
+    if (__DEV__) {
+      newTask.promise.then(() => {
+        Object.freeze(element.props);
+        Object.freeze(element);
+      }, noop);
     }
     return renderModelReference(task, lazy);
   }
