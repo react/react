@@ -21,6 +21,20 @@ import type {ReactClientValue} from './ReactFlightServer';
 export type {ReactClientValue} from './ReactFlightServer';
 import type {ThenableState} from './ReactFlightThenable';
 import type {
+  AsyncSequence,
+  IONode,
+  PromiseNode,
+  UnresolvedPromiseNode,
+} from './ReactFlightAsyncSequence';
+import {
+  IO_NODE,
+  PROMISE_NODE,
+  AWAIT_NODE,
+  UNRESOLVED_PROMISE_NODE,
+  UNRESOLVED_AWAIT_NODE,
+} from './ReactFlightAsyncSequence';
+import {isAwaitInUserspace as isAwaitInUserspaceWithFilter} from './ReactFlightStackTraceContext';
+import type {
   Thenable,
   PendingThenable,
   FulfilledThenable,
@@ -31,6 +45,8 @@ import type {
   ReactCallSite,
   ReactComponentInfo,
   ReactDebugInfo,
+  ReactAsyncInfo,
+  ReactIOInfo,
 } from 'shared/ReactTypes';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {
@@ -58,6 +74,7 @@ import {
   resetHooksForRequest,
   prepareToUseHooksForComponent,
   getThenableStateAfterSuspending,
+  getTrackedThenablesAfterRendering,
 } from './ReactFlightResultHooks';
 import {SuspenseException, getSuspendedThenable} from './ReactFlightThenable';
 import {
@@ -136,6 +153,10 @@ import {
   isServerReference,
   getServerReferenceId,
   parseStackTrace,
+  getAsyncSequenceFromPromise,
+  initAsyncDebugInfo,
+  getCurrentAsyncSequence,
+  markAsyncSequenceRootTask,
   supportsComponentStorage,
   componentStorage,
   getServerReferenceBoundArguments,
@@ -274,6 +295,8 @@ export type Request = {
   completedElements: Array<ReactElement>, // DEV-only
   didWarnForKey: null | WeakSet<ReactComponentInfo>, // DEV-only
   unkeyedElements: WeakSet<ReactElement>, // DEV-only
+  debugIONodes: WeakMap<AsyncSequence, ReactIOInfo>, // DEV-only
+  debugThenables: WeakMap<Object, Thenable<any>>, // DEV-only
   timeOrigin: number, // DEV-only
   abortTime: number, // DEV-only
   environmentName: () => string, // DEV-only
@@ -469,6 +492,8 @@ function RequestInstance(
     this.unkeyedElements = new WeakSet();
     this.timeOrigin = performance.now();
     this.abortTime = -0.0;
+    this.debugIONodes = new WeakMap();
+    this.debugThenables = new WeakMap();
     this.environmentName =
       environmentName === undefined
         ? () => 'Server'
@@ -495,6 +520,8 @@ function RequestInstance(
   );
   this.pingedTasks = [rootTask];
 }
+
+initAsyncDebugInfo();
 
 export function resolveRequest(): null | Request {
   const cache = resolveCache();
@@ -650,10 +677,52 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
     throw request.fatalError;
   }
   if (__DEV__) {
+    const trackedThenables = getTrackedThenablesAfterRendering();
+    if (trackedThenables !== null) {
+      const stacks: Array<Error> = enableAsyncDebugInfo
+        ? (trackedThenables as any)._stacks ||
+          ((trackedThenables as any)._stacks = [])
+        : (null as any);
+      for (let i = 0; i < trackedThenables.length; i++) {
+        forwardDebugInfoFromThenable(
+          request,
+          task,
+          trackedThenables[i],
+          debugOwner,
+          enableAsyncDebugInfo ? stacks[i] : null,
+        );
+      }
+    }
+  }
+
+  if (__DEV__) {
+    if (
+      result !== null &&
+      typeof result === 'object' &&
+      !isClientReference(result) &&
+      typeof (result as any).then === 'function'
+    ) {
+      const thenable: Thenable<ReactClientValue> = result as any;
+      if (thenable.status === 'fulfilled') {
+        forwardDebugInfoFromThenable(request, task, thenable);
+        result = thenable.value;
+      } else if (thenable.status === 'rejected') {
+        forwardDebugInfoFromThenable(request, task, thenable);
+        throw thenable.reason;
+      }
+    }
     task.debugOwner = debugOwner;
     task.debugStack = null;
     task.debugTask = null;
+    if (
+      result != null &&
+      typeof result === 'object' &&
+      (result as any).$$typeof === REACT_ELEMENT_TYPE
+    ) {
+      (result as any)._store.validated = 1;
+    }
   }
+
   const prevKeyPath = task.keyPath;
   const prevImplicitSlot = task.implicitSlot;
   if (key !== null) {
@@ -1119,10 +1188,12 @@ function renderThenable(
   );
   switch (thenable.status) {
     case 'fulfilled':
+      forwardDebugInfoFromThenable(request, newTask, thenable);
       newTask.model = thenable.value;
       pingTask(request, newTask);
       break;
     case 'rejected':
+      forwardDebugInfoFromThenable(request, newTask, thenable);
       try {
         erroredTask(request, newTask, thenable.reason);
       } catch (error) {
@@ -1160,12 +1231,14 @@ function renderThenable(
       thenable.then(
         fulfilledValue => {
           if (newTask.status === PENDING) {
+            forwardDebugInfoFromCurrentContext(request, newTask, thenable);
             newTask.model = fulfilledValue;
             pingTask(request, newTask);
           }
         },
         reason => {
           if (newTask.status === PENDING) {
+            forwardDebugInfoFromCurrentContext(request, newTask, thenable);
             try {
               erroredTask(request, newTask, reason);
             } catch (error) {
@@ -2363,6 +2436,9 @@ function performWork(request: Request): void {
   if (request.status === CLOSED) {
     return;
   }
+  if (__DEV__) {
+    markAsyncSequenceRootTask();
+  }
   const prevDispatcher = ReactSharedInternals.H;
   ReactSharedInternals.H = HooksDispatcher;
   const prevCache = setCurrentCache(request);
@@ -3173,6 +3249,741 @@ function completeTask(
   request.abortableTasks.delete(task);
 }
 
+function isAwaitInUserspace(request: Request, stack: ReactStackTrace): boolean {
+  return isAwaitInUserspaceWithFilter(request.filterStackFrame, stack);
+}
+
+function forwardDebugInfoFromAbortedTask(request: Request, task: Task): void {
+  // If a task is aborted, we can still include as much debug info as we can from the
+  // value that we have so far.
+  const model: any = task.model;
+  if (typeof model !== 'object' || model === null) {
+    return;
+  }
+  let debugInfo: ?ReactDebugInfo;
+  if (__DEV__) {
+    // If this came from Flight, forward any debug info into this new row.
+    debugInfo = model._debugInfo;
+    if (debugInfo) {
+      forwardDebugInfo(request, task, debugInfo);
+    }
+  }
+  if (enableProfilerTimer && enableAsyncDebugInfo) {
+    let thenable: null | Thenable<any> = null;
+    if (typeof model.then === 'function') {
+      thenable = model as any;
+    } else if (model.$$typeof === REACT_LAZY_TYPE) {
+      const payload = model._payload;
+      if (typeof payload.then === 'function') {
+        thenable = payload;
+      }
+    }
+    if (thenable !== null) {
+      const sequence = getAsyncSequenceFromPromise(thenable);
+      if (sequence !== null) {
+        let node = sequence;
+        while (node.tag === UNRESOLVED_AWAIT_NODE && node.awaited !== null) {
+          // See if any of the dependencies are resolved yet.
+          node = node.awaited;
+        }
+        if (node.tag === UNRESOLVED_PROMISE_NODE) {
+          // We don't know what Promise will eventually end up resolving this Promise and if it
+          // was I/O at all. However, we assume that it was some kind of I/O since it didn't
+          // complete in time before aborting.
+          // The best we can do is try to emit the stack of where this Promise was created.
+          serializeIONode(request, node, null);
+          const env = (0, request.environmentName)();
+          const asyncInfo: ReactAsyncInfo = {
+            awaited: node as any as ReactIOInfo, // This is deduped by this reference.
+            env: env,
+          };
+          // We don't have a start time for this await but in case there was no start time emitted
+          // we need to include something. TODO: We should maybe ideally track the time when we
+          // called .then() but without updating the task.time field since that's used for the cutoff.
+          advanceTaskTime(request, task, task.time);
+          recordAsyncDebugInfo(request, task, asyncInfo);
+        } else {
+          // We have a resolved Promise. Its debug info can include both awaited data and rejected
+          // promises after the abort.
+          emitAsyncSequence(request, task, sequence, debugInfo, null, null);
+        }
+      }
+    }
+  }
+}
+
+function recordAsyncDebugInfo(
+  request: Request,
+  task: Task,
+  info: ReactAsyncInfo,
+): void {
+  const awaited = request.debugIONodes.get(info.awaited as any);
+  if (awaited === undefined) {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error('Missing Result I/O metadata. This is a bug in React.');
+  }
+  const entry: ReactAsyncInfo = {awaited};
+  if (info.env !== undefined) {
+    // $FlowFixMe[cannot-write]
+    entry.env = info.env;
+  }
+  if (info.owner !== undefined) {
+    // $FlowFixMe[cannot-write]
+    entry.owner = info.owner;
+  }
+  if (info.stack !== undefined) {
+    // $FlowFixMe[cannot-write]
+    entry.stack = info.stack;
+  }
+  pushDebugInfo(task.promise, entry);
+}
+
+function captureDebugThenable(
+  request: Request,
+  thenable: Thenable<any>,
+): Thenable<any> {
+  const existing = request.debugThenables.get(thenable);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const value = createResultModel<any>();
+  value._debugSource = thenable;
+  request.debugThenables.set(thenable, value);
+  if (thenable.status === 'fulfilled') {
+    fulfillResultModel(value, thenable.value);
+  } else if (thenable.status === 'rejected') {
+    rejectResultModel(value, thenable.reason);
+  } else {
+    let cancelled = false;
+    thenable.then(
+      resolved => {
+        if (cancelled) {
+          return;
+        }
+        cancelled = true;
+        if (
+          (isArray(resolved) && resolved.length > 200) ||
+          (ArrayBuffer.isView(resolved) && resolved.byteLength > 1000)
+        ) {
+          markHalted(request.result, value);
+          rejectResultModel(value, null);
+        } else {
+          fulfillResultModel(value, resolved);
+        }
+      },
+      reason => {
+        if (!cancelled) {
+          cancelled = true;
+          rejectResultModel(value, reason);
+        }
+      },
+    );
+    Promise.resolve().then(() => {
+      if (!cancelled) {
+        cancelled = true;
+        markHalted(request.result, value);
+        rejectResultModel(value, null);
+      }
+    });
+  }
+  return value;
+}
+
+function isPromiseCreationInternal(url: string, functionName: string): boolean {
+  // Various internals of the JS VM can create Promises but the call frame of the
+  // internals are not very interesting for our purposes so we need to skip those.
+  if (url === 'node:internal/async_hooks') {
+    // Ignore the stack frames from the async hooks themselves.
+    return true;
+  }
+  if (url !== '') {
+    return false;
+  }
+  // V8 used to name the frames of static methods on the Promise constructor
+  // "Function.x" but newer versions name them "Promise.x". We match both.
+  switch (functionName) {
+    case 'new Promise':
+    case 'Function.withResolvers':
+    case 'Promise.withResolvers':
+    case 'Function.reject':
+    case 'Promise.reject':
+    case 'Function.resolve':
+    case 'Promise.resolve':
+    case 'Function.all':
+    case 'Promise.all':
+    case 'Function.allSettled':
+    case 'Promise.allSettled':
+    case 'Function.race':
+    case 'Promise.race':
+    case 'Function.try':
+    case 'Promise.try':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function stripLeadingPromiseCreationFrames(
+  stack: ReactStackTrace,
+): ReactStackTrace {
+  for (let i = 0; i < stack.length; i++) {
+    const callsite = stack[i];
+    const functionName = callsite[0];
+    const url = callsite[1];
+    if (!isPromiseCreationInternal(url, functionName)) {
+      if (i > 0) {
+        return stack.slice(i);
+      } else {
+        return stack;
+      }
+    }
+  }
+  return [];
+}
+
+function findCalledFunctionNameFromStackTrace(
+  request: Request,
+  stack: ReactStackTrace,
+): string {
+  // Gets the name of the first function called from first party code.
+  let bestMatch = '';
+  const filterStackFrame = request.filterStackFrame;
+  for (let i = 0; i < stack.length; i++) {
+    const callsite = stack[i];
+    const functionName = callsite[0];
+    const url = devirtualizeURL(callsite[1]);
+    const lineNumber = callsite[2];
+    const columnNumber = callsite[3];
+    if (
+      filterStackFrame(url, functionName, lineNumber, columnNumber) &&
+      // Don't consider anonymous code first party even if the filter wants to include them in the stack.
+      url !== ''
+    ) {
+      if (bestMatch === '') {
+        // If we had no good stack frames for internal calls, just use the last
+        // first party function name.
+        return functionName;
+      }
+      return bestMatch;
+    } else {
+      bestMatch = functionName;
+    }
+  }
+  return '';
+}
+
+function hasUnfilteredFrame(request: Request, stack: ReactStackTrace): boolean {
+  const filterStackFrame = request.filterStackFrame;
+  for (let i = 0; i < stack.length; i++) {
+    const callsite = stack[i];
+    const functionName = callsite[0];
+    const url = devirtualizeURL(callsite[1]);
+    const lineNumber = callsite[2];
+    const columnNumber = callsite[3];
+    // Ignore async stack frames because they're not "real". We'd expect to have at least
+    // one non-async frame if we're actually executing inside a first party function.
+    // Otherwise we might just be in the resume of a third party function that resumed
+    // inside a first party stack.
+    const isAsync = callsite[6];
+    if (
+      !isAsync &&
+      filterStackFrame(url, functionName, lineNumber, columnNumber) &&
+      // Ignore anonymous stack frames like internals. They are also not in first party
+      // code even though it might be useful to include them in the final stack.
+      url !== ''
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function visitAsyncNode(
+  request: Request,
+  task: Task,
+  node: AsyncSequence,
+  visited: Map<
+    AsyncSequence | ReactDebugInfo,
+    void | null | PromiseNode | IONode,
+  >,
+  cutOff: number,
+): void | null | PromiseNode | IONode {
+  // Collect the previous chain iteratively instead of recursively to avoid
+  // stack overflow on deep chains. We process from deepest to shallowest so
+  // each node has its previousIONode available.
+  const chain: Array<AsyncSequence> = [];
+  let current: AsyncSequence | null = node;
+
+  while (current !== null) {
+    if (visited.has(current)) {
+      break;
+    }
+    chain.push(current);
+    current = current.previous;
+  }
+
+  let previousIONode: void | null | PromiseNode | IONode =
+    current !== null ? visited.get(current) : null;
+
+  // Process from deepest to shallowest (reverse order).
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const n = chain[i];
+    // Set it as visited early in case we see the node again before returning.
+    visited.set(n, null);
+
+    const result = visitAsyncNodeImpl(
+      request,
+      task,
+      n,
+      visited,
+      cutOff,
+      previousIONode,
+    );
+
+    if (result !== null) {
+      // If we ended up with a value, let's use that value for future visits.
+      visited.set(n, result);
+    }
+
+    if (result === undefined) {
+      // Undefined is used as a signal that we found a suitable aborted node
+      // and we don't have to find further aborted nodes.
+      return undefined;
+    }
+
+    previousIONode = result;
+  }
+
+  return previousIONode;
+}
+
+function visitAsyncNodeImpl(
+  request: Request,
+  task: Task,
+  node: AsyncSequence,
+  visited: Map<
+    AsyncSequence | ReactDebugInfo,
+    void | null | PromiseNode | IONode,
+  >,
+  cutOff: number,
+  previousIONode: void | null | PromiseNode | IONode,
+): void | null | PromiseNode | IONode {
+  if (node.end >= 0 && node.end <= request.timeOrigin) {
+    // This was already resolved when we started this render. It must have been either something
+    // that's part of a start up sequence or externally cached data. We exclude that information.
+    // The technique for debugging the effects of uncached data on the render is to simply uncache it.
+    return null;
+  }
+
+  // `found` represents the return value of the following switch statement.
+  // We can't use multiple `return` statements in the switch statement
+  // since that prevents Closure compiler from inlining `visitAsyncImpl`
+  // thus doubling the call stack size.
+  let found: void | null | PromiseNode | IONode;
+  switch (node.tag) {
+    case IO_NODE: {
+      found = node;
+      break;
+    }
+    case UNRESOLVED_PROMISE_NODE: {
+      found = previousIONode;
+      break;
+    }
+    case PROMISE_NODE: {
+      const awaited = node.awaited;
+      let match: void | null | PromiseNode | IONode = previousIONode;
+      const promise = node.promise.deref();
+      if (awaited !== null) {
+        const ioNode = visitAsyncNode(request, task, awaited, visited, cutOff);
+        if (ioNode === undefined) {
+          // Undefined is used as a signal that we found a suitable aborted node and we don't have to find
+          // further aborted nodes.
+          found = undefined;
+          break;
+        } else if (ioNode !== null) {
+          // This Promise was blocked on I/O. That's a signal that this Promise is interesting to log.
+          // We don't log it yet though. We return it to be logged by the point where it's awaited.
+          // The ioNode might be another PromiseNode in the case where none of the AwaitNode had
+          // unfiltered stacks.
+          if (ioNode.tag === PROMISE_NODE) {
+            // If the ioNode was a Promise, then that means we found one in user space since otherwise
+            // we would've returned an IO node. We assume this has the best stack.
+            // Note: This might also be a Promise with a displayName but potentially a worse stack.
+            // We could potentially favor the outer Promise if it has a stack but not the inner.
+            match = ioNode;
+          } else if (
+            (node.stack !== null && hasUnfilteredFrame(request, node.stack)) ||
+            (promise !== undefined &&
+              // $FlowFixMe[prop-missing]
+              typeof promise.displayName === 'string' &&
+              (ioNode.stack === null ||
+                !hasUnfilteredFrame(request, ioNode.stack)))
+          ) {
+            // If this Promise has a stack trace then we favor that over the I/O node since we're
+            // mainly dealing with Promises as the abstraction.
+            // If it has no stack but at least has a displayName and the io doesn't have a better
+            // stack anyway, then also use this Promise instead since at least it has a name.
+            match = node;
+          } else {
+            // If this Promise was created inside only third party code, then try to use
+            // the inner I/O node instead. This could happen if third party calls into first
+            // party to perform some I/O.
+            match = ioNode;
+          }
+        } else if (request.status === ABORTING) {
+          if (node.start < request.abortTime && node.end > request.abortTime) {
+            // We aborted this render. If this Promise spanned the abort time it was probably the
+            // Promise that was aborted. This won't necessarily have I/O associated with it but
+            // it's a point of interest.
+            if (
+              (node.stack !== null &&
+                hasUnfilteredFrame(request, node.stack)) ||
+              (promise !== undefined &&
+                // $FlowFixMe[prop-missing]
+                typeof promise.displayName === 'string')
+            ) {
+              match = node;
+            }
+          }
+        }
+      }
+      // We need to forward after we visit awaited nodes because what ever I/O we requested that's
+      // the thing that generated this node and its virtual children.
+      if (promise !== undefined) {
+        const debugInfo = promise._debugInfo;
+        if (debugInfo != null && !visited.has(debugInfo)) {
+          visited.set(debugInfo, null);
+          forwardDebugInfo(request, task, debugInfo);
+        }
+      }
+      found = match;
+      break;
+    }
+    case UNRESOLVED_AWAIT_NODE: {
+      found = previousIONode;
+      break;
+    }
+    case AWAIT_NODE: {
+      const awaited = node.awaited;
+      let match: void | null | PromiseNode | IONode = previousIONode;
+      if (awaited !== null) {
+        const ioNode = visitAsyncNode(request, task, awaited, visited, cutOff);
+        if (ioNode === undefined) {
+          // Undefined is used as a signal that we found a suitable aborted node and we don't have to find
+          // further aborted nodes.
+          found = undefined;
+          break;
+        } else if (ioNode !== null) {
+          const startTime: number = node.start;
+          const endTime: number = node.end;
+          if (startTime < cutOff) {
+            // We started awaiting this node before we started rendering this sequence.
+            // This means that this particular await was never part of the current sequence.
+            // If we have another await higher up in the chain it might have a more actionable stack
+            // from the perspective of this component. If we end up here from the "previous" path,
+            // then this gets I/O ignored, which is what we want because it means it was likely
+            // just part of a previous component's rendering.
+            match = ioNode;
+            if (
+              node.stack !== null &&
+              isAwaitInUserspace(request, node.stack)
+            ) {
+              // This await happened earlier but it was done in user space. This is the first time
+              // that user space saw the value of the I/O. We know we'll emit the I/O eventually
+              // but if we do it now we can override the promise value of the I/O entry to the
+              // one observed by this await which will be a better value than the internals of
+              // the I/O entry. If it's still alive that is.
+              const promise =
+                awaited.promise === null ? undefined : awaited.promise.deref();
+              if (promise !== undefined) {
+                serializeIONode(request, ioNode, awaited.promise);
+              }
+            }
+          } else {
+            if (
+              node.stack === null ||
+              !isAwaitInUserspace(request, node.stack)
+            ) {
+              // If this await was fully filtered out, then it was inside third party code
+              // such as in an external library. We return the I/O node and try another await.
+              match = ioNode;
+            } else if (
+              request.status === ABORTING &&
+              startTime > request.abortTime
+            ) {
+              // This was awaited after aborting so we skip it.
+            } else {
+              // We found a user space await.
+
+              // Outline the IO node.
+              // The ioNode is where the I/O was initiated, but after that it could have been
+              // processed through various awaits in the internals of the third party code.
+              // Therefore we don't use the inner most Promise as the conceptual value but the
+              // Promise that was ultimately awaited by the user space await.
+              serializeIONode(request, ioNode, awaited.promise);
+
+              // If we ever visit this I/O node again, skip it because we already emitted this
+              // exact entry and we don't need two awaits on the same thing.
+              visited.set(ioNode, null);
+
+              // We log the environment at the time when the last promise pigned ping which may
+              // be later than what the environment was when we actually started awaiting.
+              const env = (0, request.environmentName)();
+              advanceTaskTime(request, task, startTime);
+              // Then emit a reference to us awaiting it in the current task.
+              recordAsyncDebugInfo(request, task, {
+                awaited: ioNode as any as ReactIOInfo, // This is deduped by this reference.
+                env: env,
+                owner: node.owner,
+                stack:
+                  node.stack === null
+                    ? null
+                    : filterStackTrace(request, node.stack),
+              });
+              // Mark the end time of the await. If we're aborting then we don't emit this
+              // to signal that this never resolved inside this render.
+              markOperationEndTime(request, task, endTime);
+              if (request.status === ABORTING) {
+                // Undefined is used as a signal that we found a suitable aborted node and we don't have to find
+                // further aborted nodes.
+                match = undefined;
+              }
+            }
+          }
+        }
+      }
+      // We need to forward after we visit awaited nodes because what ever I/O we requested that's
+      // the thing that generated this node and its virtual children.
+      const promise = node.promise.deref();
+      if (promise !== undefined) {
+        const debugInfo = promise._debugInfo;
+        if (debugInfo != null && !visited.has(debugInfo)) {
+          visited.set(debugInfo, null);
+          forwardDebugInfo(request, task, debugInfo);
+        }
+      }
+      found = match;
+      break;
+    }
+    default: {
+      // eslint-disable-next-line react-internal/prod-error-codes
+      throw new Error('Unknown AsyncSequence tag. This is a bug in React.');
+    }
+  }
+  return found;
+}
+
+function emitAsyncSequence(
+  request: Request,
+  task: Task,
+  node: AsyncSequence,
+  alreadyForwardedDebugInfo: ?ReactDebugInfo,
+  owner: null | ReactComponentInfo,
+  stack: null | Error,
+): void {
+  const visited: Map<
+    AsyncSequence | ReactDebugInfo,
+    void | null | PromiseNode | IONode,
+  > = new Map();
+  if (__DEV__ && alreadyForwardedDebugInfo) {
+    visited.set(alreadyForwardedDebugInfo, null);
+  }
+  const awaitedNode = visitAsyncNode(request, task, node, visited, task.time);
+  if (awaitedNode === undefined) {
+    // Undefined is used as a signal that we found an aborted await and that's good enough
+    // anything derived from that aborted node might be irrelevant.
+  } else if (awaitedNode !== null) {
+    // Nothing in user space (unfiltered stack) awaited this.
+    serializeIONode(request, awaitedNode, awaitedNode.promise);
+    // We log the environment at the time when we ping which may be later than what the
+    // environment was when we actually started awaiting.
+    const env = (0, request.environmentName)();
+    // If we don't have any thing awaited, the time we started awaiting was internal
+    // when we yielded after rendering. The current task time is basically that.
+    const debugInfo: ReactAsyncInfo = {
+      awaited: awaitedNode as any as ReactIOInfo, // This is deduped by this reference.
+      env: env,
+    };
+    if (__DEV__) {
+      if (owner === null && stack === null) {
+        // We have no location for the await. We can use the JSX callsite of the parent
+        // as the await if this was just passed as a prop.
+        if (task.debugOwner !== null) {
+          // $FlowFixMe[cannot-write]
+          debugInfo.owner = task.debugOwner;
+        }
+        if (task.debugStack !== null) {
+          // $FlowFixMe[cannot-write]
+          debugInfo.stack = filterStackTrace(
+            request,
+            parseStackTrace(task.debugStack, 1),
+          );
+        }
+      } else {
+        if (owner != null) {
+          // $FlowFixMe[cannot-write]
+          debugInfo.owner = owner;
+        }
+        if (stack != null) {
+          // $FlowFixMe[cannot-write]
+          debugInfo.stack = filterStackTrace(
+            request,
+            parseStackTrace(stack, 1),
+          );
+        }
+      }
+    }
+    // We don't have a start time for this await but in case there was no start time emitted
+    // we need to include something. TODO: We should maybe ideally track the time when we
+    // called .then() but without updating the task.time field since that's used for the cutoff.
+    advanceTaskTime(request, task, task.time);
+    recordAsyncDebugInfo(request, task, debugInfo);
+    // Mark the end time of the await. If we're aborting then we don't emit this
+    // to signal that this never resolved inside this render.
+    // If we're currently aborting, then this never resolved into user space.
+    markOperationEndTime(request, task, awaitedNode.end);
+  }
+}
+
+function serializeIONode(
+  request: Request,
+  ioNode: IONode | PromiseNode | UnresolvedPromiseNode,
+  promiseRef: null | WeakRef<Promise<mixed>>,
+): ReactIOInfo {
+  const existingRef = request.debugIONodes.get(ioNode);
+  if (existingRef !== undefined) {
+    // Already written
+    return existingRef;
+  }
+
+  let stack = null;
+  let name = '';
+  if (ioNode.promise !== null) {
+    // Pick an explicit name from the Promise itself if it exists.
+    // Note that we don't use the promiseRef passed in since that's sometimes the awaiting Promise
+    // which is the value observed but it's likely not the one with the name on it.
+    const promise = ioNode.promise.deref();
+    if (
+      promise !== undefined &&
+      // $FlowFixMe[prop-missing]
+      typeof promise.displayName === 'string'
+    ) {
+      name = promise.displayName;
+    }
+  }
+  if (ioNode.stack !== null) {
+    // The stack can contain some leading internal frames for the construction of the promise that we skip.
+    const fullStack = stripLeadingPromiseCreationFrames(ioNode.stack);
+    stack = filterStackTrace(request, fullStack);
+    if (name === '') {
+      // If we didn't have an explicit name, try finding one from the stack.
+      name = findCalledFunctionNameFromStackTrace(request, fullStack);
+      // The name can include the object that this was called on but sometimes that's
+      // just unnecessary context.
+      if (name.startsWith('Window.')) {
+        name = name.slice(7);
+      } else if (name.startsWith('<anonymous>.')) {
+        name = name.slice(7);
+      }
+    }
+  }
+  const owner = ioNode.owner;
+
+  let value: void | Promise<mixed> = undefined;
+  if (promiseRef !== null) {
+    value = promiseRef.deref();
+  }
+
+  // We log the environment at the time when we serialize the I/O node.
+  // The environment name may have changed from when the I/O was actually started.
+  const env = (0, request.environmentName)();
+
+  const endTime =
+    ioNode.tag === UNRESOLVED_PROMISE_NODE
+      ? // Mark the end time as now. It's arbitrary since it's not resolved but this
+        // marks when we called abort and therefore stopped trying.
+        request.abortTime
+      : ioNode.end;
+
+  const info: ReactIOInfo = {
+    name,
+    start: ioNode.start,
+    end: endTime,
+    env,
+    owner,
+    stack,
+  };
+  if (value !== undefined) {
+    // $FlowFixMe[cannot-write]
+    info.value = captureDebugThenable(request, value);
+  }
+  request.debugIONodes.set(ioNode, info);
+  return info;
+}
+
+function advanceTaskTime(
+  request: Request,
+  task: Task,
+  timestamp: number,
+): void {
+  if (
+    !enableProfilerTimer ||
+    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
+  ) {
+    return;
+  }
+  // Emits a timing chunk, if the new timestamp is higher than the previous timestamp of this task.
+  if (timestamp > task.time) {
+    recordTimingInfo(task, timestamp);
+    task.time = timestamp;
+  } else if (!task.timed) {
+    // If it wasn't timed before, e.g. an outlined object, we need to emit the first timestamp and
+    // it is now timed.
+    recordTimingInfo(task, task.time);
+  }
+  task.timed = true;
+}
+
+function forwardDebugInfoFromThenable(
+  request: Request,
+  task: Task,
+  thenable: Thenable<any>,
+  owner: null | ReactComponentInfo = null,
+  stack: null | Error = null,
+): void {
+  if (__DEV__) {
+    const debugInfo = thenable._debugInfo;
+    if (debugInfo) {
+      forwardDebugInfo(request, task, debugInfo);
+    }
+    if (enableProfilerTimer && enableAsyncDebugInfo) {
+      const sequence = getAsyncSequenceFromPromise(thenable);
+      if (sequence !== null) {
+        emitAsyncSequence(request, task, sequence, debugInfo, owner, stack);
+      }
+    }
+  }
+}
+
+function forwardDebugInfoFromCurrentContext(
+  request: Request,
+  task: Task,
+  thenable: Thenable<any>,
+): void {
+  if (__DEV__) {
+    const debugInfo = thenable._debugInfo;
+    if (debugInfo) {
+      forwardDebugInfo(request, task, debugInfo);
+    }
+    if (enableProfilerTimer && enableAsyncDebugInfo) {
+      const sequence = getCurrentAsyncSequence();
+      if (sequence !== null) {
+        emitAsyncSequence(request, task, sequence, debugInfo, null, null);
+      }
+    }
+  }
+}
+
 function recordTimingInfo(task: Task, time: number): void {
   pushDebugInfo(task.promise, {time});
 }
@@ -3275,6 +4086,9 @@ function deferTask(request: Request, task: Task): ReactClientValue {
 }
 
 function abortTask(request: Request, task: Task): void {
+  if (__DEV__) {
+    forwardDebugInfoFromAbortedTask(request, task);
+  }
   task.status = ABORTED;
   if (request.type === PRERENDER) {
     markHalted(request.result, task.promise);
