@@ -40,6 +40,40 @@ let JSDOM;
 let assertConsoleErrorDev;
 
 describe('ReactFlightResultDOM', () => {
+  // @gate __DEV__
+  it('replays logs with errors that have no stack frames', async () => {
+    const error = new Error('inner');
+    error.stack = 'Error: inner';
+    function ServerComponent() {
+      console.log('hi', new AggregateError([error], 'aggregate'));
+      return null;
+    }
+    const mockConsoleLog = spyOnDevAndProd(console, 'log').mockImplementation(
+      () => {},
+    );
+    jest.resetModules();
+    jest.mock('react', () => require('react/react.react-server'));
+    ReactServerDOMServer = require('react-server-dom-webpack/server.node');
+    const {writable, readable} = getTestStream();
+    const {pipe} = await serverAct(() =>
+      renderResultToPipeableStream(<ServerComponent />, webpackMap),
+    );
+    pipe(writable);
+    mockConsoleLog.mockClear();
+    const response = ReactServerDOMClient.createFromReadableStream(readable);
+    await serverAct(async () => {
+      expect(await response).toBe(null);
+    });
+    expect(mockConsoleLog).toHaveBeenCalledTimes(1);
+    expect(mockConsoleLog.mock.calls[0][0]).toContain('hi');
+    const args = mockConsoleLog.mock.calls[0];
+    const aggregateError = args[args.length - 1];
+    expect(aggregateError).toBeInstanceOf(AggregateError);
+    expect(aggregateError.message).toBe('aggregate');
+    expect(aggregateError.errors).toHaveLength(1);
+    expect(aggregateError.errors[0].message).toBe('inner');
+  });
+
   beforeEach(() => {
     // For this first reset we are going to load the dom-node version of react-server-dom-webpack/server
     // This can be thought of as essentially being the React Server Components scope with react-server

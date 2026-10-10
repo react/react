@@ -132,8 +132,6 @@ import {
   enableTaint,
   enableFlightObjectReferences,
   enableProfilerTimer,
-  enableComponentPerformanceTrack,
-  enableAsyncDebugInfo,
 } from 'shared/ReactFeatureFlags';
 import binaryToComparableString from 'shared/binaryToComparableString';
 import {
@@ -715,10 +713,7 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
       ) {
         warnForMissingKey(request, key, componentDebugInfo, task.debugTask);
       }
-      if (
-        enableProfilerTimer &&
-        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ) {
+      if (enableProfilerTimer) {
         task.time = performance.now();
         pushDebugInfo(task.promise, {time: task.time});
         task.timed = true;
@@ -777,17 +772,16 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   if (__DEV__ && !isRendering) {
     const trackedThenables = getTrackedThenablesAfterRendering();
     if (trackedThenables !== null) {
-      const stacks: Array<Error> = enableAsyncDebugInfo
-        ? (trackedThenables as any)._stacks ||
-          ((trackedThenables as any)._stacks = [])
-        : (null as any);
+      const stacks: Array<Error> =
+        (trackedThenables as any)._stacks ||
+        ((trackedThenables as any)._stacks = []);
       for (let i = 0; i < trackedThenables.length; i++) {
         forwardDebugInfoFromThenable(
           request,
           task,
           trackedThenables[i],
           debugOwner,
-          enableAsyncDebugInfo ? stacks[i] : null,
+          stacks[i],
         );
       }
     }
@@ -3618,11 +3612,7 @@ function completeTask(
     if (currentEnv !== task.environmentName) {
       pushDebugInfo(task.promise, {env: currentEnv});
     }
-    if (
-      enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo) &&
-      task.timed
-    ) {
+    if (enableProfilerTimer && task.timed) {
       pushDebugInfo(task.promise, {time: performance.now()});
     }
   }
@@ -3649,7 +3639,7 @@ function forwardDebugInfoFromAbortedTask(request: Request, task: Task): void {
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     let thenable: null | Thenable<any> = null;
     if (typeof model.then === 'function') {
       thenable = model as any;
@@ -4307,10 +4297,7 @@ function advanceTaskTime(
   task: Task,
   timestamp: number,
 ): void {
-  if (
-    !enableProfilerTimer ||
-    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
-  ) {
+  if (!enableProfilerTimer) {
     return;
   }
   // Emits a timing chunk, if the new timestamp is higher than the previous timestamp of this task.
@@ -4337,7 +4324,7 @@ function forwardDebugInfoFromThenable(
     if (debugInfo) {
       forwardDebugInfo(request, task, debugInfo);
     }
-    if (enableProfilerTimer && enableAsyncDebugInfo) {
+    if (enableProfilerTimer) {
       const sequence = getAsyncSequenceFromPromise(thenable);
       if (sequence !== null) {
         emitAsyncSequence(request, task, sequence, debugInfo, owner, stack);
@@ -4356,7 +4343,7 @@ function forwardDebugInfoFromCurrentContext(
     if (debugInfo) {
       forwardDebugInfo(request, task, debugInfo);
     }
-    if (enableProfilerTimer && enableAsyncDebugInfo) {
+    if (enableProfilerTimer) {
       const sequence = getCurrentAsyncSequence();
       if (sequence !== null) {
         emitAsyncSequence(request, task, sequence, debugInfo, null, null);
@@ -4370,10 +4357,7 @@ function recordTimingInfo(task: Task, time: number): void {
 }
 
 function markOperationEndTime(request: Request, task: Task, timestamp: number) {
-  if (
-    !enableProfilerTimer ||
-    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
-  ) {
+  if (!enableProfilerTimer) {
     return;
   }
   // Always emit a timing chunk even if it doesn't advance.
