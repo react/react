@@ -17,9 +17,15 @@ import {
   createRequest,
   startWork,
   startFlowing,
+  startFlowingDebug,
   stopFlowing,
   abort,
 } from 'react-server/src/ReactFlightResultSerializationServer';
+
+export type Options = {
+  onError?: mixed => ?string,
+  debugChannel?: Writable,
+};
 
 export type PipeableStream = {
   pipe<T: Writable>(destination: T): T,
@@ -40,11 +46,18 @@ function createCancelHandler(request: Request, reason: string) {
 export function renderToPipeableStream(
   input: Input,
   turbopackMap: ClientManifest,
-  onError?: mixed => ?string,
+  options?: Options,
 ): PipeableStream {
-  const request = createRequest(input, turbopackMap, onError);
+  const request = createRequest(
+    input,
+    turbopackMap,
+    options ? options.onError : undefined,
+  );
   let hasStartedFlowing = false;
   startWork(request);
+  if (__DEV__ && options && options.debugChannel) {
+    startFlowingDebug(request, options.debugChannel);
+  }
   return {
     pipe<T: Writable>(destination: T): T {
       if (hasStartedFlowing) {

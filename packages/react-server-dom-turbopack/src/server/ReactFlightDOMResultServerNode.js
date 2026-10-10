@@ -15,7 +15,10 @@ import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemp
 import {registerServerReference} from '../ReactFlightTurbopackReferences';
 import noop from 'shared/noop';
 import type {Result} from 'shared/ReactFlightResult';
-import type {PipeableStream} from './ReactFlightDOMResultSerializationServerNode';
+import type {
+  Options as SerializationOptions,
+  PipeableStream,
+} from './ReactFlightDOMResultSerializationServerNode';
 import type {ClientManifest} from './ReactFlightServerConfigTurbopackBundler';
 import {
   createRequest,
@@ -125,14 +128,10 @@ export function prerenderToResult(
 export function renderResultToPipeableStream(
   result: Result<ReactClientValue>,
   turbopackMap: ClientManifest,
-  options?: Options,
+  options?: SerializationOptions,
 ): PipeableStream {
   const input = createInput(result);
-  return renderToPipeableStream(
-    input,
-    turbopackMap,
-    options ? options.onError : undefined,
-  );
+  return renderToPipeableStream(input, turbopackMap, options);
 }
 
 export function renderResultToReadableStream(

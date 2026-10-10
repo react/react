@@ -214,6 +214,7 @@ export type Request = {
   writtenErrors: WeakMap<ErrorReference, number>,
   completedErrorChunks: Array<Chunk>,
   onError: mixed => ?string,
+  debugDestination: null | Destination, // DEV-only
   pendingDebugChunks: number, // DEV-only
   completedDebugChunks: Array<
     Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
@@ -269,6 +270,7 @@ function RequestInstance(
   this.writtenServerReferences = new Map();
   this.input = input;
   if (__DEV__) {
+    this.debugDestination = null;
     this.pendingDebugChunks = 0;
     this.completedDebugChunks = [];
     this.writtenDebugObjects = new WeakMap();
@@ -829,8 +831,26 @@ function emitDebugChunk(
   }
 
   const json: string = serializeDebugModel(request, 500, debugInfo);
-  const row = serializeRowHeader('D', id) + json + '\n';
-  request.completedRegularChunks.push(stringToChunk(row));
+  if (request.debugDestination !== null) {
+    if (json[0] === '"' && json[1] === '$') {
+      // This is already an outlined reference so we can just emit it directly,
+      // without an unnecessary indirection.
+      const row = serializeRowHeader('D', id) + json + '\n';
+      request.completedRegularChunks.push(stringToChunk(row));
+    } else {
+      // Outline the debug information to the debug channel.
+      const outlinedId = request.nextChunkId++;
+      const debugRow = outlinedId.toString(16) + ':' + json + '\n';
+      request.pendingDebugChunks++;
+      request.completedDebugChunks.push(stringToChunk(debugRow));
+      const row =
+        serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
+      request.completedRegularChunks.push(stringToChunk(row));
+    }
+  } else {
+    const row = serializeRowHeader('D', id) + json + '\n';
+    request.completedRegularChunks.push(stringToChunk(row));
+  }
 }
 
 function outlineComponentInfo(
@@ -1836,8 +1856,19 @@ function emitTimingChunk(
   request.pendingChunks++;
   const relativeTimestamp = timestamp - request.timeOrigin;
   const json = '{"time":' + relativeTimestamp + '}';
-  const row = serializeRowHeader('D', id) + json + '\n';
-  request.completedRegularChunks.push(stringToChunk(row));
+  if (request.debugDestination !== null) {
+    // Outline the actual timing information to the debug channel.
+    const outlinedId = request.nextChunkId++;
+    const debugRow = outlinedId.toString(16) + ':' + json + '\n';
+    request.pendingDebugChunks++;
+    request.completedDebugChunks.push(stringToChunk(debugRow));
+    const row =
+      serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
+    request.completedRegularChunks.push(stringToChunk(row));
+  } else {
+    const row = serializeRowHeader('D', id) + json + '\n';
+    request.completedRegularChunks.push(stringToChunk(row));
+  }
 }
 
 function serializeDeferredObject(
@@ -2750,7 +2781,11 @@ function emitHint<Code: HintCode>(
 }
 
 function enqueueFlush(request: Request): void {
-  if (!request.flushScheduled && request.destination !== null) {
+  if (
+    !request.flushScheduled &&
+    (request.destination !== null ||
+      (__DEV__ && request.debugDestination !== null))
+  ) {
     request.flushScheduled = true;
     scheduleWork(() => {
       request.flushScheduled = false;
@@ -2809,6 +2844,10 @@ function fatalError(request: Request, error: mixed): void {
   request.fatalError = error;
   cleanupInput(request);
   const destination = request.destination;
+  if (__DEV__ && request.debugDestination !== null) {
+    closeWithError(request.debugDestination, error);
+    request.debugDestination = null;
+  }
   if (destination !== null) {
     request.status = CLOSED;
     closeWithError(destination, error);
@@ -2818,6 +2857,41 @@ function fatalError(request: Request, error: mixed): void {
 }
 
 function flushCompletedChunks(request: Request): void {
+  if (__DEV__ && request.debugDestination !== null) {
+    const debugDestination = request.debugDestination;
+    beginWriting(debugDestination);
+    try {
+      const debugChunks = request.completedDebugChunks;
+      let i = 0;
+      for (; i < debugChunks.length; i++) {
+        const item = debugChunks[i];
+        if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
+          if (i + 2 >= debugChunks.length) {
+            throw new Error(
+              'A chunk pair is incomplete. This is a bug in React.',
+            );
+          }
+          request.pendingDebugChunks -= 2;
+          writeChunk(
+            debugDestination,
+            debugChunks[i + 1] as any as Chunk | BinaryChunk,
+          );
+          writeChunk(
+            debugDestination,
+            debugChunks[i + 2] as any as Chunk | BinaryChunk,
+          );
+          i += 2;
+        } else {
+          request.pendingDebugChunks--;
+          writeChunk(debugDestination, item as any as Chunk | BinaryChunk);
+        }
+      }
+      debugChunks.splice(0, i);
+    } finally {
+      completeWriting(debugDestination);
+    }
+    flushBuffered(debugDestination);
+  }
   const destination = request.destination;
   if (destination === null || request.status === CLOSED) {
     return;
@@ -2847,7 +2921,7 @@ function flushCompletedChunks(request: Request): void {
       }
     }
     hintChunks.splice(0, i);
-    if (__DEV__) {
+    if (__DEV__ && request.debugDestination === null) {
       const debugChunks = request.completedDebugChunks;
       i = 0;
       for (; i < debugChunks.length; i++) {
@@ -2945,6 +3019,10 @@ function flushCompletedChunks(request: Request): void {
     cleanupInput(request);
     request.destination = null;
     close(currentDestination);
+    if (__DEV__ && request.debugDestination !== null) {
+      close(request.debugDestination);
+      request.debugDestination = null;
+    }
   }
 }
 
@@ -2987,6 +3065,30 @@ export function startFlowing(request: Request, destination: Destination): void {
     return;
   }
   request.destination = destination;
+  try {
+    flushCompletedChunks(request);
+  } catch (error) {
+    fatalError(request, error);
+  }
+}
+
+export function startFlowingDebug(
+  request: Request,
+  debugDestination: Destination,
+): void {
+  if (request.status === CLOSING) {
+    request.status = CLOSED;
+    closeWithError(debugDestination, request.fatalError);
+    return;
+  }
+  if (request.status === CLOSED) {
+    return;
+  }
+  if (request.debugDestination !== null) {
+    // We're already flowing.
+    return;
+  }
+  request.debugDestination = debugDestination;
   try {
     flushCompletedChunks(request);
   } catch (error) {

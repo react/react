@@ -188,7 +188,7 @@ describe('ReactFlightResultTurbopackDOMNode', () => {
   });
 
   // @gate __DEV__
-  it.skip('can transport debug info through a separate debug channel', async () => {
+  it('can transport debug info through a separate debug channel', async () => {
     function Thrower() {
       throw new Error('ssr-throw');
     }
@@ -282,7 +282,7 @@ describe('ReactFlightResultTurbopackDOMNode', () => {
   });
 
   // @gate __DEV__
-  it.skip('can transport debug info through a slow debug channel', async () => {
+  it('can transport debug info through a slow debug channel', async () => {
     function Thrower() {
       throw new Error('ssr-throw');
     }
