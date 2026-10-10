@@ -514,6 +514,12 @@ function RequestInstance(
     createRootFormatContext(),
   );
   const root = rootTask.promise;
+  if (__DEV__) {
+    root._debugStartTime =
+      this.timeOrigin +
+      // $FlowFixMe[prop-missing]
+      performance.timeOrigin;
+  }
   this.result = createResult(
     root,
     reason => abort(this, reason),

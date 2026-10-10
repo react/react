@@ -19,6 +19,7 @@ export opaque type ResultModel<T>: Promise<T> & {
   +reason: mixed,
   _debugInfo: ReactDebugInfo, // DEV-only
   _debugSource?: Thenable<T>, // DEV-only
+  _debugStartTime?: number, // DEV-only
   ...
 } = Promise<T> & {
   _promise: Promise<Outcome<T>>,
@@ -29,6 +30,7 @@ export opaque type ResultModel<T>: Promise<T> & {
   reason: mixed,
   _debugInfo: ReactDebugInfo, // DEV-only
   _debugSource?: Thenable<T>, // DEV-only
+  _debugStartTime?: number, // DEV-only
   _debugModel?: T, // DEV-only
   _debugListeners?: Set<(ReactDebugInfoEntry) => void>, // DEV-only
 };

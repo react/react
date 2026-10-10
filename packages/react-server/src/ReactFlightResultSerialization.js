@@ -19,7 +19,10 @@ import type {ResultStreamController} from 'shared/ReactFlightResultReadableStrea
 import type {ErrorReference, Result} from 'shared/ReactFlightResult';
 import type {HintQueue} from 'shared/ReactFlightResult';
 import type {Thenable} from 'shared/ReactTypes';
-import {getResultModelStatus} from 'shared/ReactFlightResultModel';
+import {
+  getResultModelStatus,
+  subscribeToDebugInfo,
+} from 'shared/ReactFlightResultModel';
 import {
   getRoot,
   getHintQueue,
@@ -44,16 +47,33 @@ function subscribeToThenable(
   thenable: Thenable<ReactClientValue> | Promise<ReactClientValue>,
   reader: InputThenableReader,
 ): () => void {
+  const status = getResultModelStatus(thenable);
+  let unsubscribeDebugInfo = noop;
+  const debug = reader.debug;
+  if (__DEV__ && status !== null && debug !== undefined) {
+    const debugInfo = (thenable as any)._debugInfo;
+    if (debugInfo !== undefined) {
+      if (isHalted(result, thenable)) {
+        for (let i = 0; i < debugInfo.length; i++) {
+          debug(debugInfo[i]);
+        }
+      } else {
+        unsubscribeDebugInfo = subscribeToDebugInfo(thenable as any, debug);
+      }
+    }
+  }
   if (isHalted(result, thenable)) {
+    unsubscribeDebugInfo();
     reader.halt();
     return noop;
   }
-  const status = getResultModelStatus(thenable);
   if (status === 'fulfilled') {
+    unsubscribeDebugInfo();
     reader.resolve((thenable as any).value);
     return noop;
   }
   if (status === 'rejected') {
+    unsubscribeDebugInfo();
     reader.reject(
       (thenable as any).reason,
       getErrorReference(result, thenable),
@@ -69,6 +89,7 @@ function subscribeToThenable(
     subscription.result = null;
     subscription.reader = null;
     unsubscribe();
+    unsubscribeDebugInfo();
   }
   unsubscribe = subscribeToResult(result, () => {
     const current = subscription.reader;
@@ -106,7 +127,7 @@ function subscribeToThenable(
 }
 
 export function createInput(result: Result<ReactClientValue>): Input {
-  return {
+  const input: Input = {
     root: getRoot(result),
     temporaryReferences: getTemporaryReferenceSet(result),
     getReadableStream(value) {
@@ -176,8 +197,11 @@ export function createInput(result: Result<ReactClientValue>): Input {
       return detach;
     },
   };
+  if (__DEV__) {
+    input.debugStartTime = getRoot(result)._debugStartTime;
+  }
+  return input;
 }
-
 function subscribeToSequence(
   result: Result<any>,
   model: Object,
