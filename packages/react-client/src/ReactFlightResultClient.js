@@ -33,6 +33,7 @@ import type {ReactElement} from 'shared/ReactElementType';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {
   ReactComponentInfo,
+  ReactDebugInfo,
   ReactErrorInfoDev,
   ReactStackTrace,
   Wakeable,
@@ -66,7 +67,12 @@ import {
   getHintQueue,
   waitForHints,
 } from 'shared/ReactFlightResult';
-import {getResultModelStatus} from 'shared/ReactFlightResultModel';
+import type {ResultModel} from 'shared/ReactFlightResultModel';
+import {
+  getResultModelStatus,
+  getDebugModel,
+  subscribeToDebugInfo,
+} from 'shared/ReactFlightResultModel';
 import {
   REACT_ELEMENT_TYPE,
   REACT_LAZY_TYPE,
@@ -203,6 +209,7 @@ function isHaltedModel(response: Response, model: Object): boolean {
 }
 
 type PendingChunk<T> = {
+  _debugInfo: ReactDebugInfo, // DEV-only
   status: 'pending' | 'pending_weak',
   value: null | Array<(T) => mixed>,
   reason: null | Array<(mixed) => mixed>,
@@ -212,6 +219,7 @@ type PendingChunk<T> = {
 };
 
 type HaltedChunk<T> = {
+  _debugInfo: ReactDebugInfo, // DEV-only
   status: 'halted',
   value: null,
   reason: null,
@@ -230,6 +238,7 @@ type BlockedChunk<T> = {
 };
 
 type InitializedChunk<T> = {
+  _debugInfo: ReactDebugInfo, // DEV-only
   status: 'fulfilled',
   value: T,
   reason: null,
@@ -237,6 +246,7 @@ type InitializedChunk<T> = {
 };
 
 type ErroredChunk<T> = {
+  _debugInfo: ReactDebugInfo, // DEV-only
   status: 'rejected',
   value: null,
   reason: mixed,
@@ -244,6 +254,7 @@ type ErroredChunk<T> = {
 };
 
 type ResolvedModuleChunk<T> = {
+  _debugInfo: ReactDebugInfo, // DEV-only
   status: 'resolved_module',
   value: ClientReference<T>,
   reason: null,
@@ -251,6 +262,7 @@ type ResolvedModuleChunk<T> = {
 };
 
 type ResolvedModelChunk<T> = {
+  _debugInfo: ReactDebugInfo, // DEV-only
   status: 'resolved_model',
   value: T,
   reason: Response,
@@ -279,6 +291,9 @@ function ReactPromise(this: any, status: any, value: any, reason: any) {
   this.status = status;
   this.value = value;
   this.reason = reason;
+  if (__DEV__) {
+    this._debugInfo = [];
+  }
 }
 ReactPromise.prototype = Object.create(Promise.prototype) as any;
 
@@ -1040,7 +1055,21 @@ function readModel(response: Response, value: any): any {
   }
   const reference = getValueReference(response._result, value);
   if (reference !== undefined) {
-    const model = readModel(response, readModelReference(response, reference));
+    const referencedModel = readModelReference(response, reference);
+    let model;
+    if (
+      __DEV__ &&
+      reference.parent === null &&
+      referencedModel === reference.root.value
+    ) {
+      const chunk: SomeChunk<any> = readModel(response, reference.root);
+      model =
+        chunk.status === INITIALIZED
+          ? chunk.value
+          : readModel(response, referencedModel);
+    } else {
+      model = readModel(response, referencedModel);
+    }
     models.set(value, model);
     return model;
   }
@@ -1553,13 +1582,53 @@ function freezeCompletedElements(response: Response): void {
   }
 }
 
+function subscribeChunkDebugInfo(
+  response: Response,
+  chunk: SomeChunk<any>,
+  source: ResultModel<any>,
+): void {
+  if (
+    __DEV__ &&
+    !response._closed &&
+    getResultModelStatus(source) !== null &&
+    source._debugInfo !== undefined &&
+    !isHalted(response._result, source)
+  ) {
+    let debugChunk: null | SomeChunk<any> = chunk;
+    const unsubscribe = subscribeToDebugInfo(source, info => {
+      if (debugChunk !== null) {
+        debugChunk._debugInfo.push(info);
+      }
+    });
+    let owner: null | Response = response;
+    const cleanup = () => {
+      unsubscribe();
+      debugChunk = null;
+      if (owner !== null) {
+        if (owner._cleanups !== null) {
+          owner._cleanups.delete(cleanup);
+        }
+        owner = null;
+      }
+    };
+    if (response._cleanups === null) {
+      response._cleanups = new Set();
+    }
+    response._cleanups.add(cleanup);
+    source.then(cleanup, cleanup);
+  }
+}
+
 function initializeModelChunk<T>(
   response: Response,
   chunk: SomeChunk<T>,
   model: any,
 ): void {
   try {
-    initializeChunk(chunk, completeModel(response, model));
+    initializeChunk(
+      chunk,
+      completeModel(response, model, __DEV__ ? chunk._debugInfo : undefined),
+    );
   } catch (error) {
     triggerErrorOnChunk(chunk, error);
   }
@@ -1668,9 +1737,43 @@ export function readResult<T>(
   return chunk;
 }
 
-function completeModel(response: Response, model: any): any {
+function completeModel(
+  response: Response,
+  model: any,
+  debugInfo?: ReactDebugInfo,
+): any {
   try {
-    return readModel(response, model);
+    const value: any =
+      __DEV__ &&
+      debugInfo !== undefined &&
+      debugInfo.length > 0 &&
+      isArray(model) &&
+      (response._models.get(model) === undefined ||
+        response._models.get(model) === model)
+        ? readArray(response, model)
+        : readModel(response, model);
+    if (
+      __DEV__ &&
+      debugInfo !== undefined &&
+      debugInfo.length > 0 &&
+      value !== null &&
+      typeof value === 'object' &&
+      (value.$$typeof === REACT_ELEMENT_TYPE || isArray(value))
+    ) {
+      const resolvedDebugInfo = debugInfo.splice(0);
+      if (isArray(value._debugInfo)) {
+        // $FlowFixMe[method-unbinding]
+        value._debugInfo.unshift.apply(value._debugInfo, resolvedDebugInfo);
+      } else if (!Object.isFrozen(value)) {
+        Object.defineProperty(value, '_debugInfo', {
+          configurable: false,
+          enumerable: false,
+          value: resolvedDebugInfo,
+          writable: true,
+        });
+      }
+    }
+    return value;
   } finally {
     freezeCompletedElements(response);
   }
@@ -1691,14 +1794,36 @@ function readSpecialModel(response: Response, value: any): any {
     const chunk = createPendingChunk<any>(response);
     const lazy = createLazyChunkWrapper(chunk);
     if (__DEV__) {
+      const debugInfo = value._debugInfo;
+      if (debugInfo !== undefined && debugInfo !== null) {
+        const localDebugInfo: ReactDebugInfo = chunk._debugInfo;
+        for (let i = 0; i < debugInfo.length; i++) {
+          localDebugInfo.push(debugInfo[i]);
+        }
+      }
       const store = value._store;
       lazy._store =
         store === undefined ? undefined : createElementStore(store.validated);
     }
     models.set(value, lazy);
     const source = value._payload;
-    const reject = (error: mixed) =>
+    if (__DEV__) {
+      subscribeChunkDebugInfo(response, chunk, source);
+    }
+    const reject = (error: mixed): void => {
+      if (__DEV__ && getResultModelStatus(source) !== null) {
+        const model = getDebugModel(source);
+        if (model !== undefined) {
+          rejectElementChunk(
+            chunk,
+            model,
+            resolveError(response, source, error),
+          );
+          return;
+        }
+      }
       triggerErrorOnChunk(chunk, resolveError(response, source, error));
+    };
     if (response._closed || isHaltedModel(response, source)) {
       triggerErrorOnChunk(chunk, getClosedReason(response));
     } else if (source.status === INITIALIZED) {
@@ -1724,6 +1849,9 @@ function readSpecialModel(response: Response, value: any): any {
         thenable.status === PENDING_WEAK,
       );
       models.set(value, chunk);
+      if (__DEV__) {
+        subscribeChunkDebugInfo(response, chunk, value);
+      }
       if (chunk.status === PENDING_WEAK && isHalted(response._result, value)) {
         haltChunk(chunk);
         return chunk;

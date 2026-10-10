@@ -8,6 +8,7 @@
  */
 
 import noop from './noop';
+import type {ReactDebugInfo, ReactDebugInfoEntry} from './ReactTypes';
 
 const RESULT_MODEL_TYPE = Symbol.for('react.result.model');
 type Outcome<T> = {+value: T};
@@ -16,6 +17,7 @@ export opaque type ResultModel<T>: Promise<T> & {
   +status: 'pending' | 'pending_weak' | 'fulfilled' | 'rejected',
   +value: void | T,
   +reason: mixed,
+  _debugInfo: ReactDebugInfo, // DEV-only
   ...
 } = Promise<T> & {
   _promise: Promise<Outcome<T>>,
@@ -24,6 +26,9 @@ export opaque type ResultModel<T>: Promise<T> & {
   status: 'pending' | 'pending_weak' | 'fulfilled' | 'rejected',
   value: void | T,
   reason: mixed,
+  _debugInfo: ReactDebugInfo, // DEV-only
+  _debugModel?: T, // DEV-only
+  _debugListeners?: Set<(ReactDebugInfoEntry) => void>, // DEV-only
 };
 
 function ReactPromise(this: any, weak: boolean) {
@@ -85,4 +90,53 @@ export function getResultModelStatus(
   value: Object,
 ): null | 'pending' | 'pending_weak' | 'fulfilled' | 'rejected' {
   return value.$$typeof === RESULT_MODEL_TYPE ? value.status : null;
+}
+
+export function setDebugModel<T>(model: ResultModel<T>, value: T): void {
+  if (__DEV__) {
+    model._debugModel = value;
+  }
+}
+
+export function getDebugModel<T>(model: ResultModel<T>): void | T {
+  if (__DEV__) {
+    return model._debugModel;
+  }
+}
+
+export function pushDebugInfo<T>(
+  model: ResultModel<T>,
+  info: ReactDebugInfoEntry,
+): void {
+  if (__DEV__) {
+    model._debugInfo.push(info);
+    const listeners = model._debugListeners;
+    if (listeners !== undefined) {
+      listeners.forEach(listener => listener(info));
+    }
+  }
+}
+
+export function subscribeToDebugInfo<T>(
+  model: ResultModel<T>,
+  listener: ReactDebugInfoEntry => void,
+): () => void {
+  if (__DEV__) {
+    const info = model._debugInfo;
+    if (info !== undefined) {
+      for (let i = 0; i < info.length; i++) {
+        listener(info[i]);
+      }
+    }
+    let listeners = model._debugListeners;
+    if (listeners === undefined) {
+      model._debugListeners = listeners = new Set();
+    }
+    const subscriptions = listeners;
+    subscriptions.add(listener);
+    return () => {
+      subscriptions.delete(listener);
+    };
+  }
+  return noop;
 }

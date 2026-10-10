@@ -30,6 +30,7 @@ import type {
   ReactStackTrace,
   ReactCallSite,
   ReactComponentInfo,
+  ReactDebugInfo,
 } from 'shared/ReactTypes';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {
@@ -62,6 +63,7 @@ import {SuspenseException, getSuspendedThenable} from './ReactFlightThenable';
 import {
   createResult,
   completeResult,
+  subscribeToResult,
   pushHint,
   closeHints,
   setErrorDigest,
@@ -91,6 +93,9 @@ import {
   createResultModel,
   fulfillResultModel,
   rejectResultModel,
+  pushDebugInfo,
+  subscribeToDebugInfo,
+  setDebugModel,
 } from 'shared/ReactFlightResultModel';
 import {scheduleWork, scheduleMicrotask} from './ReactServerStreamConfig';
 import hasOwnProperty from 'shared/hasOwnProperty';
@@ -216,6 +221,7 @@ type ModelEntry =
   | {model: ReactClientValue, +root: void, +parent: null, +key: string};
 
 let modelRoot: null | ReactClientValue = null;
+let canEmitDebugInfo = false;
 let serializedSize = 0;
 const MAX_ROW_SIZE = 3200;
 const emptyRoot = {};
@@ -539,6 +545,9 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
   props: Props,
   element: ReactElement,
 ): ReactClientValue {
+  if (__DEV__ && !canEmitDebugInfo) {
+    return outlineTask(request, task);
+  }
   const renderedModels = getRenderedModels(
     request,
     element,
@@ -574,6 +583,7 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
       ) {
         warnForMissingKey(request, key, componentDebugInfo, task.debugTask);
       }
+      pushDebugInfo(task.promise, componentDebugInfo);
     }
     prepareToUseHooksForComponent(prevThenableState, componentDebugInfo);
     // $FlowFixMe[constant-condition]
@@ -887,6 +897,7 @@ function createTask(
     'environmentName' | 'debugOwner' | 'debugStack' | 'debugTask',
   > as any;
   if (__DEV__) {
+    promise._debugInfo = [];
     task.environmentName = request.environmentName();
     task.debugOwner = null;
     task.debugStack = null;
@@ -1482,6 +1493,13 @@ function renderModelDestructive(
     }
     const element: ReactElement = value as any;
     if (__DEV__) {
+      const debugInfo: ?ReactDebugInfo = element._debugInfo;
+      if (debugInfo) {
+        if (!canEmitDebugInfo) {
+          return outlineTask(request, task);
+        }
+        forwardDebugInfo(request, task, debugInfo);
+      }
       task.debugOwner = element._owner;
       task.debugStack = element._debugStack;
       task.debugTask = element._debugTask;
@@ -1517,6 +1535,15 @@ function renderModelDestructive(
     const init = lazy._init;
     const payload = lazy._payload;
     const resolvedModel = __DEV__ ? callLazyInitInDEV(lazy) : init(payload);
+    if (__DEV__) {
+      const debugInfo: ?ReactDebugInfo = lazy._debugInfo;
+      if (debugInfo) {
+        if (!canEmitDebugInfo) {
+          return outlineTask(request, task);
+        }
+        forwardDebugInfo(request, task, debugInfo);
+      }
+    }
     if (request.status === ABORTING || request.status === CLOSED) {
       throw request.fatalError;
     }
@@ -2086,9 +2113,13 @@ function retryTask(request: Request, task: Task): void {
   const originalKeyPath = task.keyPath;
   const originalImplicitSlot = task.implicitSlot;
   const parentSerializedSize = serializedSize;
+  const prevCanEmitDebugInfo = canEmitDebugInfo;
   task.currentReference = task.reference;
   try {
     modelRoot = task.model;
+    if (__DEV__) {
+      canEmitDebugInfo = true;
+    }
     const rendered = renderModelDestructive(
       request,
       task,
@@ -2103,6 +2134,9 @@ function retryTask(request: Request, task: Task): void {
       (rendered as any).$$typeof === REACT_ELEMENT_TYPE
         ? rendered
         : task.model;
+    if (__DEV__) {
+      canEmitDebugInfo = false;
+    }
     const resolvedModel =
       task.isModelReference || rendered === null || typeof rendered !== 'object'
         ? rendered
@@ -2166,6 +2200,9 @@ function retryTask(request: Request, task: Task): void {
         validateDeferredBlobs(request);
       }
     } finally {
+      if (__DEV__) {
+        canEmitDebugInfo = prevCanEmitDebugInfo;
+      }
       serializedSize = parentSerializedSize;
     }
   }
@@ -2986,6 +3023,14 @@ function blockTask(
 ): void {
   task.model = model;
   task.status = BLOCKED;
+  if (
+    __DEV__ &&
+    model !== null &&
+    typeof model === 'object' &&
+    (model as any).$$typeof === REACT_ELEMENT_TYPE
+  ) {
+    setDebugModel(task.promise, model);
+  }
   if (request.status === ABORTING) {
     abortTask(request, task);
     return;
@@ -3049,16 +3094,91 @@ function completeTask(
     if (outlinedModels === null || !outlinedModels.has(lazy._payload)) {
       const source = lazy._payload;
       forwardModelReference(request.result, task.promise, source);
-      source.then(task.resolve, error => {
-        copyErrorReference(request.result, task.promise, source);
-        task.reject(error);
-      });
+      let unsubscribeDebugInfo = noop;
+      if (__DEV__) {
+        const unsubscribeSource = subscribeToDebugInfo(source, info => {
+          forwardDebugInfo(request, task, [info]);
+        });
+        const unsubscribeResult = subscribeToResult(
+          request.result,
+          unsubscribeSource,
+        );
+        unsubscribeDebugInfo = () => {
+          unsubscribeSource();
+          unsubscribeResult();
+        };
+      }
+      source.then(
+        __DEV__
+          ? value => {
+              unsubscribeDebugInfo();
+              task.resolve(value);
+            }
+          : task.resolve,
+        error => {
+          if (__DEV__) {
+            unsubscribeDebugInfo();
+          }
+          copyErrorReference(request.result, task.promise, source);
+          task.reject(error);
+        },
+      );
       request.abortableTasks.delete(task);
       return;
     }
   }
+  if (__DEV__) {
+    const currentEnv = request.environmentName();
+    if (currentEnv !== task.environmentName) {
+      pushDebugInfo(task.promise, {env: currentEnv});
+    }
+  }
   task.resolve(resolvedModel);
   request.abortableTasks.delete(task);
+}
+
+function forwardDebugInfo(
+  request: Request,
+  task: Task,
+  debugInfo: ReactDebugInfo,
+): void {
+  for (let i = 0; i < debugInfo.length; i++) {
+    pushDebugInfo(task.promise, debugInfo[i]);
+  }
+}
+
+function outlineTask(request: Request, task: Task): ReactClientValue {
+  const source = task.model;
+  const renderedModels = getRenderedModels(
+    request,
+    source,
+    task.keyPath,
+    task.implicitSlot,
+  );
+  const newTask = createTask(
+    request,
+    task.model,
+    task.keyPath,
+    task.implicitSlot,
+    task.formatContext,
+  );
+  if (task.model !== null && typeof task.model === 'object') {
+    setModelReference(request, task.model, newTask.reference);
+  }
+  if (__DEV__) {
+    newTask.debugOwner = task.debugOwner;
+    newTask.debugStack = task.debugStack;
+    newTask.debugTask = task.debugTask;
+  }
+  retryTask(request, newTask);
+  const model =
+    newTask.promise.status === 'fulfilled'
+      ? createResultValueReference(request, newTask.reference)
+      : createLazyWrapperAroundWakeable(newTask.promise as any);
+  if (source !== null && typeof source === 'object') {
+    setRenderedModel(renderedModels, source, model);
+  }
+  return renderModelReference(task, model);
 }
 
 function deferTask(request: Request, task: Task): ReactClientValue {
