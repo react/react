@@ -2237,7 +2237,7 @@ describe('ReactFlightResultDOM', () => {
     );
   });
 
-  it.skip('should be able to include a client reference in printed errors', async () => {
+  it('should be able to include a client reference in printed errors', async () => {
     const reportedErrors = [];
 
     const ClientComponent = clientExports(function ({prop}) {

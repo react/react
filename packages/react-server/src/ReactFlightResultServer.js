@@ -29,6 +29,7 @@ import type {
   ReactErrorInfoDev,
   ReactStackTrace,
   ReactCallSite,
+  ReactComponentInfo,
 } from 'shared/ReactTypes';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {
@@ -40,6 +41,7 @@ import type {
 
 import {
   REACT_ELEMENT_TYPE,
+  REACT_LEGACY_ELEMENT_TYPE,
   REACT_LAZY_TYPE,
   REACT_FORWARD_REF_TYPE,
   REACT_MEMO_TYPE,
@@ -100,7 +102,21 @@ import {
   enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
 import binaryToComparableString from 'shared/binaryToComparableString';
-import {describeObjectForErrorMessage} from 'shared/ReactSerializationErrors';
+import {
+  describeObjectForErrorMessage,
+  jsxPropsParents,
+  jsxChildrenParents,
+  objectName,
+  isSimpleObject,
+} from 'shared/ReactSerializationErrors';
+import {resolveOwner, setCurrentOwner} from './flight/ReactFlightCurrentOwner';
+import {getOwnerStackByComponentInfoInDev} from 'shared/ReactComponentInfoStack';
+import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
+import {
+  callComponentInDEV,
+  callLazyInitInDEV,
+  callIteratorInDEV,
+} from './ReactFlightCallUserSpace';
 import {
   createHints,
   createRootFormatContext,
@@ -112,6 +128,8 @@ import {
   isServerReference,
   getServerReferenceId,
   parseStackTrace,
+  supportsComponentStorage,
+  componentStorage,
   getServerReferenceBoundArguments,
   supportsRequestStorage,
   cacheStorage,
@@ -178,6 +196,10 @@ type Task = {
   isModelReference: boolean,
   ping: () => void,
   thenableState: ThenableState | null,
+  environmentName: string, // DEV-only
+  debugOwner: null | ReactComponentInfo, // DEV-only
+  debugStack: null | Error, // DEV-only
+  debugTask: null | ConsoleTask, // DEV-only
   keyPath: ReactKey,
   implicitSlot: boolean,
 };
@@ -238,6 +260,9 @@ export type Request = {
   identifierPrefix: string,
   identifierCount: number,
   onError: mixed => ?string,
+  completedElements: Array<ReactElement>, // DEV-only
+  didWarnForKey: null | WeakSet<ReactComponentInfo>, // DEV-only
+  unkeyedElements: WeakSet<ReactElement>, // DEV-only
   environmentName: () => string, // DEV-only
   filterStackFrame: (string, string, number, number) => boolean, // DEV-only
 };
@@ -289,6 +314,50 @@ function filterStackTrace(
     }
   }
   return filteredStack;
+}
+
+function getCurrentStackInDEV(): string {
+  if (__DEV__) {
+    const owner: null | ReactComponentInfo = resolveOwner();
+    if (owner === null) {
+      return '';
+    }
+    return getOwnerStackByComponentInfoInDev(owner);
+  }
+  return '';
+}
+
+function callWithDebugContextInDEV<A, T>(
+  request: Request,
+  task: Task,
+  callback: A => T,
+  arg: A,
+): T {
+  // Give callbacks the nearest component's owner stack, as in Flight.
+  const componentDebugInfo: ReactComponentInfo = {
+    name: '',
+    env: task.environmentName,
+    key: null,
+    owner: task.debugOwner,
+    stack:
+      task.debugStack === null
+        ? null
+        : filterStackTrace(request, parseStackTrace(task.debugStack, 1)),
+    debugStack: task.debugStack,
+    debugTask: task.debugTask,
+  };
+  const debugTask = task.debugTask;
+  // We don't need the async component storage context here so we only set the
+  // synchronous tracking of owner.
+  setCurrentOwner(componentDebugInfo);
+  try {
+    if (debugTask) {
+      return debugTask.run(callback.bind(null, arg));
+    }
+    return callback(arg);
+  } finally {
+    setCurrentOwner(null);
+  }
 }
 
 function defaultErrorHandler(error: mixed): void {
@@ -381,10 +450,16 @@ function RequestInstance(
   this.createServerReference = createServerReference;
   this.identifierCount = 1;
   if (__DEV__) {
+    ReactSharedInternals.getCurrentStack = getCurrentStackInDEV;
+    this.completedElements = [];
+    this.didWarnForKey = null;
+    this.unkeyedElements = new WeakSet();
     this.environmentName =
-      typeof environmentName === 'function'
-        ? environmentName
-        : () => environmentName || 'Server';
+      environmentName === undefined
+        ? () => 'Server'
+        : typeof environmentName !== 'function'
+          ? () => environmentName
+          : environmentName;
     this.filterStackFrame =
       filterStackFrame === undefined
         ? defaultFilterStackFrame
@@ -435,6 +510,9 @@ export function createRequest(
   environmentName?: string | (() => string),
   filterStackFrame?: (string, string, number, number) => boolean,
 ): Request {
+  if (__DEV__) {
+    resetOwnerStackLimit();
+  }
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
   return new RequestInstance(
     model,
@@ -468,9 +546,71 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
     task.implicitSlot,
   );
   const prevThenableState = task.thenableState;
+  const key = element.key;
   task.thenableState = null;
-  prepareToUseHooksForComponent(prevThenableState, null);
-  let result = Component(props, undefined);
+  let result: ReactClientValue;
+  let debugOwner: null | ReactComponentInfo = null;
+  if (__DEV__) {
+    let componentDebugInfo: ReactComponentInfo;
+    if (prevThenableState !== null) {
+      componentDebugInfo = (prevThenableState as any)._componentDebugInfo;
+    } else {
+      componentDebugInfo = {
+        name: (Component as any).displayName || Component.name || '',
+        env: (0, request.environmentName)(),
+        key: element.key,
+        owner: task.debugOwner,
+        stack:
+          task.debugStack === null
+            ? null
+            : filterStackTrace(request, parseStackTrace(task.debugStack, 1)),
+        props,
+        debugStack: task.debugStack,
+        debugTask: task.debugTask,
+      };
+      if (
+        element._store.validated === 2 ||
+        request.unkeyedElements.has(element)
+      ) {
+        warnForMissingKey(request, key, componentDebugInfo, task.debugTask);
+      }
+    }
+    prepareToUseHooksForComponent(prevThenableState, componentDebugInfo);
+    // $FlowFixMe[constant-condition]
+    if (supportsComponentStorage) {
+      if (task.debugTask) {
+        result = task.debugTask.run(() =>
+          componentStorage.run(
+            componentDebugInfo,
+            callComponentInDEV,
+            Component,
+            props,
+            componentDebugInfo,
+          ),
+        );
+      } else {
+        result = componentStorage.run(
+          componentDebugInfo,
+          callComponentInDEV,
+          Component,
+          props,
+          componentDebugInfo,
+        );
+      }
+    } else {
+      if (task.debugTask) {
+        result = task.debugTask.run(() =>
+          callComponentInDEV(Component, props, componentDebugInfo),
+        );
+      } else {
+        result = callComponentInDEV(Component, props, componentDebugInfo);
+      }
+    }
+    debugOwner = componentDebugInfo;
+  } else {
+    prepareToUseHooksForComponent(prevThenableState, null);
+    result = Component(props, undefined);
+  }
   if (request.status === ABORTING || request.status === CLOSED) {
     if (
       result !== null &&
@@ -482,9 +622,13 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
     }
     throw request.fatalError;
   }
+  if (__DEV__) {
+    task.debugOwner = debugOwner;
+    task.debugStack = null;
+    task.debugTask = null;
+  }
   const prevKeyPath = task.keyPath;
   const prevImplicitSlot = task.implicitSlot;
-  const key = element.key;
   if (key !== null) {
     if (key === REACT_OPTIMISTIC_KEY || prevKeyPath === REACT_OPTIMISTIC_KEY) {
       task.keyPath = REACT_OPTIMISTIC_KEY;
@@ -587,7 +731,10 @@ function renderElement(
   type: any,
   element: ReactElement,
 ): ReactClientValue {
-  if (element.props.ref != null) {
+  const key = element.key;
+  const props = element.props;
+  const ref = props.ref;
+  if (ref !== null && ref !== undefined) {
     throw new Error(
       'Refs cannot be used in Server Components, nor passed to Client Components.',
     );
@@ -597,16 +744,36 @@ function renderElement(
     !isClientReference(type) &&
     !isOpaqueTemporaryReference(type)
   ) {
-    return renderFunctionComponent(request, task, type, element.props, element);
+    return renderFunctionComponent(request, task, type, props, element);
   }
-  if (type === REACT_FRAGMENT_TYPE && element.key === null) {
+
+  if (type === REACT_FRAGMENT_TYPE && key === null) {
+    if (
+      __DEV__ &&
+      (element._store.validated === 2 || request.unkeyedElements.has(element))
+    ) {
+      const componentDebugInfo: ReactComponentInfo = {
+        name: 'Fragment',
+        env: (0, request.environmentName)(),
+        key,
+        owner: task.debugOwner,
+        stack:
+          task.debugStack === null
+            ? null
+            : filterStackTrace(request, parseStackTrace(task.debugStack, 1)),
+        props,
+        debugStack: task.debugStack,
+        debugTask: task.debugTask,
+      };
+      warnForMissingKey(request, key, componentDebugInfo, task.debugTask);
+    }
+    const prevImplicitSlot = task.implicitSlot;
     const renderedModels = getRenderedModels(
       request,
-      element,
+      element as any,
       task.keyPath,
       task.implicitSlot,
     );
-    const prevImplicitSlot = task.implicitSlot;
     if (task.keyPath === null) {
       task.implicitSlot = true;
     }
@@ -615,7 +782,7 @@ function renderElement(
       task,
       emptyRoot,
       '',
-      element.props.children,
+      props.children,
     );
     setRenderedModel(
       renderedModels,
@@ -625,12 +792,18 @@ function renderElement(
     task.implicitSlot = prevImplicitSlot;
     return resolvedModel;
   }
+
   if (type != null && typeof type === 'object' && !isClientReference(type)) {
     switch (type.$$typeof) {
       case REACT_LAZY_TYPE: {
-        const init = type._init;
-        const payload = type._payload;
-        const wrappedType = init(payload);
+        let wrappedType;
+        if (__DEV__) {
+          wrappedType = callLazyInitInDEV(type);
+        } else {
+          const payload = type._payload;
+          const init = type._init;
+          wrappedType = init(payload);
+        }
         if (request.status === ABORTING || request.status === CLOSED) {
           throw request.fatalError;
         }
@@ -641,7 +814,7 @@ function renderElement(
           request,
           task,
           type.render,
-          element.props,
+          props,
           element,
         );
       }
@@ -649,28 +822,18 @@ function renderElement(
         return renderElement(request, task, type.type, element);
       }
     }
-  }
-  if (typeof type === 'symbol') {
-    validateSymbol(type, element as any, 'type');
-  }
-  if (typeof type === 'string') {
+  } else if (typeof type === 'string') {
     const parentFormatContext = task.formatContext;
     const newFormatContext = getChildFormatContext(
       parentFormatContext,
       type,
-      element.props,
+      props,
     );
-    if (
-      parentFormatContext !== newFormatContext &&
-      element.props.children != null
-    ) {
-      outlineModelWithFormatContext(
-        request,
-        element.props.children,
-        newFormatContext,
-      );
+    if (parentFormatContext !== newFormatContext && props.children != null) {
+      outlineModelWithFormatContext(request, props.children, newFormatContext);
     }
   }
+
   return renderClientElement(request, task, type, element);
 }
 
@@ -719,7 +882,16 @@ function createTask(
     thenableState: null,
     keyPath,
     implicitSlot,
-  };
+  } as Omit<
+    Task,
+    'environmentName' | 'debugOwner' | 'debugStack' | 'debugTask',
+  > as any;
+  if (__DEV__) {
+    task.environmentName = request.environmentName();
+    task.debugOwner = null;
+    task.debugStack = null;
+    task.debugTask = null;
+  }
   request.abortableTasks.add(task);
   return task;
 }
@@ -811,19 +983,39 @@ function createLazyWrapperAroundWakeable(
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
   task.status = ERRORED;
-  const digest = logRecoverableError(request, error);
-  setErrorDigest(request.result, task.promise, digest);
+  logRecoverableError(request, error, task);
   request.abortableTasks.delete(task);
   task.reject(error);
 }
 
-function logRecoverableError(request: Request, error: mixed): string {
+function logRecoverableError(
+  request: Request,
+  error: mixed,
+  task: Task | null = null, // DEV-only
+): string {
   const prevCache = setCurrentCache(null);
   let errorDigest;
   try {
     const onError = request.onError;
-    // $FlowFixMe[constant-condition]
-    if (supportsRequestStorage) {
+    if (__DEV__ && task !== null) {
+      // $FlowFixMe[constant-condition]
+      if (supportsRequestStorage) {
+        errorDigest = cacheStorage.run(undefined, () =>
+          requestStorage.run(
+            undefined,
+            callWithDebugContextInDEV,
+            request,
+            task,
+            onError,
+            error,
+          ),
+        );
+      } else {
+        errorDigest = callWithDebugContextInDEV(request, task, onError, error);
+      }
+      // $FlowFixMe[constant-condition]
+    } else if (supportsRequestStorage) {
+      // Exit the request context while running callbacks.
       errorDigest = cacheStorage.run(undefined, () =>
         requestStorage.run(undefined, onError, error),
       );
@@ -839,7 +1031,11 @@ function logRecoverableError(request: Request, error: mixed): string {
       `onError returned something with a type other than "string". onError should return a string and may return null or undefined but must not return anything else. It received something of type "${typeof errorDigest}" instead`,
     );
   }
-  return errorDigest || '';
+  const digest = errorDigest || '';
+  if (task !== null) {
+    setErrorDigest(request.result, task.promise, digest);
+  }
+  return digest;
 }
 
 function fatalError(request: Request, error: mixed): void {
@@ -870,6 +1066,12 @@ function renderThenable(
     task.implicitSlot,
     task.formatContext,
   );
+  if (__DEV__) {
+    newTask.environmentName = task.environmentName;
+    newTask.debugOwner = task.debugOwner;
+    newTask.debugStack = task.debugStack;
+    newTask.debugTask = task.debugTask;
+  }
   setRenderedModel(
     getRenderedModels(request, value, task.keyPath, task.implicitSlot),
     thenable,
@@ -945,6 +1147,7 @@ function renderClientElement(
   element: ReactElement,
 ): ReactClientValue {
   let key = element.key;
+  const props = element.props;
   const keyPath = task.keyPath;
   if (key === null) {
     key = keyPath;
@@ -958,40 +1161,52 @@ function renderClientElement(
   if (__DEV__ && task.implicitSlot) {
     element._store.validated = 1;
   }
+  if (__DEV__) {
+    jsxPropsParents.set(props, type);
+    if (typeof props.children === 'object' && props.children !== null) {
+      jsxChildrenParents.set(props.children, type);
+    }
+  }
   let resolvedElement: ReactElement;
   if (__DEV__) {
     resolvedElement = {
       $$typeof: REACT_ELEMENT_TYPE,
       type,
-      key,
-      props: element.props,
-      _owner: null,
+      key: key,
+      props,
+      _owner: element._owner === undefined ? null : element._owner,
       _store: element._store,
     } as any;
     Object.defineProperties(resolvedElement, {
       ref: {value: null},
       _debugInfo: {value: element._debugInfo, writable: true},
-      _debugStack: {value: null, writable: true},
-      _debugTask: {value: null, writable: true},
+      _debugStack: {
+        value: element._debugStack === undefined ? null : element._debugStack,
+        writable: true,
+      },
+      _debugTask: {
+        value: element._debugTask === undefined ? null : element._debugTask,
+        writable: true,
+      },
     });
   } else {
     resolvedElement = {
       $$typeof: REACT_ELEMENT_TYPE,
       type,
-      key,
+      key: key,
       ref: null,
-      props: element.props,
+      props,
     } as any;
   }
   const renderedModels = getRenderedModels(
     request,
-    element,
+    element as any,
     keyPath,
     task.implicitSlot,
   );
-  let resolvedModel: ReactClientValue = resolvedElement;
+  let resolvedModel: ReactClientValue = resolvedElement as any;
   if (task.implicitSlot && key !== null) {
-    const children: Array<ReactClientValue> = [resolvedElement];
+    const children: Array<ReactClientValue> = [resolvedElement as any];
     const copy: Array<ReactClientValue> = [];
     setRenderedModel(request.modelEntries, children, copy);
     const reference = task.currentReference;
@@ -1102,6 +1317,23 @@ function renderModelDestructive(
           'Event handlers cannot be passed to Client Component props.' +
             describeObjectForErrorMessage(parent, parentPropertyName) +
             '\nIf you need interactivity, consider converting part of this to a Client Component.',
+        );
+      }
+      if (
+        __DEV__ &&
+        (jsxChildrenParents.has(parent) ||
+          (jsxPropsParents.has(parent) && parentPropertyName === 'children'))
+      ) {
+        const componentName = value.displayName || value.name || 'Component';
+        throw new Error(
+          'Functions are not valid as a child of Client Components. This may happen if ' +
+            'you return ' +
+            componentName +
+            ' instead of <' +
+            componentName +
+            ' /> from render. ' +
+            'Or maybe you meant to call this function rather than return it.' +
+            describeObjectForErrorMessage(parent, parentPropertyName),
         );
       }
       throw new Error(
@@ -1249,6 +1481,11 @@ function renderModelDestructive(
       return deferTask(request, task);
     }
     const element: ReactElement = value as any;
+    if (__DEV__) {
+      task.debugOwner = element._owner;
+      task.debugStack = element._debugStack;
+      task.debugTask = element._debugTask;
+    }
     const rendered = renderElement(request, task, element.type, element);
     if (typeof rendered === 'string' && reference !== undefined) {
       const entry = renderedModels.get(value);
@@ -1279,7 +1516,7 @@ function renderModelDestructive(
     task.thenableState = null;
     const init = lazy._init;
     const payload = lazy._payload;
-    const resolvedModel = init(payload);
+    const resolvedModel = __DEV__ ? callLazyInitInDEV(lazy) : init(payload);
     if (request.status === ABORTING || request.status === CLOSED) {
       throw request.fatalError;
     }
@@ -1290,6 +1527,15 @@ function renderModelDestructive(
       parentPropertyName,
       resolvedModel,
       parentReference,
+    );
+  }
+  if (elementType === REACT_LEGACY_ELEMENT_TYPE) {
+    throw new Error(
+      'A React Element from an older version of React was rendered. ' +
+        'This is not supported. It can happen if:\n' +
+        '- Multiple copies of the "react" package is used.\n' +
+        '- A library pre-bundled an old copy of "react" or "react/jsx-runtime".\n' +
+        '- A compiler tries to "inline" JSX instead of using the runtime.',
     );
   }
   if (typeof (value as any).then === 'function') {
@@ -1382,6 +1628,38 @@ function renderModelDestructive(
         describeObjectForErrorMessage(parent, parentPropertyName),
     );
   }
+  if (__DEV__) {
+    if (objectName(value) !== 'Object') {
+      callWithDebugContextInDEV(request, task, () => {
+        console.error(
+          'Only plain objects can be passed to Client Components from Server Components. ' +
+            '%s objects are not supported.%s',
+          objectName(value),
+          describeObjectForErrorMessage(parent, parentPropertyName),
+        );
+      });
+    } else if (!isSimpleObject(value)) {
+      callWithDebugContextInDEV(request, task, () => {
+        console.error(
+          'Only plain objects can be passed to Client Components from Server Components. ' +
+            'Classes or other objects with methods are not supported.%s',
+          describeObjectForErrorMessage(parent, parentPropertyName),
+        );
+      });
+    } else if (Object.getOwnPropertySymbols) {
+      const symbols = Object.getOwnPropertySymbols(value);
+      if (symbols.length > 0) {
+        callWithDebugContextInDEV(request, task, () => {
+          console.error(
+            'Only plain objects can be passed to Client Components from Server Components. ' +
+              'Objects with symbol properties like %s are not supported.%s',
+            symbols[0].description,
+            describeObjectForErrorMessage(parent, parentPropertyName),
+          );
+        });
+      }
+    }
+  }
   const copy: {[key: string]: ReactClientValue} = {};
   setRenderedModel(request.modelEntries, value, copy);
   task.fieldParentReference = undefined;
@@ -1392,76 +1670,142 @@ function resolveModel(
   request: Request,
   task: Task,
   parent: ModelParent,
-  key: string,
+  parentPropertyName: string,
   value: ReactClientValue,
   parentReference?: null | ModelReference,
   renderedRoot?: ReactClientValue,
 ): ReactClientValue {
-  let jsonValue: ReactClientValue = value;
-  if (
-    value !== null &&
-    typeof value === 'object' &&
-    !(enableFlightObjectReferences && isServerReference(value)) &&
-    typeof (value as any).toJSON === 'function'
-  ) {
-    if (enableTaint) {
-      const tainted = TaintRegistryObjects.get(value);
-      if (tainted !== undefined) {
-        throwTaintViolation(tainted);
-      }
-    }
-    if (value instanceof Date && isSimpleDate(value)) {
-      const time = dateGetTime.call(value);
-      if (enableTaint && !Number.isNaN(time)) {
-        const tainted = TaintRegistryValues.get(dateToISOString.call(value));
+  const prevOwner = __DEV__ ? task.debugOwner : null;
+  const prevStack = __DEV__ ? task.debugStack : null;
+  const prevDebugTask = __DEV__ ? task.debugTask : null;
+  try {
+    let jsonValue: ReactClientValue = value;
+    if (
+      value !== null &&
+      typeof value === 'object' &&
+      !(enableFlightObjectReferences && isServerReference(value)) &&
+      typeof (value as any).toJSON === 'function'
+    ) {
+      if (enableTaint) {
+        const tainted = TaintRegistryObjects.get(value);
         if (tainted !== undefined) {
-          throwTaintViolation(tainted.message);
+          throwTaintViolation(tainted);
         }
       }
-      return renderModelReference(
-        task,
-        Number.isNaN(time) ? null : new Date(time),
-      );
-    }
-    jsonValue = (value as any).toJSON(key);
-  }
-  const rendered =
-    renderedRoot !== undefined && jsonValue === value
-      ? renderedRoot
-      : renderModel(request, task, parent, key, jsonValue, parentReference);
-  if (renderedRoot !== undefined) {
-    task.renderedModel = rendered;
-    if (jsonValue !== value) {
-      let outlinedModels = request.outlinedModels;
-      if (outlinedModels === null) {
-        request.outlinedModels = outlinedModels = new WeakMap();
+      if (value instanceof Date && isSimpleDate(value)) {
+        const time = dateGetTime.call(value);
+        if (enableTaint && !Number.isNaN(time)) {
+          const tainted = TaintRegistryValues.get(dateToISOString.call(value));
+          if (tainted !== undefined) {
+            throwTaintViolation(tainted.message);
+          }
+        }
+        return renderModelReference(
+          task,
+          Number.isNaN(time) ? null : new Date(time),
+        );
       }
-      outlinedModels.set(renderedRoot as any, task);
-      request.hasByValueModels = true;
+      jsonValue = (value as any).toJSON(parentPropertyName);
     }
-  }
-  if (
-    task.isModelReference ||
-    rendered === null ||
-    typeof rendered !== 'object'
-  ) {
-    return rendered;
-  }
-  const stack = request.resolvingModelStack;
-  stack.push(rendered);
-  if (request.resolvingModels !== null) {
-    request.resolvingModels.add(rendered);
-  }
-  try {
-    return resolveModelFields(request, task, rendered);
-  } finally {
-    stack.pop();
+    if (__DEV__) {
+      const originalValue = parent[parentPropertyName as any];
+      if (
+        typeof originalValue === 'object' &&
+        originalValue !== jsonValue &&
+        !(originalValue instanceof Date)
+      ) {
+        // Call with the server component as the currently rendering component
+        // for context.
+        callWithDebugContextInDEV(request, task, () => {
+          if (ArrayBuffer.isView(originalValue)) {
+            // Binary data such as a Node.js Buffer carries a toJSON method, so it
+            // is serialized through that method rather than as binary. A plain
+            // Uint8Array or ArrayBuffer has no toJSON and is serialized as
+            // binary.
+            console.error(
+              'Binary data with a toJSON method, such as a Node.js Buffer, is ' +
+                'serialized through toJSON instead of as binary. Pass a ' +
+                'Uint8Array or ArrayBuffer to send binary data.%s',
+              describeObjectForErrorMessage(parent, parentPropertyName),
+            );
+          } else if (objectName(originalValue) !== 'Object') {
+            const jsxParentType = jsxChildrenParents.get(parent);
+            if (typeof jsxParentType === 'string') {
+              console.error(
+                '%s objects cannot be rendered as text children. Try formatting it using toString().%s',
+                objectName(originalValue),
+                describeObjectForErrorMessage(parent, parentPropertyName),
+              );
+            } else {
+              console.error(
+                'Only plain objects can be passed to Client Components from Server Components. ' +
+                  '%s objects are not supported.%s',
+                objectName(originalValue),
+                describeObjectForErrorMessage(parent, parentPropertyName),
+              );
+            }
+          } else {
+            console.error(
+              'Only plain objects can be passed to Client Components from Server Components. ' +
+                'Objects with toJSON methods are not supported. Convert it manually ' +
+                'to a simple value before passing it to props.%s',
+              describeObjectForErrorMessage(parent, parentPropertyName),
+            );
+          }
+        });
+      }
+    }
+
+    const rendered =
+      renderedRoot !== undefined && jsonValue === value
+        ? renderedRoot
+        : renderModel(
+            request,
+            task,
+            parent,
+            parentPropertyName,
+            jsonValue,
+            parentReference,
+          );
+    if (renderedRoot !== undefined) {
+      task.renderedModel = rendered;
+      if (jsonValue !== value) {
+        let outlinedModels = request.outlinedModels;
+        if (outlinedModels === null) {
+          request.outlinedModels = outlinedModels = new WeakMap();
+        }
+        outlinedModels.set(renderedRoot as any, task);
+        request.hasByValueModels = true;
+      }
+    }
+    if (
+      task.isModelReference ||
+      rendered === null ||
+      typeof rendered !== 'object'
+    ) {
+      return rendered;
+    }
+    const stack = request.resolvingModelStack;
+    stack.push(rendered);
     if (request.resolvingModels !== null) {
-      request.resolvingModels.delete(rendered);
+      request.resolvingModels.add(rendered);
+    }
+    try {
+      return resolveModelFields(request, task, rendered);
+    } finally {
+      stack.pop();
+      if (request.resolvingModels !== null) {
+        request.resolvingModels.delete(rendered);
+      }
+    }
+  } finally {
+    if (__DEV__) {
+      task.debugOwner = prevOwner;
+      task.debugStack = prevStack;
+      task.debugTask = prevDebugTask;
     }
   }
 }
-
 function renderModel(
   request: Request,
   task: Task,
@@ -1509,6 +1853,12 @@ function renderModel(
         task.implicitSlot,
         task.formatContext,
       );
+      if (__DEV__) {
+        newTask.environmentName = task.environmentName;
+        newTask.debugOwner = task.debugOwner;
+        newTask.debugStack = task.debugStack;
+        newTask.debugTask = task.debugTask;
+      }
       const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
       setModelReference(request, model, newTask.reference);
       if ((model as any).$$typeof === REACT_ELEMENT_TYPE) {
@@ -1560,6 +1910,11 @@ function renderModel(
       prevImplicitSlot,
       task.formatContext,
     );
+    if (__DEV__) {
+      newTask.debugOwner = task.debugOwner;
+      newTask.debugStack = task.debugStack;
+      newTask.debugTask = task.debugTask;
+    }
     // Binding in the recovery path avoids a captured local in every hot call,
     // including after a later bundler inlines this helper.
     newTask.resolve = resolveBoxedModel.bind(null, newTask.resolve);
@@ -1864,6 +2219,21 @@ function renderFragment(
   children: Array<ReactClientValue>,
   source: Iterable<ReactClientValue> = children,
 ): ReactClientValue {
+  if (__DEV__) {
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (
+        child !== null &&
+        typeof child === 'object' &&
+        child.$$typeof === REACT_ELEMENT_TYPE
+      ) {
+        const element: ReactElement = child as any;
+        if (element.key === null && !element._store.validated) {
+          request.unkeyedElements.add(element);
+        }
+      }
+    }
+  }
   const keyPath = task.keyPath;
   let resolvedModel: ReactClientValue;
   if (keyPath !== null) {
@@ -1894,14 +2264,14 @@ function renderFragment(
       } as any;
     }
     if (task.implicitSlot) {
-      const wrappedChildren: Array<ReactClientValue> = [fragment];
+      const wrappedChildren: Array<ReactClientValue> = [fragment as any];
       const copy: Array<ReactClientValue> = [];
       setRenderedModel(request.modelEntries, wrappedChildren, copy);
       task.model = wrappedChildren;
       resolvedModel = copy;
       task.fieldParentReference = null;
     } else {
-      resolvedModel = fragment;
+      resolvedModel = fragment as any;
       task.fieldParentReference = null;
     }
     setRenderedModel(
@@ -1940,6 +2310,15 @@ function performWork(request: Request): void {
   } catch (error) {
     fatalError(request, error);
   } finally {
+    modelRoot = null;
+    if (__DEV__) {
+      const elements = request.completedElements;
+      for (let i = 0; i < elements.length; i++) {
+        Object.freeze(elements[i].props);
+        Object.freeze(elements[i]);
+      }
+      elements.length = 0;
+    }
     if (request.status !== CLOSED && request.abortableTasks.size === 0) {
       request.status = CLOSED;
       closeResult(request);
@@ -2556,6 +2935,12 @@ function renderOutlinedElement(
       false,
       task.formatContext,
     );
+    if (__DEV__) {
+      newTask.environmentName = task.environmentName;
+      newTask.debugOwner = task.debugOwner;
+      newTask.debugStack = task.debugStack;
+      newTask.debugTask = task.debugTask;
+    }
     blockTask(request, newTask, elementModel, dependencies);
     const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
     outlinedModels.set(element, newTask);
@@ -2568,6 +2953,9 @@ function renderOutlinedElement(
       );
     }
     return renderModelReference(task, lazy);
+  }
+  if (__DEV__) {
+    request.completedElements.push(element);
   }
   return elementModel;
 }
@@ -2681,6 +3069,11 @@ function deferTask(request: Request, task: Task): ReactClientValue {
     task.implicitSlot,
     task.formatContext,
   );
+  if (__DEV__) {
+    newTask.debugOwner = task.debugOwner;
+    newTask.debugStack = task.debugStack;
+    newTask.debugTask = task.debugTask;
+  }
   const lazy = createLazyWrapperAroundWakeable(newTask.promise as any);
   const model = task.model;
   if (model !== null && typeof model === 'object') {
@@ -2764,6 +3157,12 @@ function renderAsyncIterable(
     false,
     task.formatContext,
   );
+  if (__DEV__) {
+    streamTask.environmentName = task.environmentName;
+    streamTask.debugOwner = task.debugOwner;
+    streamTask.debugStack = task.debugStack;
+    streamTask.debugTask = task.debugTask;
+  }
   const resolvedIterable = controller.iterable;
   setRenderedModel(
     request.modelEntries,
@@ -2783,6 +3182,12 @@ function renderAsyncIterable(
       false,
       entry.done ? createRootFormatContext() : streamTask.formatContext,
     );
+    if (__DEV__) {
+      entryTask.environmentName = streamTask.environmentName;
+      entryTask.debugOwner = entry.done ? null : streamTask.debugOwner;
+      entryTask.debugStack = entry.done ? null : streamTask.debugStack;
+      entryTask.debugTask = entry.done ? null : streamTask.debugTask;
+    }
     if (entry.done) {
       streamTask.status = COMPLETED;
       request.abortableTasks.delete(streamTask);
@@ -2852,7 +3257,11 @@ function renderAsyncIterable(
 
   function next(): void {
     try {
-      iterator.next().then(progress, error);
+      if (__DEV__) {
+        callIteratorInDEV(iterator, progress, error);
+      } else {
+        iterator.next().then(progress, error);
+      }
     } catch (x) {
       error(x);
     }
@@ -2905,6 +3314,7 @@ function renderAsyncFragment(
         _debugStack: {value: null, writable: true},
         _debugTask: {value: null, writable: true},
       });
+      request.completedElements.push(fragment);
     } else {
       fragment = {
         $$typeof: REACT_ELEMENT_TYPE,
@@ -2999,6 +3409,9 @@ export function createPrerenderRequest(
   environmentName?: string | (() => string),
   filterStackFrame?: (string, string, number, number) => boolean,
 ): Request {
+  if (__DEV__) {
+    resetOwnerStackLimit();
+  }
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
   return new RequestInstance(
     model,
@@ -3225,6 +3638,9 @@ function renderErrorValue(request: Request, task: Task, error: Error): Error {
     setRenderedModel(request.modelEntries, error, copy);
     task.keyPath = null;
     task.implicitSlot = false;
+    task.debugOwner = null;
+    task.debugStack = null;
+    task.debugTask = null;
     if ('cause' in error) {
       copy.cause = outlineModel(request, error.cause as any);
     }
@@ -3250,6 +3666,12 @@ function renderBlob(request: Request, task: Task, blob: Blob): Blob {
       false,
       createRootFormatContext(),
     );
+    if (__DEV__) {
+      newTask.environmentName = task.environmentName;
+      newTask.debugOwner = task.debugOwner;
+      newTask.debugStack = task.debugStack;
+      newTask.debugTask = task.debugTask;
+    }
     let outlinedModels = request.outlinedModels;
     if (outlinedModels === null) {
       request.outlinedModels = outlinedModels = new WeakMap();
@@ -3415,6 +3837,11 @@ function renderIterator(
   setIteratorEntries(request.result, resolvedIterator, copy);
   task.keyPath = null;
   task.implicitSlot = false;
+  if (__DEV__) {
+    task.debugOwner = null;
+    task.debugStack = null;
+    task.debugTask = null;
+  }
   for (let i = 0; i < entries.length; i++) {
     copy[i] = resolveModel(request, task, entries, '' + i, entries[i]);
   }
@@ -3447,6 +3874,12 @@ function renderReadableStream(
     task.implicitSlot,
     task.formatContext,
   );
+  if (__DEV__) {
+    streamTask.environmentName = task.environmentName;
+    streamTask.debugOwner = task.debugOwner;
+    streamTask.debugStack = task.debugStack;
+    streamTask.debugTask = task.debugTask;
+  }
   const resolvedStream = controller.stream;
   setRenderedModel(request.modelEntries, stream, resolvedStream);
   setReadableStream(request.result, controller);
@@ -3483,6 +3916,12 @@ function renderReadableStream(
           streamTask.implicitSlot,
           streamTask.formatContext,
         );
+        if (__DEV__) {
+          entryTask.environmentName = streamTask.environmentName;
+          entryTask.debugOwner = streamTask.debugOwner;
+          entryTask.debugStack = streamTask.debugStack;
+          entryTask.debugTask = streamTask.debugTask;
+        }
         controller.enqueue(entryTask.promise as any);
         tryStreamTask(request, entryTask);
       }
@@ -3581,6 +4020,14 @@ function tryStreamTask(request: Request, task: Task): void {
   } finally {
     modelRoot = null;
     try {
+      if (__DEV__) {
+        const elements = request.completedElements;
+        for (let i = 0; i < elements.length; i++) {
+          Object.freeze(elements[i].props);
+          Object.freeze(elements[i]);
+        }
+        elements.length = 0;
+      }
       if (enableTaint) {
         validateDeferredBlobs(request);
       }
@@ -3621,6 +4068,10 @@ function renderWeakThenable(
   const keyPath = task.keyPath;
   const implicitSlot = task.implicitSlot;
   const formatContext = task.formatContext;
+  const debugOwner = __DEV__ ? task.debugOwner : null;
+  const debugStack = __DEV__ ? task.debugStack : null;
+  const debugTask = __DEV__ ? task.debugTask : null;
+  const environmentName = __DEV__ ? task.environmentName : '';
   setRenderedModel(
     getRenderedModels(request, thenable as any, keyPath, implicitSlot),
     thenable as any,
@@ -3637,6 +4088,12 @@ function renderWeakThenable(
       implicitSlot,
       formatContext,
     );
+    if (__DEV__) {
+      newTask.debugOwner = debugOwner;
+      newTask.debugStack = debugStack;
+      newTask.debugTask = debugTask;
+      newTask.environmentName = environmentName;
+    }
     newTask.promise.then(
       value => {
         fulfillResultModel(promise, value);
@@ -3681,4 +4138,71 @@ function closeResult(request: Request): void {
   }
   closeHints(request.result);
   completeResult(request.result);
+}
+
+function warnForMissingKey(
+  request: Request,
+  key: ReactKey,
+  componentDebugInfo: ReactComponentInfo,
+  debugTask: null | ConsoleTask,
+): void {
+  if (__DEV__) {
+    let didWarnForKey = request.didWarnForKey;
+    if (didWarnForKey == null) {
+      didWarnForKey = request.didWarnForKey = new WeakSet();
+    }
+    const parentOwner = componentDebugInfo.owner;
+    if (parentOwner != null) {
+      if (didWarnForKey.has(parentOwner)) {
+        // We already warned for other children in this parent.
+        return;
+      }
+      didWarnForKey.add(parentOwner);
+    }
+
+    // Call with the server component as the currently rendering component
+    // for context.
+    const logKeyError = () => {
+      console.error(
+        'Each child in a list should have a unique "key" prop.' +
+          '%s%s See https://react.dev/link/warning-keys for more information.',
+        '',
+        '',
+      );
+    };
+
+    // $FlowFixMe[constant-condition]
+    if (supportsComponentStorage) {
+      // Run the component in an Async Context that tracks the current owner.
+      if (debugTask) {
+        debugTask.run(
+          // $FlowFixMe[method-unbinding]
+          componentStorage.run.bind(
+            componentStorage,
+            componentDebugInfo,
+            callComponentInDEV,
+            logKeyError,
+            null,
+            componentDebugInfo,
+          ),
+        );
+      } else {
+        componentStorage.run(
+          componentDebugInfo,
+          callComponentInDEV,
+          logKeyError,
+          null,
+          componentDebugInfo,
+        );
+      }
+    } else {
+      if (debugTask) {
+        debugTask.run(
+          callComponentInDEV.bind(null, logKeyError, null, componentDebugInfo),
+        );
+      } else {
+        callComponentInDEV(logKeyError, null, componentDebugInfo);
+      }
+    }
+  }
 }
