@@ -7,7 +7,8 @@
  * @flow
  */
 
-import type {Writable} from 'stream';
+import type {Writable, Duplex} from 'stream';
+import {Readable} from 'stream';
 import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 import type {ClientManifest} from './ReactFlightServerConfigWebpackBundler';
 import type {
@@ -21,11 +22,19 @@ import {
   startFlowingDebug,
   stopFlowing,
   abort,
+  resolveDebugMessage,
+  closeDebugChannel,
 } from 'react-server/src/ReactFlightResultSerializationServer';
+
+import {
+  createStringDecoder,
+  readPartialStringChunk,
+  readFinalStringChunk,
+} from 'react-client/src/ReactFlightClientStreamConfigNode';
 
 export type Options = {
   onError?: mixed => ?string,
-  debugChannel?: Writable,
+  debugChannel?: Readable | Writable | Duplex | WebSocket,
   temporaryReferences?: TemporaryReferenceSet,
   startTime?: number,
   environmentName?: string | (() => string),
@@ -53,19 +62,42 @@ export function renderToPipeableStream(
   webpackMap: ClientManifest,
   options?: Options,
 ): PipeableStream {
+  const debugChannel = __DEV__ && options ? options.debugChannel : undefined;
+  const debugChannelReadable: void | Readable | WebSocket =
+    __DEV__ &&
+    debugChannel !== undefined &&
+    // $FlowFixMe[method-unbinding]
+    (typeof debugChannel.read === 'function' ||
+      typeof debugChannel.readyState === 'number')
+      ? (debugChannel as any)
+      : undefined;
+  const debugChannelWritable: void | Writable =
+    __DEV__ && debugChannel !== undefined
+      ? // $FlowFixMe[method-unbinding]
+        typeof debugChannel.write === 'function'
+        ? (debugChannel as any)
+        : // $FlowFixMe[method-unbinding]
+          typeof debugChannel.send === 'function'
+          ? createFakeWritableFromWebSocket(debugChannel as any)
+          : undefined
+      : undefined;
   const request = createRequest(
     input,
     webpackMap,
     options ? options.onError : undefined,
     options ? options.temporaryReferences : undefined,
-    __DEV__ && options ? options.startTime : undefined,
+    options ? options.startTime : undefined,
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
+    debugChannelReadable !== undefined,
   );
   let hasStartedFlowing = false;
   startWork(request);
-  if (__DEV__ && options && options.debugChannel) {
-    startFlowingDebug(request, options.debugChannel);
+  if (debugChannelWritable !== undefined) {
+    startFlowingDebug(request, debugChannelWritable);
+  }
+  if (debugChannelReadable !== undefined) {
+    startReadingFromDebugChannelReadable(request, debugChannelReadable);
   }
   return {
     pipe<T: Writable>(destination: T): T {
@@ -84,14 +116,100 @@ export function renderToPipeableStream(
           'The destination stream errored while writing data.',
         ),
       );
-      destination.on(
-        'close',
-        createCancelHandler(request, 'The destination stream closed early.'),
-      );
+      // We don't close until the debug channel closes.
+      if (!__DEV__ || debugChannelReadable === undefined) {
+        destination.on(
+          'close',
+          createCancelHandler(request, 'The destination stream closed early.'),
+        );
+      }
       return destination;
     },
     abort(reason: mixed) {
       abort(request, reason);
     },
   };
+}
+
+function startReadingFromDebugChannelReadable(
+  request: Request,
+  stream: Readable | WebSocket,
+): void {
+  const stringDecoder = createStringDecoder();
+  let lastWasPartial = false;
+  let stringBuffer = '';
+  function onData(chunk: string | Uint8Array) {
+    if (typeof chunk === 'string') {
+      if (lastWasPartial) {
+        stringBuffer += readFinalStringChunk(stringDecoder, new Uint8Array(0));
+        lastWasPartial = false;
+      }
+      stringBuffer += chunk;
+    } else {
+      const buffer: Uint8Array = chunk as any;
+      stringBuffer += readPartialStringChunk(stringDecoder, buffer);
+      lastWasPartial = true;
+    }
+    const messages = stringBuffer.split('\n');
+    for (let i = 0; i < messages.length - 1; i++) {
+      resolveDebugMessage(request, messages[i]);
+    }
+    stringBuffer = messages[messages.length - 1];
+  }
+  function onError(error: mixed) {
+    abort(
+      request,
+      new Error('Lost connection to the Debug Channel.', {
+        cause: error,
+      }),
+    );
+  }
+  function onClose() {
+    closeDebugChannel(request);
+  }
+  if (
+    // $FlowFixMe[method-unbinding]
+    typeof stream.addEventListener === 'function' &&
+    // $FlowFixMe[method-unbinding]
+    typeof stream.binaryType === 'string'
+  ) {
+    const ws: WebSocket = stream as any;
+    ws.binaryType = 'arraybuffer';
+    ws.addEventListener('message', event => {
+      // $FlowFixMe[incompatible-type]
+      onData(event.data);
+    });
+    ws.addEventListener('error', event => {
+      // $FlowFixMe[prop-missing]
+      onError(event.error);
+    });
+    ws.addEventListener('close', onClose);
+  } else {
+    const readable: Readable = stream as any;
+    readable.on('data', onData);
+    readable.on('error', onError);
+    readable.on('end', onClose);
+  }
+}
+
+function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
+  return {
+    write(chunk: string | Uint8Array) {
+      webSocket.send(chunk as any);
+      return true;
+    },
+    end() {
+      webSocket.close();
+    },
+    destroy(reason) {
+      if (typeof reason === 'object' && reason !== null) {
+        reason = reason.message;
+      }
+      if (typeof reason === 'string') {
+        webSocket.close(1011, reason);
+      } else {
+        webSocket.close(1011);
+      }
+    },
+  } as any;
 }

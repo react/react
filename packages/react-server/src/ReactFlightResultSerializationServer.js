@@ -121,6 +121,11 @@ const RENDERING = 6;
 const ObjectPrototype = Object.prototype;
 const {getPrototypeOf} = Object;
 
+type DeferredDebugStore = {
+  retained: Map<number, ReactClientValue>,
+  existing: Map<ReactClientValue, number>,
+};
+
 type Task = {
   timed: boolean, // DEV-only
   time: number, // DEV-only
@@ -219,6 +224,7 @@ export type Request = {
   writtenErrors: WeakMap<ErrorReference, number>,
   completedErrorChunks: Array<Chunk>,
   onError: mixed => ?string,
+  deferredDebugObjects: null | DeferredDebugStore, // DEV-only
   debugDestination: null | Destination, // DEV-only
   pendingDebugChunks: number, // DEV-only
   completedDebugChunks: Array<
@@ -269,6 +275,7 @@ function RequestInstance(
   debugStartTime: void | number,
   environmentName: void | string | (() => string),
   filterStackFrame: void | ((string, string) => boolean),
+  keepDebugAlive: boolean,
 ) {
   const cleanupQueue: Array<string | bigint> = [];
   if (enableTaint) {
@@ -282,6 +289,9 @@ function RequestInstance(
   this.abortableTasks = new Set();
   if (__DEV__) {
     this.debugDestination = null;
+    this.deferredDebugObjects = keepDebugAlive
+      ? {retained: new Map(), existing: new Map()}
+      : null;
     this.abortTime = -0.0;
     this.pendingDebugChunks = 0;
     this.completedDebugChunks = [];
@@ -410,6 +420,7 @@ export function createRequest(
   debugStartTime?: number,
   environmentName?: string | (() => string),
   filterStackFrame?: (string, string) => boolean,
+  keepDebugAlive: boolean = false,
 ): Request {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
   return new RequestInstance(
@@ -420,6 +431,7 @@ export function createRequest(
     debugStartTime,
     environmentName,
     filterStackFrame,
+    keepDebugAlive,
   );
 }
 
@@ -545,10 +557,23 @@ function serializeDebugThenable(
     }
   }
 
-  if (request.status >= ABORTING) {
+  if (request.status === ABORTING) {
     // Ensure that we have time to emit the halt chunk if we're sync aborting.
     emitDebugHaltChunk(request, id);
     return ref;
+  }
+
+  const deferredDebugObjects = request.deferredDebugObjects;
+  if (deferredDebugObjects !== null) {
+    // For Promises that are not yet resolved, we always defer them. They are async anyway so it's
+    // safe to defer them. This also ensures that we don't eagerly call .then() on a Promise that
+    // otherwise wouldn't have initialized. It also ensures that we don't "handle" a rejection
+    // that otherwise would have triggered unhandled rejection.
+    deferredDebugObjects.retained.set(id, thenable as any);
+    const deferredRef = '$Y@' + id.toString(16);
+    // We can now refer to the deferred object in the future.
+    request.writtenDebugObjects.set(thenable, deferredRef);
+    return deferredRef;
   }
 
   let cancelled = false;
@@ -559,7 +584,7 @@ function serializeDebugThenable(
         return;
       }
       cancelled = true;
-      if (request.status >= ABORTING) {
+      if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
         enqueueFlush(request);
         return;
@@ -583,7 +608,7 @@ function serializeDebugThenable(
         return;
       }
       cancelled = true;
-      if (request.status >= ABORTING) {
+      if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
         enqueueFlush(request);
         return;
@@ -612,6 +637,140 @@ function serializeDebugThenable(
   });
 
   return ref;
+}
+
+function emitRequestedDebugThenable(
+  request: Request,
+  id: number,
+  counter: {objectLimit: number},
+  thenable: Thenable<any>,
+): void {
+  thenable.then(
+    value => {
+      if (request.status === ABORTING) {
+        emitDebugHaltChunk(request, id);
+        enqueueFlush(request);
+        return;
+      }
+      emitOutlinedDebugModelChunk(request, id, counter, value);
+      enqueueFlush(request);
+    },
+    reason => {
+      if (request.status === ABORTING) {
+        emitDebugHaltChunk(request, id);
+        enqueueFlush(request);
+        return;
+      }
+      // We don't log these errors since they didn't actually throw into Flight.
+      const digest = '';
+      emitErrorChunk(request, id, digest, reason, true, null);
+      enqueueFlush(request);
+    },
+  );
+}
+
+function fromHex(str: string): number {
+  return parseInt(str, 16);
+}
+
+export function resolveDebugMessage(request: Request, message: string): void {
+  if (!__DEV__) {
+    // These errors should never make it into a build so we don't need to encode them in codes.json
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'resolveDebugMessage should never be called in production mode. This is a bug in React.',
+    );
+  }
+  const deferredDebugObjects = request.deferredDebugObjects;
+  if (deferredDebugObjects === null) {
+    throw new Error(
+      "resolveDebugMessage/closeDebugChannel should not be called for a Request that wasn't kept alive. This is a bug in React.",
+    );
+  }
+  if (message === '') {
+    closeDebugChannel(request);
+    return;
+  }
+  // This function lets the client ask for more data lazily through the debug channel.
+  const command = message.charCodeAt(0);
+  const ids = message.slice(2).split(',').map(fromHex);
+  switch (command) {
+    case 82 /* "R" */:
+      // Release IDs
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const retainedValue = deferredDebugObjects.retained.get(id);
+        if (retainedValue !== undefined) {
+          // We're no longer blocked on this. We won't emit it.
+          request.pendingDebugChunks--;
+          deferredDebugObjects.retained.delete(id);
+          deferredDebugObjects.existing.delete(retainedValue);
+          enqueueFlush(request);
+        }
+      }
+      break;
+    case 81 /* "Q" */:
+      // Query IDs
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const retainedValue = deferredDebugObjects.retained.get(id);
+        if (retainedValue !== undefined) {
+          // If we still have this object, and haven't emitted it before, emit it on the stream.
+          const counter = {objectLimit: 10};
+          deferredDebugObjects.retained.delete(id);
+          deferredDebugObjects.existing.delete(retainedValue);
+          emitOutlinedDebugModelChunk(request, id, counter, retainedValue);
+          enqueueFlush(request);
+        }
+      }
+      break;
+    case 80 /* "P" */:
+      // Query Promise IDs
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const retainedValue = deferredDebugObjects.retained.get(id);
+        if (retainedValue !== undefined) {
+          // If we still have this Promise, and haven't emitted it before, wait for it
+          // and then emit it on the stream.
+          const counter = {objectLimit: 10};
+          deferredDebugObjects.retained.delete(id);
+          emitRequestedDebugThenable(
+            request,
+            id,
+            counter,
+            retainedValue as any,
+          );
+        }
+      }
+      break;
+    default:
+      throw new Error(
+        'Unknown command. The debugChannel was not wired up properly.',
+      );
+  }
+}
+
+export function closeDebugChannel(request: Request): void {
+  if (!__DEV__) {
+    // These errors should never make it into a build so we don't need to encode them in codes.json
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'closeDebugChannel should never be called in production mode. This is a bug in React.',
+    );
+  }
+  // This clears all remaining deferred objects, potentially resulting in the completion of the Request.
+  const deferredDebugObjects = request.deferredDebugObjects;
+  if (deferredDebugObjects === null) {
+    throw new Error(
+      "resolveDebugMessage/closeDebugChannel should not be called for a Request that wasn't kept alive. This is a bug in React.",
+    );
+  }
+  deferredDebugObjects.retained.forEach((value, id) => {
+    request.pendingDebugChunks--;
+    deferredDebugObjects.retained.delete(id);
+    deferredDebugObjects.existing.delete(value);
+  });
+  enqueueFlush(request);
 }
 
 function serializeRowHeader(tag: string, id: number) {
@@ -1250,6 +1409,19 @@ function renderDebugModel(
 
     counter.objectLimit--;
 
+    const deferredDebugObjects = request.deferredDebugObjects;
+    if (deferredDebugObjects !== null) {
+      const deferredId = deferredDebugObjects.existing.get(value);
+      // We earlier deferred this same object. We're now going to eagerly emit it so let's emit it
+      // at the same ID that we already used to refer to it.
+      if (deferredId !== undefined) {
+        deferredDebugObjects.existing.delete(value);
+        deferredDebugObjects.retained.delete(deferredId);
+        emitOutlinedDebugModelChunk(request, deferredId, counter, value);
+        return serializeByValueID(deferredId);
+      }
+    }
+
     switch ((value as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
         const element: ReactElement = value as any;
@@ -1743,7 +1915,7 @@ function emitConsoleChunk(
   const payload = [methodName, stackTrace, owner, env];
   // $FlowFixMe[method-unbinding]
   payload.push.apply(payload, args);
-  const objectLimit = 500;
+  const objectLimit = request.deferredDebugObjects === null ? 500 : 10;
   let json = serializeDebugModel(
     request,
     objectLimit + stackTrace.length,
@@ -1931,6 +2103,17 @@ function serializeDeferredObject(
   request: Request,
   value: ReactClientValue,
 ): string {
+  const deferredDebugObjects = request.deferredDebugObjects;
+  if (deferredDebugObjects !== null) {
+    // This client supports a long lived connection. We can assign this object
+    // an ID to be lazy loaded later.
+    // This keeps the connection alive until we ask for it or release it.
+    request.pendingDebugChunks++;
+    const id = request.nextChunkId++;
+    deferredDebugObjects.existing.set(value, id);
+    deferredDebugObjects.retained.set(id, value);
+    return '$Y' + id.toString(16);
+  }
   return '$Y';
 }
 
@@ -2867,9 +3050,6 @@ function cleanupInput(request: Request): void {
   request.input = null;
   request.inputSubscriptions.forEach(detach => detach());
   request.inputSubscriptions.clear();
-  if (enableTaint) {
-    cleanupTaintQueue(request);
-  }
 }
 
 function subscribeHints(request: Request): void {
@@ -2930,6 +3110,9 @@ function fatalError(request: Request, error: mixed): void {
   request.fatalError = error;
   request.abortController.abort(error);
   cleanupInput(request);
+  if (enableTaint) {
+    cleanupTaintQueue(request);
+  }
   const destination = request.destination;
   if (__DEV__ && request.debugDestination !== null) {
     closeWithError(request.debugDestination, error);
@@ -2980,58 +3163,92 @@ function flushCompletedChunks(request: Request): void {
     flushBuffered(debugDestination);
   }
   const destination = request.destination;
-  if (destination === null || request.status === CLOSED) {
-    return;
-  }
-  beginWriting(destination);
-  try {
-    const importsChunks = request.completedImportChunks;
-    let i = 0;
-    for (; i < importsChunks.length; i++) {
-      request.pendingChunks--;
-      const keepWriting = writeChunkAndReturn(destination, importsChunks[i]);
-      if (!keepWriting) {
-        request.destination = null;
-        i++;
-        break;
+  if (destination !== null) {
+    beginWriting(destination);
+    try {
+      const importsChunks = request.completedImportChunks;
+      let i = 0;
+      for (; i < importsChunks.length; i++) {
+        request.pendingChunks--;
+        const keepWriting = writeChunkAndReturn(destination, importsChunks[i]);
+        if (!keepWriting) {
+          request.destination = null;
+          i++;
+          break;
+        }
       }
-    }
-    importsChunks.splice(0, i);
-    const hintChunks = request.completedHintChunks;
-    i = 0;
-    for (; i < hintChunks.length; i++) {
-      const keepWriting = writeChunkAndReturn(destination, hintChunks[i]);
-      if (!keepWriting) {
-        request.destination = null;
-        i++;
-        break;
-      }
-    }
-    hintChunks.splice(0, i);
-    if (__DEV__ && request.debugDestination === null) {
-      const debugChunks = request.completedDebugChunks;
+      importsChunks.splice(0, i);
+      const hintChunks = request.completedHintChunks;
       i = 0;
-      for (; i < debugChunks.length; i++) {
-        const item = debugChunks[i];
+      for (; i < hintChunks.length; i++) {
+        const keepWriting = writeChunkAndReturn(destination, hintChunks[i]);
+        if (!keepWriting) {
+          request.destination = null;
+          i++;
+          break;
+        }
+      }
+      hintChunks.splice(0, i);
+      if (__DEV__ && request.debugDestination === null) {
+        const debugChunks = request.completedDebugChunks;
+        i = 0;
+        for (; i < debugChunks.length; i++) {
+          const item = debugChunks[i];
+          let keepWriting: boolean;
+          if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
+            if (i + 2 >= debugChunks.length) {
+              throw new Error(
+                'A chunk pair is incomplete. This is a bug in React.',
+              );
+            }
+            request.pendingDebugChunks -= 2;
+            writeChunk(
+              destination,
+              debugChunks[i + 1] as any as Chunk | BinaryChunk,
+            );
+            keepWriting = writeChunkAndReturn(
+              destination,
+              debugChunks[i + 2] as any as Chunk | BinaryChunk,
+            );
+            i += 2;
+          } else {
+            request.pendingDebugChunks--;
+            keepWriting = writeChunkAndReturn(
+              destination,
+              item as any as Chunk | BinaryChunk,
+            );
+          }
+          if (!keepWriting) {
+            request.destination = null;
+            i++;
+            break;
+          }
+        }
+        debugChunks.splice(0, i);
+      }
+      const regularChunks = request.completedRegularChunks;
+      i = 0;
+      for (; i < regularChunks.length; i++) {
+        const item = regularChunks[i];
         let keepWriting: boolean;
         if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
-          if (i + 2 >= debugChunks.length) {
+          if (i + 2 >= regularChunks.length) {
             throw new Error(
               'A chunk pair is incomplete. This is a bug in React.',
             );
           }
-          request.pendingDebugChunks -= 2;
+          request.pendingChunks -= 2;
           writeChunk(
             destination,
-            debugChunks[i + 1] as any as Chunk | BinaryChunk,
+            regularChunks[i + 1] as any as Chunk | BinaryChunk,
           );
           keepWriting = writeChunkAndReturn(
             destination,
-            debugChunks[i + 2] as any as Chunk | BinaryChunk,
+            regularChunks[i + 2] as any as Chunk | BinaryChunk,
           );
           i += 2;
         } else {
-          request.pendingDebugChunks--;
+          request.pendingChunks--;
           keepWriting = writeChunkAndReturn(
             destination,
             item as any as Chunk | BinaryChunk,
@@ -3043,70 +3260,76 @@ function flushCompletedChunks(request: Request): void {
           break;
         }
       }
-      debugChunks.splice(0, i);
-    }
-    const regularChunks = request.completedRegularChunks;
-    i = 0;
-    for (; i < regularChunks.length; i++) {
-      const item = regularChunks[i];
-      let keepWriting: boolean;
-      if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
-        if (i + 2 >= regularChunks.length) {
-          throw new Error(
-            'A chunk pair is incomplete. This is a bug in React.',
-          );
-        }
-        request.pendingChunks -= 2;
-        writeChunk(
-          destination,
-          regularChunks[i + 1] as any as Chunk | BinaryChunk,
-        );
-        keepWriting = writeChunkAndReturn(
-          destination,
-          regularChunks[i + 2] as any as Chunk | BinaryChunk,
-        );
-        i += 2;
-      } else {
+      regularChunks.splice(0, i);
+      const errorChunks = request.completedErrorChunks;
+      i = 0;
+      for (; i < errorChunks.length; i++) {
         request.pendingChunks--;
-        keepWriting = writeChunkAndReturn(
-          destination,
-          item as any as Chunk | BinaryChunk,
-        );
+        const keepWriting = writeChunkAndReturn(destination, errorChunks[i]);
+        if (!keepWriting) {
+          request.destination = null;
+          i++;
+          break;
+        }
       }
-      if (!keepWriting) {
-        request.destination = null;
-        i++;
-        break;
-      }
+      errorChunks.splice(0, i);
+    } finally {
+      completeWriting(destination);
     }
-    regularChunks.splice(0, i);
-    const errorChunks = request.completedErrorChunks;
-    i = 0;
-    for (; i < errorChunks.length; i++) {
-      request.pendingChunks--;
-      const keepWriting = writeChunkAndReturn(destination, errorChunks[i]);
-      if (!keepWriting) {
-        request.destination = null;
-        i++;
-        break;
-      }
-    }
-    errorChunks.splice(0, i);
-  } finally {
-    completeWriting(destination);
+    flushBuffered(destination);
   }
-  flushBuffered(destination);
-  if (
-    request.pendingChunks === 0 &&
-    (!__DEV__ || request.pendingDebugChunks === 0) &&
-    request.destination !== null
-  ) {
-    const currentDestination = request.destination;
-    request.status = CLOSED;
-    request.abortController.abort();
-    cleanupInput(request);
-    request.destination = null;
-    close(currentDestination);
+  if (request.pendingChunks === 0) {
+    // There are no pending chunks left, so encoding is complete and its input
+    // signal is aborted here. Debug chunks can still be pending, but they carry
+    // development-only instrumentation rather than the render's output.
+    //
+    // This runs before the stream bookkeeping below, because that bookkeeping
+    // can close the main stream and set the status to CLOSED while debug chunks
+    // are outstanding. The abort only happens below ABORTING, so a later flush
+    // would skip it. Repeated flushes are safe, because aborting an aborted
+    // controller does nothing a second time.
+    //
+    // The taint queue stays untouched here. Debug chunks are checked against
+    // the taint registry as they are written, and a deferred debug object can
+    // be written long after this point.
+    if (request.status < ABORTING) {
+      request.abortController.abort();
+    }
+    if (__DEV__) {
+      const debugDestination = request.debugDestination;
+      if (request.pendingDebugChunks === 0) {
+        // Continue fully closing both streams.
+        if (debugDestination !== null) {
+          close(debugDestination);
+          request.debugDestination = null;
+        }
+      } else {
+        // We still have debug information to write.
+        if (debugDestination === null) {
+          // We'll continue writing on this stream so nothing closes.
+          return;
+        } else {
+          // We'll close the main stream but keep the debug stream open.
+          // TODO: If this destination is not currently flowing we'll not close it when it resumes flowing.
+          // We should keep a separate status for this.
+          if (request.destination !== null) {
+            request.status = CLOSED;
+            close(request.destination);
+            request.destination = null;
+          }
+          return;
+        }
+      }
+    }
+    // We're done.
+    if (enableTaint) {
+      cleanupTaintQueue(request);
+    }
+    if (request.destination !== null) {
+      request.status = CLOSED;
+      close(request.destination);
+      request.destination = null;
+    }
     if (__DEV__ && request.debugDestination !== null) {
       close(request.debugDestination);
       request.debugDestination = null;
