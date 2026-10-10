@@ -105,6 +105,9 @@ import {
   enableFlightWeakThenables,
   enableTaint,
   enableFlightObjectReferences,
+  enableProfilerTimer,
+  enableComponentPerformanceTrack,
+  enableAsyncDebugInfo,
 } from 'shared/ReactFeatureFlags';
 import binaryToComparableString from 'shared/binaryToComparableString';
 import {
@@ -201,6 +204,8 @@ type Task = {
   isModelReference: boolean,
   ping: () => void,
   thenableState: ThenableState | null,
+  timed: boolean, // DEV-only
+  time: number, // DEV-only
   environmentName: string, // DEV-only
   debugOwner: null | ReactComponentInfo, // DEV-only
   debugStack: null | Error, // DEV-only
@@ -269,6 +274,8 @@ export type Request = {
   completedElements: Array<ReactElement>, // DEV-only
   didWarnForKey: null | WeakSet<ReactComponentInfo>, // DEV-only
   unkeyedElements: WeakSet<ReactElement>, // DEV-only
+  timeOrigin: number, // DEV-only
+  abortTime: number, // DEV-only
   environmentName: () => string, // DEV-only
   filterStackFrame: (string, string, number, number) => boolean, // DEV-only
 };
@@ -460,6 +467,8 @@ function RequestInstance(
     this.completedElements = [];
     this.didWarnForKey = null;
     this.unkeyedElements = new WeakSet();
+    this.timeOrigin = performance.now();
+    this.abortTime = -0.0;
     this.environmentName =
       environmentName === undefined
         ? () => 'Server'
@@ -582,6 +591,14 @@ function renderFunctionComponent<Props: {[name: string]: mixed}>(
         request.unkeyedElements.has(element)
       ) {
         warnForMissingKey(request, key, componentDebugInfo, task.debugTask);
+      }
+      if (
+        enableProfilerTimer &&
+        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+      ) {
+        task.time = performance.now();
+        pushDebugInfo(task.promise, {time: task.time});
+        task.timed = true;
       }
       pushDebugInfo(task.promise, componentDebugInfo);
     }
@@ -894,9 +911,16 @@ function createTask(
     implicitSlot,
   } as Omit<
     Task,
-    'environmentName' | 'debugOwner' | 'debugStack' | 'debugTask',
+    | 'environmentName'
+    | 'debugOwner'
+    | 'debugStack'
+    | 'debugTask'
+    | 'timed'
+    | 'time',
   > as any;
   if (__DEV__) {
+    task.timed = false;
+    task.time = request.timeOrigin;
     promise._debugInfo = [];
     task.environmentName = request.environmentName();
     task.debugOwner = null;
@@ -910,6 +934,9 @@ function createTask(
 function pingTask(request: Request, task: Task): void {
   if (request.status === CLOSED || task.status !== PENDING) {
     return;
+  }
+  if (__DEV__) {
+    task.timed = true;
   }
   const pingedTasks = request.pingedTasks;
   pingedTasks.push(task);
@@ -1079,6 +1106,8 @@ function renderThenable(
   );
   if (__DEV__) {
     newTask.environmentName = task.environmentName;
+    newTask.time = task.time;
+    newTask.timed = task.timed;
     newTask.debugOwner = task.debugOwner;
     newTask.debugStack = task.debugStack;
     newTask.debugTask = task.debugTask;
@@ -3132,9 +3161,41 @@ function completeTask(
     if (currentEnv !== task.environmentName) {
       pushDebugInfo(task.promise, {env: currentEnv});
     }
+    if (
+      enableProfilerTimer &&
+      (enableComponentPerformanceTrack || enableAsyncDebugInfo) &&
+      task.timed
+    ) {
+      pushDebugInfo(task.promise, {time: performance.now()});
+    }
   }
   task.resolve(resolvedModel);
   request.abortableTasks.delete(task);
+}
+
+function recordTimingInfo(task: Task, time: number): void {
+  pushDebugInfo(task.promise, {time});
+}
+
+function markOperationEndTime(request: Request, task: Task, timestamp: number) {
+  if (
+    !enableProfilerTimer ||
+    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
+  ) {
+    return;
+  }
+  // Always emit a timing chunk even if it doesn't advance.
+  // This ensures that the end time of the previous entry isn't implied to be the start of the next one.
+  if (request.status === ABORTING && timestamp > request.abortTime) {
+    // If we're aborting then we don't emit any end times that happened after.
+    return;
+  }
+  if (timestamp > task.time) {
+    recordTimingInfo(task, timestamp);
+    task.time = timestamp;
+  } else {
+    recordTimingInfo(task, task.time);
+  }
 }
 
 function forwardDebugInfo(
@@ -3143,7 +3204,12 @@ function forwardDebugInfo(
   debugInfo: ReactDebugInfo,
 ): void {
   for (let i = 0; i < debugInfo.length; i++) {
-    pushDebugInfo(task.promise, debugInfo[i]);
+    const info = debugInfo[i];
+    if (typeof info.time === 'number') {
+      markOperationEndTime(request, task, info.time);
+    } else {
+      pushDebugInfo(task.promise, info);
+    }
   }
 }
 
@@ -3485,6 +3551,9 @@ export function abort(request: Request, reason: mixed): void {
   }
   try {
     request.status = ABORTING;
+    if (__DEV__) {
+      request.abortTime = performance.now();
+    }
     request.cacheController.abort(reason);
     if (request.type === PRERENDER) {
       finishAbort(request, reason, true);
