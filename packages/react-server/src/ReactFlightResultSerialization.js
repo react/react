@@ -26,6 +26,7 @@ import {
   waitForHints,
   subscribeToResult,
   getErrorReference,
+  getErrorInfo,
   getValueReference,
   getCollectionEntries,
   getAsyncIterable,
@@ -132,6 +133,7 @@ export function createInput(result: Result<ReactClientValue>): Input {
     getServerReference: value => getServerReference(result, value),
     getValueReference: value => getValueReference(result, value),
     getModelInfo: value => getModelInfo(result, value),
+    getErrorInfo: value => getErrorInfo(result, value),
     getCollectionEntries: value => getCollectionEntries(result, value),
     subscribeToThenable: (thenable, reader) =>
       subscribeToThenable(result, thenable, reader),

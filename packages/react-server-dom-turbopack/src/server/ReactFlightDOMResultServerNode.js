@@ -74,6 +74,8 @@ type Options = {
   signal?: AbortSignal,
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
+  environmentName?: string | (() => string),
+  filterStackFrame?: (string, string, number, number) => boolean,
 };
 
 export function renderToResult(
@@ -86,6 +88,8 @@ export function renderToResult(
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
     createServerReference,
+    __DEV__ && options ? options.environmentName : undefined,
+    __DEV__ && options ? options.filterStackFrame : undefined,
   );
   startWork(request);
   if (options && options.signal) {
@@ -107,6 +111,8 @@ export function prerenderToResult(
       options ? options.identifierPrefix : undefined,
       options ? options.temporaryReferences : undefined,
       createServerReference,
+      __DEV__ && options ? options.environmentName : undefined,
+      __DEV__ && options ? options.filterStackFrame : undefined,
     );
     startWork(request);
     const signal = options ? options.signal : undefined;

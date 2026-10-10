@@ -11,7 +11,7 @@ import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemp
 import type {ResultModel} from './ReactFlightResultModel';
 import type {AsyncIterableController} from './ReactFlightResultAsyncIterable';
 import type {ResultStreamController} from './ReactFlightResultReadableStream';
-import type {Thenable} from './ReactTypes';
+import type {Thenable, ReactErrorInfoDev} from './ReactTypes';
 import type {
   HintCode,
   HintModel,
@@ -55,6 +55,7 @@ export opaque type Result<T>: {abort(reason: mixed): void, ...} = {
   abortCallback: null | (mixed => void),
   abort: (reason: mixed) => void,
   errorReferences: WeakMap<Object, ErrorReference>,
+  errorInfos: WeakMap<Error, ReactErrorInfoDev>,
   haltedModels: null | WeakSet<Object>,
   modelReferences: null | WeakMap<Object, Object>,
   valueReferences: null | WeakSet<Object>,
@@ -90,6 +91,7 @@ export function createResult<T>(
     abortCallback: abort,
     abort: noop,
     errorReferences: new WeakMap(),
+    errorInfos: __DEV__ ? new WeakMap() : (null as any),
     haltedModels: null,
     modelReferences: null,
     valueReferences: null,
@@ -448,4 +450,19 @@ export function getAsyncIterable<T>(
 ): void | AsyncIterableController<any> {
   const asyncIterables = result.asyncIterables;
   return asyncIterables === null ? undefined : asyncIterables.get(iterable);
+}
+
+export function setErrorInfo<T>(
+  result: Result<T>,
+  error: Error,
+  errorInfo: ReactErrorInfoDev,
+): void {
+  result.errorInfos.set(error, errorInfo);
+}
+
+export function getErrorInfo<T>(
+  result: Result<T>,
+  error: Error,
+): void | ReactErrorInfoDev {
+  return result.errorInfos.get(error);
 }

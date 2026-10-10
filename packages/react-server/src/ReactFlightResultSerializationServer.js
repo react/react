@@ -13,7 +13,11 @@ import type {
   ErrorReference,
   ModelReference,
 } from 'shared/ReactFlightResult';
-import type {ReactStackTrace, ReactKey} from 'shared/ReactTypes';
+import type {
+  ReactStackTrace,
+  ReactKey,
+  ReactErrorInfoDev,
+} from 'shared/ReactTypes';
 import {
   MODEL_KIND_MASK,
   MODEL_OBJECT,
@@ -143,6 +147,7 @@ export type Input = {
   getServerReference: Object => void | ServerReferenceMetadata,
   getValueReference: Object => void | ModelReference,
   getModelInfo: Object => number,
+  getErrorInfo: Error => void | ReactErrorInfoDev,
   getCollectionEntries: Object => void | ResultModel<Array<any>>,
   subscribe: ({
     hint: (HintCode, HintModel<any>) => void,
@@ -429,6 +434,7 @@ function renderModelDestructive(
           (value as any).$$typeof === REACT_ELEMENT_TYPE ||
           value instanceof Map ||
           value instanceof Set ||
+          value instanceof Error ||
           (typeof FormData === 'function' && value instanceof FormData) ||
           (typeof Blob === 'function' && value instanceof Blob) ||
           value instanceof ArrayBuffer ||
@@ -546,6 +552,9 @@ function renderModelDestructive(
     }
     if (typeof Blob === 'function' && value instanceof Blob) {
       return serializeBlob(request, value);
+    }
+    if (value instanceof Error) {
+      return serializeErrorValue(request, value);
     }
     if (isArray(value)) {
       return value as any;
@@ -1487,6 +1496,45 @@ function serializeReadableStream(
     }),
   );
   return serializeByValueID(streamTask.id);
+}
+
+function serializeErrorValue(request: Request, error: Error): string {
+  if (__DEV__) {
+    const input = request.input;
+    const capturedInfo = input === null ? undefined : input.getErrorInfo(error);
+    if (capturedInfo === undefined) {
+      // eslint-disable-next-line react-internal/prod-error-codes
+      throw new Error(
+        'Expected Error metadata in Result. This is a bug in React.',
+      );
+    }
+    const errorInfo: ReactErrorInfoDev = {
+      name: capturedInfo.name,
+      message: capturedInfo.message,
+      stack: capturedInfo.stack,
+      env: capturedInfo.env,
+    };
+    if ('cause' in error) {
+      const cause: ReactClientValue = error.cause as any;
+      const causeId = outlineModel(request, cause);
+      errorInfo.cause = serializeByValueID(causeId);
+    }
+    if (
+      typeof AggregateError !== 'undefined' &&
+      error instanceof AggregateError
+    ) {
+      const errors: ReactClientValue = error.errors as any;
+      const errorsId = outlineModel(request, errors);
+      errorInfo.errors = serializeByValueID(errorsId);
+    }
+    const id = outlineModel(request, errorInfo);
+    return '$Z' + id.toString(16);
+  } else {
+    // In prod we don't emit any information about this Error object to avoid
+    // unintentional leaks. Since this doesn't actually throw on the server
+    // we don't go through onError and so don't register any digest neither.
+    return '$Z';
+  }
 }
 
 function serializeWeakPromiseID(id: number): string {

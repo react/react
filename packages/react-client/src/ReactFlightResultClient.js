@@ -31,7 +31,13 @@ import {closeReadableStream} from 'shared/ReactFlightResultReadableStream';
 import type {AsyncIterableController} from 'shared/ReactFlightResultAsyncIterable';
 import type {ReactElement} from 'shared/ReactElementType';
 import type {LazyComponent} from 'react/src/ReactLazy';
-import type {ReactComponentInfo, Wakeable, Thenable} from 'shared/ReactTypes';
+import type {
+  ReactComponentInfo,
+  ReactErrorInfoDev,
+  ReactStackTrace,
+  Wakeable,
+  Thenable,
+} from 'shared/ReactTypes';
 import type {
   ClientReferenceMetadata,
   ClientReference,
@@ -55,6 +61,7 @@ import {
   MODEL_ARRAY,
   MODEL_ELEMENT,
   getErrorReference,
+  getErrorInfo,
   isHalted,
   getHintQueue,
   waitForHints,
@@ -135,6 +142,7 @@ export type Response = {
   _streamErrors: null | Array<(Error) => void>,
   _cleanups: null | Set<() => void>,
   _completedElements: Array<ReactElement>, // DEV-only
+  _debugFindSourceMapURL: void | ((string, string) => null | string), // DEV-only
 };
 
 export function createResponse(
@@ -149,6 +157,7 @@ export function createResponse(
   temporaryReferences: void | TemporaryReferenceSet,
   onError?: mixed => ?string,
   allowPartialStream: boolean = false,
+  findSourceMapURL?: (string, string) => null | string,
 ): Response {
   const response: Response = {
     _result: result,
@@ -176,6 +185,7 @@ export function createResponse(
   } as any;
   if (__DEV__) {
     response._completedElements = [];
+    response._debugFindSourceMapURL = findSourceMapURL;
   }
   return response;
 }
@@ -1507,6 +1517,19 @@ function scanModelFields(
       if (typeof Blob === 'function' && value instanceof Blob) {
         return false;
       }
+      if (value instanceof Error) {
+        if (__DEV__ && 'cause' in value) {
+          scanOutlinedModel(response, value.cause, state, chunks);
+        }
+        if (
+          __DEV__ &&
+          typeof AggregateError !== 'undefined' &&
+          value instanceof AggregateError
+        ) {
+          scanOutlinedModel(response, value.errors, state, chunks);
+        }
+        return false;
+      }
     }
     const object: {[key: string]: any} = value;
     const keys = Object.keys(object);
@@ -1830,6 +1853,41 @@ function readSpecialModel(response: Response, value: any): any {
     if (typeof Blob === 'function' && value instanceof Blob) {
       const copy = new Blob([value], {type: value.type});
       models.set(value, copy);
+      return copy;
+    }
+    if (value instanceof Error) {
+      let copy;
+      if (__DEV__) {
+        const errorInfo = getErrorInfo(response._result, value);
+        if (errorInfo === undefined) {
+          // eslint-disable-next-line react-internal/prod-error-codes
+          throw new Error(
+            'Expected Error metadata in Result. This is a bug in React.',
+          );
+        }
+        copy = resolveErrorDev(
+          response,
+          errorInfo,
+          'cause' in value ? {cause: undefined} : undefined,
+          typeof AggregateError !== 'undefined' &&
+            value instanceof AggregateError,
+        );
+      } else {
+        copy = resolveErrorProd(response);
+      }
+      models.set(value, copy);
+      if (__DEV__ && 'cause' in value) {
+        copy.cause = readOutlinedModel(response, value.cause);
+      }
+      if (
+        __DEV__ &&
+        typeof AggregateError !== 'undefined' &&
+        copy instanceof AggregateError
+      ) {
+        copy.errors = new AggregateError(
+          readOutlinedModel(response, value.errors),
+        ).errors;
+      }
       return copy;
     }
     return readObject(response, value);
@@ -2431,4 +2489,270 @@ function subscribeWeakModel(
       }
     },
   );
+}
+
+type FakeFunction<T> = (() => T) => T;
+const fakeFunctionCache: Map<string, FakeFunction<any>> = __DEV__
+  ? new Map()
+  : (null as any);
+let fakeFunctionIdx = 0;
+function createFakeFunction<T>(
+  name: string,
+  filename: string,
+  sourceMap: null | string,
+  line: number,
+  col: number,
+  enclosingLine: number,
+  enclosingCol: number,
+  environmentName: string,
+): FakeFunction<T> {
+  // This creates a fake copy of a Server Module. It represents a module that has already
+  // executed on the server but we re-execute a blank copy for its stack frames on the client.
+
+  const comment =
+    '/* This module was rendered by a Server Component. Turn on Source Maps to see the server source. */';
+
+  if (!name) {
+    // An eval:ed function with no name gets the name "eval". We give it something more descriptive.
+    name = '<anonymous>';
+  }
+  const encodedName = JSON.stringify(name);
+  // We generate code where the call is at the line and column of the server executed code.
+  // This allows us to use the original source map as the source map of this fake file to
+  // point to the original source.
+  let code;
+  // Normalize line/col to zero based.
+  if (enclosingLine < 1) {
+    enclosingLine = 0;
+  } else {
+    enclosingLine--;
+  }
+  if (enclosingCol < 1) {
+    enclosingCol = 0;
+  } else {
+    enclosingCol--;
+  }
+  if (line < 1) {
+    line = 0;
+  } else {
+    line--;
+  }
+  if (col < 1) {
+    col = 0;
+  } else {
+    col--;
+  }
+  if (line < enclosingLine || (line === enclosingLine && col < enclosingCol)) {
+    // Protection against invalid enclosing information. Should not happen.
+    enclosingLine = 0;
+    enclosingCol = 0;
+  }
+  if (line < 1) {
+    // Fit everything on the first line.
+    const minCol = encodedName.length + 3;
+    let enclosingColDistance = enclosingCol - minCol;
+    if (enclosingColDistance < 0) {
+      enclosingColDistance = 0;
+    }
+    let colDistance = col - enclosingColDistance - minCol - 3;
+    if (colDistance < 0) {
+      colDistance = 0;
+    }
+    code =
+      '({' +
+      encodedName +
+      ':' +
+      ' '.repeat(enclosingColDistance) +
+      '_=>' +
+      ' '.repeat(colDistance) +
+      '_()})';
+  } else if (enclosingLine < 1) {
+    // Fit just the enclosing function on the first line.
+    const minCol = encodedName.length + 3;
+    let enclosingColDistance = enclosingCol - minCol;
+    if (enclosingColDistance < 0) {
+      enclosingColDistance = 0;
+    }
+    code =
+      '({' +
+      encodedName +
+      ':' +
+      ' '.repeat(enclosingColDistance) +
+      '_=>' +
+      '\n'.repeat(line - enclosingLine) +
+      ' '.repeat(col) +
+      '_()})';
+  } else if (enclosingLine === line) {
+    // Fit the enclosing function and callsite on same line.
+    let colDistance = col - enclosingCol - 3;
+    if (colDistance < 0) {
+      colDistance = 0;
+    }
+    code =
+      '\n'.repeat(enclosingLine - 1) +
+      '({' +
+      encodedName +
+      ':\n' +
+      ' '.repeat(enclosingCol) +
+      '_=>' +
+      ' '.repeat(colDistance) +
+      '_()})';
+  } else {
+    // This is the ideal because we can always encode any position.
+    code =
+      '\n'.repeat(enclosingLine - 1) +
+      '({' +
+      encodedName +
+      ':\n' +
+      ' '.repeat(enclosingCol) +
+      '_=>' +
+      '\n'.repeat(line - enclosingLine) +
+      ' '.repeat(col) +
+      '_()})';
+  }
+
+  if (enclosingLine < 1) {
+    // If the function starts at the first line, we append the comment after.
+    code = code + '\n' + comment;
+  } else {
+    // Otherwise we prepend the comment on the first line.
+    code = comment + code;
+  }
+
+  if (filename.startsWith('/')) {
+    // If the filename starts with `/` we assume that it is a file system file
+    // rather than relative to the current host. Since on the server fully qualified
+    // stack traces use the file path.
+    // TODO: What does this look like on Windows?
+    filename = 'file://' + filename;
+  }
+
+  if (sourceMap) {
+    // We use the prefix about://React/ to separate these from other files listed in
+    // the Chrome DevTools. We need a "host name" and not just a protocol because
+    // otherwise the group name becomes the root folder. Ideally we don't want to
+    // show these at all but there's two reasons to assign a fake URL.
+    // 1) A printed stack trace string needs a unique URL to be able to source map it.
+    // 2) If source maps are disabled or fails, you should at least be able to tell
+    //    which file it was.
+    code +=
+      '\n//# sourceURL=about://React/' +
+      encodeURIComponent(environmentName) +
+      '/' +
+      encodeURI(filename) +
+      '?' +
+      fakeFunctionIdx++;
+    code += '\n//# sourceMappingURL=' + sourceMap;
+  } else if (filename) {
+    code += '\n//# sourceURL=' + encodeURI(filename);
+  } else {
+    code += '\n//# sourceURL=<anonymous>';
+  }
+
+  let fn: FakeFunction<T>;
+  try {
+    // eslint-disable-next-line no-eval
+    fn = (0, eval)(code)[name];
+  } catch (x) {
+    // If eval fails, such as if in an environment that doesn't support it,
+    // we fallback to creating a function here. It'll still have the right
+    // name but it'll lose line/column number and file name.
+    fn = function (_) {
+      return _();
+    };
+    // Using the usual {[name]: _() => _()}.bind() trick to avoid minifiers
+    // doesn't work here since this will produce `Object.*` names.
+    Object.defineProperty(
+      fn,
+      // $FlowFixMe[cannot-write] -- `name` is configurable though.
+      'name',
+      {value: name},
+    );
+  }
+  return fn;
+}
+
+function buildFakeCallStack<T>(
+  response: Response,
+  stack: ReactStackTrace,
+  environmentName: string,
+  useEnclosingLine: boolean,
+  innerCall: () => T,
+): () => T {
+  let callStack = innerCall;
+  for (let i = 0; i < stack.length; i++) {
+    const frame = stack[i];
+    const frameKey =
+      frame.join('-') +
+      '-' +
+      environmentName +
+      (useEnclosingLine ? '-e' : '-n');
+    let fn = fakeFunctionCache.get(frameKey);
+    if (fn === undefined) {
+      const [name, filename, line, col, enclosingLine, enclosingCol] = frame;
+      const findSourceMapURL = response._debugFindSourceMapURL;
+      const sourceMap = findSourceMapURL
+        ? findSourceMapURL(filename, environmentName)
+        : null;
+      fn = createFakeFunction(
+        name,
+        filename,
+        sourceMap,
+        line,
+        col,
+        useEnclosingLine ? line : enclosingLine,
+        useEnclosingLine ? col : enclosingCol,
+        environmentName,
+      );
+      // TODO: This cache should technically live on the response since the _debugFindSourceMapURL
+      // function is an input and can vary by response.
+      fakeFunctionCache.set(frameKey, fn);
+    }
+    callStack = fn.bind(null, callStack);
+  }
+  return callStack;
+}
+
+function resolveErrorDev(
+  response: Response,
+  errorInfo: ReactErrorInfoDev,
+  errorOptions: void | {cause: mixed},
+  isAggregateError: boolean,
+): Error {
+  const name = errorInfo.name;
+  const message = errorInfo.message;
+  const stack = errorInfo.stack;
+  const env = errorInfo.env;
+  if (!__DEV__) {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'resolveErrorDev should never be called in production mode. Use resolveErrorProd instead. This is a bug in React.',
+    );
+  }
+  const callStack = buildFakeCallStack<Error>(
+    response,
+    stack,
+    env,
+    false,
+    isAggregateError
+      ? // $FlowFixMe[incompatible-use]
+        AggregateError.bind(
+          null,
+          [],
+          message ||
+            'An error occurred in the Server Components render but no message was provided',
+          errorOptions,
+        )
+      : // $FlowFixMe[incompatible-use]
+        Error.bind(
+          null,
+          message ||
+            'An error occurred in the Server Components render but no message was provided',
+          errorOptions,
+        ),
+  );
+  const error = callStack();
+  (error as any).name = name;
+  (error as any).environmentName = env;
+  return error;
 }
