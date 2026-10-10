@@ -110,6 +110,7 @@ import {
   createResultModel,
   fulfillResultModel,
   rejectResultModel,
+  getResultModelStatus,
   pushDebugInfo,
   subscribeToDebugInfo,
   setDebugModel,
@@ -1091,8 +1092,47 @@ function createLazyWrapperAroundWakeable(
 function erroredTask(request: Request, task: Task, error: mixed): void {
   task.status = ERRORED;
   logRecoverableError(request, error, task);
+  if (
+    __DEV__ &&
+    error instanceof Error &&
+    ('cause' in error ||
+      (typeof AggregateError !== 'undefined' &&
+        error instanceof AggregateError))
+  ) {
+    const normalized = outlineModel(request, error);
+    if (
+      normalized !== null &&
+      typeof normalized === 'object' &&
+      getResultModelStatus(normalized) !== null
+    ) {
+      (normalized as any).then(task.reject, task.reject);
+    } else {
+      task.reject(normalized);
+    }
+  } else {
+    task.reject(error);
+  }
+  const model = task.model;
+  if (
+    model !== null &&
+    typeof model === 'object' &&
+    (model as any).$$typeof === REACT_ELEMENT_TYPE
+  ) {
+    const renderedModels = getRenderedModels(
+      request,
+      model,
+      task.keyPath,
+      task.implicitSlot,
+    );
+    if (getRenderedModel(renderedModels, model) === undefined) {
+      setRenderedModel(
+        renderedModels,
+        model,
+        createLazyWrapperAroundWakeable(task.promise as any),
+      );
+    }
+  }
   request.abortableTasks.delete(task);
-  task.reject(error);
 }
 
 function logRecoverableError(

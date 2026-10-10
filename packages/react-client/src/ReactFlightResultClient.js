@@ -1062,6 +1062,8 @@ function readModel(response: Response, value: any): any {
       reference.parent === null &&
       referencedModel === reference.root.value
     ) {
+      // Root completion consumes its task history; raw dereferencing skips it.
+      // A chunk still initializing can use provisional copies to preserve cycles.
       const chunk: SomeChunk<any> = readModel(response, reference.root);
       model =
         chunk.status === INITIALIZED
@@ -1667,7 +1669,13 @@ function resolveError(
     return existingError;
   }
   let resolvedError;
-  if (__DEV__) {
+  if (
+    __DEV__ &&
+    error instanceof Error &&
+    getErrorInfo(response._result, error) !== undefined
+  ) {
+    resolvedError = readModel(response, error);
+  } else if (__DEV__) {
     let name = 'Error';
     let message;
     let descriptors = null;

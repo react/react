@@ -15,6 +15,7 @@ import type {
 } from 'shared/ReactFlightResult';
 import type {
   ReactStackTrace,
+  ReactCallSite,
   ReactKey,
   ReactErrorInfoDev,
 } from 'shared/ReactTypes';
@@ -183,6 +184,8 @@ export type Request = {
   writtenErrors: WeakMap<ErrorReference, number>,
   completedErrorChunks: Array<Chunk>,
   onError: mixed => ?string,
+  environmentName: () => string, // DEV-only
+  filterStackFrame: (string, string, number, number) => boolean, // DEV-only
   taintCleanupQueue: Array<string | bigint>,
 };
 
@@ -229,6 +232,10 @@ function RequestInstance(
   this.temporaryReferences = input.temporaryReferences;
   this.writtenServerReferences = new Map();
   this.input = input;
+  if (__DEV__) {
+    this.environmentName = () => 'Server';
+    this.filterStackFrame = defaultFilterStackFrame;
+  }
   this.destination = null;
   this.status = OPENING;
   this.fatalError = null;
@@ -248,6 +255,59 @@ function RequestInstance(
   this.writtenErrors = new WeakMap();
   this.completedErrorChunks = [];
   this.onError = onError === undefined ? defaultErrorHandler : onError;
+}
+
+function defaultFilterStackFrame(
+  filename: string,
+  functionName: string,
+): boolean {
+  return (
+    filename !== '' &&
+    !filename.startsWith('node:') &&
+    !filename.includes('node_modules')
+  );
+}
+
+function devirtualizeURL(url: string): string {
+  if (url.startsWith('about://React/')) {
+    // This callsite is a virtual fake callsite that came from another Flight client.
+    // We need to reverse it back into the original location by stripping its prefix
+    // and suffix. We don't need the environment name because it's available on the
+    // parent object that will contain the stack.
+    const envIdx = url.indexOf('/', 'about://React/'.length);
+    const suffixIdx = url.lastIndexOf('?');
+    if (envIdx > -1 && suffixIdx > -1) {
+      return decodeURI(url.slice(envIdx + 1, suffixIdx));
+    }
+  }
+  return url;
+}
+
+function filterStackTrace(
+  request: Request,
+  stack: ReactStackTrace,
+): ReactStackTrace {
+  // Since stacks can be quite large and we pass a lot of them, we filter them out eagerly
+  // to save bandwidth even in DEV. We'll also replay these stacks on the client so by
+  // stripping them early we avoid that overhead. Otherwise we'd normally just rely on
+  // the DevTools or framework's ignore lists to filter them out.
+  const filterStackFrame = request.filterStackFrame;
+  const filteredStack: ReactStackTrace = [];
+  for (let i = 0; i < stack.length; i++) {
+    const callsite = stack[i];
+    const functionName = callsite[0];
+    const url = devirtualizeURL(callsite[1]);
+    const lineNumber = callsite[2];
+    const columnNumber = callsite[3];
+    if (filterStackFrame(url, functionName, lineNumber, columnNumber)) {
+      // Use a clone because the Flight protocol isn't yet resilient to deduping
+      // objects in the debug info. TODO: Support deduping stacks.
+      const clone: ReactCallSite = callsite.slice(0) as any;
+      clone[1] = url;
+      filteredStack.push(clone);
+    }
+  }
+  return filteredStack;
 }
 
 function defaultErrorHandler(error: mixed): void {
@@ -1002,16 +1062,29 @@ function emitErrorChunk(
     let name = 'Error';
     let message;
     let stack: ReactStackTrace;
-    let env = 'Server';
+    let env = (0, request.environmentName)();
+    let causeReference: null | string = null;
+    let errorsReference: null | string = null;
     try {
       if (error instanceof Error) {
         name = error.name;
         // eslint-disable-next-line react-internal/safe-string-coercion
         message = String(error.message);
-        stack = parseStackTrace(error, 0);
+        stack = filterStackTrace(request, parseStackTrace(error, 0));
         const errorEnv = (error as any).environmentName;
         if (typeof errorEnv === 'string') {
           env = errorEnv;
+        }
+        if ('cause' in error) {
+          const cause: ReactClientValue = error.cause as any;
+          causeReference = serializeByValueID(outlineModel(request, cause));
+        }
+        if (
+          typeof AggregateError !== 'undefined' &&
+          error instanceof AggregateError
+        ) {
+          const errors: ReactClientValue = error.errors as any;
+          errorsReference = serializeByValueID(outlineModel(request, errors));
         }
       } else if (typeof error === 'object' && error !== null) {
         message = describeObjectForErrorMessage(error);
@@ -1025,7 +1098,21 @@ function emitErrorChunk(
       message = 'An error occurred but serializing the error message failed.';
       stack = [];
     }
-    errorInfo = {digest, name, message, stack, env, owner: null};
+    const info: ReactErrorInfoDev = {
+      digest,
+      name,
+      message,
+      stack,
+      env,
+      owner: null,
+    };
+    if (causeReference !== null) {
+      info.cause = causeReference;
+    }
+    if (errorsReference !== null) {
+      info.errors = errorsReference;
+    }
+    errorInfo = info;
   } else {
     errorInfo = {digest};
   }
@@ -1500,20 +1587,35 @@ function serializeReadableStream(
 
 function serializeErrorValue(request: Request, error: Error): string {
   if (__DEV__) {
+    let name: string = 'Error';
+    let message: string;
+    let stack: ReactStackTrace;
+    let env = (0, request.environmentName)();
     const input = request.input;
     const capturedInfo = input === null ? undefined : input.getErrorInfo(error);
-    if (capturedInfo === undefined) {
-      // eslint-disable-next-line react-internal/prod-error-codes
-      throw new Error(
-        'Expected Error metadata in Result. This is a bug in React.',
-      );
+    if (capturedInfo !== undefined) {
+      name = capturedInfo.name;
+      message = capturedInfo.message;
+      stack = capturedInfo.stack;
+      env = capturedInfo.env;
+    } else {
+      try {
+        name = error.name;
+        // eslint-disable-next-line react-internal/safe-string-coercion
+        message = String(error.message);
+        stack = filterStackTrace(request, parseStackTrace(error, 0));
+        const errorEnv = (error as any).environmentName;
+        if (typeof errorEnv === 'string') {
+          // This probably came from another FlightClient as a pass through.
+          // Keep the environment name.
+          env = errorEnv;
+        }
+      } catch (x) {
+        message = 'An error occurred but serializing the error message failed.';
+        stack = [];
+      }
     }
-    const errorInfo: ReactErrorInfoDev = {
-      name: capturedInfo.name,
-      message: capturedInfo.message,
-      stack: capturedInfo.stack,
-      env: capturedInfo.env,
-    };
+    const errorInfo: ReactErrorInfoDev = {name, message, stack, env};
     if ('cause' in error) {
       const cause: ReactClientValue = error.cause as any;
       const causeId = outlineModel(request, cause);
