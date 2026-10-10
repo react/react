@@ -26,7 +26,8 @@ import {
   UNRESOLVED_AWAIT_NODE,
 } from './ReactFlightAsyncSequence';
 import {resolveOwner} from './flight/ReactFlightCurrentOwner';
-import {resolveRequest, isAwaitInUserspace} from './ReactFlightServer';
+import {resolveCache} from './flight/ReactFlightCurrentCache';
+import {isAwaitInUserspace} from './ReactFlightStackTraceContext';
 import {createHook, executionAsyncId, AsyncResource} from 'async_hooks';
 import {parseStackTracePrivate} from './ReactFlightServerConfig';
 
@@ -39,6 +40,7 @@ const pendingOperations: Map<number, AsyncSequence> = __DEV__
 
 // Keep the last resolved await as a workaround for async functions missing data.
 let lastRanAwait: null | AwaitNode = null;
+let initialized = false;
 
 function resolvePromiseOrAwaitNode(
   unresolvedNode: UnresolvedAwaitNode | UnresolvedPromiseNode,
@@ -60,7 +62,8 @@ const emptyStack: ReactStackTrace = [];
 // In theory we could enable and disable using a ref count of active requests
 // but given that typically this is just a live server, it doesn't really matter.
 export function initAsyncDebugInfo(): void {
-  if (__DEV__) {
+  if (__DEV__ && !initialized) {
+    initialized = true;
     createHook({
       init(
         asyncId: number,
@@ -100,12 +103,17 @@ export function initAsyncDebugInfo(): void {
               }
             } else {
               promiseRef = new WeakRef(resource as Promise<any>);
-              const request = resolveRequest();
-              if (request === null) {
+              const context = resolveCache();
+              const filterStackFrame =
+                context === null ? undefined : context.filterStackFrame;
+              if (filterStackFrame === undefined) {
                 // We don't collect stacks for awaits that weren't in the scope of a specific render.
               } else {
                 stack = parseStackTracePrivate(new Error(), 5);
-                if (stack !== null && !isAwaitInUserspace(request, stack)) {
+                if (
+                  stack !== null &&
+                  !isAwaitInUserspace(filterStackFrame, stack)
+                ) {
                   // If this await was not done directly in user space, then clear the stack. We won't use it
                   // anyway. This lets future awaits on this await know that we still need to get their stacks
                   // until we find one in user space.
