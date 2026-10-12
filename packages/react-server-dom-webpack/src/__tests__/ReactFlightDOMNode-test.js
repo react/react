@@ -3069,4 +3069,68 @@ describe('ReactFlightDOMNode', () => {
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
   });
+
+  it('can retry a lazy Flight model after a decoding stack overflow during SSR', async () => {
+    const model = '["$","span",null,{"children":"leaf"}]';
+    const readable = new Stream.PassThrough();
+    let response;
+    await serverAct(() => {
+      response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: null,
+      });
+      readable.end(
+        '0:["$","div",null,{"children":"$L1"}]\n' + '1:' + model + '\n',
+      );
+    });
+
+    function Flight() {
+      return use(response);
+    }
+    function Wrapper({children}) {
+      return children;
+    }
+
+    // In a deep tree, Flight can exhaust the stack while decoding an otherwise
+    // valid model. Simulate one transient overflow at the parsing boundary so
+    // the test does not depend on the engine's stack size or JIT optimization.
+    // Fizz retries with a fresh stack, but Flight must not permanently reject
+    // the lazy chunk with the first overflow.
+    const parse = JSON.parse;
+    let attempts = 0;
+    const parseSpy = jest
+      .spyOn(JSON, 'parse')
+      .mockImplementation((json, ...args) => {
+        if (json === model && ++attempts === 1) {
+          throw new RangeError('Maximum call stack size exceeded');
+        }
+        return parse(json, ...args);
+      });
+
+    const errors = [];
+    let result;
+    try {
+      await serverAct(() => {
+        result = readResult(
+          ReactDOMServer.renderToPipeableStream(
+            <Wrapper>
+              <Flight />
+            </Wrapper>,
+            {
+              onError(error) {
+                errors.push(error);
+              },
+            },
+          ),
+        ).catch(error => error);
+      });
+      // Drain the complete stream; receiving a shell alone is insufficient.
+      const html = await result;
+      expect(errors).toEqual([]);
+      expect(attempts).toBeGreaterThan(1);
+      expect(html).toBe('<div><span>leaf</span></div>');
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
 });
