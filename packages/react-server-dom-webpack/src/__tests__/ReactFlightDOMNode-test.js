@@ -1396,9 +1396,9 @@ describe('ReactFlightDOMNode', () => {
     const fileChunk = fs.readFileSync(file);
     fs.unlinkSync(file);
 
-    // Verify this chunk uses the Buffer pool (8192 bytes for files < 4KB).
-    expect(fileChunk.buffer.byteLength).toBe(8192);
-
+    // Verify this chunk uses the Buffer pool. Its size varies by Node version.
+    expect(fileChunk.buffer.byteLength).toBeGreaterThan(fileChunk.byteLength);
+    expect(fileChunk.buffer.byteLength).toBe(Buffer.poolSize);
     const readable = await serverAct(() =>
       ReactServerDOMServer.renderToReadableStream(fileChunk, webpackMap),
     );
