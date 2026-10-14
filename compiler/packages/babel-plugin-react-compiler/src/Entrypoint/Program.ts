@@ -1154,7 +1154,10 @@ function callsHooksOrCreatesJsx(
     },
     CallExpression(call) {
       const callee = call.get('callee');
-      if (callee.isExpression() && isHook(callee)) {
+      if (
+        callee.isExpression() &&
+        (isHook(callee) || isReactAPI(callee, 'use'))
+      ) {
         invokesHooks = true;
       }
     },
