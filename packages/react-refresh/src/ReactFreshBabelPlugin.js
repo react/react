@@ -98,9 +98,20 @@ export default function (babel, opts = {}) {
             if (!foundInside) {
               return false;
             }
-            // const Foo = hoc1(hoc2(() => {}))
-            // export default memo(React.forwardRef(function() {}))
-            callback(inferredName, node, path);
+
+            // TODO: this is a hack, we should find a better way to detect this.
+            if (
+              firstArgPath.node.type === 'Identifier' &&
+              inferredName === '%default%'
+            ) {
+              // export default memo(function() {}))
+              // export default forwardRef(function() {}))
+              callback(innerName, node, path);
+            } else {
+              // const Foo = hoc1(hoc2(() => {}))
+              // export default memo(React.forwardRef(function() {}))
+              callback(inferredName, node, path);
+            }
             return true;
           }
           default: {
