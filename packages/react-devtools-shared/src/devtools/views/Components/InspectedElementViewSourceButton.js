@@ -18,13 +18,15 @@ import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSo
 import useOpenResource from '../useOpenResource';
 
 type Props = {
+  elementID?: number | null,
   source: null | ReactFunctionLocation,
-  symbolicatedSourcePromise: Promise<SourceMappedLocation | null> | null,
+  symbolicatedSource: SourceMappedLocation | null,
 };
 
 function InspectedElementViewSourceButton({
   source,
-  symbolicatedSourcePromise,
+  symbolicatedSource,
+  elementID,
 }: Props): React.Node {
   return (
     <React.Suspense
@@ -34,29 +36,28 @@ function InspectedElementViewSourceButton({
         </Button>
       }>
       <ActualSourceButton
+        elementID={elementID}
         source={source}
-        symbolicatedSourcePromise={symbolicatedSourcePromise}
+        symbolicatedSource={symbolicatedSource}
       />
     </React.Suspense>
   );
 }
 
 type ActualSourceButtonProps = {
+  elementID?: number | null,
   source: null | ReactFunctionLocation,
-  symbolicatedSourcePromise: Promise<SourceMappedLocation | null> | null,
+  symbolicatedSource: SourceMappedLocation | null,
 };
 function ActualSourceButton({
   source,
-  symbolicatedSourcePromise,
+  symbolicatedSource,
+  elementID,
 }: ActualSourceButtonProps): React.Node {
-  const symbolicatedSource =
-    symbolicatedSourcePromise == null
-      ? null
-      : React.use(symbolicatedSourcePromise);
-
   const [buttonIsEnabled, viewSource] = useOpenResource(
     source,
     symbolicatedSource == null ? null : symbolicatedSource.location,
+    elementID,
   );
   return (
     <Button
