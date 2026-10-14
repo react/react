@@ -8,6 +8,7 @@
  */
 
 import type {Request} from 'react-server/src/ReactFlightServer';
+import type {CacheContext} from 'react-server/src/flight/ReactFlightCurrentCache';
 import type {ReactComponentInfo} from 'shared/ReactTypes';
 
 export * from 'react-server-dom-esm/src/server/ReactFlightServerConfigESMBundler';
@@ -15,6 +16,7 @@ export * from 'react-dom-bindings/src/server/ReactFlightServerConfigDOM';
 
 export const supportsRequestStorage = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
+export const cacheStorage: AsyncLocalStorage<CacheContext | void> = null as any;
 
 export const supportsComponentStorage = false;
 export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =

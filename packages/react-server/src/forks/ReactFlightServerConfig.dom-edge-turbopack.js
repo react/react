@@ -7,6 +7,7 @@
  * @flow
  */
 import type {Request} from 'react-server/src/ReactFlightServer';
+import type {CacheContext} from 'react-server/src/flight/ReactFlightCurrentCache';
 import type {ReactComponentInfo} from 'shared/ReactTypes';
 
 export * from 'react-server-dom-turbopack/src/server/ReactFlightServerConfigTurbopackBundler';
@@ -15,6 +16,8 @@ export * from 'react-dom-bindings/src/server/ReactFlightServerConfigDOM';
 // For now, we get this from the global scope, but this will likely move to a module.
 export const supportsRequestStorage = typeof AsyncLocalStorage === 'function';
 export const requestStorage: AsyncLocalStorage<Request | void> =
+  supportsRequestStorage ? new AsyncLocalStorage() : (null as any);
+export const cacheStorage: AsyncLocalStorage<CacheContext | void> =
   supportsRequestStorage ? new AsyncLocalStorage() : (null as any);
 
 export const supportsComponentStorage: boolean =

@@ -9,6 +9,9 @@ if (process.env.NODE_ENV === 'production') {
 
 exports.renderToReadableStream = s.renderToReadableStream;
 exports.renderToPipeableStream = s.renderToPipeableStream;
+exports.renderToResult = s.renderToResult;
+exports.renderResultToPipeableStream = s.renderResultToPipeableStream;
+exports.renderResultToReadableStream = s.renderResultToReadableStream;
 exports.decodeReply = s.decodeReply;
 exports.decodeReplyFromBusboy = s.decodeReplyFromBusboy;
 exports.decodeReplyFromAsyncIterable = s.decodeReplyFromAsyncIterable;

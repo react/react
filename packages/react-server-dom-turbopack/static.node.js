@@ -10,4 +10,5 @@
 export {
   prerender,
   prerenderToNodeStream,
+  prerenderToResult,
 } from './src/server/react-flight-dom-server.node';
