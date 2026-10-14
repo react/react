@@ -73,6 +73,9 @@ export const warnsIfNotActing = $$$config.warnsIfNotActing;
 export const supportsMutation = $$$config.supportsMutation;
 export const supportsPersistence = $$$config.supportsPersistence;
 export const supportsHydration = $$$config.supportsHydration;
+export const waitForHydrationIfBlocked: (
+  rootContainer: any,
+) => null | Promise<void> = $$$config.waitForHydrationIfBlocked || (() => null);
 export const getInstanceFromNode = $$$config.getInstanceFromNode;
 export const beforeActiveInstanceBlur = $$$config.beforeActiveInstanceBlur;
 export const afterActiveInstanceBlur = $$$config.afterActiveInstanceBlur;
