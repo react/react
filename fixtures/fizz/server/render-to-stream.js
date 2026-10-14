@@ -24,29 +24,40 @@ module.exports = function render(url, res) {
   });
   let didError = false;
   let didFinish = false;
-  const {pipe, abort} = renderToPipeableStream(<App assets={assets} />, {
-    bootstrapScripts: [assets['main.js']],
-    onAllReady() {
-      // Full completion.
-      // You can use this for SSG or crawlers.
-      didFinish = true;
-    },
-    onShellReady() {
-      // If something errored before we started streaming, we set the error code appropriately.
-      res.statusCode = didError ? 500 : 200;
-      res.setHeader('Content-type', 'text/html');
-      setImmediate(() => pipe(res));
-    },
-    onShellError(x) {
-      // Something errored before we could complete the shell so we emit an alternative shell.
-      res.statusCode = 500;
-      res.send('<!doctype><p>Error</p>');
-    },
-    onError(x) {
-      didError = true;
-      console.error(x);
-    },
-  });
+  const {pipe, abort} = renderToPipeableStream(
+    <App
+      assets={assets}
+      delay={
+        new Promise(resolve => {
+          setTimeout(resolve, 5000);
+        })
+      }
+    />,
+    {
+      bootstrapScripts: [assets['main.js']],
+      onAllReady() {
+        // Full completion.
+        // You can use this for SSG or crawlers.
+        didFinish = true;
+      },
+      onShellReady() {
+        // If something errored before we started streaming, we set the error code appropriately.
+        res.statusCode = didError ? 500 : 200;
+        res.setHeader('Content-type', 'text/html');
+        setImmediate(() => pipe(res));
+      },
+      onShellError(x) {
+        // Something errored before we could complete the shell so we emit an alternative shell.
+        res.statusCode = 500;
+        res.send('<!doctype><p>Error</p>');
+      },
+      onError(x) {
+        didError = true;
+        console.error(x);
+      },
+      progressiveChunkSize: 1024,
+    }
+  );
   // Abandon and switch to client rendering if enough time passes.
   // Try lowering this to see the client recover.
   setTimeout(() => {
