@@ -148,6 +148,7 @@ class Visitor extends ReactiveFunctionTransform<VisitorState> {
               loc: instruction.loc,
             });
             maybeHoistedFn.definition = instruction.value.lvalue.place;
+            instruction.value.lvalue.kind = InstructionKind.Reassign;
             /**
              * References to hoisted functions are now "safe" as variable assignments
              * have finished.
