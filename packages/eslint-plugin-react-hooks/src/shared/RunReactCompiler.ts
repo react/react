@@ -99,21 +99,40 @@ function checkTopLevelNode(node: ESTree.Node): boolean {
   }
 
   // Handle: const MyComponent = () => {} or const useHook = function() {}
+  // Also handles: const MyComponent = memo(function MyComponent() {}) or
+  //               const MyComponent = React.memo(() => {})
   if (node.type === 'VariableDeclaration') {
     for (const decl of (node as ESTree.VariableDeclaration).declarations) {
       if (decl.id.type === 'Identifier') {
-        const init = decl.init;
+        const name = decl.id.name;
         if (
-          init != null &&
-          (init.type === 'ArrowFunctionExpression' ||
-            init.type === 'FunctionExpression')
+          !COMPONENT_NAME_PATTERN.test(name) &&
+          !HOOK_NAME_PATTERN.test(name)
         ) {
-          const name = decl.id.name;
-          if (
-            COMPONENT_NAME_PATTERN.test(name) ||
-            HOOK_NAME_PATTERN.test(name)
-          ) {
-            return true;
+          continue;
+        }
+        const init = decl.init;
+        if (init == null) {
+          continue;
+        }
+        if (
+          init.type === 'ArrowFunctionExpression' ||
+          init.type === 'FunctionExpression'
+        ) {
+          return true;
+        }
+        // Unwrap one level of call expression to catch patterns like:
+        //   const Comp = memo(function Comp() {...})
+        //   const Comp = React.memo(() => {...})
+        //   const Comp = forwardRef(function Comp() {...})
+        if (init.type === 'CallExpression') {
+          for (const arg of (init as ESTree.CallExpression).arguments) {
+            if (
+              arg.type === 'ArrowFunctionExpression' ||
+              arg.type === 'FunctionExpression'
+            ) {
+              return true;
+            }
           }
         }
       }
