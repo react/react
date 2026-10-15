@@ -36,7 +36,10 @@ import {
   ANIMATION_END,
   ANIMATION_ITERATION,
   ANIMATION_START,
+  TRANSITION_CANCEL,
   TRANSITION_END,
+  TRANSITION_RUN,
+  TRANSITION_START,
 } from '../DOMEventNames';
 import {
   topLevelEventsToReactNames,
@@ -140,7 +143,10 @@ function extractEvents(
     case ANIMATION_START:
       SyntheticEventCtor = SyntheticAnimationEvent;
       break;
+    case TRANSITION_CANCEL:
     case TRANSITION_END:
+    case TRANSITION_RUN:
+    case TRANSITION_START:
       SyntheticEventCtor = SyntheticTransitionEvent;
       break;
     case 'scroll':
