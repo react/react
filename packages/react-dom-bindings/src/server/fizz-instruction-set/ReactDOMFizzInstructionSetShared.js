@@ -350,7 +350,7 @@ export function revealCompletedBoundariesWithViewTransitions(
           const elementStyle = element.style;
           const previousName = restoreQueue[i + 1];
           elementStyle['viewTransitionName'] = previousName;
-          const previousClassName = restoreQueue[i + 1];
+          const previousClassName = restoreQueue[i + 2];
           elementStyle['viewTransitionClass'] = previousClassName;
           if (element.getAttribute('style') === '') {
             element.removeAttribute('style');
