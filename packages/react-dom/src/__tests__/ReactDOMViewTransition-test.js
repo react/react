@@ -248,7 +248,6 @@ describe('ReactDOMViewTransition', () => {
       }
     });
 
-    // @gate enableViewTransition
     it('fires onEnter when a ViewTransition mounts', async () => {
       const onEnter = jest.fn();
       const startViewTransitionSpy = jest.fn(document.startViewTransition);
@@ -285,7 +284,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onEnter).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition
     it('fires onExit when a ViewTransition unmounts', async () => {
       const onExit = jest.fn();
 
@@ -320,7 +318,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onExit).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition
     it('fires onUpdate when content inside a ViewTransition changes', async () => {
       const onUpdate = jest.fn();
       const onEnter = jest.fn();
@@ -358,7 +355,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onEnter).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition
     it('fires onShare for paired named transitions instead of onEnter/onExit', async () => {
       const onShareA = jest.fn();
       const onExitA = jest.fn();
@@ -418,7 +414,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onEnterB).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition
     it('fires onEnter when Suspense content resolves', async () => {
       const onEnter = jest.fn();
 
@@ -462,7 +457,6 @@ describe('ReactDOMViewTransition', () => {
       ).toBeGreaterThanOrEqual(1);
     });
 
-    // @gate enableViewTransition
     it('does not fire onExit/onEnter on nested ViewTransition when the subtree is removed as one unit', async () => {
       const onParentExit = jest.fn();
       const onParentEnter = jest.fn();
@@ -525,7 +519,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onNestedExit).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('fires onParentExit when ancestor ViewTransition exits', async () => {
       const onParentExit = jest.fn();
       const onNestedExit = jest.fn();
@@ -573,7 +567,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('fires onParentEnter when ancestor ViewTransition enters', async () => {
       const onParentEnter = jest.fn();
       const onNestedEnter = jest.fn();
@@ -621,7 +615,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnterNested).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('breaks parentExit chain when intermediate ViewTransition lacks parentExit', async () => {
       const onParentExit1 = jest.fn();
       const onParentExit2 = jest.fn();
@@ -677,7 +671,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit2).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('stops the parentExit relay when an intermediate class is "none"', async () => {
       const onParentExitDeep = jest.fn();
       const onParentExitSibling = jest.fn();
@@ -731,7 +725,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExitSibling).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('stops the parentEnter relay when an intermediate class is "none"', async () => {
       const onParentEnterDeep = jest.fn();
       const onParentEnterSibling = jest.fn();
@@ -823,7 +817,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnter).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition
     it('does not fire onParentExit when ancestor shares instead of exiting', async () => {
       const onShare = jest.fn();
       const onParentExit = jest.fn();
@@ -872,7 +865,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition
     it('does not fire onParentEnter when ancestor shares instead of entering', async () => {
       const onShare = jest.fn();
       const onParentEnter = jest.fn();
@@ -995,7 +987,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnter).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('relays parentExit chain through unstyled parentExit', async () => {
       const onParentExit = jest.fn();
 
@@ -1037,7 +1029,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('fires onParentExit when ancestor ViewTransition exits with handler only', async () => {
       const onParentExit = jest.fn();
       const onRelayParentExit = jest.fn();
@@ -1083,7 +1075,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExitDeep).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('fires onParentEnter when ancestor ViewTransition enters with handler only', async () => {
       const onParentEnter = jest.fn();
       const onRelayParentEnter = jest.fn();
@@ -1164,7 +1156,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnter).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('relays parentEnter chain to handler-only child through intermediate divs', async () => {
       const onParentEnter = jest.fn();
       const onParentEnterNested = jest.fn();
@@ -1207,7 +1199,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnterNested).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition
     it('enters without props and does not fire handlers', async () => {
       const startViewTransitionSpy = jest.fn(document.startViewTransition);
       document.startViewTransition = startViewTransitionSpy;
@@ -1239,7 +1230,6 @@ describe('ReactDOMViewTransition', () => {
       expect(startViewTransitionSpy).toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition
     it('exits without props and does not fire handlers', async () => {
       const startViewTransitionSpy = jest.fn(document.startViewTransition);
       document.startViewTransition = startViewTransitionSpy;
@@ -1273,7 +1263,7 @@ describe('ReactDOMViewTransition', () => {
       expect(startViewTransitionSpy).toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('fires onParentEnter when ancestor ViewTransition has no props', async () => {
       const onParentEnterNested = jest.fn();
 
@@ -1311,7 +1301,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnterNested).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    // @gate enableViewTransitionParentEnterExit
     it('fires onParentExit when ancestor ViewTransition has no props', async () => {
       const onParentExitNested = jest.fn();
 

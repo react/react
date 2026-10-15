@@ -224,7 +224,6 @@ describe('ReactFragment', () => {
     ]);
   });
 
-  // @gate enableViewTransition
   it('includes built-in for ViewTransition', async () => {
     ReactNoop.createRoot({
       onCaughtError,

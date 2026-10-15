@@ -21,9 +21,9 @@ description: Use when feature flag tests fail, flags need updating, understandin
 Use when the feature is completely unavailable without the flag:
 
 ```javascript
-// @gate enableViewTransition
-it('supports view transitions', () => {
-  // This test only runs when enableViewTransition is true
+// @gate enableGestureTransition
+it('supports gesture transitions', () => {
+  // This test only runs when enableGestureTransition is true
   // and is SKIPPED (not failed) when false
 });
 ```

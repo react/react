@@ -29,7 +29,6 @@ export const {
   syncLaneExpirationMs,
   transitionLaneExpirationMs,
   enableSuspenseyImages,
-  enableViewTransition,
   enableScrollEndPolyfill,
   enableInternalInstanceMap,
   enableViewTransitionParentEnterExit,

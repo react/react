@@ -10,11 +10,7 @@
 import type {ReactContext, ReactConsumerType} from 'shared/ReactTypes';
 import type {Fiber} from './ReactInternalTypes';
 
-import {
-  disableLegacyMode,
-  enableLegacyHidden,
-  enableViewTransition,
-} from 'shared/ReactFeatureFlags';
+import {disableLegacyMode, enableLegacyHidden} from 'shared/ReactFeatureFlags';
 
 import {
   FunctionComponent,
@@ -137,9 +133,7 @@ export default function getComponentNameFromFiber(fiber: Fiber): string | null {
     case TracingMarkerComponent:
       return 'TracingMarker';
     case ViewTransitionComponent:
-      if (enableViewTransition) {
-        return 'ViewTransition';
-      }
+      return 'ViewTransition';
     // The display name for these tags come from the user-provided type:
     // Fallthrough
     case IncompleteClassComponent:

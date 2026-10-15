@@ -118,7 +118,6 @@ import {
   enableLegacyHidden,
   enableCPUSuspense,
   disableLegacyMode,
-  enableViewTransition,
 } from 'shared/ReactFeatureFlags';
 import shallowEqual from 'shared/shallowEqual';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
@@ -4487,10 +4486,7 @@ function beginWork(
       break;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        return updateViewTransition(current, workInProgress, renderLanes);
-      }
-      break;
+      return updateViewTransition(current, workInProgress, renderLanes);
     }
     case Throw: {
       // This represents a Component that threw in the reconciliation phase.

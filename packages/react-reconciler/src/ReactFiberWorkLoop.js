@@ -56,7 +56,6 @@ import {
   enableComponentPerformanceTrack,
   enableYieldingBeforePassive,
   enableThrottledScheduling,
-  enableViewTransition,
   enableGestureTransition,
   enableDefaultTransitionIndicator,
 } from 'shared/ReactFeatureFlags';
@@ -926,20 +925,18 @@ export function scheduleViewTransitionEvent(
     types: Array<string>,
   ) => void | (() => void),
 ): void {
-  if (enableViewTransition) {
-    if (callback != null) {
-      const state: ViewTransitionState = fiber.stateNode;
-      let instance = state.ref;
-      if (instance === null) {
-        instance = state.ref = createViewTransitionInstance(
-          getViewTransitionName(fiber.memoizedProps, state),
-        );
-      }
-      if (pendingViewTransitionEvents === null) {
-        pendingViewTransitionEvents = [];
-      }
-      pendingViewTransitionEvents.push(callback.bind(null, instance));
+  if (callback != null) {
+    const state: ViewTransitionState = fiber.stateNode;
+    let instance = state.ref;
+    if (instance === null) {
+      instance = state.ref = createViewTransitionInstance(
+        getViewTransitionName(fiber.memoizedProps, state),
+      );
     }
+    if (pendingViewTransitionEvents === null) {
+      pendingViewTransitionEvents = [];
+    }
+    pendingViewTransitionEvents.push(callback.bind(null, instance));
   }
 }
 
@@ -1609,7 +1606,7 @@ function completeRootWhenReady(
   const BothVisibilityAndMaySuspendCommit = Visibility | MaySuspendCommit;
   const subtreeFlags = finishedWork.subtreeFlags;
   const isViewTransitionEligible =
-    enableViewTransition && includesOnlyViewTransitionEligibleLanes(lanes); // TODO: Use a subtreeFlag to optimize.
+    includesOnlyViewTransitionEligibleLanes(lanes); // TODO: Use a subtreeFlag to optimize.
   const isGestureTransition = enableGestureTransition && isGestureRender(lanes);
   const maySuspendCommit =
     subtreeFlags & ShouldSuspendCommit ||
@@ -3783,17 +3780,13 @@ function commitRoot(
   // TODO: Delete all other places that schedule the passive effect callback
   // They're redundant.
   let passiveSubtreeMask;
-  if (enableViewTransition) {
-    pendingViewTransitionEvents = null;
-    if (includesOnlyViewTransitionEligibleLanes(lanes)) {
-      // Claim any pending Transition Types for this commit.
-      pendingTransitionTypes = claimQueuedTransitionTypes(root);
-      passiveSubtreeMask = PassiveTransitionMask;
-    } else {
-      pendingTransitionTypes = null;
-      passiveSubtreeMask = PassiveMask;
-    }
+  pendingViewTransitionEvents = null;
+  if (includesOnlyViewTransitionEligibleLanes(lanes)) {
+    // Claim any pending Transition Types for this commit.
+    pendingTransitionTypes = claimQueuedTransitionTypes(root);
+    passiveSubtreeMask = PassiveTransitionMask;
   } else {
+    pendingTransitionTypes = null;
     passiveSubtreeMask = PassiveMask;
   }
   if (
@@ -3901,7 +3894,7 @@ function commitRoot(
   }
 
   pendingEffectsStatus = PENDING_MUTATION_PHASE;
-  if (enableViewTransition && shouldStartViewTransition) {
+  if (shouldStartViewTransition) {
     if (enableProfilerTimer && enableComponentPerformanceTrack) {
       startAnimating(lanes);
     }
@@ -4203,10 +4196,9 @@ function flushSpawnedWork(): void {
   const recoverableErrors = pendingRecoverableErrors;
   const didIncludeRenderPhaseUpdate = pendingDidIncludeRenderPhaseUpdate;
 
-  const passiveSubtreeMask =
-    enableViewTransition && includesOnlyViewTransitionEligibleLanes(lanes)
-      ? PassiveTransitionMask
-      : PassiveMask;
+  const passiveSubtreeMask = includesOnlyViewTransitionEligibleLanes(lanes)
+    ? PassiveTransitionMask
+    : PassiveMask;
   const rootDidHavePassiveEffects = // If this subtree rendered with profiling this commit, we need to visit it to log it.
     (enableProfilerTimer &&
       enableComponentPerformanceTrack &&
@@ -4296,27 +4288,25 @@ function flushSpawnedWork(): void {
     }
   }
 
-  if (enableViewTransition) {
-    // We should now be after the startViewTransition's .ready call which is late enough
-    // to start animating any pseudo-elements. We do this before flushing any passive
-    // effects or spawned sync work since this is still part of the previous commit.
-    // Even though conceptually it's like its own task between layout effets and passive.
-    const pendingEvents = pendingViewTransitionEvents;
-    let pendingTypes = pendingTransitionTypes;
-    pendingTransitionTypes = null;
-    if (pendingEvents !== null) {
-      pendingViewTransitionEvents = null;
-      if (pendingTypes === null) {
-        // Normalize the type. This is lazily created only for events.
-        pendingTypes = [];
-      }
-      if (committedViewTransition !== null) {
-        for (let i = 0; i < pendingEvents.length; i++) {
-          const viewTransitionEvent = pendingEvents[i];
-          const cleanup = viewTransitionEvent(pendingTypes);
-          if (cleanup !== undefined) {
-            addViewTransitionFinishedListener(committedViewTransition, cleanup);
-          }
+  // We should now be after the startViewTransition's .ready call which is late enough
+  // to start animating any pseudo-elements. We do this before flushing any passive
+  // effects or spawned sync work since this is still part of the previous commit.
+  // Even though conceptually it's like its own task between layout effets and passive.
+  const pendingEvents = pendingViewTransitionEvents;
+  let pendingTypes = pendingTransitionTypes;
+  pendingTransitionTypes = null;
+  if (pendingEvents !== null) {
+    pendingViewTransitionEvents = null;
+    if (pendingTypes === null) {
+      // Normalize the type. This is lazily created only for events.
+      pendingTypes = [];
+    }
+    if (committedViewTransition !== null) {
+      for (let i = 0; i < pendingEvents.length; i++) {
+        const viewTransitionEvent = pendingEvents[i];
+        const cleanup = viewTransitionEvent(pendingTypes);
+        if (cleanup !== undefined) {
+          addViewTransitionFinishedListener(committedViewTransition, cleanup);
         }
       }
     }
@@ -4590,29 +4580,27 @@ function flushGestureAnimations(): void {
     ReactSharedInternals.T = prevTransition;
   }
 
-  if (enableViewTransition) {
-    // We should now be after the startGestureTransition's .ready call which is late enough
-    // to start animating any pseudo-elements. We have also already applied any adjustments
-    // we do to the built-in animations which can now be read by the refs.
-    const pendingEvents = pendingViewTransitionEvents;
-    let pendingTypes = pendingTransitionTypes;
-    pendingTransitionTypes = null;
-    if (pendingEvents !== null) {
-      pendingViewTransitionEvents = null;
-      if (pendingTypes === null) {
-        // Normalize the type. This is lazily created only for events.
-        pendingTypes = [];
-      }
-      const appliedGesture = root.pendingGestures;
-      if (appliedGesture !== null) {
-        const runningTransition = appliedGesture.running;
-        if (runningTransition !== null) {
-          for (let i = 0; i < pendingEvents.length; i++) {
-            const viewTransitionEvent = pendingEvents[i];
-            const cleanup = viewTransitionEvent(pendingTypes);
-            if (cleanup !== undefined) {
-              addViewTransitionFinishedListener(runningTransition, cleanup);
-            }
+  // We should now be after the startGestureTransition's .ready call which is late enough
+  // to start animating any pseudo-elements. We have also already applied any adjustments
+  // we do to the built-in animations which can now be read by the refs.
+  const pendingEvents = pendingViewTransitionEvents;
+  let pendingTypes = pendingTransitionTypes;
+  pendingTransitionTypes = null;
+  if (pendingEvents !== null) {
+    pendingViewTransitionEvents = null;
+    if (pendingTypes === null) {
+      // Normalize the type. This is lazily created only for events.
+      pendingTypes = [];
+    }
+    const appliedGesture = root.pendingGestures;
+    if (appliedGesture !== null) {
+      const runningTransition = appliedGesture.running;
+      if (runningTransition !== null) {
+        for (let i = 0; i < pendingEvents.length; i++) {
+          const viewTransitionEvent = pendingEvents[i];
+          const cleanup = viewTransitionEvent(pendingTypes);
+          if (cleanup !== undefined) {
+            addViewTransitionFinishedListener(runningTransition, cleanup);
           }
         }
       }
@@ -4669,7 +4657,7 @@ export function flushPendingEffectsDelayed(): boolean {
 
 export function flushPendingEffects(): boolean {
   // Returns whether passive effects were flushed.
-  if (enableViewTransition && pendingViewTransition !== null) {
+  if (pendingViewTransition !== null) {
     // If we forced a flush before the View Transition full started then we skip it.
     // This ensures that we're not running a partial animation.
     stopViewTransition(pendingViewTransition);
