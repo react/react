@@ -84,6 +84,7 @@ import {
 } from './ReactFiberCallUserSpace';
 
 import {runWithFiberInDEV} from './ReactCurrentFiber';
+import hasOwnProperty from 'shared/hasOwnProperty';
 
 function shouldProfile(current: Fiber): boolean {
   return (
@@ -805,7 +806,7 @@ function commitAttachRef(finishedWork: Fiber) {
         // phase (markRef).
         if (typeof ref === 'string') {
           console.error('String refs are no longer supported.');
-        } else if (!ref.hasOwnProperty('current')) {
+        } else if (!hasOwnProperty.call(ref, 'current')) {
           console.error(
             'Unexpected ref object provided for %s. ' +
               'Use either a ref-setter function or React.createRef().',
