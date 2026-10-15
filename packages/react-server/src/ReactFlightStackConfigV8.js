@@ -233,12 +233,16 @@ export function parseStackTrace(
       continue;
     }
     let name = parsed[1] || '';
-    let isAsync = parsed[8] === 'async ';
+    // V8 marks an async frame as `at async name (file:0:0)`, but an anonymous
+    // async function has no name to hang that marker off of and is printed as
+    // `at async file:0:0` instead. The regexp consumes the prefix there, and it
+    // can't be captured without shifting the other groups, so read it off the
+    // frame itself.
+    const isAsync = /^ *at async /.test(frames[i]);
     if (name === '<anonymous>') {
       name = '';
     } else if (name.startsWith('async ')) {
       name = name.slice(6);
-      isAsync = true;
     }
     let filename = parsed[2] || parsed[5] || '';
     if (filename === '<anonymous>') {
