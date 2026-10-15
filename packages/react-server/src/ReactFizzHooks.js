@@ -218,8 +218,8 @@ function areHookInputsEqual(
           'Previous: %s\n' +
           'Incoming: %s',
         currentHookNameInDev,
-        `[${nextDeps.join(', ')}]`,
-        `[${prevDeps.join(', ')}]`,
+        `[${nextDeps.map(String).join(', ')}]`,
+        `[${prevDeps.map(String).join(', ')}]`,
       );
     }
   }
