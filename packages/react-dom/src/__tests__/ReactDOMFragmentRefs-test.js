@@ -64,6 +64,76 @@ describe('FragmentRefs', () => {
     document.body.removeChild(container);
   });
 
+  it('keeps the original capture option when the options object changes', async () => {
+    const ref = React.createRef();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() =>
+      root.render(
+        <Fragment ref={ref}>
+          <button />
+        </Fragment>,
+      ),
+    );
+    const listener = jest.fn();
+    const options = {capture: false};
+    ref.current.addEventListener('click', listener, options);
+    options.capture = true;
+    ref.current.removeEventListener('click', listener, false);
+    await act(() =>
+      root.render(
+        <Fragment ref={ref}>
+          <button />
+          <button />
+        </Fragment>,
+      ),
+    );
+    container.firstChild.click();
+    container.lastChild.click();
+    expect(listener).toHaveBeenCalledTimes(0);
+  });
+
+  it('keeps once listeners scoped to the Fragment after options change', async () => {
+    const ref = React.createRef();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() =>
+      root.render(
+        <Fragment ref={ref}>
+          <button />
+          <button />
+        </Fragment>,
+      ),
+    );
+    const listener = jest.fn();
+    const options = {capture: false, once: true};
+    ref.current.addEventListener('click', listener, options);
+    options.capture = true;
+    container.firstChild.click();
+    container.lastChild.click();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts listeners using their original capture option', async () => {
+    const ref = React.createRef();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() =>
+      root.render(
+        <Fragment ref={ref}>
+          <button />
+        </Fragment>,
+      ),
+    );
+    const controller = new AbortController();
+    const listener = jest.fn();
+    const options = {capture: false, signal: controller.signal};
+    ref.current.addEventListener('click', listener, options);
+    options.capture = true;
+    controller.abort();
+    container.firstChild.click();
+    ref.current.addEventListener('click', listener);
+    container.firstChild.click();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it('attaches a ref to Fragment', async () => {
     const fragmentRef = React.createRef();
     const root = ReactDOMClient.createRoot(container);
