@@ -23,6 +23,7 @@ import {
   eachTerminalOperand,
 } from '../HIR/visitors';
 import {assertExhaustive, retainWhere} from '../Utils/utils';
+import {valueMayThrow} from './PruneMaybeThrows';
 
 /*
  * Implements dead-code elimination, eliminating instructions whose values are unused.
@@ -35,7 +36,7 @@ export function deadCodeElimination(fn: HIRFunction): void {
    * Usages may be visited AFTER declarations if there are circular phi / data dependencies
    * between blocks, so we wait to sweep until after fixed point iteration is complete
    */
-  const state = findReferencedIdentifiers(fn);
+  const state = findReferencedIdentifiers(fn, true);
 
   /**
    * Phase 2: Prune / sweep unreferenced identifiers and instructions
@@ -55,7 +56,13 @@ export function deadCodeElimination(fn: HIRFunction): void {
       const isBlockValue =
         block.kind !== 'block' && i === block.instructions.length - 1;
       if (!isBlockValue) {
-        rewriteInstruction(block.instructions[i], state);
+        rewriteInstruction(
+          block.instructions[i],
+          block.terminal.kind === 'maybe-throw' &&
+            block.terminal.handler !== null &&
+            valueMayThrow(block.instructions[i].value),
+          state,
+        );
       }
     }
   }
@@ -111,7 +118,10 @@ class State {
   }
 }
 
-function findReferencedIdentifiers(fn: HIRFunction): State {
+function findReferencedIdentifiers(
+  fn: HIRFunction,
+  preserveCaughtThrows: boolean,
+): State {
   /*
    * If there are no back-edges the algorithm can terminate after a single iteration
    * of the blocks
@@ -150,6 +160,14 @@ function findReferencedIdentifiers(fn: HIRFunction): State {
           }
         } else if (
           state.isIdOrNameUsed(instr.lvalue.identifier) ||
+          (preserveCaughtThrows &&
+            block.terminal.kind === 'maybe-throw' &&
+            block.terminal.handler !== null &&
+            valueMayThrow(instr.value) &&
+            !(
+              instr.value.kind === 'StoreLocal' &&
+              !state.isIdUsed(instr.value.lvalue.place.identifier)
+            )) ||
           !pruneableValue(instr.value, state)
         ) {
           state.reference(instr.lvalue.identifier);
@@ -161,7 +179,11 @@ function findReferencedIdentifiers(fn: HIRFunction): State {
              */
             if (
               instr.value.lvalue.kind === InstructionKind.Reassign ||
-              state.isIdUsed(instr.value.lvalue.place.identifier)
+              state.isIdUsed(instr.value.lvalue.place.identifier) ||
+              (preserveCaughtThrows &&
+                block.terminal.kind === 'maybe-throw' &&
+                block.terminal.handler !== null &&
+                valueMayThrow(instr.value))
             ) {
               state.reference(instr.value.value.identifier);
             }
@@ -184,8 +206,43 @@ function findReferencedIdentifiers(fn: HIRFunction): State {
   return state;
 }
 
-function rewriteInstruction(instr: Instruction, state: State): void {
-  if (instr.value.kind === 'Destructure') {
+export function findSemanticOnlyCaughtInstructions(
+  fn: HIRFunction,
+): Set<Instruction> | null {
+  const candidates: Array<Instruction> = [];
+  for (const [, block] of fn.body.blocks) {
+    if (
+      block.terminal.kind !== 'maybe-throw' ||
+      block.terminal.handler === null
+    ) {
+      continue;
+    }
+    for (const instr of block.instructions) {
+      if (valueMayThrow(instr.value)) {
+        candidates.push(instr);
+      }
+    }
+  }
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const state = findReferencedIdentifiers(fn, false);
+  const semanticOnly = new Set<Instruction>();
+  for (const instr of candidates) {
+    if (!state.isIdOrNameUsed(instr.lvalue.identifier)) {
+      semanticOnly.add(instr);
+    }
+  }
+  return semanticOnly;
+}
+
+function rewriteInstruction(
+  instr: Instruction,
+  preserveCaughtValue: boolean,
+  state: State,
+): void {
+  if (instr.value.kind === 'Destructure' && !preserveCaughtValue) {
     // Remove unused lvalues
     switch (instr.value.lvalue.pattern.kind) {
       case 'ArrayPattern': {
@@ -255,6 +312,10 @@ function rewriteInstruction(instr: Instruction, state: State): void {
       instr.value.lvalue.kind !== InstructionKind.Reassign &&
       !state.isIdUsed(instr.value.lvalue.place.identifier)
     ) {
+      if (preserveCaughtValue) {
+        instr.value.lvalue.kind = InstructionKind.Let;
+        return;
+      }
       /*
        * This is a const/let declaration where the variable is accessed later,
        * but where the value is always overwritten before being read. Ie the
