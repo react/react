@@ -46,6 +46,14 @@ const allTests = {
       `,
     },
     {
+      code: normalizeIndent`
+        // Valid: CJK component names are components (JSX does not treat them as DOM tags).
+        function 双池视图() {
+          useHook();
+        }
+      `,
+    },
+    {
       syntax: 'flow',
       code: normalizeIndent`
         // Component syntax
@@ -948,6 +956,17 @@ const allTests = {
         }
       `,
       errors: [conditionalError('useConditionalHook')],
+    },
+    {
+      code: normalizeIndent`
+        // Invalid: early return then hook — must flag CJK-named components too (#37665).
+        function 双池视图() {
+          const [x, setX] = useState(null);
+          if (!x) return null;
+          const y = useCallback(() => {}, []);
+        }
+      `,
+      errors: [conditionalError('useCallback', true)],
     },
     {
       code: normalizeIndent`
