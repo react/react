@@ -424,6 +424,135 @@ describe('ReactFlightDOMBrowser', () => {
     expect(container.innerHTML).toBe('<div><span>12345</span>12345</div>');
   });
 
+  it('waits for a Set referenced through unfinished element props', async () => {
+    let resolvePayload;
+    let resolveComponent;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(
+      function Widget() {
+        return null;
+      },
+      'widget',
+      '/widget.js',
+      new Promise(resolve => (resolveComponent = resolve)),
+    );
+    const data = {};
+    const element = <Widget data={data} items={new Set([payload])} />;
+    data.alias = element.props;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {element, items: element.props.items},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    const observed = [];
+    await act(() => {
+      response.then(
+        value =>
+          observed.push(
+            value.items instanceof Set ? Array.from(value.items) : value.items,
+          ),
+        error => observed.push(error),
+      );
+    });
+    expect(observed).toEqual([]);
+
+    await act(() => resolvePayload());
+    expect(observed).toEqual([['ready']]);
+    await act(() => resolveComponent());
+  });
+
+  it('waits for shared props contents without waiting for the component module', async () => {
+    let resolvePayload;
+    let resolveComponent;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(
+      function Widget() {
+        return null;
+      },
+      'widget',
+      '/widget.js',
+      new Promise(resolve => (resolveComponent = resolve)),
+    );
+    const data = {};
+    const element = <Widget data={data} payload={payload} />;
+    data.alias = element.props;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {element, props: element.props},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    const observed = [];
+    await act(() => {
+      response.then(value => {
+        // Capture the field when it is delivered. A later write must not
+        // hide a callback that received an unfinished props object.
+        observed.push(value.props.payload);
+      });
+    });
+    expect(observed).toEqual([]);
+
+    await act(() => resolvePayload());
+    expect(observed).toEqual(['ready']);
+
+    // The component is still unavailable, but its shared data is complete.
+    await act(() => resolveComponent());
+    expect(observed).toEqual(['ready']);
+  });
+
+  it('can render an element reached through its own data after it suspends', async () => {
+    let resolvePayload;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(function Widget({payload: value}) {
+      return <b>{value}</b>;
+    });
+    const data = {};
+    const element = <Widget data={data} payload={payload} />;
+    data.self = element;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({element, data}, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    let received;
+    await act(() => {
+      response.then(value => {
+        received = value;
+      });
+    });
+    expect(received).toBeDefined();
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<Suspense fallback="Loading">{received.data.self}</Suspense>);
+    });
+    expect(container.textContent).toBe('Loading');
+
+    await act(() => resolvePayload());
+    expect(container.innerHTML).toBe('<b>ready</b>');
+  });
+
   it('should resolve deduped objects in nested children of blocked models', async () => {
     let resolveOuterClientComponentChunk;
     let resolveInnerClientComponentChunk;
@@ -2722,6 +2851,43 @@ describe('ReactFlightDOMBrowser', () => {
     expect(Array.from(responseBar)[0]).toBe(responseFoo);
   });
 
+  it('completes a cyclic Set exposed by separate Promise results', async () => {
+    let resolveSet;
+    let resolveArray;
+    const set = new Set();
+    const array = [set];
+    set.add(set);
+    set.add(array);
+    const model = {
+      set: new Promise(resolve => (resolveSet = resolve)),
+      array: new Promise(resolve => (resolveArray = resolve)),
+    };
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    await serverAct(() => resolveSet(set));
+    await serverAct(() => resolveArray(array));
+
+    const observed = [];
+    await act(() => {
+      response.then(value => {
+        value.set.then(received => {
+          const [self, back] = Array.from(received);
+          observed.push([received.size, self instanceof Set, back[0].size]);
+        });
+        value.array.then(received => {
+          const [self, back] = Array.from(received[0]);
+          observed.push([received[0].size, self instanceof Set, back[0].size]);
+        });
+      });
+    });
+    expect(observed).toEqual([
+      [2, true, 2],
+      [2, true, 2],
+    ]);
+  });
+
   it('should resolve deduped references in maps used in client component props', async () => {
     const ClientComponent = clientExports(function ClientComponent({
       shared,
@@ -3064,9 +3230,9 @@ describe('ReactFlightDOMBrowser', () => {
               [
                 "Object.<anonymous>",
                 "/packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js",
-                2992,
+                3158,
                 19,
-                2976,
+                3142,
                 89,
               ],
             ],
@@ -3712,7 +3878,7 @@ describe('ReactFlightDOMBrowser', () => {
     });
   });
 
-  it('rejects a value that waits on a row that fails to parse', async () => {
+  it('keeps a selected field available when its containing model rejects', async () => {
     const foo = {};
     const x = {};
     // The server outlines a Set into its own row, and that row refers to foo by
@@ -3764,10 +3930,8 @@ describe('ReactFlightDOMBrowser', () => {
       }),
     );
 
-    // Reading foo first parses foo's row, and the nested Set row along with it.
-    // The Set row then waits on foo's row, and foo's row fails on the error
-    // row. The client must reject the reference the Set row queued on foo's
-    // row, so that the Set row errors as well and x errors with the Set row.
+    // Reading foo first initializes the nested Set as well. foo must reject,
+    // but its failure must not discard the Set carrier's unaffected fields.
     const fooError = await Promise.resolve(response.foo).then(
       () => null,
       error => error,
@@ -3778,12 +3942,8 @@ describe('ReactFlightDOMBrowser', () => {
         'Functions cannot be passed directly to Client Components',
       );
     }
-    // The error object travels by identity from the error row into every row it
-    // errors, so x rejects with the same object that rejected foo.
-    const xError = await Promise.resolve(response.x).then(
-      () => null,
-      error => error,
-    );
-    expect(xError).toBe(fooError);
+    // x is selected from the same carrier, but none of its contents depends
+    // on the unsupported function. It can still be delivered successfully.
+    expect(await response.x).toEqual({});
   });
 });

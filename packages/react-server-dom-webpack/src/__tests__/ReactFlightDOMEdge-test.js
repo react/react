@@ -453,6 +453,40 @@ describe('ReactFlightDOMEdge', () => {
     expect(result.boundMethod()).toBe('hi, there');
   });
 
+  it('binds a server reference to its containing array after the module loads', async () => {
+    let resolveModule;
+    const {read} = serverExports(
+      {
+        read(array, other) {
+          return [array.length, array[1].length, other];
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    const array = [];
+    array.push(read.bind(null, array, null), array);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(array, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: webpackServerMap,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        observed.push(value[0]());
+      });
+    });
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveModule());
+    expect(observed).toEqual([[2, 2, null]]);
+  });
+
   it('should load a server reference on a consuming server and pass it back', async () => {
     function greet(name) {
       return 'hi, ' + name;
@@ -908,6 +942,44 @@ describe('ReactFlightDOMEdge', () => {
     expect(result2.syncText).toEqual(result.syncText);
   });
 
+  it('delivers a Set containing itself with its entries already installed', async () => {
+    const set = new Set();
+    set.add(set);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(set),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        const self = Array.from(value)[0];
+        observed.push([value.size, self instanceof Set && self.size]);
+      });
+    });
+    expect(observed).toEqual([[1, 1]]);
+  });
+
+  it('delivers a Map containing itself with its entries already installed', async () => {
+    const map = new Map();
+    map.set('self', map);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(map),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        const self = value.get('self');
+        observed.push([value.size, self instanceof Map && self.size]);
+      });
+    });
+    expect(observed).toEqual([[1, 1]]);
+  });
+
   it('should be able to serialize any kind of typed array', async () => {
     const buffer = new Uint8Array([
       123, 4, 10, 5, 100, 255, 244, 45, 56, 67, 43, 124, 67, 89, 100, 20,
@@ -1070,6 +1142,54 @@ describe('ReactFlightDOMEdge', () => {
 
     expect(await readPromise).toEqual({value: 'world', done: false});
     expect(await reader.read()).toEqual({value: '!', done: false});
+    expect(await reader.read()).toEqual({value: undefined, done: true});
+  });
+
+  it('waits for a queued stream item to initialize before closing', async () => {
+    let resolveFirst;
+    let resolveSecond;
+    const first = await clientExports(
+      new Promise(resolve => (resolveFirst = resolve)),
+    );
+    const second = await clientExports(
+      new Promise(resolve => (resolveSecond = resolve)),
+    );
+    let controller;
+    const source = new ReadableStream({
+      start(c) {
+        controller = c;
+        c.enqueue(new Set([first]));
+        c.enqueue(new Set([second]));
+      },
+    });
+
+    // Deliver both items while their imports are still pending.
+    const result = await serverAct(() =>
+      ReactServerDOMClient.createFromReadableStream(
+        ReactServerDOMServer.renderToReadableStream(source, webpackMap),
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      ),
+    );
+    const reader = result.getReader();
+    const firstRead = reader.read();
+    await serverAct(() => resolveFirst('first'));
+    expect(await firstRead).toEqual({value: new Set(['first']), done: false});
+
+    // The second item has started initializing, but its import still blocks
+    // delivery. Closing the source must wait for that item to finish.
+    const received = [];
+    const secondRead = reader.read();
+    secondRead.then(value => received.push(value));
+    await serverAct(() => controller.close());
+    expect(received).toEqual([]);
+
+    await serverAct(() => resolveSecond('second'));
+    expect(await secondRead).toEqual({value: new Set(['second']), done: false});
     expect(await reader.read()).toEqual({value: undefined, done: true});
   });
 

@@ -104,6 +104,42 @@ import getPrototypeOf from 'shared/getPrototypeOf';
 
 import {injectInternals} from './ReactFlightClientDevToolsHook';
 
+import type {
+  ErroredInitializationHandler,
+  InitializationHandler,
+  ConstructionFact,
+  ConstructionState,
+  ConstructionCollection,
+  ConstructionInputs,
+  DebugInfoSource,
+} from './ReactFlightClientConstruction';
+import {
+  CONSTRUCTION_REFERENCE,
+  CONSTRUCTION_PUBLICATION,
+  CONSTRUCTION_BINDING,
+  CONSTRUCTION_PENDING,
+  CONSTRUCTION_INSTALLED,
+  CONSTRUCTION_FAILED,
+  createInitializationHandler,
+  createConstructionState,
+  getPendingConstructionField,
+  registerConstructionField,
+  settleConstructionField,
+  subscribeConstructionFact,
+  reserveConstructionCollection,
+  settleConstructionEntries,
+  createConstructionInputs,
+  readConstructionInputs,
+  subscribeConstructionFacts,
+  readConstructionContents,
+  installConstructionHead,
+  getConstructionHead,
+  aliasConstructionField,
+  getConstructionSequence,
+  publishConstructionSequence,
+  captureConstructionValue,
+} from './ReactFlightClientConstruction';
+
 import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
 
 import ReactVersion from 'shared/ReactVersion';
@@ -126,7 +162,12 @@ const ReactSharedInternals: SharedStateServer | SharedStateClient =
   React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE ||
   ReactSharedInteralsServer;
 
-export type {CallServerCallback, EncodeFormActionCallback};
+export type {
+  CallServerCallback,
+  EncodeFormActionCallback,
+  BlockedChunk,
+  FlightStreamController,
+};
 
 interface FlightStreamController {
   enqueueValue(value: any): void;
@@ -178,8 +219,8 @@ const RESPONSE_SYMBOL: RESPONSE_SYMBOL_TYPE = Symbol() as any;
 
 type PendingChunk<T> = {
   status: 'pending',
-  value: null | Array<InitializationReference | (T => mixed)>,
-  reason: null | Array<InitializationReference | (mixed => mixed)>,
+  value: null | Array<InitializationConsumer | (T => mixed)>,
+  reason: null | Array<InitializationConsumer | (mixed => mixed)>,
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
@@ -187,8 +228,8 @@ type PendingChunk<T> = {
 };
 type PendingWeakChunk<T> = {
   status: 'pending_weak',
-  value: null | Array<InitializationReference | (T => mixed)>,
-  reason: null | Array<InitializationReference | (mixed => mixed)>,
+  value: null | Array<InitializationConsumer | (T => mixed)>,
+  reason: null | Array<InitializationConsumer | (mixed => mixed)>,
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
@@ -196,8 +237,8 @@ type PendingWeakChunk<T> = {
 };
 type BlockedChunk<T> = {
   status: 'blocked',
-  value: null | Array<InitializationReference | (T => mixed)>,
-  reason: null | Array<InitializationReference | (mixed => mixed)>,
+  value: null | Array<InitializationConsumer | (T => mixed)>,
+  reason: null | Array<InitializationConsumer | (mixed => mixed)>,
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
@@ -336,15 +377,13 @@ function reactPromiseThen<T>(
     case BLOCKED:
       if (typeof resolve === 'function') {
         if (chunk.value === null) {
-          chunk.value = [] as Array<InitializationReference | (T => mixed)>;
+          chunk.value = [] as Array<InitializationConsumer | (T => mixed)>;
         }
         chunk.value.push(resolve);
       }
       if (typeof reject === 'function') {
         if (chunk.reason === null) {
-          chunk.reason = [] as Array<
-            InitializationReference | (mixed => mixed),
-          >;
+          chunk.reason = [] as Array<InitializationConsumer | (mixed => mixed)>;
         }
         chunk.reason.push(reject);
       }
@@ -390,6 +429,8 @@ type Response = {
   _encodeFormAction: void | EncodeFormActionCallback,
   _nonce: ?string,
   _chunks: Map<number, SomeChunk<any>>,
+  _construction: null | ConstructionState<ConstructionListener>,
+  _initializingModels: number,
   _stringDecoder: StringDecoder,
   _closed: boolean,
   _closedReason: mixed,
@@ -655,13 +696,14 @@ function processChunkDebugInfo<T>(
   chunk: InitializedChunk<T> | InitializedStreamChunk<any>,
   value: T,
 ): void {
+  normalizeDebugValue(response, chunk._debugInfo, true);
   filterDebugInfo(response, chunk);
   moveDebugInfoFromChunkToInnerValue(chunk, value);
 }
 
 function wakeChunk<T>(
   response: Response,
-  listeners: Array<InitializationReference | (T => mixed)>,
+  listeners: Array<InitializationConsumer | (T => mixed)>,
   value: T,
   chunk: InitializedChunk<T>,
 ): void {
@@ -670,7 +712,7 @@ function wakeChunk<T>(
     if (typeof listener === 'function') {
       listener(value);
     } else {
-      fulfillReference(response, listener, value, chunk);
+      fulfillInitializationConsumer(response, listener, value, chunk);
     }
   }
 
@@ -681,7 +723,7 @@ function wakeChunk<T>(
 
 function rejectChunk(
   response: Response,
-  listeners: Array<InitializationReference | (mixed => mixed)>,
+  listeners: Array<InitializationConsumer | (mixed => mixed)>,
   error: mixed,
 ): void {
   for (let i = 0; i < listeners.length; i++) {
@@ -689,34 +731,20 @@ function rejectChunk(
     if (typeof listener === 'function') {
       listener(error);
     } else {
-      rejectReference(response, listener.handler, error);
+      rejectInitializationConsumer(response, listener, error);
     }
   }
 }
 
-function resolveBlockedCycle<T>(
-  resolvedChunk: SomeChunk<T>,
-  reference: InitializationReference,
-): null | InitializationHandler {
-  const referencedChunk = reference.handler.chunk;
-  if (referencedChunk === null) {
-    return null;
-  }
-  if (referencedChunk === resolvedChunk) {
-    // We found the cycle. We can resolve the blocked cycle now.
-    return reference.handler;
-  }
-  const resolveListeners = referencedChunk.value;
-  if (resolveListeners !== null) {
-    for (let i = 0; i < resolveListeners.length; i++) {
-      const listener = resolveListeners[i];
-      if (typeof listener !== 'function') {
-        const foundHandler = resolveBlockedCycle(resolvedChunk, listener);
-        if (foundHandler !== null) {
-          return foundHandler;
-        }
-      }
-    }
+function getPrivateReferenceModel(
+  response: Response,
+  chunk: SomeChunk<any>,
+): null | ConstructionFact<ConstructionListener> {
+  const head = getConstructionHead(response._construction, chunk);
+  if (head !== undefined) {
+    // Model references can install an available identity. Field reads and
+    // constructors still wait separately for the inputs they consume.
+    return head;
   }
   return null;
 }
@@ -724,26 +752,28 @@ function resolveBlockedCycle<T>(
 function wakeChunkIfInitialized<T>(
   response: Response,
   chunk: SomeChunk<T>,
-  resolveListeners: Array<InitializationReference | (T => mixed)>,
-  rejectListeners: null | Array<InitializationReference | (mixed => mixed)>,
+  resolveListeners: Array<InitializationConsumer | (T => mixed)>,
+  rejectListeners: null | Array<InitializationConsumer | (mixed => mixed)>,
 ): void {
   switch (chunk.status) {
     case INITIALIZED:
       wakeChunk(response, resolveListeners, chunk.value, chunk);
       break;
     case BLOCKED:
-      // It is possible that we're blocked on our own chunk if it's a cycle.
-      // Before adding back the listeners to the chunk, let's check if it would
-      // result in a cycle.
+      // Internal references use an installed identity. Public listeners stay
+      // on the chunk until its ordinary contents pass publication.
       for (let i = 0; i < resolveListeners.length; i++) {
         const listener = resolveListeners[i];
         if (typeof listener !== 'function') {
-          const reference: InitializationReference = listener;
-          const cyclicHandler = resolveBlockedCycle(chunk, reference);
-          if (cyclicHandler !== null) {
-            // This reference points back to this chunk. We can resolve the cycle by
-            // using the value from that handler.
-            fulfillReference(response, reference, cyclicHandler.value, chunk);
+          const reference: InitializationConsumer = listener;
+          const model = getPrivateReferenceModel(response, chunk);
+          if (model !== null) {
+            fulfillInitializationConsumer(
+              response,
+              reference,
+              model.value,
+              chunk,
+            );
             resolveListeners.splice(i, 1);
             i--;
             if (rejectListeners !== null) {
@@ -1014,41 +1044,107 @@ function resolveModuleChunk<T>(
   }
 }
 
+type ModelMapping<T> = (
+  response: Response,
+  model: any,
+  parentObject: Object,
+  key: string,
+  reference: null | InitializationReference,
+) => T;
+
 type InitializationReference = {
+  +kind: 0,
   handler: InitializationHandler,
   parentObject: Object,
   key: string,
-  map: (
-    response: Response,
-    model: any,
-    parentObject: Object,
-    key: string,
-  ) => any,
+  map: ModelMapping<any>,
   path: Array<string>,
+  // Retain the source chunk when a field wait replaces a chunk wait.
+  source: SomeChunk<any>,
+  // The result of installing this reference in parentObject[key].
+  assignment: ConstructionFact<ConstructionListener>,
+  // A mapper can hand this assignment to asynchronous server-reference loading.
+  isMappingDeferred: boolean,
+  // A collection's identity is installed before its carrier is filled.
+  collection: null | ConstructionCollection<ConstructionListener>,
+  // Retain the whole carrier when a constructor waits for an input field.
+  inputs: null | ConstructionInputs<ConstructionListener>,
+  // Several input facts can wake the same operation. It finishes once.
+  queued: boolean,
+  done: boolean,
   isDebug?: boolean, // DEV-only
 };
-type PendingInitializationHandler = {
-  parent: null | InitializationHandler,
-  chunk: null | BlockedChunk<any>,
+type ConstructionPublication = {
+  +kind: 1,
+  chunk: BlockedChunk<any>,
   value: any,
-  // The controller of a stream whose chunk is blocked on its debug info. Null
-  // for every other model.
-  reason: null | FlightStreamController,
-  deps: number,
-  errored: false,
+  reason: InitializedChunk<any>['reason'],
+  handler: null | InitializationHandler,
+  waiting: null | Set<ConstructionFact<ConstructionListener>>,
+  queued: boolean,
+  done: boolean,
 };
-type ErroredInitializationHandler = {
-  parent: null | InitializationHandler,
-  chunk: null | BlockedChunk<any>,
-  value: null,
-  // The error the handler was rejected with.
-  reason: mixed,
-  deps: number,
-  errored: true,
+type ServerReferenceBinding = {
+  +kind: 2,
+  handler: InitializationHandler,
+  parentObject: Object,
+  key: string,
+  assignment: ConstructionFact<ConstructionListener>,
+  serverReference: ClientReference<any>,
+  id: string,
+  bound: null | Thenable<Array<any>>,
+  moduleStatus: 0 | 1 | 2,
+  moduleError: mixed,
+  inputs: null | ConstructionInputs<ConstructionListener>,
+  queued: boolean,
+  done: boolean,
 };
-type InitializationHandler =
-  | PendingInitializationHandler
-  | ErroredInitializationHandler;
+type InitializationConsumer = InitializationReference | ServerReferenceBinding;
+type ConstructionListener = InitializationConsumer | ConstructionPublication;
+
+// Only reuse containers after their own reviver has returned, and only
+// when there are no unresolved field assignments in this response.
+let parsingChunk: null | SomeChunk<any> = null;
+let parsingModel: any = null;
+let revivedContainers: null | WeakSet<Object> = null;
+const UNAVAILABLE_REVIVED_MODEL = {};
+
+function readRevivedModel(
+  response: Response,
+  chunk: SomeChunk<any>,
+  path: Array<string>,
+): any {
+  const completed = revivedContainers;
+  if (
+    chunk !== parsingChunk ||
+    completed === null ||
+    (response._construction !== null && response._construction.unfinished !== 0)
+  ) {
+    return UNAVAILABLE_REVIVED_MODEL;
+  }
+  let value = parsingModel;
+  for (let i = 1; i < path.length; i++) {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      path[i] === __PROTO__ ||
+      (isArray(value)
+        ? value[0] === '$' || value[0] === REACT_ELEMENT_TYPE
+        : getPrototypeOf(value) !== ObjectPrototype ||
+          (value as any).$$typeof === REACT_ELEMENT_TYPE ||
+          (value as any).$$typeof === REACT_LAZY_TYPE)
+    ) {
+      return UNAVAILABLE_REVIVED_MODEL;
+    }
+    const field = Object.getOwnPropertyDescriptor(value, path[i]);
+    if (field === undefined || !hasOwnProperty.call(field, 'value')) {
+      return UNAVAILABLE_REVIVED_MODEL;
+    }
+    value = field.value;
+  }
+  return completed.has(value) ? value : UNAVAILABLE_REVIVED_MODEL;
+}
+
 let initializingHandler: null | InitializationHandler = null;
 let initializingChunk: null | BlockedChunk<any> = null;
 let isInitializingDebugInfo: boolean = false;
@@ -1057,80 +1153,56 @@ function initializeDebugChunk(
   response: Response,
   chunk: ResolvedModelChunk<any> | PendingChunk<any> | PendingWeakChunk<any>,
 ): void {
-  const debugChunk = chunk._debugChunk;
-  if (debugChunk !== null) {
-    const debugInfo = chunk._debugInfo;
-    const prevIsInitializingDebugInfo = isInitializingDebugInfo;
-    isInitializingDebugInfo = true;
-    try {
-      if (debugChunk.status === RESOLVED_MODEL) {
-        // Find the index of this debug info by walking the linked list.
-        let idx = debugInfo.length;
-        let c = debugChunk._debugChunk;
-        while (c !== null) {
-          if (c.status !== INITIALIZED) {
-            idx++;
-          }
-          c = c._debugChunk;
-        }
-        // Initializing the model for the first time.
-        initializeModelChunk(debugChunk);
-        const initializedChunk = debugChunk as any as SomeChunk<any>;
-        switch (initializedChunk.status) {
-          case INITIALIZED: {
-            debugInfo[idx] = initializeDebugInfo(
-              response,
-              initializedChunk.value,
-            );
-            break;
-          }
-          case BLOCKED:
-          case PENDING:
-          case PENDING_WEAK: {
-            waitForReference(
-              initializedChunk,
-              debugInfo,
-              '' + idx,
-              response,
-              initializeDebugInfo,
-              [''], // path
-              true,
-            );
-            break;
-          }
-          default:
-            throw initializedChunk.reason;
-        }
-      } else {
-        switch (debugChunk.status) {
-          case INITIALIZED: {
-            // Already done.
-            break;
-          }
-          case BLOCKED:
-          case PENDING:
-          case PENDING_WEAK: {
-            // Signal to the caller that we need to wait.
-            waitForReference(
-              debugChunk,
-              {}, // noop, since we'll have already added an entry to debug info
-              'debug', // noop, but we need it to not be empty string since that indicates the root object
-              response,
-              initializeDebugInfo,
-              [''], // path
-              true,
-            );
-            break;
-          }
-          default:
-            throw debugChunk.reason;
-        }
-      }
-    } catch (error) {
-      triggerErrorOnChunk(response, chunk, error);
-    } finally {
-      isInitializingDebugInfo = prevIsInitializingDebugInfo;
+  const debugChunk: null | SomeChunk<ReactDebugInfoEntry> = chunk._debugChunk;
+  if (debugChunk === null) {
+    return;
+  }
+  const previous = isInitializingDebugInfo;
+  isInitializingDebugInfo = true;
+  try {
+    if (debugChunk.status === RESOLVED_MODEL) {
+      const state = getConstructionState(response);
+      const sequence = getConstructionSequence(state, chunk, chunk._debugInfo);
+      const i = sequence.values.length;
+      sequence.values.push(null);
+      // Reserve the destination before nested initialization. Chunk status
+      // cannot tell us whether a preceding debug destination was installed.
+      const reference = createInitializationReference<ReactDebugInfoEntry>(
+        response,
+        sequence.values,
+        '' + i,
+        initializeDebugInfo,
+        EMPTY_REFERENCE_PATH,
+        debugChunk,
+        true,
+      );
+      resolveInitializationConsumer<ReactDebugInfoEntry>(
+        response,
+        reference,
+        debugChunk,
+      );
+    } else if (
+      debugChunk.status === BLOCKED ||
+      debugChunk.status === PENDING ||
+      debugChunk.status === PENDING_WEAK
+    ) {
+      // This entry already has a producer. Only retain its dependency here.
+      waitForReference(
+        debugChunk,
+        {},
+        'debug',
+        response,
+        createModel,
+        EMPTY_REFERENCE_PATH,
+        true,
+      );
+    } else if (debugChunk.status === ERRORED) {
+      throw debugChunk.reason;
     }
+  } catch (error) {
+    triggerErrorOnChunk(response, chunk, error);
+  } finally {
+    isInitializingDebugInfo = previous;
   }
 }
 
@@ -1141,6 +1213,7 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
 
   const resolvedModel = chunk.value;
   const response = chunk.reason[RESPONSE_SYMBOL];
+  response._initializingModels++;
 
   // We go to the BLOCKED state until we've fully resolved this.
   // We do this before parsing in case we try to initialize the same chunk
@@ -1163,27 +1236,21 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
   }
 
   try {
-    const value: T = parseModel(response, resolvedModel);
+    const value: T = parseModel(response, resolvedModel, cyclicChunk);
     const handler = initializingHandler;
     if (handler !== null) {
-      if (handler.errored) {
-        // The handler errored during the parse, so `cyclicChunk` errors with
-        // the same reason. `triggerErrorOnChunk` also rejects the references
-        // that nested parses queued on `cyclicChunk` during the parse. No value
-        // will arrive for them. `initializeDebugChunk` can have errored
-        // `cyclicChunk` before the parse. That error stays.
-        if ((cyclicChunk as any).status === BLOCKED) {
-          triggerErrorOnChunk(response, cyclicChunk, handler.reason);
-        }
-        return;
+      // Attach the completed parse to its owner before installing references
+      // that can make further progress from this model's identity.
+      if (!handler.errored) {
+        handler.value = value;
       }
-      // Record on the handler which chunk it completes, and with what value,
-      // before the listeners below are examined. `resolveBlockedCycle` walks
-      // from a reference to its handler and on to that handler's chunk. A cycle
-      // that closes through `cyclicChunk` is only found once `handler.chunk` is
-      // `cyclicChunk`.
-      handler.value = value;
       handler.chunk = cyclicChunk;
+    }
+
+    if (response._construction !== null && (value as any) !== null) {
+      // The reviver has finished. A non-null result is an installed root value;
+      // a null root can still be an unresolved reference's placeholder.
+      installConstructionHead(response._construction, cyclicChunk, value);
     }
 
     const listeners = cyclicChunk.value;
@@ -1195,29 +1262,24 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
       // parsing. They come from models that were parsed nested inside that
       // parse and that pointed back at `cyclicChunk`. They fall in two groups.
       //
-      // A reference whose handler is transitively waiting on `cyclicChunk` is a
-      // cycle. Neither side can complete before the other, so one of them has
-      // to accept the value as it is now. The reference receives the current
-      // object, and the outstanding references fill it in place.
+      // Internal references can use the installed root now. Selected fields
+      // and constructor inputs retain their own obligations. Completing a
+      // reference does not authorize publication of the enclosing contents.
       //
-      // Every other listener waits. Its handler is not waiting on
-      // `cyclicChunk`, so it can receive the value once the model has resolved
-      // its own references, like any reference into a blocked chunk does.
-      // Handing it the value now would complete that handler with an object
-      // that still has references outstanding. Function listeners have no
-      // handler and always wait.
-      let cyclic: null | Array<InitializationReference> = null;
-      let deferred: null | Array<InitializationReference | (T => mixed)> = null;
+      // Every other listener waits for the model's references to finish.
+      // Function listeners are public observations and always wait.
+      let available: null | Array<InitializationConsumer> = null;
+      let deferred: null | Array<InitializationConsumer | (T => mixed)> = null;
       for (let i = 0; i < listeners.length; i++) {
         const listener = listeners[i];
         if (
           typeof listener !== 'function' &&
-          resolveBlockedCycle(cyclicChunk, listener) !== null
+          getPrivateReferenceModel(response, cyclicChunk) !== null
         ) {
-          if (cyclic === null) {
-            cyclic = [];
+          if (available === null) {
+            available = [];
           }
-          cyclic.push(listener);
+          available.push(listener);
           // A reference is queued for rejection as the same object that is
           // queued for resolution. It is fulfilled below, so its rejection
           // entry goes.
@@ -1234,49 +1296,61 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
           deferred.push(listener);
         }
       }
-      // Put the deferred listeners back on `cyclicChunk` before any cyclic
+      // Put the deferred listeners back on `cyclicChunk` before any available
       // reference is fulfilled. Fulfilling one can complete `cyclicChunk`, and
       // completion wakes what is queued on it at that moment.
       if (deferred !== null) {
         cyclicChunk.value = deferred;
         cyclicChunk.reason = rejectListeners;
       }
-      if (cyclic !== null) {
-        for (let i = 0; i < cyclic.length; i++) {
-          fulfillReference(response, cyclic[i], value, cyclicChunk);
+      if (available !== null) {
+        for (let i = 0; i < available.length; i++) {
+          fulfillInitializationConsumer(
+            response,
+            available[i],
+            value,
+            cyclicChunk,
+          );
         }
       }
     }
 
+    if (handler !== null && handler.errored) {
+      // Failure of the whole model does not invalidate its installed identity
+      // or every field inside it. Internal references above can still select
+      // an unaffected field; public observers receive the model's error.
+      if ((cyclicChunk as any).status === BLOCKED) {
+        triggerErrorOnChunk(response, cyclicChunk, handler.reason);
+      }
+      return;
+    }
+
     if ((cyclicChunk as any).status !== BLOCKED) {
-      // Fulfilling a cyclic reference completed `cyclicChunk`, or failed and
+      // Fulfilling an available reference completed `cyclicChunk`, or failed and
       // errored it. A failure rejects the reference's handler. The rejection
       // reaches `cyclicChunk`, directly or through the cycle, because
       // `handler.chunk` is set.
       return;
     }
-    if (handler !== null && handler.deps > 0) {
-      // The model references chunks that have not resolved yet. `cyclicChunk`
-      // stays BLOCKED, with the deferred listeners queued on it, until the last
-      // of those resolves.
-      return;
-    }
-    initializeBlockedChunk(response, cyclicChunk, value, null);
+    requestConstructionPublication(response, cyclicChunk, value, null, handler);
   } catch (error) {
-    const erroredChunk: ErroredChunk<T> = chunk as any;
-    erroredChunk.status = ERRORED;
-    erroredChunk.reason = error;
+    triggerErrorOnChunk(response, cyclicChunk, error);
   } finally {
     initializingHandler = prevHandler;
     if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
       initializingChunk = prevChunk;
     }
+    response._initializingModels--;
+    drainConstruction(response);
   }
 }
 
 function initializeModuleChunk<T>(chunk: ResolvedModuleChunk<T>): void {
   try {
     const value: T = requireModule(chunk.value);
+    // Client exports are external values. Their properties and getters are
+    // not reader construction dependencies.
+    markConstructionExternalValue(value);
     const initializedChunk: InitializedChunk<T> = chunk as any;
     initializedChunk.status = INITIALIZED;
     initializedChunk.value = value;
@@ -1391,6 +1465,7 @@ function initializeElement(
     SomeChunk<React$Element<any>>,
   >,
 ): void {
+  normalizeDebugElement(response, element, lazyNode);
   if (!__DEV__) {
     return;
   }
@@ -1490,6 +1565,7 @@ function createElement(
   owner: ?ReactComponentInfo, // DEV-only
   stack: ?ReactStackTrace, // DEV-only
   validated: 0 | 1 | 2, // DEV-only
+  tuple: Object,
 ):
   | React$Element<any>
   | LazyComponent<React$Element<any>, SomeChunk<React$Element<any>>> {
@@ -1558,6 +1634,26 @@ function createElement(
     // We pop the stack to the previous outer handler before leaving the Element.
     // This is effectively the complete phase.
     initializingHandler = handler.parent;
+    let contentsPending = false;
+    if (
+      !handler.errored &&
+      handler.deps === 0 &&
+      response._construction !== null
+    ) {
+      try {
+        contentsPending =
+          readConstructionContents(
+            response._construction,
+            element,
+            isConstructionBoundary,
+          ) !== null;
+      } catch (error) {
+        const erroredHandler: ErroredInitializationHandler = handler as any;
+        erroredHandler.errored = true;
+        erroredHandler.value = null;
+        erroredHandler.reason = error;
+      }
+    }
     if (handler.errored) {
       // Something errored inside this Element's props. We can turn this Element
       // into a Lazy so that we can still render up until that Lazy is rendered.
@@ -1587,19 +1683,40 @@ function createElement(
       }
       return createLazyChunkWrapper(erroredChunk, validated);
     }
-    if (handler.deps > 0) {
+    if (handler.deps > 0 || contentsPending) {
       // We have blocked references inside this Element but we can turn this into
       // a Lazy node referencing this Element to let everything around it proceed.
       const blockedChunk: BlockedChunk<React$Element<any>> =
         createBlockedChunk(response);
       handler.value = element;
       handler.chunk = blockedChunk;
+      // The native element already exists even though its fields may still
+      // load. Selected paths can use it without publishing the element.
+      const state = getConstructionState(response);
+      aliasConstructionField(state, tuple, '1', element, 'type');
+      aliasConstructionField(state, tuple, '2', element, 'key');
+      aliasConstructionField(state, tuple, '3', element, 'props');
+      if (__DEV__) {
+        aliasConstructionField(state, tuple, '4', element, '_owner');
+        aliasConstructionField(state, tuple, '5', element, '_debugStack');
+      }
+      installConstructionHead(state, blockedChunk, element);
       const lazyNode = createLazyChunkWrapper(blockedChunk, validated);
+      if (__DEV__) {
+        registerDebugLazy(response, lazyNode);
+      }
       if (__DEV__) {
         // After we have initialized any blocked references, initialize stack etc.
         const init = initializeElement.bind(null, response, element, lazyNode);
         blockedChunk.then(init, init);
       }
+      requestConstructionPublication(
+        response,
+        blockedChunk,
+        element,
+        null,
+        handler,
+      );
       return lazyNode;
     }
   }
@@ -1712,6 +1829,7 @@ function initializeBlockedChunk<T>(
 ): void {
   const resolveListeners = chunk.value;
   if (__DEV__) {
+    value = normalizeDebugValue(response, value, false);
     // Only a blocked chunk receives debug info, so release the set here.
     chunk._receivedDebugInfo = null;
   }
@@ -1749,7 +1867,238 @@ function initializeChunkIfUnblocked(
   // `handler.reason` is the controller of a stream whose chunk was blocked on
   // its debug info, and null otherwise. It becomes the initialized chunk's
   // `reason` either way.
-  initializeBlockedChunk(response, chunk, handler.value, handler.reason);
+  requestConstructionPublication(
+    response,
+    chunk,
+    handler.value,
+    handler.reason,
+    handler,
+  );
+}
+
+let constructionExternalValues: null | WeakSet<Object> = null;
+
+function markConstructionExternalValue(value: any): void {
+  if (typeof value === 'object' && value !== null) {
+    let externalValues = constructionExternalValues;
+    if (externalValues === null) {
+      externalValues = constructionExternalValues = new WeakSet();
+    }
+    externalValues.add(value);
+  }
+}
+
+function isConstructionBoundary(value: any): boolean {
+  return (
+    (constructionExternalValues !== null &&
+      constructionExternalValues.has(value)) ||
+    value instanceof ReactPromise ||
+    value.$$typeof === REACT_LAZY_TYPE
+  );
+}
+
+function requestConstructionPublication(
+  response: Response,
+  chunk: BlockedChunk<any>,
+  value: any,
+  reason: InitializedChunk<any>['reason'],
+  handler: null | InitializationHandler,
+): void {
+  const state = response._construction;
+  if (state === null) {
+    initializeBlockedChunk(response, chunk, value, reason);
+    return;
+  }
+  let publications = state.publications;
+  const existing = publications === null ? undefined : publications.get(chunk);
+  if (existing !== undefined && existing.kind === CONSTRUCTION_PUBLICATION) {
+    enqueueConstructionPublication(response, existing);
+    return;
+  }
+  const publication: ConstructionPublication = {
+    kind: CONSTRUCTION_PUBLICATION,
+    chunk,
+    value,
+    reason,
+    handler,
+    waiting: null,
+    queued: false,
+    done: false,
+  };
+  if (publications === null) {
+    publications = state.publications = new WeakMap();
+  }
+  publications.set(chunk, publication);
+  enqueueConstructionPublication(response, publication);
+}
+
+function enqueueConstructionPublication(
+  response: Response,
+  publication: ConstructionPublication,
+): void {
+  if (!publication.done && !publication.queued) {
+    publication.queued = true;
+    getConstructionState(response).publicationQueue.push(publication);
+  }
+  drainConstruction(response);
+}
+
+function enqueueConstructionOperation(
+  response: Response,
+  operation: InitializationConsumer,
+): void {
+  if (!operation.done && !operation.queued) {
+    operation.queued = true;
+    getConstructionState(response).operationQueue.push(operation);
+  }
+  drainConstruction(response);
+}
+
+// Installing one fact can finish several other operations. Coalesce input
+// wakeups within the batch, then run public callbacks after those operations
+// and the enclosing reviver have returned.
+function drainConstruction(response: Response): void {
+  const state = response._construction;
+  if (
+    state === null ||
+    state.draining ||
+    state.waking !== 0 ||
+    response._initializingModels !== 0
+  ) {
+    return;
+  }
+  state.draining = true;
+  try {
+    const operations = state.operationQueue;
+    const publications = state.publicationQueue;
+    let operationIndex = 0;
+    let publicationIndex = 0;
+    while (
+      operationIndex < operations.length ||
+      publicationIndex < publications.length
+    ) {
+      while (operationIndex < operations.length) {
+        const operation = operations[operationIndex++];
+        if (operation.kind !== CONSTRUCTION_PUBLICATION) {
+          operation.queued = false;
+          if (operation.kind === CONSTRUCTION_BINDING) {
+            resumeServerReferenceBinding(response, operation);
+          } else {
+            resumeInitializationInputs(response, operation);
+          }
+        }
+      }
+      if (publicationIndex < publications.length) {
+        const publication = publications[publicationIndex++];
+        if (publication.kind === CONSTRUCTION_PUBLICATION) {
+          publication.queued = false;
+          resumeConstructionPublication(response, publication);
+        }
+      }
+    }
+    operations.length = 0;
+    publications.length = 0;
+  } finally {
+    state.draining = false;
+  }
+}
+
+function resumeConstructionPublication(
+  response: Response,
+  publication: ConstructionPublication,
+): void {
+  if (publication.done) {
+    return;
+  }
+  const state = getConstructionState(response);
+  const {chunk, handler} = publication;
+  if ((chunk as SomeChunk<any>).status !== BLOCKED) {
+    publication.done = true;
+    if (state.publications !== null) {
+      state.publications.delete(chunk);
+    }
+    return;
+  }
+  if (handler !== null && handler.errored) {
+    return;
+  }
+  let pending: null | Array<ConstructionFact<ConstructionListener>>;
+  try {
+    pending = readConstructionContents(
+      state,
+      handler === null ? publication.value : handler.value,
+      isConstructionBoundary,
+    );
+    if (__DEV__) {
+      const sequences = state.sequences;
+      const own = sequences === null ? undefined : sequences.get(chunk);
+      if (own !== undefined) {
+        const debugPending = readConstructionContents(
+          state,
+          own.values,
+          isConstructionBoundary,
+        );
+        if (debugPending !== null) {
+          pending =
+            pending === null ? debugPending : pending.concat(debugPending);
+        }
+      }
+      const sources = handler === null ? null : handler.debugSources;
+      if (sources !== null) {
+        for (let i = 0; i < sources.length; i++) {
+          const source = sources[i];
+          const sequence =
+            sequences === null ? undefined : sequences.get(source);
+          const debugPending =
+            sequence === undefined
+              ? null
+              : readConstructionContents(
+                  state,
+                  sequence.values,
+                  isConstructionBoundary,
+                );
+          if (debugPending !== null) {
+            pending =
+              pending === null ? debugPending : pending.concat(debugPending);
+          } else {
+            transferReferencedDebugInfo(chunk, source);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    publication.done = true;
+    if (state.publications !== null) {
+      state.publications.delete(chunk);
+    }
+    if (handler === null) {
+      triggerErrorOnChunk(response, chunk, error);
+    } else {
+      rejectReference(response, handler, error);
+    }
+    return;
+  }
+  if (pending !== null) {
+    publication.waiting = subscribeConstructionFacts(
+      publication.waiting,
+      pending,
+      publication,
+    );
+    return;
+  }
+  if (handler !== null && handler.deps !== 0) {
+    return;
+  }
+  publication.done = true;
+  if (state.publications !== null) {
+    state.publications.delete(chunk);
+  }
+  initializeBlockedChunk(
+    response,
+    chunk,
+    handler === null ? publication.value : handler.value,
+    publication.reason,
+  );
 }
 
 function fulfillReference(
@@ -1758,7 +2107,12 @@ function fulfillReference(
   value: any,
   fulfilledChunk: SomeChunk<any>,
 ): void {
+  if (reference.done) {
+    return;
+  }
   const {handler, parentObject, key, map, path} = reference;
+  reference.source = fulfilledChunk;
+  let mappedValue;
 
   try {
     for (let i = 1; i < path.length; i++) {
@@ -1791,17 +2145,11 @@ function fulfillReference(
               continue;
             }
             case BLOCKED: {
-              // It is possible that we're blocked on our own chunk if it's a cycle.
-              // Before adding the listener to the inner chunk, let's check if it would
-              // result in a cycle.
-              const cyclicHandler = resolveBlockedCycle(
-                referencedChunk,
-                reference,
-              );
-              if (cyclicHandler !== null) {
-                // This reference points back to this chunk. We can resolve the cycle by
-                // using the value from that handler.
-                value = cyclicHandler.value;
+              // A temporary wrapper may already have a native element whose
+              // fields are installed separately from its public completion.
+              const model = getPrivateReferenceModel(response, referencedChunk);
+              if (model !== null) {
+                value = model.value;
                 continue;
               }
               // Fallthrough
@@ -1830,9 +2178,9 @@ function fulfillReference(
               return;
             }
             default: {
-              rejectReference(
+              rejectInitializationReference(
                 response,
-                reference.handler,
+                reference,
                 referencedChunk.reason,
               );
               return;
@@ -1846,100 +2194,478 @@ function fulfillReference(
         value !== null &&
         hasOwnProperty.call(value, name)
       ) {
+        const fact = getPendingConstructionField(
+          response._construction,
+          value,
+          name,
+        );
+        if (fact !== undefined) {
+          // The object is available, but this field still has a reference
+          // waiting to resolve. Reading it now would return the placeholder.
+          // Wait for that field, then continue with its resolved value. The
+          // listener receives the field's value, so skip the path leading to it.
+          path.splice(0, i);
+          subscribeConstructionFact(fact, reference);
+          return;
+        }
         value = value[name];
       } else {
         throw new Error('Invalid reference.');
       }
     }
 
-    while (
-      typeof value === 'object' &&
-      value !== null &&
-      value.$$typeof === REACT_LAZY_TYPE
-    ) {
-      // If what we're referencing is a Lazy it must be because we inserted one as a virtual node
-      // while it was blocked by other data. If it's no longer blocked, we can unwrap it.
-      const referencedChunk: SomeChunk<any> = value._payload;
-      if (referencedChunk === handler.chunk) {
-        // This is a reference to the thing we're currently blocking. We can peak
-        // inside of it to get the value.
-        value = handler.value;
-        continue;
+    // Paths can use a private element identity to select a field. The final
+    // value still represents a suspended handle until its payload completes.
+    value = resolveLazy(value) as any;
+
+    const collection = reference.collection;
+    if (map !== createModel) {
+      reference.inputs = createConstructionInputs(
+        value,
+        map === createMap || map === createFormData,
+      );
+      if (collection !== null) {
+        collection.inputs = value;
       } else {
-        switch (referencedChunk.status) {
-          case RESOLVED_MODEL:
-            initializeModelChunk(referencedChunk);
-            break;
-          case RESOLVED_MODULE:
-            initializeModuleChunk(referencedChunk);
-            break;
-        }
-        switch (referencedChunk.status) {
-          case INITIALIZED: {
-            value = referencedChunk.value;
-            continue;
-          }
-        }
+        reference.assignment.inputs = value;
       }
-      break;
+      resumeInitializationInputs(response, reference);
+      return;
     }
-
-    const mappedValue = map(response, value, parentObject, key);
-    if (key !== __PROTO__) {
-      parentObject[key] = mappedValue;
-    }
-
-    // If this is the root object for a model reference, where `handler.value`
-    // is a stale `null`, the resolved value can be used directly.
-    if (key === '' && handler.value === null) {
-      handler.value = mappedValue;
-    }
-
-    // If the parent object is an unparsed React element tuple, we also need to
-    // update the props and owner of the parsed element object (i.e.
-    // handler.value).
-    if (
-      parentObject[0] === REACT_ELEMENT_TYPE &&
-      typeof handler.value === 'object' &&
-      handler.value !== null &&
-      handler.value.$$typeof === REACT_ELEMENT_TYPE
-    ) {
-      const element: any = handler.value;
-      switch (key) {
-        case '3':
-          if (__DEV__ && !reference.isDebug) {
-            transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-          }
-          element.props = mappedValue;
-          break;
-        case '4':
-          // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
-          if (__DEV__) {
-            element._owner = mappedValue;
-          }
-          break;
-        case '5':
-          // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
-          if (__DEV__) {
-            element._debugStack = mappedValue;
-          }
-          break;
-        default:
-          if (__DEV__ && !reference.isDebug) {
-            transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-          }
-          break;
-      }
-    } else if (__DEV__ && !reference.isDebug) {
-      transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-    }
+    mappedValue = map(response, value, parentObject, key, reference);
+    installInitializationReference(
+      response,
+      reference,
+      mappedValue,
+      fulfilledChunk,
+    );
   } catch (error) {
-    rejectReference(response, reference.handler, error);
+    rejectInitializationReference(response, reference, error);
     return;
   }
 
+  finishInitializationReference(response, reference, mappedValue);
+}
+
+function installInitializationReference(
+  response: Response,
+  reference: InitializationReference,
+  mappedValue: any,
+  fulfilledChunk: SomeChunk<any>,
+): void {
+  const {handler, parentObject, key} = reference;
+  if (__DEV__) {
+    recordDebugReference(response, reference, mappedValue);
+  }
+  if (key !== __PROTO__) {
+    parentObject[key] = mappedValue;
+  }
+
+  // If this is the root object for a model reference, where `handler.value`
+  // is a stale `null`, the resolved value can be used directly.
+  if (key === '' && !handler.errored && handler.value === null) {
+    handler.value = mappedValue;
+  }
+
+  // If the parent object is an unparsed React element tuple, we also need to
+  // update the props and owner of the parsed element object (i.e.
+  // handler.value).
+  if (
+    parentObject[0] === REACT_ELEMENT_TYPE &&
+    typeof handler.value === 'object' &&
+    handler.value !== null &&
+    handler.value.$$typeof === REACT_ELEMENT_TYPE
+  ) {
+    const element: any = handler.value;
+    switch (key) {
+      case '1':
+        element.type = mappedValue;
+        break;
+      case '2':
+        element.key = mappedValue;
+        break;
+      case '3':
+        if (__DEV__ && !reference.isDebug) {
+          recordReferencedDebugInfo(handler, fulfilledChunk);
+        }
+        element.props = mappedValue;
+        break;
+      case '4':
+        // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
+        if (__DEV__) {
+          element._owner = mappedValue;
+        }
+        break;
+      case '5':
+        // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
+        if (__DEV__) {
+          element._debugStack = mappedValue;
+        }
+        break;
+      default:
+        if (__DEV__ && !reference.isDebug) {
+          recordReferencedDebugInfo(handler, fulfilledChunk);
+        }
+        break;
+    }
+  } else if (__DEV__ && !reference.isDebug) {
+    recordReferencedDebugInfo(handler, fulfilledChunk);
+  }
+}
+
+function finishInitializationReference(
+  response: Response,
+  reference: InitializationReference,
+  mappedValue: any,
+): void {
+  if (reference.done) {
+    return;
+  }
+  reference.done = true;
+  const {handler, parentObject, key} = reference;
+  // loadServerReference can take over this assignment while its module or
+  // bound arguments load. It will install the field and wake its readers when
+  // that work finishes. Returning its placeholder does not finish the field.
+  if (!reference.isMappingDeferred) {
+    finishInitializationField(
+      response,
+      parentObject,
+      key,
+      reference.assignment,
+      CONSTRUCTION_INSTALLED,
+      mappedValue,
+    );
+  }
   handler.deps--;
   initializeChunkIfUnblocked(response, handler);
+}
+
+function getConstructionState(
+  response: Response,
+): ConstructionState<ConstructionListener> {
+  let state = response._construction;
+  if (state === null) {
+    state = response._construction = createConstructionState();
+  }
+  return state;
+}
+
+function wakeConstructionReferences(
+  response: Response,
+  listeners: null | Array<ConstructionListener>,
+  status: 1 | 2,
+  value: any,
+): void {
+  if (listeners === null) {
+    return;
+  }
+  const state = getConstructionState(response);
+  state.waking++;
+  try {
+    for (let i = 0; i < listeners.length; i++) {
+      const reference = listeners[i];
+      if (reference.kind === CONSTRUCTION_PUBLICATION) {
+        enqueueConstructionPublication(response, reference);
+      } else if (status === CONSTRUCTION_FAILED) {
+        rejectInitializationConsumer(response, reference, value);
+      } else if (
+        reference.kind === CONSTRUCTION_BINDING ||
+        reference.inputs !== null
+      ) {
+        // Several slots can be installed in the same parse or wakeup.
+        // Resume their owning operation once after that batch returns.
+        enqueueConstructionOperation(response, reference);
+      } else {
+        fulfillReference(response, reference, value, reference.source);
+      }
+    }
+  } finally {
+    state.waking--;
+    drainConstruction(response);
+  }
+}
+
+function finishInitializationField(
+  response: Response,
+  parentObject: Object,
+  key: string,
+  fact: ConstructionFact<ConstructionListener>,
+  status: 1 | 2,
+  value: any,
+): void {
+  const listeners = settleConstructionField(
+    getConstructionState(response),
+    parentObject,
+    key,
+    fact,
+    status,
+    value,
+  );
+  if (__DEV__ && status === CONSTRUCTION_INSTALLED) {
+    const state = getConstructionState(response);
+    const sequence =
+      state.sequences === null ? undefined : state.sequences.get(parentObject);
+    if (sequence !== undefined) {
+      // Moving debug info is observable too. Install the visible prefix
+      // before waking consumers that may publish and move it to a value.
+      publishConstructionSequence(state, sequence);
+    }
+  }
+  wakeConstructionReferences(response, listeners, status, value);
+}
+
+function rejectInitializationReference(
+  response: Response,
+  reference: InitializationReference,
+  error: mixed,
+): void {
+  if (reference.done) {
+    return;
+  }
+  reference.done = true;
+  const collection = reference.collection;
+  if (collection !== null) {
+    finishCollectionEntries(response, collection, CONSTRUCTION_FAILED, error);
+  }
+  finishInitializationField(
+    response,
+    reference.parentObject,
+    reference.key,
+    reference.assignment,
+    CONSTRUCTION_FAILED,
+    error,
+  );
+  rejectReference(response, reference.handler, error);
+}
+
+function reserveInitializationCollection(
+  response: Response,
+  reference: InitializationReference,
+): void {
+  const map = reference.map;
+  if (map !== createSet && map !== createMap) {
+    return;
+  }
+  const value = map === createSet ? new Set<any>() : new Map<any, any>();
+  reference.collection = reserveConstructionCollection(
+    getConstructionState(response),
+    value,
+  );
+
+  // A carrier can refer back to this destination before it finishes loading.
+  // Install the identity before waking any references that select the field.
+  const {handler, parentObject, key} = reference;
+  if (key !== __PROTO__) {
+    parentObject[key] = value;
+  }
+  if (key === '' && !handler.errored && handler.value === null) {
+    handler.value = value;
+  }
+  finishInitializationField(
+    response,
+    parentObject,
+    key,
+    reference.assignment,
+    CONSTRUCTION_INSTALLED,
+    value,
+  );
+}
+
+function finishCollectionEntries(
+  response: Response,
+  collection: ConstructionCollection<ConstructionListener>,
+  status: 1 | 2,
+  value: any,
+): void {
+  const listeners = settleConstructionEntries(
+    getConstructionState(response),
+    collection,
+    status,
+    value,
+  );
+  wakeConstructionReferences(response, listeners, status, value);
+}
+
+function resumeInitializationInputs(
+  response: Response,
+  reference: InitializationReference,
+): void {
+  const collection = reference.collection;
+  const inputs = reference.inputs;
+  if (
+    reference.done ||
+    inputs === null ||
+    (collection !== null && collection.entries.status !== CONSTRUCTION_PENDING)
+  ) {
+    return;
+  }
+  // A sibling's failure rejects the enclosing model, but other references can
+  // still select this field. Finish it according to its own inputs.
+  let mappedValue;
+  try {
+    const pending =
+      __DEV__ && reference.map === initializeDebugInfo
+        ? readConstructionContents(
+            getConstructionState(response),
+            inputs.values,
+            isConstructionBoundary,
+          )
+        : readConstructionInputs(response._construction, inputs);
+    if (pending !== null) {
+      // Retain one constructor dependency, but follow every missing input.
+      // A failed input must reject even if another service is still withheld.
+      inputs.waiting = subscribeConstructionFacts(
+        inputs.waiting,
+        pending,
+        reference,
+      );
+      return;
+    }
+    mappedValue =
+      collection === null
+        ? reference.map(
+            response,
+            inputs.values,
+            reference.parentObject,
+            reference.key,
+            reference,
+          )
+        : fillInitializationCollection(response, collection, inputs.values);
+    installInitializationReference(
+      response,
+      reference,
+      mappedValue,
+      reference.source,
+    );
+  } catch (error) {
+    rejectInitializationReference(response, reference, error);
+    return;
+  }
+  reference.inputs = null;
+  finishInitializationReference(response, reference, mappedValue);
+}
+
+function waitForConstructionInputs<T>(
+  response: Response,
+  inputs: ConstructionInputs<ConstructionListener>,
+  parentObject: Object,
+  key: string,
+  map: ModelMapping<T>,
+  chunk: SomeChunk<any>,
+): T {
+  const reference = createInitializationReference(
+    response,
+    parentObject,
+    key,
+    map,
+    [],
+    chunk,
+    isInitializingDebugInfo,
+  );
+  const collection = reference.collection;
+  if (collection !== null) {
+    collection.inputs = inputs.values;
+  } else {
+    reference.assignment.inputs = inputs.values;
+  }
+  reference.inputs = inputs;
+  // Reserving the identity can wake another reference. Recheck the inputs
+  // rather than subscribing to a fact that might have settled in that work.
+  resumeInitializationInputs(response, reference);
+  return (
+    reference.assignment.status === CONSTRUCTION_INSTALLED
+      ? reference.assignment.value
+      : null
+  ) as any;
+}
+
+function fillInitializationCollection(
+  response: Response,
+  collection: ConstructionCollection<ConstructionListener>,
+  model: Array<any>,
+): Set<any> | Map<any, any> {
+  const value = collection.value;
+  collection.inputs = model;
+  // Copy into the identity already installed at the destination. Allocating a
+  // second collection here would leave its back-references pointing elsewhere.
+  if (value instanceof Set) {
+    for (let i = 0; i < model.length; i++) {
+      value.add(model[i]);
+    }
+  } else {
+    for (let i = 0; i < model.length; i++) {
+      value.set(model[i][0], model[i][1]);
+    }
+  }
+  finishCollectionEntries(response, collection, CONSTRUCTION_INSTALLED, value);
+  return value;
+}
+
+function createInitializationReference<T>(
+  response: Response,
+  parentObject: Object,
+  key: string,
+  map: ModelMapping<any>,
+  path: Array<string>,
+  source: SomeChunk<T>,
+  isAwaitingDebugInfo: boolean,
+): InitializationReference {
+  let handler: InitializationHandler;
+  if (initializingHandler) {
+    handler = initializingHandler;
+    handler.deps++;
+  } else {
+    handler = initializingHandler = createInitializationHandler(null, 1);
+  }
+
+  const reference: InitializationReference = {
+    kind: CONSTRUCTION_REFERENCE,
+    handler,
+    parentObject,
+    key,
+    map,
+    path,
+    source,
+    isMappingDeferred: false,
+    assignment: registerConstructionField(
+      getConstructionState(response),
+      parentObject,
+      key,
+    ),
+    collection: null,
+    inputs: null,
+    queued: false,
+    done: false,
+  };
+  if (__DEV__) {
+    reference.isDebug = isAwaitingDebugInfo;
+  }
+  reserveInitializationCollection(response, reference);
+  return reference;
+}
+
+function waitForConstructionField<T>(
+  response: Response,
+  fact: ConstructionFact<ConstructionListener>,
+  parentObject: Object,
+  key: string,
+  map: ModelMapping<T>,
+  path: Array<string>,
+  chunk: SomeChunk<any>,
+): T {
+  const reference = createInitializationReference(
+    response,
+    parentObject,
+    key,
+    map,
+    path,
+    chunk,
+    isInitializingDebugInfo,
+  );
+  subscribeConstructionFact(fact, reference);
+  return (
+    reference.collection === null ? null : reference.collection.value
+  ) as any;
 }
 
 function rejectReference(
@@ -1994,11 +2720,11 @@ function rejectReference(
 }
 
 function waitForReference<T>(
-  referencedChunk: PendingChunk<T> | PendingWeakChunk<T> | BlockedChunk<T>,
+  referencedChunk: SomeChunk<T>,
   parentObject: Object,
   key: string,
   response: Response,
-  map: (response: Response, model: any, parentObject: Object, key: string) => T,
+  map: ModelMapping<T>,
   path: Array<string>,
   isAwaitingDebugInfo: boolean, // DEV-only
 ): T {
@@ -2022,59 +2748,147 @@ function waitForReference<T>(
     }
   }
 
-  let handler: InitializationHandler;
-  if (initializingHandler) {
-    handler = initializingHandler;
-    handler.deps++;
-  } else {
-    handler = initializingHandler = {
-      parent: null,
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
-  }
-
-  const reference: InitializationReference = {
-    handler,
+  const reference = createInitializationReference(
+    response,
     parentObject,
     key,
     map,
     path,
-  };
-  if (__DEV__) {
-    reference.isDebug = isAwaitingDebugInfo;
+    referencedChunk,
+    isAwaitingDebugInfo,
+  );
+
+  resolveInitializationConsumer(response, reference, referencedChunk);
+  return (
+    reference.assignment.status === CONSTRUCTION_INSTALLED
+      ? reference.assignment.value
+      : null
+  ) as any;
+}
+
+function resolveInitializationConsumer<T>(
+  response: Response,
+  reference: InitializationConsumer,
+  chunk: SomeChunk<T>,
+): void {
+  if (chunk.status === RESOLVED_MODEL) {
+    initializeModelChunk(chunk);
+  } else if (chunk.status === RESOLVED_MODULE) {
+    initializeModuleChunk(chunk);
+  }
+  switch (chunk.status) {
+    case INITIALIZED:
+      fulfillInitializationConsumer(response, reference, chunk.value, chunk);
+      return;
+    case ERRORED: {
+      // A failed model can still contain the selected field. Its private head
+      // and field facts distinguish that field's result from the whole model.
+      const head = getPrivateReferenceModel(response, chunk);
+      if (head !== null) {
+        fulfillInitializationConsumer(response, reference, head.value, chunk);
+        return;
+      }
+      rejectInitializationConsumer(response, reference, chunk.reason);
+      return;
+    }
+    case HALTED:
+      return;
+    case BLOCKED:
+    case PENDING:
+    case PENDING_WEAK: {
+      const head = getPrivateReferenceModel(response, chunk);
+      if (head !== null) {
+        fulfillInitializationConsumer(response, reference, head.value, chunk);
+        return;
+      }
+      if (chunk.value === null) {
+        chunk.value = [reference];
+      } else {
+        chunk.value.push(reference);
+      }
+      if (chunk.reason === null) {
+        chunk.reason = [reference];
+      } else {
+        chunk.reason.push(reference);
+      }
+    }
+  }
+}
+
+type ServerReferenceMetadata = {
+  id: any,
+  bound: null | Thenable<Array<any>>,
+  name?: string, // DEV-only
+  env?: string, // DEV-only
+  location?: ReactFunctionLocation, // DEV-only
+};
+
+function initializeServerReference<T>(
+  response: Response,
+  serverReference: ClientReference<T>,
+  id: string,
+  bound: null | Thenable<Array<any>>,
+  parentObject: Object,
+  key: string,
+  handler: InitializationHandler,
+  args: null | Array<any>,
+): any {
+  let resolvedValue = requireModule(serverReference) as any;
+
+  if (bound) {
+    const boundArgs: Array<any> = isArray(args) ? args.slice(0) : [];
+    boundArgs.unshift(null); // this
+    resolvedValue = resolvedValue.bind.apply(resolvedValue, boundArgs);
+    captureConstructionValue(response._construction, resolvedValue, boundArgs);
   }
 
-  // Add "listener".
-  if (referencedChunk.value === null) {
-    referencedChunk.value = [reference];
-  } else {
-    referencedChunk.value.push(reference);
-  }
-  if (referencedChunk.reason === null) {
-    referencedChunk.reason = [reference];
-  } else {
-    referencedChunk.reason.push(reference);
+  registerBoundServerReference(
+    resolvedValue,
+    id,
+    bound,
+    response._encodeFormAction,
+  );
+
+  if (key !== __PROTO__) {
+    parentObject[key] = resolvedValue;
   }
 
-  // Return a place holder value for now.
-  return null as any;
+  // If this is the root object for a model reference, where `handler.value`
+  // is a stale `null`, the resolved value can be used directly.
+  if (key === '' && handler.value === null) {
+    handler.value = resolvedValue;
+  }
+
+  // If the parent object is an unparsed React element tuple, we also need to
+  // update the props and owner of the parsed element object (i.e.
+  // handler.value).
+  if (
+    parentObject[0] === REACT_ELEMENT_TYPE &&
+    typeof handler.value === 'object' &&
+    handler.value !== null &&
+    handler.value.$$typeof === REACT_ELEMENT_TYPE
+  ) {
+    const element: any = handler.value;
+    switch (key) {
+      case '3':
+        element.props = resolvedValue;
+        break;
+      case '4':
+        if (__DEV__) {
+          element._owner = resolvedValue;
+        }
+        break;
+    }
+  }
+  return resolvedValue;
 }
 
 function loadServerReference<A: Iterable<any>, T>(
   response: Response,
-  metaData: {
-    id: any,
-    bound: null | Thenable<Array<any>>,
-    name?: string, // DEV-only
-    env?: string, // DEV-only
-    location?: ReactFunctionLocation, // DEV-only
-  },
+  metaData: ServerReferenceMetadata,
   parentObject: Object,
   key: string,
+  reference: null | InitializationReference,
 ): (...A) => Promise<T> {
   if (key === 'then') {
     // This should never happen because we always serialize objects with then-functions
@@ -2100,148 +2914,203 @@ function loadServerReference<A: Iterable<any>, T>(
     resolveServerReference<$FlowFixMe>(response._serverReferenceConfig, id);
 
   const bound = metaData.bound;
-  let promise: null | Thenable<any> = preloadModule(serverReference);
-  if (!promise) {
-    if (bound instanceof ReactPromise) {
-      promise = Promise.resolve(bound);
-    } else {
-      // We only await the bound arguments when they are one of our own chunks.
-      // Anything else could be a foreign thenable whose `then` we must not call.
-      const resolvedValue = requireModule(serverReference) as any;
-      registerBoundServerReference(
-        resolvedValue,
-        id,
-        bound,
-        response._encodeFormAction,
-      );
-      return resolvedValue;
-    }
-  } else if (bound instanceof ReactPromise) {
-    promise = Promise.all([promise, bound]);
-  }
-
-  let handler: InitializationHandler;
-  if (initializingHandler) {
-    handler = initializingHandler;
-    handler.deps++;
-  } else {
-    handler = initializingHandler = {
-      parent: null,
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
-  }
-
-  function fulfill(): void {
-    let resolvedValue = requireModule(serverReference) as any;
-
-    if (bound) {
-      // This promise is coming from us and should have initialized by now.
-      const promiseValue = (bound as any).value;
-      const boundArgs: Array<any> = isArray(promiseValue)
-        ? promiseValue.slice(0)
-        : [];
-      boundArgs.unshift(null); // this
-      resolvedValue = resolvedValue.bind.apply(resolvedValue, boundArgs);
-    }
-
+  const modulePromise = preloadModule(serverReference);
+  if (modulePromise === null && !(bound instanceof ReactPromise)) {
+    // We only await the bound arguments when they are one of our own chunks.
+    // Anything else could be a foreign thenable whose `then` we must not call.
+    const resolvedValue = requireModule(serverReference) as any;
     registerBoundServerReference(
       resolvedValue,
       id,
       bound,
       response._encodeFormAction,
     );
-
-    if (key !== __PROTO__) {
-      parentObject[key] = resolvedValue;
-    }
-
-    // If this is the root object for a model reference, where `handler.value`
-    // is a stale `null`, the resolved value can be used directly.
-    if (key === '' && handler.value === null) {
-      handler.value = resolvedValue;
-    }
-
-    // If the parent object is an unparsed React element tuple, we also need to
-    // update the props and owner of the parsed element object (i.e.
-    // handler.value).
-    if (
-      parentObject[0] === REACT_ELEMENT_TYPE &&
-      typeof handler.value === 'object' &&
-      handler.value !== null &&
-      handler.value.$$typeof === REACT_ELEMENT_TYPE
-    ) {
-      const element: any = handler.value;
-      switch (key) {
-        case '3':
-          element.props = resolvedValue;
-          break;
-        case '4':
-          if (__DEV__) {
-            element._owner = resolvedValue;
-          }
-          break;
-      }
-    }
-
-    handler.deps--;
-    initializeChunkIfUnblocked(response, handler);
+    return resolvedValue;
   }
 
-  function reject(error: mixed): void {
-    if (handler.errored) {
-      // We've already errored. We could instead build up an AggregateError
-      // but if there are multiple errors we just take the first one like
-      // Promise.all.
-      return;
-    }
-    const blockedValue = handler.value;
-    const erroredHandler: ErroredInitializationHandler = handler as any;
-    erroredHandler.errored = true;
-    erroredHandler.value = null;
-    erroredHandler.reason = error;
-    const chunk = handler.chunk;
-    if (chunk === null || chunk.status !== BLOCKED) {
-      return;
-    }
-
-    if (__DEV__) {
-      if (
-        typeof blockedValue === 'object' &&
-        blockedValue !== null &&
-        blockedValue.$$typeof === REACT_ELEMENT_TYPE
-      ) {
-        const element = blockedValue;
-        // Conceptually the error happened inside this Element but right before
-        // it was rendered. We don't have a client side component to render but
-        // we can add some DebugInfo to explain that this was conceptually a
-        // Server side error that errored inside this element. That way any stack
-        // traces will point to the nearest JSX that errored - e.g. during
-        // serialization.
-        const erroredComponent: ReactComponentInfo = {
-          name: getComponentNameFromType(element.type) || '',
-          owner: element._owner,
-        };
-        // $FlowFixMe[cannot-write]
-        erroredComponent.debugStack = element._debugStack;
-        if (supportsCreateTask) {
-          // $FlowFixMe[cannot-write]
-          erroredComponent.debugTask = element._debugTask;
-        }
-        chunk._debugInfo.push(erroredComponent);
-      }
-    }
-
-    triggerErrorOnChunk(response, chunk, error);
+  let handler: InitializationHandler;
+  if (reference !== null) {
+    // The mapper hands its destination to one binding operation. That
+    // operation retains the dependency until both inputs are installed.
+    handler = reference.handler;
+    handler.deps++;
+    reference.isMappingDeferred = true;
+  } else if (initializingHandler !== null) {
+    handler = initializingHandler;
+    handler.deps++;
+  } else {
+    handler = initializingHandler = createInitializationHandler(null, 1);
   }
 
-  promise.then(fulfill, reject);
+  const assignment =
+    reference === null
+      ? registerConstructionField(
+          getConstructionState(response),
+          parentObject,
+          key,
+        )
+      : reference.assignment;
+  const binding: ServerReferenceBinding = {
+    kind: CONSTRUCTION_BINDING,
+    handler,
+    parentObject,
+    key,
+    assignment,
+    serverReference,
+    id,
+    bound,
+    moduleStatus:
+      modulePromise === null ? CONSTRUCTION_INSTALLED : CONSTRUCTION_PENDING,
+    moduleError: null,
+    inputs: null,
+    queued: false,
+    done: false,
+  };
 
-  // Return a place holder value for now.
-  return null as any;
+  if (bound instanceof ReactPromise) {
+    // Bound arguments are one of our native chunks. Internal consumers can
+    // use its array identity without waiting for its public contents.
+    const boundChunk: SomeChunk<Array<any>> = bound as any;
+    resolveInitializationConsumer(response, binding, boundChunk);
+  } else {
+    resumeServerReferenceBinding(response, binding);
+  }
+  if (modulePromise !== null) {
+    modulePromise.then(
+      () => {
+        binding.moduleStatus = CONSTRUCTION_INSTALLED;
+        enqueueConstructionOperation(response, binding);
+      },
+      error => {
+        binding.moduleStatus = CONSTRUCTION_FAILED;
+        binding.moduleError = error;
+        enqueueConstructionOperation(response, binding);
+      },
+    );
+  }
+
+  return (
+    assignment.status === CONSTRUCTION_INSTALLED ? assignment.value : null
+  ) as any;
+}
+
+// Chunk listeners and field listeners can wake the same binding. Its
+// destination has one producer and is installed or failed exactly once.
+function fulfillInitializationConsumer(
+  response: Response,
+  consumer: InitializationConsumer,
+  value: any,
+  source: SomeChunk<any>,
+): void {
+  if (consumer.kind === CONSTRUCTION_BINDING) {
+    if (consumer.done) {
+      return;
+    }
+    const args: Array<any> = isArray(value) ? value : [];
+    consumer.inputs = createConstructionInputs(args, false);
+    consumer.assignment.inputs = args;
+    resumeServerReferenceBinding(response, consumer);
+  } else {
+    fulfillReference(response, consumer, value, source);
+  }
+}
+
+function rejectInitializationConsumer(
+  response: Response,
+  consumer: InitializationConsumer,
+  error: mixed,
+): void {
+  if (consumer.kind === CONSTRUCTION_BINDING) {
+    rejectServerReferenceBinding(response, consumer, error);
+  } else {
+    rejectInitializationReference(response, consumer, error);
+  }
+}
+
+function resumeServerReferenceBinding(
+  response: Response,
+  binding: ServerReferenceBinding,
+): void {
+  if (binding.done) {
+    return;
+  }
+  // An enclosing model's failure does not cancel this field's producer.
+  if (binding.moduleStatus === CONSTRUCTION_FAILED) {
+    rejectServerReferenceBinding(response, binding, binding.moduleError);
+    return;
+  }
+  const inputs = binding.inputs;
+  let resolvedValue;
+  try {
+    // Check all available argument slots even while the module is loading.
+    // A failed argument must not wait for that unrelated service.
+    if (inputs !== null) {
+      const pending = readConstructionInputs(response._construction, inputs);
+      if (pending !== null) {
+        inputs.waiting = subscribeConstructionFacts(
+          inputs.waiting,
+          pending,
+          binding,
+        );
+        return;
+      }
+    } else if (binding.bound instanceof ReactPromise) {
+      return;
+    }
+    if (binding.moduleStatus !== CONSTRUCTION_INSTALLED) {
+      return;
+    }
+    let args = null;
+    if (inputs !== null) {
+      args = inputs.values;
+    } else if (binding.bound) {
+      args = (binding.bound as any).value;
+    }
+    resolvedValue = initializeServerReference(
+      response,
+      binding.serverReference,
+      binding.id,
+      binding.bound,
+      binding.parentObject,
+      binding.key,
+      binding.handler,
+      args,
+    );
+  } catch (error) {
+    rejectServerReferenceBinding(response, binding, error);
+    return;
+  }
+  binding.done = true;
+  finishInitializationField(
+    response,
+    binding.parentObject,
+    binding.key,
+    binding.assignment,
+    CONSTRUCTION_INSTALLED,
+    resolvedValue,
+  );
+  binding.handler.deps--;
+  initializeChunkIfUnblocked(response, binding.handler);
+}
+
+function rejectServerReferenceBinding(
+  response: Response,
+  binding: ServerReferenceBinding,
+  error: mixed,
+): void {
+  if (binding.done) {
+    return;
+  }
+  binding.done = true;
+  finishInitializationField(
+    response,
+    binding.parentObject,
+    binding.key,
+    binding.assignment,
+    CONSTRUCTION_FAILED,
+    error,
+  );
+  rejectReference(response, binding.handler, error);
 }
 
 function loadServerObjectReference(
@@ -2283,9 +3152,144 @@ function resolveLazy(value: any): mixed {
   return value;
 }
 
+function registerDebugLazy(
+  response: Response,
+  lazy: LazyComponent<any, SomeChunk<any>>,
+): void {
+  const state = getConstructionState(response);
+  if (state.debugLazies === null) {
+    state.debugLazies = new WeakMap();
+  }
+  state.debugLazies.set(lazy, isInitializingDebugInfo);
+}
+
+function normalizeDebugElement(
+  response: Response,
+  element: any,
+  lazy: any,
+): void {
+  const state = response._construction;
+  const debugView =
+    isInitializingDebugInfo ||
+    (lazy !== null &&
+      state !== null &&
+      state.debugLazies !== null &&
+      state.debugLazies.get(lazy) === true);
+  normalizeDebugValue(response, element, debugView);
+}
+
+function projectDebugValue(lazies: WeakMap<Object, boolean>, value: any): any {
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    value.$$typeof === REACT_LAZY_TYPE &&
+    lazies.has(value) &&
+    value._payload.status === INITIALIZED
+  ) {
+    return value._payload.value;
+  }
+  return value;
+}
+
+function recordDebugReference(
+  response: Response,
+  reference: InitializationReference,
+  value: any,
+): void {
+  const state = response._construction;
+  if (
+    state === null ||
+    state.debugLazies === null ||
+    !state.debugLazies.has(value)
+  ) {
+    return;
+  }
+  // Ordinary references unwrap completed virtual nodes in getOutlinedModel.
+  // A reference installed from a private head gets the same final projection.
+  // Inline model fields retain their existing lazy boundary.
+  let references = state.debugReferences;
+  if (references === null) {
+    references = state.debugReferences = new WeakMap();
+  }
+  let fields = references.get(reference.parentObject);
+  if (fields === undefined) {
+    fields = new Set();
+    references.set(reference.parentObject, fields);
+  }
+  fields.add(reference.key);
+}
+
+function normalizeDebugValue(
+  response: Response,
+  root: any,
+  debugView: boolean,
+): any {
+  const state = response._construction;
+  if (state === null || state.debugLazies === null) {
+    return root;
+  }
+  const lazies = state.debugLazies;
+  root = projectDebugValue(lazies, root);
+  const todo: Array<any> = [root, debugView];
+  const seen = new Map<Object, boolean>();
+  for (let index = 0; index < todo.length; index += 2) {
+    const value = todo[index];
+    const isDebug = todo[index + 1];
+    if (value === null || typeof value !== 'object') {
+      continue;
+    }
+    const visited = seen.get(value);
+    if (visited === true || visited === isDebug) {
+      continue;
+    }
+    seen.set(value, isDebug);
+    let keys;
+    if (value.$$typeof === REACT_ELEMENT_TYPE) {
+      keys = ['type', 'props', '_owner', '_debugInfo'];
+    } else if (isArray(value) || getPrototypeOf(value) === ObjectPrototype) {
+      keys = Object.keys(value);
+    } else {
+      continue;
+    }
+    const references =
+      state.debugReferences === null
+        ? undefined
+        : state.debugReferences.get(value);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const field = Object.getOwnPropertyDescriptor(value, key);
+      if (field === undefined || !hasOwnProperty.call(field, 'value')) {
+        continue;
+      }
+      const childIsDebug = isDebug || key === '_owner' || key === '_debugInfo';
+      const child =
+        childIsDebug || (references !== undefined && references.has(key))
+          ? projectDebugValue(lazies, field.value)
+          : field.value;
+      if (child !== field.value && field.writable) {
+        value[key] = child;
+      }
+      todo.push(child, childIsDebug);
+    }
+  }
+  return root;
+}
+
+function recordReferencedDebugInfo(
+  handler: InitializationHandler,
+  source: DebugInfoSource,
+): void {
+  const sources = handler.debugSources;
+  if (sources === null) {
+    handler.debugSources = [source];
+  } else if (sources.indexOf(source) === -1) {
+    sources.push(source);
+  }
+}
+
 function transferReferencedDebugInfo(
   receivingChunk: null | BlockedChunk<any>,
-  referencedChunk: SomeChunk<any>,
+  referencedChunk: DebugInfoSource,
 ): void {
   if (__DEV__) {
     // We add the debug info to the receiving chunk since the resolution of that
@@ -2325,12 +3329,33 @@ function transferReferencedDebugInfo(
 // It's never mutated because only paths with entries get spliced in place.
 const EMPTY_REFERENCE_PATH: Array<string> = [];
 
+function recordFailedModelField(
+  response: Response,
+  parentObject: Object,
+  key: string,
+  error: mixed,
+): void {
+  const fact = registerConstructionField(
+    getConstructionState(response),
+    parentObject,
+    key,
+  );
+  finishInitializationField(
+    response,
+    parentObject,
+    key,
+    fact,
+    CONSTRUCTION_FAILED,
+    error,
+  );
+}
+
 function getOutlinedModel<T>(
   response: Response,
   reference: string,
   parentObject: Object,
   key: string,
-  map: (response: Response, model: any, parentObject: Object, key: string) => T,
+  map: ModelMapping<T>,
 ): T {
   // parseInt stops at the ':' so we only need to split when there's a path.
   const id = parseInt(reference, 16);
@@ -2395,18 +3420,20 @@ function getOutlinedModel<T>(
                 handler = initializingHandler;
                 handler.deps++;
               } else {
-                handler = initializingHandler = {
-                  parent: null,
-                  chunk: null,
-                  value: null,
-                  reason: null,
-                  deps: 1,
-                  errored: false,
-                };
+                handler = initializingHandler = createInitializationHandler(
+                  null,
+                  1,
+                );
               }
               return null as any;
             }
             default: {
+              recordFailedModelField(
+                response,
+                parentObject,
+                key,
+                referencedChunk.reason,
+              );
               // This is an error. Instead of erroring directly, we're going to encode this on
               // an initialization handler so that we can catch it at the nearest Element.
               if (initializingHandler) {
@@ -2422,6 +3449,7 @@ function getOutlinedModel<T>(
                   value: null,
                   reason: referencedChunk.reason,
                   deps: 0,
+                  debugSources: null,
                   errored: true,
                 };
               }
@@ -2437,6 +3465,26 @@ function getOutlinedModel<T>(
             getPrototypeOf(value) === ArrayPrototype) &&
           hasOwnProperty.call(value, name)
         ) {
+          // An initialized chunk can contain an object borrowed from another
+          // model that is still blocked. A reference in that object's field
+          // might not be resolved yet. Like fulfillReference, wait for the
+          // field instead of reading its placeholder.
+          const fact = getPendingConstructionField(
+            response._construction,
+            value,
+            name,
+          );
+          if (fact !== undefined) {
+            return waitForConstructionField(
+              response,
+              fact,
+              parentObject,
+              key,
+              map,
+              path.slice(i),
+              chunk,
+            );
+          }
           value = value[name];
         } else {
           throw new Error('Invalid reference.');
@@ -2468,7 +3516,28 @@ function getOutlinedModel<T>(
         break;
       }
 
-      const chunkValue = map(response, value, parentObject, key);
+      if (
+        response._construction !== null &&
+        (map as ModelMapping<any>) !== createModel
+      ) {
+        const inputs: ConstructionInputs<ConstructionListener> =
+          createConstructionInputs(
+            value,
+            (map as ModelMapping<any>) === createMap ||
+              (map as ModelMapping<any>) === createFormData,
+          );
+        if (readConstructionInputs(response._construction, inputs) !== null) {
+          return waitForConstructionInputs(
+            response,
+            inputs,
+            parentObject,
+            key,
+            map,
+            chunk,
+          );
+        }
+      }
+      const chunkValue = map(response, value, parentObject, key, null);
       if (__DEV__) {
         if (
           parentObject[0] === REACT_ELEMENT_TYPE &&
@@ -2486,9 +3555,19 @@ function getOutlinedModel<T>(
         }
       }
       return chunkValue;
+    case BLOCKED:
+      if (
+        (map as ModelMapping<any>) === createModel &&
+        !(__DEV__ && isInitializingDebugInfo)
+      ) {
+        const revivedValue = readRevivedModel(response, chunk, path);
+        if (revivedValue !== UNAVAILABLE_REVIVED_MODEL) {
+          return revivedValue;
+        }
+      }
+    // Fallthrough
     case PENDING:
     case PENDING_WEAK:
-    case BLOCKED:
       return waitForReference(
         chunk,
         parentObject,
@@ -2506,18 +3585,23 @@ function getOutlinedModel<T>(
         handler = initializingHandler;
         handler.deps++;
       } else {
-        handler = initializingHandler = {
-          parent: null,
-          chunk: null,
-          value: null,
-          reason: null,
-          deps: 1,
-          errored: false,
-        };
+        handler = initializingHandler = createInitializationHandler(null, 1);
       }
       return null as any;
     }
     default:
+      if (getPrivateReferenceModel(response, chunk) !== null) {
+        return waitForReference(
+          chunk,
+          parentObject,
+          key,
+          response,
+          map,
+          path,
+          isInitializingDebugInfo,
+        );
+      }
+      recordFailedModelField(response, parentObject, key, chunk.reason);
       // This is an error. Instead of erroring directly, we're going to encode this on
       // an initialization handler so that we can catch it at the nearest Element.
       if (initializingHandler) {
@@ -2533,6 +3617,7 @@ function getOutlinedModel<T>(
           value: null,
           reason: chunk.reason,
           deps: 0,
+          debugSources: null,
           errored: true,
         };
       }
@@ -2621,7 +3706,9 @@ function defineLazyGetter<T>(
 
 function extractIterator(response: Response, model: Array<any>): Iterator<any> {
   // $FlowFixMe[incompatible-use]: This uses raw Symbols because we're extracting from a native array.
-  return model[Symbol.iterator]();
+  const iterator = model[Symbol.iterator]();
+  captureConstructionValue(response._construction, iterator, model);
+  return iterator;
 }
 
 function createModel(
@@ -2690,14 +3777,10 @@ function parseModelString(
         // a new element, we need to shadow it because we're now in a new scope.
         // This is effectively the "begin" or "push" phase of Element parsing.
         // We'll pop later when we parse the array itself.
-        initializingHandler = {
-          parent: initializingHandler,
-          chunk: null,
-          value: null,
-          reason: null,
-          deps: 0,
-          errored: false,
-        };
+        initializingHandler = createInitializationHandler(
+          initializingHandler,
+          0,
+        );
       }
       return REACT_ELEMENT_TYPE;
     }
@@ -2792,7 +3875,12 @@ function parseModelString(
               'Pass a temporaryReference option with the set that was used with the reply.',
           );
         }
-        return readTemporaryReference(temporaryReferences, reference);
+        const temporaryValue: any = readTemporaryReference(
+          temporaryReferences,
+          reference,
+        );
+        markConstructionExternalValue(temporaryValue);
+        return temporaryValue;
       }
       case 'Q': {
         // Map
@@ -3013,6 +4101,7 @@ function parseModelTuple(
       __DEV__ ? (tuple as any)[4] : null,
       __DEV__ ? (tuple as any)[5] : null,
       __DEV__ ? (tuple as any)[6] : 0,
+      tuple,
     );
   }
   return value;
@@ -3054,6 +4143,8 @@ function ResponseInstance(
   this._encodeFormAction = encodeFormAction;
   this._nonce = nonce;
   this._chunks = chunks;
+  this._construction = null;
+  this._initializingModels = 0;
   // Preserve a leading U+FEFF instead of consuming it as an encoding signature.
   this._stringDecoder = createStringDecoder(true);
   this._closed = false;
@@ -3621,16 +4712,18 @@ function startReadableStream<T>(
         const blockedChunk = previousBlockedChunk;
         const chunk: SomeChunk<T> = createPendingChunk(response);
         chunk.then(
-          v => controller.enqueue(v),
+          v => {
+            if (previousBlockedChunk === chunk) {
+              // We were still the last chunk so we can now clear the queue and return
+              // to synchronous emitting.
+              previousBlockedChunk = null;
+            }
+            controller.enqueue(v);
+          },
           e => controller.error(e as any),
         );
         previousBlockedChunk = chunk;
         blockedChunk.then(function () {
-          if (previousBlockedChunk === chunk) {
-            // We were still the last chunk so we can now clear the queue and return
-            // to synchronous emitting.
-            previousBlockedChunk = null;
-          }
           resolveModelChunk(response, chunk, json);
         });
       }
@@ -5668,12 +6761,40 @@ export function processStringChunk(
   streamState._rowLength = rowLength;
 }
 
-function parseModel<T>(response: Response, json: UninitializedModel): T {
+function parseModel<T>(
+  response: Response,
+  json: UninitializedModel,
+  chunk?: SomeChunk<any>,
+): T {
   const rawModel = JSON.parse(json);
-  // Pass a wrapper object as parentObject to match the original JSON.parse
-  // reviver behavior, where the root value's reviver receives {"": rootValue}
-  // as `this`. This ensures parentObject is never null when accessed downstream.
-  return reviveModel(response, rawModel, {'': rawModel}, '');
+  // Without protocol strings or keys that revival deletes, JSON.parse has
+  // already produced the final value. Escapes can hide either spelling.
+  if (
+    json.indexOf('$') === -1 &&
+    json.indexOf('\\') === -1 &&
+    json.indexOf('__proto__') === -1
+  ) {
+    return rawModel;
+  }
+  const previousChunk = parsingChunk;
+  const previousModel = parsingModel;
+  const previousContainers = revivedContainers;
+  parsingChunk = chunk === undefined ? null : chunk;
+  parsingModel = rawModel;
+  revivedContainers = json.indexOf('"$') === -1 ? null : new WeakSet();
+  try {
+    return reviveModel(
+      response,
+      rawModel,
+      {'': rawModel},
+      '',
+      revivedContainers,
+    );
+  } finally {
+    parsingChunk = previousChunk;
+    parsingModel = previousModel;
+    revivedContainers = previousContainers;
+  }
 }
 
 function reviveModel(
@@ -5681,6 +6802,7 @@ function reviveModel(
   value: JSONValue,
   parentObject: Object,
   key: string,
+  completed?: null | WeakSet<Object>,
 ): any {
   if (typeof value === 'string') {
     if (value[0] === '$') {
@@ -5693,12 +6815,21 @@ function reviveModel(
   }
   if (isArray(value)) {
     for (let i = 0; i < value.length; i++) {
-      (value as any)[i] = reviveModel(response, value[i], value, '' + i);
+      (value as any)[i] = reviveModel(
+        response,
+        value[i],
+        value,
+        '' + i,
+        completed,
+      );
     }
     // $FlowFixMe[invalid-compare]
     if (value[0] === REACT_ELEMENT_TYPE) {
       // React element tuple
       return parseModelTuple(response, value);
+    }
+    if (completed != null) {
+      completed.add(value);
     }
     return value;
   }
@@ -5708,7 +6839,13 @@ function reviveModel(
       if (k === __PROTO__) {
         delete (value as any)[k];
       } else {
-        const walked = reviveModel(response, (value as any)[k], value, k);
+        const walked = reviveModel(
+          response,
+          (value as any)[k],
+          value,
+          k,
+          completed,
+        );
         if (walked !== undefined) {
           (value as any)[k] = walked;
         } else {
@@ -5716,6 +6853,9 @@ function reviveModel(
         }
       }
     }
+  }
+  if (completed != null) {
+    completed.add(value);
   }
   return value;
 }
