@@ -1348,5 +1348,51 @@ describe('ReactDOMViewTransition', () => {
 
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
+
+    // @gate enableViewTransition
+    it('does not report InvalidStateError when Chromium appends a reason to the abort message', async () => {
+      const onRecoverableError = jest.fn();
+      // Newer versions of Chromium append the reason to the generic message.
+      const hiddenDocumentError = new DOMException(
+        'Transition was aborted because of invalid state. Document hidden',
+        'InvalidStateError',
+      );
+      document.startViewTransition = function ({update}) {
+        update();
+        return {
+          ready: Promise.reject(hiddenDocumentError),
+          finished: Promise.resolve(),
+          skipTransition() {},
+        };
+      };
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition>
+            <div>Hello</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container, {
+        onRecoverableError,
+      });
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      // The transition was started and the update was applied, even though
+      // ready rejected.
+      expect(container.innerHTML).toContain('Hello');
+      // A ready rejection caused by the document being hidden is not an
+      // actual failure, so it must not be reported as a recoverable error.
+      expect(onRecoverableError).not.toHaveBeenCalled();
+    });
   });
 });

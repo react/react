@@ -16,6 +16,6 @@ export * from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
 export * from 'react-client/src/ReactClientConsoleConfigServer';
 
 export const isWorkLoopExternallyDriven = false;
-export const supportsRequestStorage = true;
+export const supportsRequestStorage: boolean = true;
 export const requestStorage: AsyncLocalStorage<Request | void> =
   new AsyncLocalStorage();

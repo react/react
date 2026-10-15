@@ -13,7 +13,7 @@ import type {ReactComponentInfo} from 'shared/ReactTypes';
 export * from 'react-server-dom-webpack/src/server/ReactFlightServerConfigWebpackBundler';
 export * from 'react-dom-bindings/src/server/ReactFlightServerConfigDOM';
 
-export const supportsRequestStorage = false;
+export const supportsRequestStorage: boolean = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;

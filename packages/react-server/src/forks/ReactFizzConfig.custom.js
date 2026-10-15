@@ -36,13 +36,13 @@ export opaque type FormatContext = mixed;
 export opaque type HeadersDescriptor = mixed;
 export type {TransitionStatus};
 
-export const isPrimaryRenderer = false;
+export const isPrimaryRenderer: boolean = false;
 
-export const supportsClientAPIs = true;
+export const supportsClientAPIs: boolean = true;
 
 export const isWorkLoopExternallyDriven =
   $$$config.isWorkLoopExternallyDriven === true;
-export const supportsRequestStorage = false;
+export const supportsRequestStorage: boolean = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const bindToConsole = $$$config.bindToConsole;

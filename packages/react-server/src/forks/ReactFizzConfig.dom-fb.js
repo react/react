@@ -16,5 +16,5 @@ export * from 'react-client/src/ReactClientConsoleConfigBrowser';
 // can ping tasks, but the outer caller decides when to process them.
 export const isWorkLoopExternallyDriven = true;
 
-export const supportsRequestStorage = false;
+export const supportsRequestStorage: boolean = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;

@@ -2015,7 +2015,6 @@ function updateHostComponent(
     // and forms cannot be nested. If we did support nested providers, then
     // we would need to push a context value even for host fibers that
     // haven't been upgraded yet.
-    // $FlowFixMe[constant-condition]
     if (isPrimaryRenderer) {
       HostTransitionContext._currentValue = newState;
     } else {
@@ -2301,7 +2300,6 @@ function updateSuspenseOffscreenState(
   let cachePool: SpawnedCachePool | null = null;
   const prevCachePool: SpawnedCachePool | null = prevOffscreenState.cachePool;
   if (prevCachePool !== null) {
-    // $FlowFixMe[constant-condition]
     const parentCache = isPrimaryRenderer
       ? CacheContext._currentValue
       : CacheContext._currentValue2;
