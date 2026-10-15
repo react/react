@@ -589,10 +589,22 @@ export function completeBoundaryWithStyles(
 export function completeSegment(containerID, placeholderID) {
   const segmentContainer = document.getElementById(containerID);
   const placeholderNode = document.getElementById(placeholderID);
-  // We always expect both nodes to exist here because, while we might
-  // have navigated away from the main tree, we still expect the detached
-  // tree to exist.
+  if (!segmentContainer) {
+    // If the client has failed hydration we may have already deleted the streaming
+    // segments, so there is nothing to insert.
+    return;
+  }
+  // Detach the container even if there is nowhere to insert its content, so that
+  // the content is never left behind in the document.
   segmentContainer.parentNode.removeChild(segmentContainer);
+  if (!placeholderNode) {
+    // The placeholder can be gone before its segment arrives. For example, client
+    // rendering the root after a failed hydration clears the container, including
+    // the hidden segments that hold placeholders, and revealing a boundary removes
+    // its fallback along with any placeholder inside it. There is nowhere left to
+    // insert the content, so it is dropped.
+    return;
+  }
   while (segmentContainer.firstChild) {
     placeholderNode.parentNode.insertBefore(
       segmentContainer.firstChild,
