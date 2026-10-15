@@ -3536,6 +3536,7 @@ function completeRoot(
 ): void {
   root.cancelPendingCommit = null;
 
+  const currentBeforeFlush = root.current;
   do {
     // `flushPassiveEffects` will call `flushSyncUpdateQueue` at the end, which
     // means `flushPassiveEffects` will sometimes result in additional
@@ -3619,6 +3620,24 @@ function completeRoot(
         );
       }
     }
+  }
+
+  if (
+    root.current !== currentBeforeFlush ||
+    (root === workInProgressRoot && workInProgress !== null)
+  ) {
+    // While flushing the pending effects above, a synchronous render started
+    // on this same root — e.g. a useSyncExternalStore update or a flushSync
+    // scheduled by another root's passive effects. It either already
+    // committed a new tree (possibly this exact one) or left a partially
+    // rendered one behind. Committing now would either re-commit the same
+    // tree or overwrite newer work. Bail out instead; any lanes this commit
+    // was carrying remain pending and will be rendered again on the next
+    // attempt.
+    if (enableSchedulingProfiler) {
+      markCommitStopped();
+    }
+    return;
   }
 
   if (finishedWork === root.current) {
