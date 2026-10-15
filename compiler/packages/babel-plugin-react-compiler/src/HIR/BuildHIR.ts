@@ -2450,11 +2450,25 @@ function lowerExpression(
     }
     case 'TaggedTemplateExpression': {
       const expr = exprPath as NodePath<t.TaggedTemplateExpression>;
-      if (expr.get('quasi').get('expressions').length !== 0) {
+      const subexprs = expr.get('quasi').get('expressions');
+      const quasis = expr.get('quasi').get('quasis');
+
+      if (subexprs.length !== quasis.length - 1) {
         builder.recordError(
           new CompilerErrorDetail({
-            reason:
-              '(BuildHIR::lowerExpression) Handle tagged template with interpolations',
+            reason: `Unexpected quasi and subexpression lengths in tagged template`,
+            category: ErrorCategory.Syntax,
+            loc: exprPath.node.loc ?? null,
+            suggestions: null,
+          }),
+        );
+        return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
+      }
+
+      if (subexprs.some(e => !e.isExpression())) {
+        builder.recordError(
+          new CompilerErrorDetail({
+            reason: `(BuildHIR::lowerExpression) Handle TSType in tagged template.`,
             category: ErrorCategory.Todo,
             loc: exprPath.node.loc ?? null,
             suggestions: null,
@@ -2462,13 +2476,10 @@ function lowerExpression(
         );
         return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
       }
-      CompilerError.invariant(expr.get('quasi').get('quasis').length == 1, {
-        reason:
-          "there should be only one quasi as we don't support interpolations yet",
-        loc: expr.node.loc ?? GeneratedSource,
-      });
-      const value = expr.get('quasi').get('quasis').at(0)!.node.value;
-      if (value.raw !== value.cooked) {
+
+      if (
+        quasis.some(quasi => quasi.node.value.raw !== quasi.node.value.cooked)
+      ) {
         builder.recordError(
           new CompilerErrorDetail({
             reason:
@@ -2484,7 +2495,13 @@ function lowerExpression(
       return {
         kind: 'TaggedTemplateExpression',
         tag: lowerExpressionToTemporary(builder, expr.get('tag')),
-        value,
+        subexprs: subexprs.map(subexpr =>
+          lowerExpressionToTemporary(
+            builder,
+            subexpr as NodePath<t.Expression>,
+          ),
+        ),
+        quasis: quasis.map(quasi => quasi.node.value),
         loc: exprLoc,
       };
     }
