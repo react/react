@@ -289,7 +289,7 @@ type BaseFiberRootProperties = {
   formState: ReactFormState<any, any> | null,
 
   // enableViewTransition only
-  transitionTypes: null | TransitionTypes, // TODO: Make this a LaneMap.
+  transitionTypes: LaneMap<null | TransitionTypes>,
   // enableGestureTransition only
   pendingGestures: null | ScheduledGesture,
   gestureClone: null | Instance,
