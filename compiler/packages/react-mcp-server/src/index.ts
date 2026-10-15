@@ -22,6 +22,7 @@ import assertExhaustive from './utils/assertExhaustive';
 import {convert} from 'html-to-text';
 import {measurePerformance} from './tools/runtimePerf';
 import {parseReactComponentTree} from './tools/componentTree';
+import {explainCompilerDiagnostic} from './tools/explainCompilerDiagnostic';
 
 function calculateMean(values: number[]): string {
   return values.length > 0
@@ -287,6 +288,50 @@ server.tool(
         content: [{type: 'text' as const, text: `Error: ${err.stack}`}],
       };
     }
+  },
+);
+
+server.tool(
+  'explain-compiler-diagnostic',
+  `Explain a React Compiler diagnostic in plain English.
+
+  Use this tool whenever the \`compile\` tool returns a diagnostic and you want
+  to understand what the diagnostic means, why it was reported, and how to fix
+  the underlying code. The tool returns a structured explanation with a
+  title, summary, category, why-it-happens, how-to-fix, optional before/after
+  code example, severity, and links to the relevant React docs.
+
+  <input>
+  - \`message\` (required): the diagnostic message exactly as returned by the
+    \`compile\` tool. Used to identify the rule via regex pattern matching.
+  - \`rule\` (optional): the rule name from babel-plugin-react-compiler's
+    \`ErrorCategory\` enum (e.g. "set-state-in-render"). If you know the rule
+    name, this gives an exact lookup without depending on message text.
+  - \`codeContext\` (optional): the source code that produced the diagnostic.
+    Currently unused by the matcher but accepted for completeness.
+  </input>
+
+  <output>
+  A JSON object with one of two shapes:
+  - On match: \`{ "kind": "matched", "explanation": { rule, title, summary, ... } }\`
+  - On miss:  \`{ "kind": "unmatched", "message", "genericGuidance" }\`
+  </output>
+  `,
+  {
+    message: z.string(),
+    codeContext: z.string().optional(),
+    rule: z.string().optional(),
+  },
+  async ({message, codeContext, rule}) => {
+    const result = explainCompilerDiagnostic({message, codeContext, rule});
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
   },
 );
 
