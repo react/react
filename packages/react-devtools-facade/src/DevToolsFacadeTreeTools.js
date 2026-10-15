@@ -407,6 +407,8 @@ export function createTreeTools(
       ) {
         return (resource as any).instance;
       }
+      // Hoistable instances such as title and meta have no resource record.
+      return fiber.stateNode;
     }
 
     return null;
