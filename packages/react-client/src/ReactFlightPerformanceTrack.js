@@ -149,7 +149,7 @@ export function logComponentAborted(
   childrenEndTime: number,
   rootEnv: string,
 ): void {
-  if (supportsUserTiming) {
+  if (supportsUserTiming && childrenEndTime >= 0 && trackIdx < 10) {
     const env = componentInfo.env;
     const name = componentInfo.name;
     const isPrimaryEnv = env === rootEnv;
@@ -206,7 +206,7 @@ export function logComponentErrored(
   rootEnv: string,
   error: mixed,
 ): void {
-  if (supportsUserTiming) {
+  if (supportsUserTiming && childrenEndTime >= 0 && trackIdx < 10) {
     const env = componentInfo.env;
     const name = componentInfo.name;
     const isPrimaryEnv = env === rootEnv;
