@@ -571,6 +571,10 @@ export function injectIntoGlobalHook(globalObject: any): void {
             if (didError) {
               // We'll remount it on future edits.
               failedRoots.add(root);
+            } else if (!failedRoots.has(root)) {
+              // Nothing is mounted and there is nothing to retry.
+              // For example, the root was unmounted before its first commit.
+              helpersByRoot.delete(root);
             }
           }
         } else {
