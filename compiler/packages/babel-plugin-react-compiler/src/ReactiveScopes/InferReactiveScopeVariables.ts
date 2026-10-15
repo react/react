@@ -178,17 +178,21 @@ function mergeLocation(l: SourceLocation, r: SourceLocation): SourceLocation {
     return l;
   } else {
     return {
-      filename: l.filename,
-      identifierName: l.identifierName,
-      start: {
-        index: Math.min(l.start.index, r.start.index),
-        line: Math.min(l.start.line, r.start.line),
-        column: Math.min(l.start.column, r.start.column),
-      },
-      end: {
-        index: Math.max(l.end.index, r.end.index),
-        line: Math.max(l.end.line, r.end.line),
-        column: Math.max(l.end.column, r.end.column),
+      start: undefined,
+      end: undefined,
+      loc: {
+        filename: l.loc.filename,
+        identifierName: l.loc.identifierName,
+        start: {
+          index: Math.min(l.loc.start.index, r.loc.start.index),
+          line: Math.min(l.loc.start.line, r.loc.start.line),
+          column: Math.min(l.loc.start.column, r.loc.start.column),
+        },
+        end: {
+          index: Math.max(l.loc.end.index, r.loc.end.index),
+          line: Math.max(l.loc.end.line, r.loc.end.line),
+          column: Math.max(l.loc.end.column, r.loc.end.column),
+        },
       },
     };
   }

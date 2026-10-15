@@ -483,8 +483,6 @@ const skipFilter = new Set([
   'bug-aliased-capture-mutate',
   'bug-functiondecl-hoisting',
   'bug-type-inference-control-flow',
-  'fbt/bug-fbt-plural-multiple-function-calls',
-  'fbt/bug-fbt-plural-multiple-mixed-call-tag',
   'bug-invalid-phi-as-dependency',
   'bug-ref-prefix-postfix-operator',
 

@@ -316,6 +316,12 @@ export function createNewFunctionNode(
       );
     }
   }
+  if (originalFn.node.start !== undefined) {
+    transformedFn.start = originalFn.node.start;
+  }
+  if (originalFn.node.end !== undefined) {
+    transformedFn.end = originalFn.node.end;
+  }
   // Avoid visiting the new transformed version
   return transformedFn;
 }

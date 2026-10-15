@@ -20,6 +20,7 @@ import {z} from 'zod/v4';
 import type {AliasingEffect} from '../Inference/AliasingEffects';
 import {isReservedWord} from '../Utils/Keyword';
 import {Err, Ok, Result} from '../Utils/Result';
+import {GeneratedSource, type SourceLocation} from './SourceLocation';
 
 /*
  * *******************************************************************************************
@@ -37,8 +38,11 @@ import {Err, Ok, Result} from '../Utils/Result';
  *
  * `GeneratedSource` indicates that there is no single source location from which the code derives.
  */
-export const GeneratedSource = Symbol();
-export type SourceLocation = t.SourceLocation | typeof GeneratedSource;
+export {
+  GeneratedSource,
+  getSourceLocation,
+  type SourceLocation,
+} from './SourceLocation';
 
 /*
  * A React function defines a computation that takes some set of reactive inputs
