@@ -13,7 +13,7 @@ import {
   CompilerSuggestionOperation,
   ErrorCategory,
 } from '../CompilerError';
-import {assertExhaustive} from '../Utils/utils';
+import {assertExhaustive, escapeStringRegexp} from '../Utils/utils';
 import {GeneratedSource} from '../HIR';
 
 /**
@@ -90,7 +90,18 @@ export function findProgramSuppressions(
   let disablePattern: RegExp | null = null;
   let enablePattern: RegExp | null = null;
   if (ruleNames != null && ruleNames.length !== 0) {
-    const rulePattern = `(${ruleNames.join('|')})`;
+    /*
+     * Escape regex special characters in each configured rule name and anchor
+     * the match to a rule-list separator (comma or whitespace) or the end of
+     * the comment, so that a configured rule like `react-hooks/rules-of-hooks`
+     * does not also match a longer rule sharing the same prefix (e.g.
+     * `react-hooks/rules-of-hooks-extra`), and punctuation such as `.` is
+     * matched literally rather than as a regex wildcard.
+     */
+    const escapedRuleNames = ruleNames.map(ruleName =>
+      escapeStringRegexp(ruleName),
+    );
+    const rulePattern = `(?:${escapedRuleNames.join('|')})(?=[,\\s]|$)`;
     disableNextLinePattern = new RegExp(
       `eslint-disable-next-line ${rulePattern}`,
     );
