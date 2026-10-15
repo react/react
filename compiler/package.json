@@ -30,7 +30,7 @@
     "@babel/types": "^7.26.0",
     "@tsconfig/strictest": "^2.0.5",
     "concurrently": "^7.4.0",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.1",
     "folder-hash": "^4.0.4",
     "npm-dts": "^1.3.13",
     "object-assign": "^4.1.1",
