@@ -158,7 +158,15 @@ export class SourceMapMetadataConsumer {
       sourcemap[REACT_SOURCES_EXTENSION_KEY] != null
     ) {
       const reactMetadataArray = sourcemap[REACT_SOURCES_EXTENSION_KEY];
-      reactMetadataArray.filter(Boolean).forEach(updateMap);
+      // The array lines up with `sources`, so an entry may be null when that
+      // source has no React metadata. Keep the index instead of filtering the
+      // nulls out, otherwise every entry after one is assigned to the wrong
+      // source.
+      reactMetadataArray.forEach((reactMetadata, sourceIndex) => {
+        if (reactMetadata != null) {
+          updateMap(reactMetadata, sourceIndex);
+        }
+      });
     } else if (
       sourcemap.hasOwnProperty(FB_SOURCES_EXTENSION_KEY) &&
       sourcemap[FB_SOURCES_EXTENSION_KEY] != null
