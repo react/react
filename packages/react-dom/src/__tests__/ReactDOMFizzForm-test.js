@@ -69,7 +69,10 @@ describe('ReactDOMFizzForm', () => {
       return;
     }
     const action =
-      (submitter && submitter.getAttribute('formaction')) || form.action;
+      (submitter && submitter.getAttribute('formaction')) ||
+      (typeof form.action === 'string'
+        ? form.action
+        : form.getAttribute('action'));
     if (!/\s*javascript:/i.test(action)) {
       throw new Error('Navigate to: ' + action);
     }
@@ -482,6 +485,38 @@ describe('ReactDOMFizzForm', () => {
 
     // It should've now been replayed
     expect(foo).toBe('bar');
+  });
+
+  it('should replay a form action after hydration when a field is named "action"', async () => {
+    let foo;
+
+    function action(formData) {
+      foo = formData.get('action');
+    }
+    function App() {
+      return (
+        <form action={action}>
+          <button name="action" value="delete">
+            Delete
+          </button>
+        </form>
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<App />),
+    );
+    await readIntoContainer(stream);
+
+    // Dispatch an event before hydration
+    submit(container.getElementsByTagName('button')[0]);
+
+    await act(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />);
+    });
+
+    // It should've now been replayed
+    expect(foo).toBe('delete');
   });
 
   it('should replay input/button formAction', async () => {
