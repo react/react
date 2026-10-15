@@ -37,8 +37,13 @@ if (entries.length > 0) {
   // than necessary.
   window['$RT'] = entries[0].startTime;
 } else {
-  // Otherwise we wait for the next rAF for it.
-  requestAnimationFrame(() => {
-    window['$RT'] = performance.now();
-  });
+  // Otherwise wait for the next rAF. Since rAF pauses in background tabs, 
+  // race a setTimeout to guarantee we get a timestamp.
+  const markShellTime = () => {
+    if (typeof window['$RT'] !== 'number') {
+      window['$RT'] = performance.now();
+    }
+  };
+  requestAnimationFrame(markShellTime)
+  setTimeout(markShellTime);
 }
