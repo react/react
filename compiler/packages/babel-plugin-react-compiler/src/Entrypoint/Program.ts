@@ -919,26 +919,21 @@ function hasMemoCacheFunctionImport(
   program: NodePath<t.Program>,
   moduleName: string,
 ): boolean {
-  let hasUseMemoCache = false;
-  program.traverse({
-    ImportSpecifier(path) {
-      const imported = path.get('imported');
-      let importedName: string | null = null;
-      if (imported.isIdentifier()) {
-        importedName = imported.node.name;
-      } else if (imported.isStringLiteral()) {
-        importedName = imported.node.value;
+  for (const stmt of program.node.body) {
+    if (stmt.type === 'ImportDeclaration' && stmt.source.value === moduleName) {
+      for (const specifier of stmt.specifiers) {
+        if (specifier.type === 'ImportSpecifier') {
+          const imported = specifier.imported;
+          const importedName =
+            imported.type === 'Identifier' ? imported.name : imported.value;
+          if (importedName === 'c') {
+            return true;
+          }
+        }
       }
-      if (
-        importedName === 'c' &&
-        path.parentPath.isImportDeclaration() &&
-        path.parentPath.get('source').node.value === moduleName
-      ) {
-        hasUseMemoCache = true;
-      }
-    },
-  });
-  return hasUseMemoCache;
+    }
+  }
+  return false;
 }
 
 function isHookName(s: string): boolean {
@@ -1102,8 +1097,8 @@ function getComponentOrHookLike(
   // Check if the name is component or hook like:
   if (functionName !== null && isComponentName(functionName)) {
     let isComponent =
-      callsHooksOrCreatesJsx(node) &&
       isValidComponentParams(node.get('params')) &&
+      callsHooksOrCreatesJsx(node) &&
       !returnsNonNode(node);
     return isComponent ? 'Component' : null;
   } else if (functionName !== null && isHook(functionName)) {
@@ -1149,13 +1144,15 @@ function callsHooksOrCreatesJsx(
   let createsJsx = false;
 
   node.traverse({
-    JSX() {
+    JSX(path) {
       createsJsx = true;
+      path.stop();
     },
     CallExpression(call) {
       const callee = call.get('callee');
       if (callee.isExpression() && isHook(callee)) {
         invokesHooks = true;
+        call.stop();
       }
     },
     ArrowFunctionExpression: skipNestedFunctions(node),
