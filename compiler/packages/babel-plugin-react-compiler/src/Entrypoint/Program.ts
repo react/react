@@ -351,7 +351,21 @@ function insertNewOutlinedFunctionNode(
         params: compiledFn.params,
         body: compiledFn.body,
       };
-      const insertedFuncDecl = program.pushContainer('body', [fn])[0]!;
+      /*
+       * If the original function is nested within another function (e.g. a component returned
+       * from a factory function), insert the outlined function next to the statement containing
+       * the original function so that bindings from enclosing functions remain in scope.
+       * Otherwise (or if the original function is not within a statement of its closest enclosing
+       * function, e.g. an expression-bodied arrow function), insert it at the program level.
+       */
+      const enclosingFn = originalFn.getFunctionParent();
+      const statementParent = originalFn.getStatementParent();
+      const insertedFuncDecl =
+        enclosingFn != null &&
+        statementParent != null &&
+        statementParent.getFunctionParent() === enclosingFn
+          ? statementParent.insertAfter(fn)[0]!
+          : program.pushContainer('body', [fn])[0]!;
       CompilerError.invariant(insertedFuncDecl.isFunctionDeclaration(), {
         reason: 'Expected inserted function declaration',
         description: `Got: ${insertedFuncDecl}`,
