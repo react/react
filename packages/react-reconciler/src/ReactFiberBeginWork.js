@@ -3028,6 +3028,17 @@ function updateDehydratedSuspenseComponent(
         );
         queueHydrationError(capturedValue);
       }
+      if (!didReceiveUpdate) {
+        // If the client render suspends, we might keep the server fallback
+        // in place, but only if no context it could read has changed. Propagate
+        // context changes now, while the dehydrated fragment is still our
+        // child, so that they're reflected in this boundary's childLanes.
+        lazilyPropagateParentContextChanges(
+          current,
+          workInProgress,
+          renderLanes,
+        );
+      }
       return retrySuspenseComponentWithoutHydrating(
         current,
         workInProgress,
@@ -3182,6 +3193,49 @@ function updateDehydratedSuspenseComponent(
       workInProgress.child = current.child;
       // The dehydrated completion pass expects this flag to be there
       // but the normal suspense pass doesn't.
+      workInProgress.flags |= DidCapture;
+      return null;
+    } else if (
+      isSuspenseInstanceFallback(suspenseInstance) &&
+      // This is unreachable in renderers that do not support hydration.
+      // $FlowFixMe[invalid-compare]
+      getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+        REACT_RECOVERABLE_DIGEST &&
+      // Neither the props, legacy context nor any context propagated into
+      // this boundary changed, so the server fallback is still up to date.
+      !didReceiveUpdate &&
+      !includesSomeLane(renderLanes, current.childLanes) &&
+      // The content spawned a deferred render (useDeferredValue). Only the
+      // regular fallback path schedules it on the primary children.
+      !didPrimaryChildrenDefer
+    ) {
+      // The server rendered the fallback because the content is browser-only
+      // and we tried to client render the content, but that suspended.
+      // Committing would replace the server fallback with an identical client
+      // fallback, which recreates the DOM and restarts animations etc. Instead,
+      // stay in dehydrated mode and keep the server fallback in place until we
+      // can render the content. Unlike delaying the whole commit, this only
+      // affects this boundary.
+      // TODO: Do the same for boundaries that errored on the server. That
+      // requires not reporting the server error again on every retry.
+      pushFallbackTreeSuspenseHandler(workInProgress);
+
+      // Unwinding the client render attempt already dropped the deletion of
+      // the dehydrated fragment, but not the flag. The dehydrated fragment is
+      // our only child, so nothing else is being deleted.
+      workInProgress.deletions = null;
+      workInProgress.flags &= ~ChildDeletion;
+      workInProgress.child = current.child;
+      const nextSuspenseState: SuspenseState = {
+        dehydrated: suspenseInstance,
+        treeContext: suspenseState.treeContext,
+        // Unlike a boundary that's waiting to be hydrated, the content isn't on
+        // screen yet, so retry at a normal retry lane once it's unblocked.
+        retryLane: NoLane,
+        hydrationErrors: suspenseState.hydrationErrors,
+      };
+      workInProgress.memoizedState = nextSuspenseState;
+      // The dehydrated completion pass expects this flag to be there.
       workInProgress.flags |= DidCapture;
       return null;
     } else {
@@ -4036,6 +4090,24 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
       const state: SuspenseState | null = workInProgress.memoizedState;
       if (state !== null) {
         if (state.dehydrated !== null) {
+          if (
+            isSuspenseInstanceFallback(state.dehydrated) &&
+            lazilyPropagateParentContextChanges(
+              current,
+              workInProgress,
+              renderLanes,
+            )
+          ) {
+            // This boundary is client rendered but is still showing the
+            // server fallback. Like a client rendered boundary showing its
+            // fallback, conservatively retry it when a parent context changed,
+            // since that might change the fallback or unblock the content.
+            return updateSuspenseComponent(
+              current,
+              workInProgress,
+              renderLanes,
+            );
+          }
           // We're not going to render the children, so this is just to maintain
           // push/pop symmetry
           pushPrimaryTreeSuspenseHandler(workInProgress);
