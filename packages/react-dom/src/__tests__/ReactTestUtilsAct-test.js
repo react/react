@@ -195,6 +195,54 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
+      it('keeps flushing when act is re-entered during the outer flush', () => {
+        let updateFromListener;
+
+        function App() {
+          const [open, setOpen] = React.useState(false);
+          const [fromEffect, setFromEffect] = React.useState(0);
+          const [fromListener, setFromListener] = React.useState(0);
+          updateFromListener = setFromListener;
+
+          React.useEffect(() => {
+            if (open) {
+              document.dispatchEvent(new Event('committed'));
+              setFromEffect(value => value + 1);
+            }
+          }, [open]);
+
+          return (
+            <button onClick={() => setOpen(true)}>
+              {`${open}:${fromEffect}:${fromListener}`}
+            </button>
+          );
+        }
+
+        act(() => {
+          render(<App />, container);
+        });
+
+        const handleCommitted = () => {
+          act(() => {
+            updateFromListener(value => value + 1);
+          });
+        };
+        document.addEventListener('committed', handleCommitted);
+
+        try {
+          act(() => {
+            container
+              .querySelector('button')
+              .dispatchEvent(new MouseEvent('click', {bubbles: true}));
+          });
+        } finally {
+          document.removeEventListener('committed', handleCommitted);
+        }
+
+        expect(container.textContent).toBe('true:1:1');
+      });
+
+      // @gate __DEV__
       it('warns if a setState is called outside of act(...)', () => {
         let setValue = null;
         function App() {
