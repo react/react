@@ -127,6 +127,7 @@ use react_compiler_hir::reactive::ReactiveTerminalTargetKind;
 use react_compiler_hir::reactive::ReactiveValue;
 
 use crate::build_reactive_function::build_reactive_function;
+use crate::promote_used_temporaries::promote_used_temporaries;
 use crate::prune_hoisted_contexts::prune_hoisted_contexts;
 use crate::prune_unused_labels::prune_unused_labels;
 use crate::prune_unused_lvalues::prune_unused_lvalues;
@@ -527,6 +528,7 @@ pub fn codegen_function(
         let mut reactive_fn_mut = reactive_fn;
         prune_unused_labels(&mut reactive_fn_mut, cx.env)?;
         prune_unused_lvalues(&mut reactive_fn_mut, cx.env);
+        promote_used_temporaries(&mut reactive_fn_mut, cx.env);
         prune_hoisted_contexts(&mut reactive_fn_mut, cx.env)?;
 
         let identifiers = rename_variables(&mut reactive_fn_mut, cx.env);
@@ -3910,7 +3912,7 @@ fn codegen_primitive_value(value: &PrimitiveValue, loc: Option<DiagSourceLocatio
                         argument: Box::new(Expression::Identifier(make_identifier("Infinity"))),
                     })
                 }
-            } else if f < 0.0 {
+            } else if f < 0.0 || (f == 0.0 && f.is_sign_negative()) {
                 Expression::UnaryExpression(ast_expr::UnaryExpression {
                     base: base_node_with_loc("UnaryExpression", loc),
                     operator: AstUnaryOperator::Neg,

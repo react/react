@@ -18,6 +18,12 @@ const skipFilter = new Set([
   'todo-round3_promote_used_temps',
 
   /**
+   * Compiles after PromoteUsedTemporaries runs on outlined functions.
+   * Sprout cannot load the fixture's local `./Bar` import.
+   */
+  'invariant-unnamed-temporary',
+
+  /**
    * `export as namespace` is a .d.ts-shaped construct that breaks sprout's
    * second-stage TS->CJS evaluator transform itself. The sibling ts-* interop
    * fixtures are deliberately not skipped: that transform handles their
