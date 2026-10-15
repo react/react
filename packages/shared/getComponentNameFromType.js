@@ -20,6 +20,7 @@ import {
   REACT_PROFILER_TYPE,
   REACT_STRICT_MODE_TYPE,
   REACT_SUSPENSE_TYPE,
+  REACT_SERVER_ERROR_BOUNDARY_TYPE,
   REACT_SUSPENSE_LIST_TYPE,
   REACT_LAZY_TYPE,
   REACT_TRACING_MARKER_TYPE,
@@ -30,6 +31,7 @@ import {
 import {
   enableTransitionTracing,
   enableViewTransition,
+  enableServerErrorBoundary,
 } from './ReactFeatureFlags';
 
 // Keep in sync with react-reconciler/getComponentNameFromFiber
@@ -78,6 +80,8 @@ export default function getComponentNameFromType(type: mixed): string | null {
       return 'StrictMode';
     case REACT_SUSPENSE_TYPE:
       return 'Suspense';
+    case REACT_SERVER_ERROR_BOUNDARY_TYPE:
+      return enableServerErrorBoundary ? 'ServerErrorBoundary' : null;
     case REACT_SUSPENSE_LIST_TYPE:
       return 'SuspenseList';
     case REACT_ACTIVITY_TYPE:
