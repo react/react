@@ -747,4 +747,80 @@ describe('ReactDOMFizzViewTransition', () => {
     expect(applied.get('fbC')).toBe('skeleton-exit');
     expect(applied.get('fbD')).toBe('skeleton-exit-deep');
   });
+
+  // @gate enableViewTransition
+  it('restores the previous view-transition-name and class after a streaming reveal', async () => {
+    const applied = new Map();
+    document.startViewTransition = function (arg) {
+      const update = typeof arg === 'function' ? arg : arg.update;
+      container.querySelectorAll('*').forEach(el => {
+        if (el.id && el.style && el.style.viewTransitionName) {
+          applied.set(el.id, el.style.viewTransitionClass);
+        }
+      });
+      if (update) {
+        update();
+      }
+      return {
+        ready: Promise.resolve(),
+        finished: Promise.resolve(),
+        skipTransition() {},
+        types: [],
+      };
+    };
+    if (!global.window.CSS) {
+      global.window.CSS = {escape: s => s};
+    }
+    Object.defineProperty(document, 'fonts', {
+      value: {status: 'loaded', ready: Promise.resolve()},
+      configurable: true,
+    });
+    // The reveal skips a boundary whose parent measures as empty, so give
+    // elements a non-zero rect.
+    global.window.Element.prototype.getBoundingClientRect = function () {
+      return {left: 0, top: 0, width: 100, height: 20, right: 100, bottom: 20};
+    };
+
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      return (
+        <div>
+          <Suspense
+            fallback={
+              <ViewTransition exit="page-exit">
+                <div id="fallback">Loading</div>
+              </ViewTransition>
+            }>
+            <ViewTransition enter="page-enter">
+              <Suspend />
+            </ViewTransition>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+
+    // Simulate an authored view-transition-name and class on the fallback.
+    const fallback = document.getElementById('fallback');
+    fallback.style.viewTransitionName = 'authored-name';
+    fallback.style.viewTransitionClass = 'authored-class';
+
+    await serverAct(async () => {
+      await resolve(<div id="content">Done</div>);
+    });
+
+    // The reveal temporarily applies its own class while the transition runs.
+    expect(applied.get('fallback')).toBe('page-exit');
+    // Once the transition is ready, the authored values are restored.
+    expect(fallback.style.viewTransitionName).toBe('authored-name');
+    expect(fallback.style.viewTransitionClass).toBe('authored-class');
+  });
 });
