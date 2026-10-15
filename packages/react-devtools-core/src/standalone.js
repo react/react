@@ -327,7 +327,9 @@ type ClientOptions = {
 
 function startServer(
   port: number = 8097,
-  host: string = 'localhost',
+  // When omitted, the server listens on all interfaces, so that React Native
+  // apps on physical devices can connect, and clients connect to localhost.
+  host?: string,
   httpsOptions?: ServerOptions,
   loggerOptions?: LoggerOptions,
   path?: string,
@@ -392,7 +394,7 @@ function startServer(
 
     // Client overrides: when connecting through a reverse proxy, the client
     // may need to connect to a different host/port/protocol than the server.
-    const clientHost = clientOptions?.host ?? host;
+    const clientHost = clientOptions?.host ?? host ?? 'localhost';
     const clientPort = clientOptions?.port ?? port;
     const clientUseHttps = clientOptions?.useHttps ?? useHttps;
 
@@ -426,7 +428,7 @@ function startServer(
     );
   });
 
-  httpServer.listen(port, () => {
+  httpServer.listen(port, host, () => {
     statusListener(
       'The server is listening on the port ' + port + '.',
       'server-connected',

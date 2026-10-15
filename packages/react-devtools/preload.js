@@ -33,7 +33,8 @@ contextBridge.exposeInMainWorld('api', {
       console.error('Failed to process SSL options - ', err);
       options = undefined;
     }
-    const host = process.env.HOST || 'localhost';
+    // Listen on all interfaces unless a host is explicitly configured.
+    const host = process.env.HOST || undefined;
     const protocol = useHttps ? 'https' : 'http';
     const port = +process.env.REACT_DEVTOOLS_PORT || +process.env.PORT || 8097;
     const path = process.env.REACT_DEVTOOLS_PATH || undefined;
