@@ -66,6 +66,12 @@ struct MutationInfo {
     loc: Option<SourceLocation>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CaptureInfo {
+    index: usize,
+    is_object_spread_capture: bool,
+}
+
 #[derive(Debug, Clone)]
 enum NodeValue {
     Object,
@@ -77,7 +83,7 @@ enum NodeValue {
 struct Node {
     id: IdentifierId,
     created_from: IndexMap<IdentifierId, usize, FxBuildHasher>,
-    captures: IndexMap<IdentifierId, usize, FxBuildHasher>,
+    captures: IndexMap<IdentifierId, CaptureInfo, FxBuildHasher>,
     aliases: IndexMap<IdentifierId, usize, FxBuildHasher>,
     maybe_aliases: IndexMap<IdentifierId, usize, FxBuildHasher>,
     edges: Vec<Edge>,
@@ -140,7 +146,13 @@ impl AliasingState {
         }
     }
 
-    fn capture(&mut self, index: usize, from: &Place, into: &Place) {
+    fn capture(
+        &mut self,
+        index: usize,
+        from: &Place,
+        into: &Place,
+        is_object_spread_capture: bool,
+    ) {
         let from_id = from.identifier;
         let into_id = into.identifier;
         if !self.nodes.contains_key(&from_id) || !self.nodes.contains_key(&into_id) {
@@ -156,7 +168,10 @@ impl AliasingState {
             .unwrap()
             .captures
             .entry(from_id)
-            .or_insert(index);
+            .or_insert(CaptureInfo {
+                index,
+                is_object_spread_capture,
+            });
     }
 
     fn assign(&mut self, index: usize, from: &Place, into: &Place) {
@@ -226,8 +241,8 @@ impl AliasingState {
                 }
                 queue.push(alias);
             }
-            for (&capture, &when) in &node.captures {
-                if when >= index {
+            for (&capture, info) in &node.captures {
+                if info.index >= index {
                     continue;
                 }
                 queue.push(capture);
@@ -283,6 +298,7 @@ impl AliasingState {
                 None => continue,
             };
 
+            let was_mutated = node.local.is_some() || node.transitive.is_some();
             if node.mutation_reason.is_none() {
                 node.mutation_reason = reason.clone();
             }
@@ -346,7 +362,7 @@ impl AliasingState {
                 node.aliases.iter().map(|(&k, &v)| (k, v)).collect();
             let node_maybe_aliases: Vec<(IdentifierId, usize)> =
                 node.maybe_aliases.iter().map(|(&k, &v)| (k, v)).collect();
-            let node_captures: Vec<(IdentifierId, usize)> =
+            let node_captures: Vec<(IdentifierId, CaptureInfo)> =
                 node.captures.iter().map(|(&k, &v)| (k, v)).collect();
             let node_created_from: Vec<(IdentifierId, usize)> =
                 node.created_from.iter().map(|(&k, &v)| (k, v)).collect();
@@ -409,15 +425,20 @@ impl AliasingState {
 
             // Only transitive mutations affect captures backward
             if entry.transitive {
-                for (capture, when) in &node_captures {
-                    if *when >= index {
+                for (capture, info) in &node_captures {
+                    if info.index >= index {
                         continue;
                     }
                     queue.push(QueueEntry {
                         place: *capture,
                         transitive: entry.transitive,
                         direction: Direction::Backwards,
-                        kind: entry.kind,
+                        // An earlier mutation may have replaced the property being mutated.
+                        kind: if info.is_object_spread_capture && was_mutated {
+                            MutationKind::Conditional
+                        } else {
+                            entry.kind
+                        },
                     });
                 }
             }
@@ -583,8 +604,14 @@ pub fn infer_mutation_aliasing_ranges(
                         state.maybe_alias(index, from, into);
                         index += 1;
                     }
-                    AliasingEffect::Capture { from, into } => {
-                        state.capture(index, from, into);
+                    AliasingEffect::Capture { from, into }
+                    | AliasingEffect::ObjectSpreadCapture { from, into } => {
+                        state.capture(
+                            index,
+                            from,
+                            into,
+                            matches!(effect, AliasingEffect::ObjectSpreadCapture { .. }),
+                        );
                         index += 1;
                     }
                     AliasingEffect::MutateTransitive { value }
@@ -899,6 +926,7 @@ pub fn infer_mutation_aliasing_ranges(
                     AliasingEffect::Assign { from, into, .. }
                     | AliasingEffect::Alias { from, into }
                     | AliasingEffect::Capture { from, into }
+                    | AliasingEffect::ObjectSpreadCapture { from, into }
                     | AliasingEffect::CreateFrom { from, into }
                     | AliasingEffect::MaybeAlias { from, into } => {
                         let is_mutated_or_reassigned = env.identifiers[into.identifier.0 as usize]
