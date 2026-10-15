@@ -570,6 +570,20 @@ function appendFunctionErrors(env: Environment | null, fn: HIRFunction): void {
   }
 }
 
+function functionMayMutate(fn: HIRFunction, value: Identifier): boolean {
+  if (fn.aliasingEffects == null) {
+    return true;
+  }
+  return fn.aliasingEffects.some(
+    effect =>
+      (effect.kind === 'Mutate' ||
+        effect.kind === 'MutateConditionally' ||
+        effect.kind === 'MutateTransitive' ||
+        effect.kind === 'MutateTransitiveConditionally') &&
+      effect.value.identifier.id === value.id,
+  );
+}
+
 export enum MutationKind {
   None = 0,
   Conditional = 1,
@@ -718,9 +732,30 @@ class AliasingState {
       transitive: boolean;
       direction: 'backwards' | 'forwards';
       kind: MutationKind;
-    }> = [{place: start, transitive, direction: 'backwards', kind: startKind}];
+      /**
+       * Mutating a function is treated as possibly calling it. A transitive
+       * mutation also reaches the functions it captured, but calling a function
+       * only calls those if its own effects mutate them. Tracks whether a
+       * function reached here may actually be called.
+       */
+      maybeCalled: boolean;
+    }> = [
+      {
+        place: start,
+        transitive,
+        direction: 'backwards',
+        kind: startKind,
+        maybeCalled: true,
+      },
+    ];
     while (queue.length !== 0) {
-      const {place: current, transitive, direction, kind} = queue.pop()!;
+      const {
+        place: current,
+        transitive,
+        direction,
+        kind,
+        maybeCalled,
+      } = queue.pop()!;
       const previousKind = seen.get(current);
       if (previousKind != null && previousKind >= kind) {
         continue;
@@ -739,6 +774,7 @@ class AliasingState {
       }
       if (
         node.value.kind === 'Function' &&
+        maybeCalled &&
         node.transitive == null &&
         node.local == null
       ) {
@@ -768,6 +804,7 @@ class AliasingState {
           direction: 'forwards',
           // Traversing a maybeAlias edge always downgrades to conditional mutation
           kind: edge.kind === 'maybeAlias' ? MutationKind.Conditional : kind,
+          maybeCalled,
         });
       }
       for (const [alias, when] of node.createdFrom) {
@@ -779,6 +816,7 @@ class AliasingState {
           transitive: true,
           direction: 'backwards',
           kind,
+          maybeCalled,
         });
       }
       if (direction === 'backwards' || node.value.kind !== 'Phi') {
@@ -801,6 +839,7 @@ class AliasingState {
             transitive,
             direction: 'backwards',
             kind,
+            maybeCalled,
           });
         }
         /**
@@ -819,6 +858,7 @@ class AliasingState {
             transitive,
             direction: 'backwards',
             kind: MutationKind.Conditional,
+            maybeCalled,
           });
         }
       }
@@ -835,6 +875,10 @@ class AliasingState {
             transitive,
             direction: 'backwards',
             kind,
+            maybeCalled:
+              maybeCalled &&
+              (node.value.kind !== 'Function' ||
+                functionMayMutate(node.value.function, capture)),
           });
         }
       }
