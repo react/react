@@ -1001,4 +1001,123 @@ describe('Store component filters', () => {
           <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
     `);
   });
+
+  // @reactVersion >= 19.2
+  it('stops filtering by an Activity slice once the Activity unmounts', async () => {
+    const Activity = React.Activity;
+
+    function App({showBlog}) {
+      return (
+        <>
+          <Activity name="/" mode="visible">
+            <h1>Home</h1>
+          </Activity>
+          {showBlog ? (
+            <Activity name="/blog" mode="visible">
+              <h2>Blog</h2>
+            </Activity>
+          ) : null}
+        </>
+      );
+    }
+
+    await actAsync(async () => render(<App showBlog={true} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Activity name="/" mode="visible">
+              <h1>
+          ▾ <Activity name="/blog" mode="visible">
+              <h2>
+    `);
+
+    await actAsync(
+      async () =>
+        (store.componentFilters = [
+          utils.createActivitySliceFilter(store.getElementIDAtIndex(3)),
+        ]),
+    );
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Activity name="/blog" mode="visible">
+            <h2>
+    `);
+
+    await actAsync(async () => render(<App showBlog={false} />));
+    // The slice is gone, so this is the tree that applying the filters again would show.
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Activity name="/" mode="visible">
+              <h1>
+    `);
+    expect(store.componentFilters).toEqual([
+      expect.objectContaining({
+        type: Types.ComponentFilterActivitySlice,
+        isValid: false,
+      }),
+    ]);
+
+    await actAsync(async () => render(<App showBlog={true} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Activity name="/" mode="visible">
+              <h1>
+          ▾ <Activity name="/blog" mode="visible">
+              <h2>
+    `);
+  });
+
+  // @reactVersion >= 19.2
+  it('stops filtering by an Activity slice that unmounted while profiling once profiling stops', async () => {
+    const Activity = React.Activity;
+
+    function App({showBlog, count}) {
+      return (
+        <>
+          <Activity name="/" mode="visible">
+            <h1>{count}</h1>
+          </Activity>
+          {showBlog ? (
+            <Activity name="/blog" mode="visible">
+              <h2>Blog</h2>
+            </Activity>
+          ) : null}
+        </>
+      );
+    }
+
+    await actAsync(async () => render(<App showBlog={true} count={0} />));
+    await actAsync(
+      async () =>
+        (store.componentFilters = [
+          utils.createActivitySliceFilter(store.getElementIDAtIndex(3)),
+        ]),
+    );
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Activity name="/blog" mode="visible">
+            <h2>
+    `);
+
+    await actAsync(async () => store.profilerStore.startProfiling());
+    await actAsync(async () => render(<App showBlog={false} count={1} />));
+    // Re-mounting the tree while profiling would break the commit data.
+    expect(store).toMatchInlineSnapshot(`[root]`);
+    await actAsync(async () => store.profilerStore.stopProfiling());
+
+    const rootID = store.roots[0];
+    expect(store.profilerStore.getDataForRoot(rootID).commitData).toHaveLength(
+      1,
+    );
+
+    await actAsync(async () => render(<App showBlog={false} count={2} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Activity name="/" mode="visible">
+              <h1>
+    `);
+  });
 });

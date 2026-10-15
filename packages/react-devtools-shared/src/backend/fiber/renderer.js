@@ -793,6 +793,9 @@ export function attach(
   const hideElementsWithTypes: Set<ElementType> = new Set();
   const hideElementsWithEnvs: Set<string> = new Set();
   let isInFocusedActivity: boolean = true;
+  // Everything outside of the focused Activity is filtered.
+  // Once it unmounts, we need to stop filtering by it.
+  let didUnmountFocusedActivity: boolean = false;
 
   // Highlight updates
   let traceUpdatesEnabled: boolean = false;
@@ -888,11 +891,6 @@ export function attach(
       throw Error('Cannot modify filter preferences while profiling');
     }
 
-    const previousForcedFallbacks =
-      forceFallbackForFibers.size > 0 ? new Set(forceFallbackForFibers) : null;
-    const previousForcedErrors =
-      forceErrorForFibers.size > 0 ? new Map(forceErrorForFibers) : null;
-
     // The ID will be based on the old tree. We need to find the Fiber based on
     // that ID before we unmount everything. We set the activity slice ID once
     // we mount it again.
@@ -909,6 +907,58 @@ export function attach(
       }
     }
 
+    remountAllRoots(() => {
+      if (
+        nextFocusedActivity !== focusedActivity &&
+        (focusedActivityFilter === null ||
+          focusedActivityFilter.rendererID === rendererID)
+      ) {
+        // When we find the applied instance during mount we will send the actual ID.
+        // Otherwise 0 will indicate that we unfocused the activity slice.
+        pushOperation(TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE);
+        pushOperation(0);
+      }
+      applyComponentFilters(componentFilters, nextFocusedActivity);
+    });
+
+    // We need to write back the new ID for the focused Fiber.
+    // Otherwise subsequent filter applications will try to focus based on the old ID.
+    // This is also relevant to filter across renderers.
+    if (focusedActivityFilter !== null && focusedActivityID !== null) {
+      focusedActivityFilter.activityID = focusedActivityID;
+    }
+
+    // We're not profiling so it's safe to flush without a specific root.
+    flushPendingEvents(null);
+
+    needsToFlushComponentLogs = false;
+  }
+
+  // Like changing the filters, except that only the Activity slice filter stops applying.
+  function unfocusUnmountedActivity() {
+    remountAllRoots(() => {
+      focusedActivity = null;
+      focusedActivityID = null;
+      isInFocusedActivity = true;
+      // The frontend will mark the Activity slice filter as invalid.
+      pushOperation(TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE);
+      pushOperation(0);
+    });
+
+    // We're not profiling so it's safe to flush without a specific root.
+    flushPendingEvents(null);
+
+    needsToFlushComponentLogs = false;
+  }
+
+  // Unmounts all roots, lets `applyChanges` change what the tree should contain,
+  // and mounts all roots again.
+  function remountAllRoots(applyChanges: () => void) {
+    const previousForcedFallbacks =
+      forceFallbackForFibers.size > 0 ? new Set(forceFallbackForFibers) : null;
+    const previousForcedErrors =
+      forceErrorForFibers.size > 0 ? new Map(forceErrorForFibers) : null;
+
     // Recursively unmount all roots.
     hook.getFiberRoots(rendererID).forEach(root => {
       const rootInstance = rootToFiberInstanceMap.get(root);
@@ -921,18 +971,10 @@ export function attach(
       rootToFiberInstanceMap.delete(root);
       currentRoot = null as any;
     });
+    // The focused Activity is mounted again below, if it still exists.
+    didUnmountFocusedActivity = false;
 
-    if (
-      nextFocusedActivity !== focusedActivity &&
-      (focusedActivityFilter === null ||
-        focusedActivityFilter.rendererID === rendererID)
-    ) {
-      // When we find the applied instance during mount we will send the actual ID.
-      // Otherwise 0 will indicate that we unfocused the activity slice.
-      pushOperation(TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE);
-      pushOperation(0);
-    }
-    applyComponentFilters(componentFilters, nextFocusedActivity);
+    applyChanges();
 
     // Reset pseudo counters so that new path selections will be persisted.
     rootDisplayNameCounter.clear();
@@ -994,18 +1036,6 @@ export function attach(
       mountFiberRecursively(root.current, false);
       currentRoot = null as any;
     });
-
-    // We need to write back the new ID for the focused Fiber.
-    // Otherwise subsequent filter applications will try to focus based on the old ID.
-    // This is also relevant to filter across renderers.
-    if (focusedActivityFilter !== null && focusedActivityID !== null) {
-      focusedActivityFilter.activityID = focusedActivityID;
-    }
-
-    // We're not profiling so it's safe to flush without a specific root.
-    flushPendingEvents(null);
-
-    needsToFlushComponentLogs = false;
   }
 
   function getEnvironmentNames(): Array<string> {
@@ -3614,6 +3644,7 @@ export function attach(
     if (focusedActivity !== null) {
       if (instance.id === focusedActivityID) {
         isInFocusedActivity = true;
+        didUnmountFocusedActivity = true;
       } else if (
         instance.kind === FIBER_INSTANCE &&
         // $FlowFixMe[invalid-compare]
@@ -5160,6 +5191,12 @@ export function attach(
     }
 
     currentRoot = null as any;
+
+    // Re-mounting while profiling would break the commit data.
+    // Instead, we'll do it after the first commit once profiling stops.
+    if (didUnmountFocusedActivity && !isProfiling) {
+      unfocusUnmountedActivity();
+    }
   }
 
   function getResourceInstance(fiber: Fiber): HostInstance | null {
