@@ -459,6 +459,20 @@ describe('ReactDOMServerHydration', () => {
       `);
     });
 
+    // Guards that the Fizz and hydration-diff serializers stay in sync;
+    // this passes pre-fix too since both used to trim consistently.
+    // @gate __DEV__
+    it('does not warn when a CSS custom property value is only whitespace (gh-20497)', () => {
+      function Mismatch() {
+        return (
+          <div className="parent">
+            <main className="child" style={{'--foo': ' '}} />
+          </div>
+        );
+      }
+      expect(testMismatch(Mismatch)).toEqual([]);
+    });
+
     // @gate __DEV__
     it('picks the DFS-first Fiber as the error Owner', () => {
       function LeftMismatch({isClient}) {

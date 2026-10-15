@@ -38,7 +38,7 @@ export function createDangerousStringForStyles(styles) {
           if (__DEV__) {
             checkCSSPropertyStringCoercion(value, styleName);
           }
-          serialized += delimiter + styleName + ':' + ('' + value).trim();
+          serialized += delimiter + styleName + ':' + ('' + value);
         } else {
           if (
             typeof value === 'number' &&
