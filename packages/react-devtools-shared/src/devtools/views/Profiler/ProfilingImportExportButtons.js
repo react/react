@@ -97,8 +97,11 @@ export default function ProfilingImportExportButtons(): React.Node {
     if (input !== null && input.files.length > 0) {
       const file = input.files[0];
 
-      // TODO (profiling) Handle fileReader errors.
       const fileReader = new FileReader();
+      fileReader.addEventListener('error', () => {
+        const error = fileReader.error;
+        showImportError(error !== null ? error.message : null);
+      });
       fileReader.addEventListener('load', () => {
         const raw = fileReader.result as any as string;
 
