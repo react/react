@@ -1725,6 +1725,8 @@ export function restoreRootViewTransitionName(rootContainer: Container): void {
   }
   if (
     // $FlowFixMe[prop-missing]
+    containerInstance.style != null &&
+    // $FlowFixMe[prop-missing]
     containerInstance.style.viewTransitionName === 'root'
   ) {
     // If we moved the root view transition name to the container in a gesture

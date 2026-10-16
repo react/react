@@ -1348,5 +1348,49 @@ describe('ReactDOMViewTransition', () => {
 
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
+
+    // @gate enableViewTransition
+    it('does not throw when container is a ShadowRoot', async () => {
+      const host = document.createElement('div');
+      container.appendChild(host);
+      const shadowRoot = host.attachShadow({mode: 'open'});
+
+      function App({shown}) {
+        return (
+          <div>
+            {shown && (
+              <ViewTransition>
+                <div>Box</div>
+              </ViewTransition>
+            )}
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(shadowRoot);
+      await act(() => {
+        startTransition(() => {
+          root.render(<App shown={false} />);
+        });
+      });
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App shown={true} />);
+        });
+      });
+
+      expect(shadowRoot.textContent).toBe('Box');
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App shown={false} />);
+        });
+      });
+
+      expect(shadowRoot.textContent).toBe('');
+      expect(document.documentElement.style.viewTransitionName).toBe('');
+    });
   });
 });
+
