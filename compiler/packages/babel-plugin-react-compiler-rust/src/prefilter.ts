@@ -103,7 +103,7 @@ function isInsideMemoOrForwardRef(
 }
 
 /**
- * Check if a function has an opt-in directive ('use memo' or 'use forget')
+ * Check if a function has an opt-in directive ('use memo', 'use forget', or 'use memo if(...)')
  * in its body, indicating it should be compiled in annotation mode.
  */
 function hasOptInDirective(
@@ -114,7 +114,10 @@ function hasOptInDirective(
 ): boolean {
   if (node.body.type !== 'BlockStatement') return false;
   return node.body.directives.some(
-    d => d.value.value === 'use memo' || d.value.value === 'use forget',
+    d =>
+      d.value.value === 'use memo' ||
+      d.value.value === 'use forget' ||
+      d.value.value.startsWith('use memo if('),
   );
 }
 

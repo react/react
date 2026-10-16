@@ -4,13 +4,13 @@
 ```javascript
 // @dynamicGating:{"source":"shared-runtime"} @compilationMode:"annotation"
 
-function Foo() {
+function foo() {
   'use memo if(getTrue)';
   return <div>hello world</div>;
 }
 
 export const FIXTURE_ENTRYPOINT = {
-  fn: Foo,
+  fn: foo,
   params: [{}],
 };
 
@@ -21,8 +21,8 @@ export const FIXTURE_ENTRYPOINT = {
 ```javascript
 import { c as _c } from "react/compiler-runtime";
 import { getTrue } from "shared-runtime"; // @dynamicGating:{"source":"shared-runtime"} @compilationMode:"annotation"
-const Foo = getTrue()
-  ? function Foo() {
+const foo = getTrue()
+  ? function foo() {
       "use memo if(getTrue)";
       const $ = _c(1);
       let t0;
@@ -34,13 +34,13 @@ const Foo = getTrue()
       }
       return t0;
     }
-  : function Foo() {
+  : function foo() {
       "use memo if(getTrue)";
       return <div>hello world</div>;
     };
 
 export const FIXTURE_ENTRYPOINT = {
-  fn: Foo,
+  fn: foo,
   params: [{}],
 };
 

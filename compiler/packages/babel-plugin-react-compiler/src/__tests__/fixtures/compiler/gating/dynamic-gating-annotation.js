@@ -1,11 +1,11 @@
 // @dynamicGating:{"source":"shared-runtime"} @compilationMode:"annotation"
 
-function Foo() {
+function foo() {
   'use memo if(getTrue)';
   return <div>hello world</div>;
 }
 
 export const FIXTURE_ENTRYPOINT = {
-  fn: Foo,
+  fn: foo,
   params: [{}],
 };
