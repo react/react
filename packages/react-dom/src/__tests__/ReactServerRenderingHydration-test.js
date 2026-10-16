@@ -835,6 +835,54 @@ describe('ReactDOMServerHydration', () => {
     expect(c.current.value).toBe('C');
   });
 
+  // https://github.com/react/react/issues/23324
+  it('hydrates a form whose nodeName is shadowed by a control', async () => {
+    const element = document.createElement('div');
+    element.innerHTML = '<form><input name="nodeName" /></form>';
+    const form = element.firstChild;
+    // Browsers expose named controls as properties of their form, which
+    // shadow built-in properties like nodeName. jsdom doesn't implement this.
+    Object.defineProperty(form, 'nodeName', {value: form.firstChild});
+
+    const ref = React.createRef();
+    await act(() => {
+      ReactDOMClient.hydrateRoot(
+        element,
+        <form ref={ref}>
+          <input name="nodeName" />
+        </form>,
+      );
+    });
+
+    // The content should not have been client rendered.
+    expect(ref.current).toBe(form);
+  });
+
+  it('reports a mismatch on a form whose nodeName is shadowed by a control', async () => {
+    const element = document.createElement('div');
+    element.innerHTML = '<div><form><input name="nodeName" /></form></div>';
+    const form = element.firstChild.firstChild;
+    Object.defineProperty(form, 'nodeName', {value: form.firstChild});
+
+    const errors = [];
+    await act(() => {
+      ReactDOMClient.hydrateRoot(element, <div />, {
+        onRecoverableError(error) {
+          errors.push(error.message);
+        },
+      });
+    });
+
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain(
+      "Hydration failed because the server rendered HTML didn't match the client.",
+    );
+    if (__DEV__) {
+      // The server-only form is described in the mismatch diff.
+      expect(errors[0]).toContain('-   <form>');
+    }
+  });
+
   it('allows rendering extra hidden inputs immediately before a text instance', async () => {
     const element = document.createElement('div');
     element.innerHTML =
