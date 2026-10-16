@@ -23,7 +23,23 @@ const didWarnAboutName: {[string]: boolean} = __DEV__ ? {} : (null as any);
 
 export function trackNamedViewTransition(fiber: Fiber): void {
   if (__DEV__) {
-    const name = (fiber.memoizedProps as ViewTransitionProps).name;
+    const props = (fiber.memoizedProps as ViewTransitionProps);
+    const name = props != null ? props.name : null;
+
+    if (fiber.alternate !== null) {
+      const prevProps = (fiber.alternate.memoizedProps as ViewTransitionProps);
+      const prevName = prevProps != null ? prevProps.name : null;
+      if (prevName != null && prevName !== 'auto' && prevName !== name) {
+        const existingPrev = mountedNamedViewTransitions.get(prevName);
+        if (
+          existingPrev !== undefined &&
+          (existingPrev === fiber || existingPrev === fiber.alternate)
+        ) {
+          mountedNamedViewTransitions.delete(prevName);
+        }
+      }
+    }
+
     if (name != null && name !== 'auto') {
       const existing = mountedNamedViewTransitions.get(name);
       if (existing !== undefined) {
@@ -57,7 +73,8 @@ export function trackNamedViewTransition(fiber: Fiber): void {
 
 export function untrackNamedViewTransition(fiber: Fiber): void {
   if (__DEV__) {
-    const name = (fiber.memoizedProps as ViewTransitionProps).name;
+    const props = (fiber.memoizedProps as ViewTransitionProps);
+    const name = props != null ? props.name : null;
     if (name != null && name !== 'auto') {
       const existing = mountedNamedViewTransitions.get(name);
       if (
@@ -67,5 +84,19 @@ export function untrackNamedViewTransition(fiber: Fiber): void {
         mountedNamedViewTransitions.delete(name);
       }
     }
+    if (fiber.alternate !== null) {
+      const prevProps = (fiber.alternate.memoizedProps as ViewTransitionProps);
+      const prevName = prevProps != null ? prevProps.name : null;
+      if (prevName != null && prevName !== 'auto' && prevName !== name) {
+        const existing = mountedNamedViewTransitions.get(prevName);
+        if (
+          existing !== undefined &&
+          (existing === fiber || existing === fiber.alternate)
+        ) {
+          mountedNamedViewTransitions.delete(prevName);
+        }
+      }
+    }
   }
 }
+

@@ -3654,6 +3654,15 @@ function updateViewTransition(
     if (getIsHydrating()) {
       pushMaterializedTreeId(workInProgress);
     }
+    if (
+      !__DEV__ ||
+      current === null ||
+      current.memoizedProps == null ||
+      (current.memoizedProps as ViewTransitionProps).name == null ||
+      (current.memoizedProps as ViewTransitionProps).name === 'auto'
+    ) {
+      workInProgress.flags &= ~ViewTransitionNamedStatic;
+    }
   }
   if (__DEV__) {
     // $FlowFixMe[prop-missing]
