@@ -205,6 +205,13 @@ export const EnvironmentConfigSchema = z.object({
   enablePreserveExistingMemoizationGuarantees: z.boolean().default(true),
 
   /**
+   * When true, skips the DropManualMemoization pass entirely, leaving existing
+   * useMemo/useCallback calls in place while the compiler layers
+   * auto-memoization around them.
+   */
+  enablePreserveExistingManualUseMemo: z.boolean().default(false),
+
+  /**
    * Validates that all useMemo/useCallback values are also memoized by Forget. This mode can be
    * used with or without @enablePreserveExistingMemoizationGuarantees.
    *
@@ -637,13 +644,12 @@ export class Environment {
 
   get enableDropManualMemoization(): boolean {
     switch (this.outputMode) {
-      case 'lint': {
-        // linting drops to be more compatible with compiler analysis
-        return true;
-      }
-      case 'client':
+      case 'lint':
       case 'ssr': {
         return true;
+      }
+      case 'client': {
+        return !this.config.enablePreserveExistingManualUseMemo;
       }
       default: {
         assertExhaustive(
