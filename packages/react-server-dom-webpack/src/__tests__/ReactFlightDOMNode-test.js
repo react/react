@@ -2997,9 +2997,12 @@ describe('ReactFlightDOMNode', () => {
         return originalEnqueue.call(this, chunk);
       });
 
+    let sendFirst;
     let sendMore;
     const model = {
-      first: Promise.resolve(view),
+      first: new Promise(resolve => {
+        sendFirst = resolve;
+      }),
       second: new Promise(resolve => {
         sendMore = resolve;
       }),
@@ -3032,6 +3035,12 @@ describe('ReactFlightDOMNode', () => {
         },
       },
     );
+
+    // Read the root before failing a write. An errored stream may discard queued
+    // chunks, so the root must not depend on how debug data fills the buffer.
+    await serverAct(() => {
+      sendFirst(view);
+    });
 
     // This must fail. Adjust the mock above to be able to throw at a specific
     // point.
