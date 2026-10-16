@@ -61,7 +61,7 @@ Two-phase mark-and-sweep with fixed-point iteration for loops:
   - Memoization markers (StartMemoize, FinishMemoize)
 
 - **SSR mode special case:**
-  - In SSR mode, unused `useState`, `useReducer`, and `useRef` hooks can be removed
+  - In SSR mode, unused `useState`, `useReducer`, and `useRef` hooks can be removed, except a `useReducer` call with an initializer (`useReducer(reducer, arg, init)`): React calls `init(arg)` on mount, so the call is kept
 
 - **Object destructuring with rest:**
   - Cannot remove unused properties if rest element is used (would change rest's value)

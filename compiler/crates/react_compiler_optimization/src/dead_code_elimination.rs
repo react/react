@@ -67,7 +67,7 @@ pub fn dead_code_elimination(func: &mut HirFunction, env: &Environment) {
 }
 
 /// State for tracking referenced identifiers during mark phase.
-struct State {
+pub(crate) struct State {
     /// SSA-specific usages (by IdentifierId)
     identifiers: FxHashSet<IdentifierId>,
     /// Named variable usages (any version)
@@ -102,7 +102,7 @@ fn reference(
 
 /// Check if any version of the given identifier is used somewhere.
 /// Checks both the specific SSA id and (for named identifiers) any usage of that name.
-fn is_id_or_name_used(
+pub(crate) fn is_id_or_name_used(
     state: &State,
     identifiers: &[react_compiler_hir::Identifier],
     identifier_id: IdentifierId,
@@ -119,12 +119,12 @@ fn is_id_or_name_used(
 }
 
 /// Check if this specific SSA id is used.
-fn is_id_used(state: &State, identifier_id: IdentifierId) -> bool {
+pub(crate) fn is_id_used(state: &State, identifier_id: IdentifierId) -> bool {
     state.identifiers.contains(&identifier_id)
 }
 
-/// Phase 1: Find all referenced identifiers via fixed-point iteration.
-fn find_referenced_identifiers(func: &HirFunction, env: &Environment) -> State {
+/// Phase 1: Find all referenced identifiers via fixed-point iteration. Does not modify `func`.
+pub(crate) fn find_referenced_identifiers(func: &HirFunction, env: &Environment) -> State {
     let has_loop = has_back_edge(func);
     // Collect block ids in reverse order (postorder - successors before predecessors)
     let reversed_block_ids: Vec<BlockId> = func.body.blocks.keys().rev().copied().collect();
@@ -330,14 +330,19 @@ fn pruneable_value(value: &InstructionValue, state: &State, env: &Environment) -
             // explicitly retain debugger statements
             false
         }
-        InstructionValue::CallExpression { callee, .. } => {
+        InstructionValue::CallExpression { callee, args, .. } => {
             if env.output_mode == OutputMode::Ssr {
                 let callee_ty =
                     &env.types[env.identifiers[callee.identifier.0 as usize].type_.0 as usize];
                 if let Some(hook_kind) = env.get_hook_kind_for_type(callee_ty).ok().flatten() {
                     match hook_kind {
-                        HookKind::UseState | HookKind::UseReducer | HookKind::UseRef => {
+                        HookKind::UseState | HookKind::UseRef => {
                             return true;
+                        }
+                        HookKind::UseReducer => {
+                            // React calls the initializer, `init(arg)`, on mount, so keep a call
+                            // that has one
+                            return args.len() < 3;
                         }
                         _ => {}
                     }
@@ -345,14 +350,19 @@ fn pruneable_value(value: &InstructionValue, state: &State, env: &Environment) -
             }
             false
         }
-        InstructionValue::MethodCall { property, .. } => {
+        InstructionValue::MethodCall { property, args, .. } => {
             if env.output_mode == OutputMode::Ssr {
                 let callee_ty =
                     &env.types[env.identifiers[property.identifier.0 as usize].type_.0 as usize];
                 if let Some(hook_kind) = env.get_hook_kind_for_type(callee_ty).ok().flatten() {
                     match hook_kind {
-                        HookKind::UseState | HookKind::UseReducer | HookKind::UseRef => {
+                        HookKind::UseState | HookKind::UseRef => {
                             return true;
+                        }
+                        HookKind::UseReducer => {
+                            // React calls the initializer, `init(arg)`, on mount, so keep a call
+                            // that has one
+                            return args.len() < 3;
                         }
                         _ => {}
                     }
