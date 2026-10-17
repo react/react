@@ -64,6 +64,7 @@ import {validateProperties as validateUnknownProperties} from '../shared/ReactDO
 import sanitizeURL from '../shared/sanitizeURL';
 
 import noop from 'shared/noop';
+import hasOwnProperty from 'shared/hasOwnProperty';
 
 import {trackHostMutation} from 'react-reconciler/src/ReactFiberMutationTracking';
 
@@ -1126,7 +1127,7 @@ export function setInitialProperties(
       let hasSrc = false;
       let hasSrcSet = false;
       for (const propKey in props) {
-        if (!props.hasOwnProperty(propKey)) {
+        if (!hasOwnProperty.call(props, propKey)) {
           continue;
         }
         const propValue = props[propKey];
@@ -1177,7 +1178,7 @@ export function setInitialProperties(
       let checked = null;
       let defaultChecked = null;
       for (const propKey in props) {
-        if (!props.hasOwnProperty(propKey)) {
+        if (!hasOwnProperty.call(props, propKey)) {
           continue;
         }
         const propValue = props[propKey];
@@ -1250,7 +1251,7 @@ export function setInitialProperties(
       let defaultValue = null;
       let multiple = null;
       for (const propKey in props) {
-        if (!props.hasOwnProperty(propKey)) {
+        if (!hasOwnProperty.call(props, propKey)) {
           continue;
         }
         const propValue = props[propKey];
@@ -1294,7 +1295,7 @@ export function setInitialProperties(
       let defaultValue = null;
       let children = null;
       for (const propKey in props) {
-        if (!props.hasOwnProperty(propKey)) {
+        if (!hasOwnProperty.call(props, propKey)) {
           continue;
         }
         const propValue = props[propKey];
@@ -1339,7 +1340,7 @@ export function setInitialProperties(
     case 'option': {
       validateOptionProps(domElement, props);
       for (const propKey in props) {
-        if (!props.hasOwnProperty(propKey)) {
+        if (!hasOwnProperty.call(props, propKey)) {
           continue;
         }
         const propValue = props[propKey];
@@ -1419,7 +1420,7 @@ export function setInitialProperties(
     case 'menuitem': {
       // Void elements
       for (const propKey in props) {
-        if (!props.hasOwnProperty(propKey)) {
+        if (!hasOwnProperty.call(props, propKey)) {
           continue;
         }
         const propValue = props[propKey];
@@ -1446,7 +1447,7 @@ export function setInitialProperties(
     default: {
       if (isCustomElement(tag, props)) {
         for (const propKey in props) {
-          if (!props.hasOwnProperty(propKey)) {
+          if (!hasOwnProperty.call(props, propKey)) {
             continue;
           }
           const propValue = props[propKey];
@@ -1468,7 +1469,7 @@ export function setInitialProperties(
   }
 
   for (const propKey in props) {
-    if (!props.hasOwnProperty(propKey)) {
+    if (!hasOwnProperty.call(props, propKey)) {
       continue;
     }
     const propValue = props[propKey];
@@ -1493,7 +1494,7 @@ export function clearSingletonProperties(
   // body, so they always use this generic path.
   for (const propKey in props) {
     const propValue = props[propKey];
-    if (props.hasOwnProperty(propKey) && propValue != null) {
+    if (hasOwnProperty.call(props, propKey) && propValue != null) {
       setProp(domElement, tag, propKey, null, emptyProps, propValue);
     }
   }
@@ -1531,7 +1532,7 @@ export function updateProperties(
       let defaultChecked = null;
       for (const propKey in lastProps) {
         const lastProp = lastProps[propKey];
-        if (lastProps.hasOwnProperty(propKey) && lastProp != null) {
+        if (hasOwnProperty.call(lastProps, propKey) && lastProp != null) {
           switch (propKey) {
             case 'checked': {
               break;
@@ -1546,7 +1547,7 @@ export function updateProperties(
             // defaultChecked and defaultValue are ignored by setProp
             // Fallthrough
             default: {
-              if (!nextProps.hasOwnProperty(propKey))
+              if (!hasOwnProperty.call(nextProps, propKey))
                 setProp(domElement, tag, propKey, null, nextProps, lastProp);
             }
           }
@@ -1556,7 +1557,7 @@ export function updateProperties(
         const nextProp = nextProps[propKey];
         const lastProp = lastProps[propKey];
         if (
-          nextProps.hasOwnProperty(propKey) &&
+          hasOwnProperty.call(nextProps, propKey) &&
           (nextProp != null || lastProp != null)
         ) {
           switch (propKey) {
@@ -1689,7 +1690,7 @@ export function updateProperties(
       let wasMultiple = null;
       for (const propKey in lastProps) {
         const lastProp = lastProps[propKey];
-        if (lastProps.hasOwnProperty(propKey) && lastProp != null) {
+        if (hasOwnProperty.call(lastProps, propKey) && lastProp != null) {
           switch (propKey) {
             case 'value': {
               // This is handled by updateWrapper below.
@@ -1702,7 +1703,7 @@ export function updateProperties(
             }
             // Fallthrough
             default: {
-              if (!nextProps.hasOwnProperty(propKey)) {
+              if (!hasOwnProperty.call(nextProps, propKey)) {
                 setProp(domElement, tag, propKey, null, nextProps, lastProp);
               }
             }
@@ -1713,7 +1714,7 @@ export function updateProperties(
         const nextProp = nextProps[propKey];
         const lastProp = lastProps[propKey];
         if (
-          nextProps.hasOwnProperty(propKey) &&
+          hasOwnProperty.call(nextProps, propKey) &&
           (nextProp != null || lastProp != null)
         ) {
           switch (propKey) {
@@ -1765,9 +1766,9 @@ export function updateProperties(
       for (const propKey in lastProps) {
         const lastProp = lastProps[propKey];
         if (
-          lastProps.hasOwnProperty(propKey) &&
+          hasOwnProperty.call(lastProps, propKey) &&
           lastProp != null &&
-          !nextProps.hasOwnProperty(propKey)
+          !hasOwnProperty.call(nextProps, propKey)
         ) {
           switch (propKey) {
             case 'value': {
@@ -1789,7 +1790,7 @@ export function updateProperties(
         const nextProp = nextProps[propKey];
         const lastProp = lastProps[propKey];
         if (
-          nextProps.hasOwnProperty(propKey) &&
+          hasOwnProperty.call(nextProps, propKey) &&
           (nextProp != null || lastProp != null)
         ) {
           switch (propKey) {
@@ -1842,9 +1843,9 @@ export function updateProperties(
       for (const propKey in lastProps) {
         const lastProp = lastProps[propKey];
         if (
-          lastProps.hasOwnProperty(propKey) &&
+          hasOwnProperty.call(lastProps, propKey) &&
           lastProp != null &&
-          !nextProps.hasOwnProperty(propKey)
+          !hasOwnProperty.call(nextProps, propKey)
         ) {
           switch (propKey) {
             case 'selected': {
@@ -1862,7 +1863,7 @@ export function updateProperties(
         const nextProp = nextProps[propKey];
         const lastProp = lastProps[propKey];
         if (
-          nextProps.hasOwnProperty(propKey) &&
+          hasOwnProperty.call(nextProps, propKey) &&
           nextProp !== lastProp &&
           (nextProp != null || lastProp != null)
         ) {
@@ -1905,9 +1906,9 @@ export function updateProperties(
       for (const propKey in lastProps) {
         const lastProp = lastProps[propKey];
         if (
-          lastProps.hasOwnProperty(propKey) &&
+          hasOwnProperty.call(lastProps, propKey) &&
           lastProp != null &&
-          !nextProps.hasOwnProperty(propKey)
+          !hasOwnProperty.call(nextProps, propKey)
         ) {
           setProp(domElement, tag, propKey, null, nextProps, lastProp);
         }
@@ -1916,7 +1917,7 @@ export function updateProperties(
         const nextProp = nextProps[propKey];
         const lastProp = lastProps[propKey];
         if (
-          nextProps.hasOwnProperty(propKey) &&
+          hasOwnProperty.call(nextProps, propKey) &&
           nextProp !== lastProp &&
           (nextProp != null || lastProp != null)
         ) {
@@ -1946,9 +1947,9 @@ export function updateProperties(
         for (const propKey in lastProps) {
           const lastProp = lastProps[propKey];
           if (
-            lastProps.hasOwnProperty(propKey) &&
+            hasOwnProperty.call(lastProps, propKey) &&
             lastProp !== undefined &&
-            !nextProps.hasOwnProperty(propKey)
+            !hasOwnProperty.call(nextProps, propKey)
           ) {
             setPropOnCustomElement(
               domElement,
@@ -1964,7 +1965,7 @@ export function updateProperties(
           const nextProp = nextProps[propKey];
           const lastProp = lastProps[propKey];
           if (
-            nextProps.hasOwnProperty(propKey) &&
+            hasOwnProperty.call(nextProps, propKey) &&
             nextProp !== lastProp &&
             (nextProp !== undefined || lastProp !== undefined)
           ) {
@@ -1986,9 +1987,9 @@ export function updateProperties(
   for (const propKey in lastProps) {
     const lastProp = lastProps[propKey];
     if (
-      lastProps.hasOwnProperty(propKey) &&
+      hasOwnProperty.call(lastProps, propKey) &&
       lastProp != null &&
-      !nextProps.hasOwnProperty(propKey)
+      !hasOwnProperty.call(nextProps, propKey)
     ) {
       setProp(domElement, tag, propKey, null, nextProps, lastProp);
     }
@@ -1997,7 +1998,7 @@ export function updateProperties(
     const nextProp = nextProps[propKey];
     const lastProp = lastProps[propKey];
     if (
-      nextProps.hasOwnProperty(propKey) &&
+      hasOwnProperty.call(nextProps, propKey) &&
       nextProp !== lastProp &&
       (nextProp != null || lastProp != null)
     ) {
@@ -2474,7 +2475,7 @@ function diffHydratedCustomComponent(
   serverDifferences: {[propName: string]: mixed},
 ) {
   for (const propKey in props) {
-    if (!props.hasOwnProperty(propKey)) {
+    if (!hasOwnProperty.call(props, propKey)) {
       continue;
     }
     const value = props[propKey];
@@ -2607,7 +2608,7 @@ function diffHydratedGenericElement(
   serverDifferences: {[propName: string]: mixed},
 ) {
   for (const propKey in props) {
-    if (!props.hasOwnProperty(propKey)) {
+    if (!hasOwnProperty.call(props, propKey)) {
       continue;
     }
     const value = props[propKey];
