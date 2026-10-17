@@ -191,8 +191,6 @@ const TS_SKIP_FIXTURES: Set<string> = new Set([
   // Minor output difference (TS adds unused runtime import)
   'use-no-forget-multiple-with-eslint-suppression',
   // Cosmetic blank-line/unused-var differences between Rust and TS codegen
-  'debugger',
-  'debugger-memoized',
   'idx-no-outlining',
   'optional-call-with-independently-memoizable-arg',
 ]);
