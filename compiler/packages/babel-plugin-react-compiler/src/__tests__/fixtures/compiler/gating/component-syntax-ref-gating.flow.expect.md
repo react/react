@@ -46,8 +46,9 @@ function Foo_withRef_unoptimized(
   return <Stringify ref={ref} />;
 }
 function Foo_withRef(arg0, arg1) {
-  if (isForgetEnabled_Fixtures_result) return Foo_withRef_optimized(arg0, arg1);
-  else return Foo_withRef_unoptimized(arg0, arg1);
+  if (isForgetEnabled_Fixtures_result)
+    return Foo_withRef_optimized.apply(this, arguments);
+  else return Foo_withRef_unoptimized.apply(this, arguments);
 }
 
 export const FIXTURE_ENTRYPOINT = {
