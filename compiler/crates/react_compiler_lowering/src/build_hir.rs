@@ -2708,6 +2708,11 @@ fn lower_block_statement_inner(
         .scope_bindings_with_children(scope_id)
         .filter(|b| {
             !matches!(b.kind, AstBindingKind::Param | AstBindingKind::Module)
+                // Catch clause params (`catch (e) {...}`) are `let` bindings
+                // declared by the CatchClause itself. Like function params
+                // they are initialized before the block body executes and
+                // never need to be hoisted (matches TS `isCatchClause()`).
+                && b.declaration_type != "CatchClause"
                 && b.declaration_type != "FunctionExpression"
                 && b.declaration_type != "TypeAlias"
                 && b.declaration_type != "OpaqueType"
