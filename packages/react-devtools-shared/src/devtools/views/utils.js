@@ -54,29 +54,29 @@ export function createRegExp(string: string): RegExp {
     return char.toLowerCase() !== char.toUpperCase();
   }
 
-  function matchAnyCase(char: string) {
+  function matchAnyCase(char: string): string {
     if (!isLetter(char)) {
-      // Don't mess with special characters like [.
-      return char;
+      // Escape special characters like [ so they match literally.
+      // Escaping per character keeps multi-character escapes like \x2d intact.
+      return escapeStringRegExp(char);
     }
     return '[' + char.toLowerCase() + char.toUpperCase() + ']';
   }
 
   // 'item' should match 'Item' and 'ListItem', but not 'InviteMom'.
   // To do this, we'll slice off 'tem' and check first letter separately.
-  const escaped = escapeStringRegExp(string);
-  const firstChar = escaped[0];
+  const firstChar = string[0];
   let restRegex = '';
   // For 'item' input, restRegex becomes '[tT][eE][mM]'
   // We can't simply make it case-insensitive because first letter case matters.
-  for (let i = 1; i < escaped.length; i++) {
-    restRegex += matchAnyCase(escaped[i]);
+  for (let i = 1; i < string.length; i++) {
+    restRegex += matchAnyCase(string[i]);
   }
 
   if (!isLetter(firstChar)) {
     // We can't put a non-character like [ in a group
     // so we fall back to the simple case.
-    return new RegExp(firstChar + restRegex);
+    return new RegExp(escapeStringRegExp(firstChar) + restRegex);
   }
 
   // Construct a smarter regex.
