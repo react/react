@@ -269,6 +269,7 @@ export function logComponentRender(
       if (
         props !== null &&
         alternate !== null &&
+        alternate.memoizedProps !== null &&
         alternate.memoizedProps !== props
       ) {
         // If this is an update, we'll diff the props and emit which ones changed.
