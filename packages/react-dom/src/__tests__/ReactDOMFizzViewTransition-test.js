@@ -747,4 +747,80 @@ describe('ReactDOMFizzViewTransition', () => {
     expect(applied.get('fbC')).toBe('skeleton-exit');
     expect(applied.get('fbD')).toBe('skeleton-exit-deep');
   });
+
+  // @gate enableViewTransition
+  it('handles a skipped view transition on streaming reveal', async () => {
+    // Browsers skip the transition, and reject `ready`, when the document is
+    // hidden or the viewport resizes during the reveal.
+    const skipped = new Error('Transition was skipped');
+    skipped.name = 'AbortError';
+    document.startViewTransition = function (arg) {
+      arg.update();
+      return {
+        ready: Promise.reject(skipped),
+        finished: Promise.resolve(),
+        skipTransition() {},
+        types: [],
+      };
+    };
+    if (!global.window.CSS) {
+      global.window.CSS = {escape: s => s};
+    }
+    Object.defineProperty(document, 'fonts', {
+      value: {status: 'loaded', ready: Promise.resolve()},
+      configurable: true,
+    });
+    global.window.Element.prototype.getBoundingClientRect = function () {
+      return {left: 0, top: 0, width: 100, height: 20, right: 100, bottom: 20};
+    };
+
+    const unhandledRejections = [];
+    const onUnhandledRejection = reason => {
+      unhandledRejections.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<div id="fallback">Loading</div>}>
+            <ViewTransition enter="page-enter">
+              <Suspend />
+            </ViewTransition>
+          </Suspense>
+        </div>
+      );
+    }
+
+    try {
+      await serverAct(async () => {
+        const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+        pipe(writable);
+      });
+      await serverAct(async () => {
+        await resolve(<div id="content">Hello</div>);
+      });
+      // Node reports unhandled rejections after the microtask queue drains.
+      await new Promise(r => setImmediate(r));
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection);
+    }
+
+    expect(unhandledRejections).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div id="content" vt-enter="page-enter" vt-update="auto">
+          Hello
+        </div>
+      </div>,
+    );
+    // The view-transition-name applied for the reveal is still removed.
+    expect(document.getElementById('content').getAttribute('style')).toBe(null);
+    expect(document.__reactViewTransition).toBe(null);
+  });
 });
