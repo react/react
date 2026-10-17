@@ -1764,11 +1764,13 @@ function parseModelString(
       }
       case 'K': {
         // FormData
-        const stringId = value.slice(2);
+        // The id is hex on the wire like every other reference, but the backing
+        // entries are written with the decimal id as their prefix.
+        const id = parseInt(value.slice(2), 16);
 
         // Use the special marker from the Client to distinguish keys that should
         // be consumed by referenced FormData.
-        const formPrefix = response._prefix + '_' + stringId + '_';
+        const formPrefix = response._prefix + '_' + id + '_';
         return consumeBackingEntries(response._formData, formPrefix);
       }
       case 'i': {
