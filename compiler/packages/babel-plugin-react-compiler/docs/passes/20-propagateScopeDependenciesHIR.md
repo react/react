@@ -116,6 +116,9 @@ Accessing `ref.current` is treated specially - the dependency is truncated to ju
 ### Optional Chains
 Optional chains like `a?.b?.c` produce different dependency paths than `a.b.c`. The pass distinguishes them and may merge optional loads into unconditional ones when control flow proves the object is non-null.
 
+### Unused Optional Chains
+Instructions inside an optional chain are skipped and the whole chain is recorded as a dependency where its value is consumed, usually the phi at the chain's fallthrough block. When the value is unused (`const _ = a?.b`), DCE prunes that phi but keeps the chain as an expression statement. `CollectOptionalChainDependencies` records such chains in `unusedOptionalChains`, and this pass visits them at the optional terminal so that the chain's base (`a`) is still added to `scope.declarations` when it was declared in an earlier scope. Without this, codegen emits `a?.b;` after the scope block without hoisting `a`, producing a `ReferenceError` (see fixture `unused-optional-member-expr-base-declared-in-scope`).
+
 ### Inner Functions
 Dependencies from inner functions are collected recursively but with special handling for context variables.
 
