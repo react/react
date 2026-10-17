@@ -4,11 +4,19 @@ import {normalizeUrlIfValid} from 'react-devtools-shared/src/utils';
 import {__DEBUG__} from 'react-devtools-shared/src/constants';
 
 let debugIDCounter = 0;
+const FETCH_FROM_PAGE_TIMEOUT = 60000;
 
 const debugLog = (...args) => {
   if (__DEBUG__) {
     console.log(...args);
   }
+};
+
+type PendingFetchRequest = {
+  promise: Promise<string>,
+  onMessage: (message: any) => void,
+  reject: (reason: mixed) => void,
+  timeoutID: TimeoutID,
 };
 
 const fetchFromNetworkCache = (url, resolve, reject) => {
@@ -78,50 +86,108 @@ const fetchFromNetworkCache = (url, resolve, reject) => {
   });
 };
 
-const pendingFetchRequests = new Set();
-function pendingFetchRequestsCleanup({payload, source}) {
-  if (source === 'react-devtools-background') {
-    switch (payload?.type) {
-      case 'fetch-file-with-cache-complete':
-      case 'fetch-file-with-cache-error':
-        pendingFetchRequests.delete(payload.url);
-    }
-  }
-}
-chrome.runtime.onMessage.addListener(pendingFetchRequestsCleanup);
+const pendingFetchRequests: Map<string, PendingFetchRequest> = new Map();
 
-const fetchFromPage = async (url, resolve, reject) => {
+function clearPendingFetchRequest(url: string) {
+  const pendingFetchRequest = pendingFetchRequests.get(url);
+  if (pendingFetchRequest == null) {
+    return;
+  }
+
+  chrome.runtime.onMessage.removeListener(pendingFetchRequest.onMessage);
+  clearTimeout(pendingFetchRequest.timeoutID);
+  pendingFetchRequests.delete(url);
+}
+
+function rejectPendingFetchRequests(reason: Error) {
+  pendingFetchRequests.forEach((pendingFetchRequest, url) => {
+    clearPendingFetchRequest(url);
+    pendingFetchRequest.reject(reason);
+  });
+}
+
+chrome.devtools.network.onNavigated.addListener(() => {
+  rejectPendingFetchRequests(
+    new Error(
+      'Aborted fetching source from the inspected page because the page navigated.',
+    ),
+  );
+});
+
+const abortPendingFetchRequestsOnUnload = () => {
+  rejectPendingFetchRequests(
+    new Error('Aborted fetching source from the inspected page.'),
+  );
+};
+
+if (__IS_FIREFOX__) {
+  window.addEventListener('unload', abortPendingFetchRequestsOnUnload);
+} else {
+  window.addEventListener('beforeunload', abortPendingFetchRequestsOnUnload);
+}
+
+const fetchFromPage = (url, resolve, reject) => {
   debugLog('[main] fetchFromPage()', url);
+
+  const pendingFetchRequest = pendingFetchRequests.get(url);
+  if (pendingFetchRequest != null) {
+    pendingFetchRequest.promise.then(resolve, reject);
+    return;
+  }
+
+  let resolveFetchRequest: string => void = (null: any);
+  let rejectFetchRequest: mixed => void = (null: any);
+  const promise: Promise<string> = new Promise(
+    (resolveRequest, rejectRequest) => {
+      resolveFetchRequest = resolveRequest;
+      rejectFetchRequest = rejectRequest;
+    },
+  );
 
   function onPortMessage({payload, source}) {
     if (source === 'react-devtools-background' && payload?.url === url) {
       switch (payload?.type) {
         case 'fetch-file-with-cache-complete':
-          chrome.runtime.onMessage.removeListener(onPortMessage);
-          resolve(payload.value);
+          clearPendingFetchRequest(url);
+          resolveFetchRequest(payload.value);
           break;
         case 'fetch-file-with-cache-error':
-          chrome.runtime.onMessage.removeListener(onPortMessage);
-          reject(payload.value);
+          clearPendingFetchRequest(url);
+          rejectFetchRequest(payload.value);
           break;
       }
     }
   }
 
-  chrome.runtime.onMessage.addListener(onPortMessage);
-  if (pendingFetchRequests.has(url)) {
-    return;
-  }
+  const timeoutID = setTimeout(() => {
+    clearPendingFetchRequest(url);
+    const error = new Error(
+      `Timed out fetching source from the inspected page: ${url}`,
+    );
+    rejectFetchRequest(error);
+  }, FETCH_FROM_PAGE_TIMEOUT);
 
-  pendingFetchRequests.add(url);
-  chrome.runtime.sendMessage({
-    source: 'devtools-page',
-    payload: {
-      type: 'fetch-file-with-cache',
-      tabId: chrome.devtools.inspectedWindow.tabId,
-      url,
-    },
+  pendingFetchRequests.set(url, {
+    promise,
+    onMessage: onPortMessage,
+    reject: rejectFetchRequest,
+    timeoutID,
   });
+  chrome.runtime.onMessage.addListener(onPortMessage);
+  promise.then(resolve, reject);
+  try {
+    chrome.runtime.sendMessage({
+      source: 'devtools-page',
+      payload: {
+        type: 'fetch-file-with-cache',
+        tabId: chrome.devtools.inspectedWindow.tabId,
+        url,
+      },
+    });
+  } catch (error) {
+    clearPendingFetchRequest(url);
+    rejectFetchRequest(error);
+  }
 };
 
 // 1. Check if resource is available via chrome.devtools.inspectedWindow.getResources
