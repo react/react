@@ -26,9 +26,9 @@ import { c as _c } from "react/compiler-runtime";
 import { isForgetEnabled_Fixtures } from "ReactForgetFeatureFlag"; // @gating
 import { memo } from "react";
 import { Stringify } from "shared-runtime";
+const isForgetEnabled_Fixtures_result = isForgetEnabled_Fixtures();
 
 export default memo(Foo);
-const isForgetEnabled_Fixtures_result = isForgetEnabled_Fixtures();
 function Foo_optimized(t0) {
   "use memo";
   const $ = _c(3);
