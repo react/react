@@ -906,7 +906,11 @@ export function attach(
       if (filter.type === ComponentFilterActivitySlice && filter.isEnabled) {
         focusedActivityFilter = filter;
         const instance = idToDevToolsInstanceMap.get(filter.activityID);
-        if (instance !== undefined && instance.kind === FIBER_INSTANCE) {
+        if (
+          instance !== undefined &&
+          instance.kind === FIBER_INSTANCE &&
+          instance.connected
+        ) {
           nextFocusedActivity = instance.data;
         }
       }
