@@ -2378,7 +2378,7 @@ function codegenValue(
        * run with { compact: true }.
        * See repro https://codesandbox.io/p/devbox/5d47fr
        */
-      return t.unaryExpression('-', t.numericLiteral(-value), false);
+      return t.unaryExpression('-', t.numericLiteral(-value));
     } else {
       return t.numericLiteral(value);
     }
