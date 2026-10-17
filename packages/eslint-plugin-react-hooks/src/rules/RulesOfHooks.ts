@@ -212,10 +212,14 @@ const rule = {
     ],
   },
   create(context: Rule.RuleContext) {
+    const rawOptions = context.options && context.options[0];
     const settings = context.settings || {};
 
+    // Use rule-level additionalHooks if provided, otherwise fall back to settings
     const additionalEffectHooks =
-      getAdditionalEffectHooksFromSettings(settings);
+      rawOptions && rawOptions.additionalHooks
+        ? new RegExp(rawOptions.additionalHooks)
+        : getAdditionalEffectHooksFromSettings(settings);
 
     let lastEffect: CallExpression | null = null;
     const codePathReactHooksMapStack: Array<
