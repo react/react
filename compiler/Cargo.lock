@@ -249,6 +249,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
+name = "oxc_index"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "191884bee6c3744909a51acc7d78d4ae370d817b25875b10642f632327b6296e"
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -319,6 +325,7 @@ name = "react_compiler_hir"
 version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "rustc-hash",
  "serde",
@@ -330,6 +337,7 @@ name = "react_compiler_inference"
 version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "react_compiler_lowering",
