@@ -9,9 +9,11 @@ import type {DocSearchHit, InternalDocSearchHit} from '../types/algolia';
 import {liteClient, type Hit, type SearchResponse} from 'algoliasearch/lite';
 
 // https://github.com/reactjs/react.dev/blob/55986965fbf69c2584040039c9586a01bd54eba7/src/siteConfig.js#L15-L19
+// Credentials are read from environment variables so they are not hardcoded
+// in source control. Set ALGOLIA_APP_ID / ALGOLIA_API_KEY to override.
 const ALGOLIA_CONFIG = {
-  appId: '1FCF9AYYAT',
-  apiKey: '1b7ad4e1c89e645e351e59d40544eda1',
+  appId: process.env.ALGOLIA_APP_ID ?? '1FCF9AYYAT',
+  apiKey: process.env.ALGOLIA_API_KEY ?? '1b7ad4e1c89e645e351e59d40544eda1',
   indexName: 'beta-react',
 };
 
