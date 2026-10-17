@@ -31,7 +31,7 @@ export type IONode = {
   end: number, // we typically don't use this. only when there's no promise intermediate.
   promise: null, // not used on I/O
   awaited: null, // I/O is only blocked on external.
-  previous: null | AwaitNode | UnresolvedAwaitNode, // the preceeding await that spawned this new work
+  previous: null | AwaitNode | UnresolvedAwaitNode, // the preceding await that spawned this new work
 };
 
 export type PromiseNode = {
