@@ -13,6 +13,7 @@ import {
   isStableType,
 } from '../HIR';
 import {eachPatternOperand} from '../HIR/visitors';
+import {Iterable_some} from '../Utils/utils';
 import {collectReactiveIdentifiers} from './CollectReactiveIdentifiers';
 import {ReactiveFunctionVisitor, visitReactiveFunction} from './visitors';
 
@@ -96,7 +97,18 @@ class Visitor extends ReactiveFunctionVisitor<ReactiveIdentifiers> {
   ): void {
     this.traverseScope(scopeBlock, state);
     for (const dep of scopeBlock.scope.dependencies) {
-      const isReactive = state.has(dep.identifier.id);
+      /*
+       * Dependencies on a variable that this scope reassigns describe the value
+       * flowing in from an earlier scope. That value only exists as a phi, which
+       * has been lowered away by now, so it never appears in `state`.
+       */
+      const isReactive =
+        state.has(dep.identifier.id) ||
+        Iterable_some(
+          scopeBlock.scope.reassignments,
+          reassignment =>
+            reassignment.declarationId === dep.identifier.declarationId,
+        );
       if (!isReactive) {
         scopeBlock.scope.dependencies.delete(dep);
       }
