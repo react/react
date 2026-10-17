@@ -346,11 +346,10 @@ export function printOperationsArray(operations: Array<number>) {
         } else {
           rects = '[';
           for (let rectIndex = 0; rectIndex < numRects; rectIndex++) {
-            const offset = i + rectIndex * 4;
-            const x = operations[offset + 0];
-            const y = operations[offset + 1];
-            const width = operations[offset + 2];
-            const height = operations[offset + 3];
+            const x = operations[i];
+            const y = operations[i + 1];
+            const width = operations[i + 2];
+            const height = operations[i + 3];
 
             if (rectIndex > 0) {
               rects += ', ';
