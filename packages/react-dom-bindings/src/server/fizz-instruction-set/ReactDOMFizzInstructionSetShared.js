@@ -623,7 +623,7 @@ export function listenToFormSubmissionsForReplaying() {
     }
     const form = event.target;
     const submitter = event['submitter'];
-    let action = form.action;
+    let action = form.getAttribute('action');
     let formDataSubmitter = submitter;
     if (submitter) {
       const submitterAction = submitter.getAttribute('formAction');
