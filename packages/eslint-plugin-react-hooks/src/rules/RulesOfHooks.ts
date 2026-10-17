@@ -834,6 +834,13 @@ const rule = {
         }
       },
 
+      FunctionExpression(node) {
+        // const MyComponent = function() { const onClick = useEffectEvent(...) }
+        if (isInsideComponentOrHook(node)) {
+          recordAllUseEffectEventFunctions(getScope(node));
+        }
+      },
+
       // @ts-expect-error parser-hermes produces these node types
       ComponentDeclaration(node) {
         // component MyComponent() { const onClick = useEffectEvent(...) }
