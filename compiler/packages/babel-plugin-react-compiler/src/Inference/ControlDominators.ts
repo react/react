@@ -95,8 +95,9 @@ function postDominatorsOf(
   const result = new Set<BlockId>();
   const visited = new Set<BlockId>();
   const queue = [targetId];
-  while (queue.length) {
-    const currentId = queue.shift()!;
+  let queueIndex = 0;
+  while (queueIndex < queue.length) {
+    const currentId = queue[queueIndex++];
     if (visited.has(currentId)) {
       continue;
     }
