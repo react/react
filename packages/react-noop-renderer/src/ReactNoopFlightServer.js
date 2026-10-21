@@ -41,6 +41,13 @@ const ReactNoopFlightServer = ReactFlightServer({
     destination.push(chunk);
     return true;
   },
+  writeStandaloneChunkAndReturn(
+    destination: Destination,
+    chunk: string,
+  ): boolean {
+    destination.push(chunk);
+    return true;
+  },
   completeWriting(destination: Destination): void {},
   close(destination: Destination): void {},
   closeWithError(destination: Destination, error: mixed): void {},

@@ -174,6 +174,13 @@ export function writeChunkAndReturn(
   return destinationHasCapacity;
 }
 
+export function writeStandaloneChunkAndReturn(
+  destination: Destination,
+  chunk: PrecomputedChunk | Chunk | BinaryChunk,
+): boolean {
+  return writeChunkAndReturn(destination, chunk);
+}
+
 export function completeWriting(destination: Destination) {
   if (currentView && writtenBytes > 0) {
     destination.write(currentView.subarray(0, writtenBytes));
