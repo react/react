@@ -17,17 +17,30 @@ import DisjointSet from '../Utils/DisjointSet';
  * Ensures that method call instructions have scopes such that either:
  * - Both the MethodCall and its property have the same scope
  * - OR neither has a scope
+ *
+ * Tagged templates with a member expression tag are aligned the same way.
  */
 export function alignMethodCallScopes(fn: HIRFunction): void {
   const scopeMapping = new Map<IdentifierId, ReactiveScope | null>();
   const mergedScopes = new DisjointSet<ReactiveScope>();
+  const memberLoads = new Set<IdentifierId>();
 
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       const {lvalue, value} = instr;
-      if (value.kind === 'MethodCall') {
+      if (value.kind === 'PropertyLoad' || value.kind === 'ComputedLoad') {
+        memberLoads.add(lvalue.identifier.id);
+      }
+      const property =
+        value.kind === 'MethodCall'
+          ? value.property
+          : value.kind === 'TaggedTemplateExpression' &&
+              memberLoads.has(value.tag.identifier.id)
+            ? value.tag
+            : null;
+      if (property !== null) {
         const lvalueScope = lvalue.identifier.scope;
-        const propertyScope = value.property.identifier.scope;
+        const propertyScope = property.identifier.scope;
         if (lvalueScope !== null) {
           if (propertyScope !== null) {
             // Both have a scope: merge the scopes
@@ -37,11 +50,11 @@ export function alignMethodCallScopes(fn: HIRFunction): void {
              * Else the call itself has a scope but not the property,
              * record that this property should be in this scope
              */
-            scopeMapping.set(value.property.identifier.id, lvalueScope);
+            scopeMapping.set(property.identifier.id, lvalueScope);
           }
         } else if (propertyScope !== null) {
           // else this property does not need a scope
-          scopeMapping.set(value.property.identifier.id, null);
+          scopeMapping.set(property.identifier.id, null);
         }
       } else if (
         value.kind === 'FunctionExpression' ||

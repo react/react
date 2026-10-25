@@ -1848,6 +1848,27 @@ function computeSignatureForInstruction(
       });
       break;
     }
+    case 'TaggedTemplateExpression': {
+      // tag`a${x}` calls tag(strings, x), where strings is a new frozen array
+      const strings = createTemporaryPlace(env, value.loc);
+      effects.push({
+        kind: 'Create',
+        into: strings,
+        value: ValueKind.Frozen,
+        reason: ValueReason.Other,
+      });
+      effects.push({
+        kind: 'Apply',
+        receiver: value.tag,
+        function: value.tag,
+        mutatesFunction: true,
+        args: [strings, ...value.subexprs],
+        into: lvalue,
+        signature: getFunctionCallSignature(env, value.tag.identifier.type),
+        loc: value.loc,
+      });
+      break;
+    }
     case 'PropertyDelete':
     case 'ComputedDelete': {
       effects.push({
@@ -2298,7 +2319,6 @@ function computeSignatureForInstruction(
       });
       break;
     }
-    case 'TaggedTemplateExpression':
     case 'BinaryExpression':
     case 'Debugger':
     case 'JSXText':
