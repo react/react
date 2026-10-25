@@ -1143,9 +1143,11 @@ fn apply_instruction_operands(
                 }
             }
         }
-        InstructionValue::TaggedTemplateExpression { tag, .. } => {
+        InstructionValue::TaggedTemplateExpression { tag, subexprs, .. } => {
             resolve_identifier(tag.identifier, identifiers, types, unifier);
-            // The template quasi's subexpressions are not separate operands in this HIR
+            for sub in subexprs {
+                resolve_identifier(sub.identifier, identifiers, types, unifier);
+            }
         }
         InstructionValue::PropertyLoad { object, .. } => {
             resolve_identifier(object.identifier, identifiers, types, unifier);

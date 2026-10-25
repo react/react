@@ -2175,7 +2175,7 @@ fn apply_effect(
 
 fn compute_signature_for_instruction(
     context: &mut Context,
-    env: &Environment,
+    env: &mut Environment,
     instr: &react_compiler_hir::Instruction,
     _func: &HirFunction,
 ) -> InstructionSignature {
@@ -2275,6 +2275,31 @@ fn compute_signature_for_instruction(
                 function: callee.clone(),
                 mutates_function: true,
                 args: args.iter().map(place_or_spread_to_hole).collect(),
+                into: lvalue.clone(),
+                signature: sig,
+                loc: *loc,
+            });
+        }
+        InstructionValue::TaggedTemplateExpression {
+            tag, subexprs, loc, ..
+        } => {
+            // tag`a${x}` calls tag(strings, x), where strings is a new frozen array
+            let strings = create_temp_place(env, *loc);
+            effects.push(AliasingEffect::Create {
+                into: strings.clone(),
+                value: ValueKind::Frozen,
+                reason: ValueReason::Other,
+            });
+            let sig = get_function_call_signature(env, tag.identifier)
+                .ok()
+                .flatten();
+            effects.push(AliasingEffect::Apply {
+                receiver: tag.clone(),
+                function: tag.clone(),
+                mutates_function: true,
+                args: std::iter::once(PlaceOrSpreadOrHole::Place(strings))
+                    .chain(subexprs.iter().cloned().map(PlaceOrSpreadOrHole::Place))
+                    .collect(),
                 into: lvalue.clone(),
                 signature: sig,
                 loc: *loc,
@@ -2742,8 +2767,7 @@ fn compute_signature_for_instruction(
             });
         }
         // All primitive-creating instructions
-        InstructionValue::TaggedTemplateExpression { .. }
-        | InstructionValue::BinaryExpression { .. }
+        InstructionValue::BinaryExpression { .. }
         | InstructionValue::Debugger { .. }
         | InstructionValue::JSXText { .. }
         | InstructionValue::MetaProperty { .. }

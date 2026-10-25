@@ -2605,23 +2605,37 @@ fn codegen_base_instruction_value(
             expr_type,
             ..
         } => codegen_function_expression(cx, name, name_hint, lowered_func, expr_type),
-        InstructionValue::TaggedTemplateExpression { tag, value, .. } => {
+        InstructionValue::TaggedTemplateExpression {
+            tag,
+            subexprs,
+            quasis,
+            ..
+        } => {
             let tag_expr = codegen_place_to_expression(cx, tag)?;
+            let exprs: Vec<Expression> = subexprs
+                .iter()
+                .map(|p| codegen_place_to_expression(cx, p))
+                .collect::<Result<_, _>>()?;
+            let template_elems: Vec<TemplateElement> = quasis
+                .iter()
+                .enumerate()
+                .map(|(i, q)| TemplateElement {
+                    base: BaseNode::typed("TemplateElement"),
+                    value: TemplateElementValue {
+                        raw: q.raw.clone(),
+                        cooked: q.cooked.clone(),
+                    },
+                    tail: i == quasis.len() - 1,
+                })
+                .collect();
             Ok(ExpressionOrJsxText::Expression(
                 Expression::TaggedTemplateExpression(ast_expr::TaggedTemplateExpression {
                     base: BaseNode::typed("TaggedTemplateExpression"),
                     tag: Box::new(tag_expr),
                     quasi: ast_expr::TemplateLiteral {
                         base: BaseNode::typed("TemplateLiteral"),
-                        quasis: vec![TemplateElement {
-                            base: BaseNode::typed("TemplateElement"),
-                            value: TemplateElementValue {
-                                raw: value.raw.clone(),
-                                cooked: value.cooked.clone(),
-                            },
-                            tail: true,
-                        }],
-                        expressions: Vec::new(),
+                        quasis: template_elems,
+                        expressions: exprs,
                     },
                     type_parameters: None,
                 }),

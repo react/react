@@ -7,9 +7,11 @@
 //! - Both the MethodCall and its property have the same scope
 //! - OR neither has a scope
 //!
+//! Tagged templates with a member expression tag are aligned the same way.
+//!
 //! Ported from TypeScript `src/ReactiveScopes/AlignMethodCallScopes.ts`.
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{EvaluationOrder, HirFunction, IdentifierId, InstructionValue, ScopeId};
@@ -27,36 +29,50 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     // Maps an identifier to the scope it should be assigned to (or None to remove scope)
     let mut scope_mapping: FxHashMap<IdentifierId, Option<ScopeId>> = FxHashMap::default();
     let mut merged_scopes = DisjointSet::<ScopeId>::new();
+    let mut member_loads: FxHashSet<IdentifierId> = FxHashSet::default();
 
     // Phase 1: Walk instructions and collect scope relationships
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
-            match &instr.value {
-                InstructionValue::MethodCall { property, .. } => {
-                    let lvalue_scope = env.identifiers[instr.lvalue.identifier.0 as usize].scope;
-                    let property_scope = env.identifiers[property.identifier.0 as usize].scope;
+            let property = match &instr.value {
+                InstructionValue::PropertyLoad { .. } | InstructionValue::ComputedLoad { .. } => {
+                    member_loads.insert(instr.lvalue.identifier);
+                    None
+                }
+                InstructionValue::MethodCall { property, .. } => Some(property.identifier),
+                InstructionValue::TaggedTemplateExpression { tag, .. }
+                    if member_loads.contains(&tag.identifier) =>
+                {
+                    Some(tag.identifier)
+                }
+                _ => None,
+            };
+            if let Some(property_id) = property {
+                let lvalue_scope = env.identifiers[instr.lvalue.identifier.0 as usize].scope;
+                let property_scope = env.identifiers[property_id.0 as usize].scope;
 
-                    match (lvalue_scope, property_scope) {
-                        (Some(lvalue_sid), Some(property_sid)) => {
-                            // Both have a scope: merge the scopes
-                            merged_scopes.union(&[lvalue_sid, property_sid]);
-                        }
-                        (Some(lvalue_sid), None) => {
-                            // Call has a scope but not the property:
-                            // record that this property should be in this scope
-                            scope_mapping.insert(property.identifier, Some(lvalue_sid));
-                        }
-                        (None, Some(_)) => {
-                            // Property has a scope but call doesn't:
-                            // this property does not need a scope
-                            scope_mapping.insert(property.identifier, None);
-                        }
-                        (None, None) => {
-                            // Neither has a scope, nothing to do
-                        }
+                match (lvalue_scope, property_scope) {
+                    (Some(lvalue_sid), Some(property_sid)) => {
+                        // Both have a scope: merge the scopes
+                        merged_scopes.union(&[lvalue_sid, property_sid]);
+                    }
+                    (Some(lvalue_sid), None) => {
+                        // Call has a scope but not the property:
+                        // record that this property should be in this scope
+                        scope_mapping.insert(property_id, Some(lvalue_sid));
+                    }
+                    (None, Some(_)) => {
+                        // Property has a scope but call doesn't:
+                        // this property does not need a scope
+                        scope_mapping.insert(property_id, None);
+                    }
+                    (None, None) => {
+                        // Neither has a scope, nothing to do
                     }
                 }
+            }
+            match &instr.value {
                 InstructionValue::FunctionExpression { lowered_func, .. }
                 | InstructionValue::ObjectMethod { lowered_func, .. } => {
                     // Recurse into inner functions
