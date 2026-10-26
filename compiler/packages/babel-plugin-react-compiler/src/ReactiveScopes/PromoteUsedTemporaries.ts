@@ -340,12 +340,6 @@ class PromoteInterposedTemporaries extends ReactiveFunctionVisitor<InterState> {
           // Treat property of method call as constlike so we don't promote it.
           this.#consts.add(instruction.value.property.identifier.id);
         }
-        if (
-          instruction.value.kind === 'TaggedTemplateExpression' &&
-          instruction.value.receiver !== null
-        ) {
-          this.#consts.add(instruction.value.tag.identifier.id);
-        }
 
         super.visitInstruction(instruction, state);
         if (

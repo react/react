@@ -666,14 +666,6 @@ fn promote_interposed_instruction(
                     if let InstructionValue::MethodCall { property, .. } = iv {
                         consts.insert(property.identifier);
                     }
-                    if let InstructionValue::TaggedTemplateExpression {
-                        receiver: Some(_),
-                        tag,
-                        ..
-                    } = iv
-                    {
-                        consts.insert(tag.identifier);
-                    }
 
                     // Visit operands
                     for place in

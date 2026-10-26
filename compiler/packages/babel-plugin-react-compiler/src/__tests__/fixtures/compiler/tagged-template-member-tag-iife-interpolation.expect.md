@@ -45,8 +45,9 @@ function Component(props) {
   const t0 = props.obj;
   let t1;
   if ($[0] !== props.obj) {
+    const t2 = t0.tag;
     print(1);
-    t1 = t0.tag`${1}`;
+    t1 = t2.bind(t0)`${1}`;
     $[0] = props.obj;
     $[1] = t1;
   } else {

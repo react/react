@@ -2606,12 +2606,30 @@ fn codegen_base_instruction_value(
             ..
         } => codegen_function_expression(cx, name, name_hint, lowered_func, expr_type),
         InstructionValue::TaggedTemplateExpression {
+            receiver,
             tag,
             subexprs,
             quasis,
             ..
         } => {
-            let tag_expr = codegen_place_to_expression(cx, tag)?;
+            let mut tag_expr = codegen_place_to_expression(cx, tag)?;
+            if let Some(receiver) = receiver
+                && !matches!(tag_expr, Expression::MemberExpression(_))
+            {
+                tag_expr = Expression::CallExpression(ast_expr::CallExpression {
+                    base: BaseNode::typed("CallExpression"),
+                    callee: Box::new(Expression::MemberExpression(ast_expr::MemberExpression {
+                        base: BaseNode::typed("MemberExpression"),
+                        object: Box::new(tag_expr),
+                        property: Box::new(Expression::Identifier(make_identifier("bind"))),
+                        computed: false,
+                    })),
+                    arguments: vec![codegen_place_to_expression(cx, receiver)?],
+                    type_parameters: None,
+                    type_arguments: None,
+                    optional: None,
+                });
+            }
             let exprs: Vec<Expression> = subexprs
                 .iter()
                 .map(|p| codegen_place_to_expression(cx, p))
