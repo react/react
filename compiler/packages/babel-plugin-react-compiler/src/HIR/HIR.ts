@@ -1049,6 +1049,7 @@ export type InstructionValue =
   | FunctionExpression
   | {
       kind: 'TaggedTemplateExpression';
+      receiver: Place | null;
       tag: Place;
       subexprs: Array<Place>;
       quasis: Array<{raw: string; cooked?: string}>;

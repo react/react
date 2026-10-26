@@ -1792,7 +1792,14 @@ fn lower_expression(
                     loc,
                 });
             }
-            let tag = lower_expression_to_temporary(builder, &tagged.tag)?;
+            let (receiver, tag) = if let Expression::MemberExpression(member) = tagged.tag.as_ref()
+            {
+                let lowered = lower_member_expression(builder, member)?;
+                let tag = lower_value_to_temporary(builder, lowered.value)?;
+                (Some(lowered.object), tag)
+            } else {
+                (None, lower_expression_to_temporary(builder, &tagged.tag)?)
+            };
             let subexprs = tagged
                 .quasi
                 .expressions
@@ -1800,6 +1807,7 @@ fn lower_expression(
                 .map(|e| lower_expression_to_temporary(builder, e))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(InstructionValue::TaggedTemplateExpression {
+                receiver,
                 tag,
                 subexprs,
                 quasis,

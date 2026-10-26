@@ -617,6 +617,9 @@ export class DebugPrinter {
       case 'TaggedTemplateExpression': {
         this.line('TaggedTemplateExpression {');
         this.indent();
+        if (instrValue.receiver !== null) {
+          this.formatPlaceField('receiver', instrValue.receiver);
+        }
         this.formatPlaceField('tag', instrValue.tag);
         this.line('subexprs:');
         this.indent();

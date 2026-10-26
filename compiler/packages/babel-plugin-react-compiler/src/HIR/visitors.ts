@@ -228,6 +228,9 @@ export function* eachInstructionValueOperand(
       break;
     }
     case 'TaggedTemplateExpression': {
+      if (instrValue.receiver !== null) {
+        yield instrValue.receiver;
+      }
       yield instrValue.tag;
       yield* instrValue.subexprs;
       break;
@@ -602,6 +605,9 @@ export function mapInstructionValueOperands(
       break;
     }
     case 'TaggedTemplateExpression': {
+      if (instrValue.receiver !== null) {
+        instrValue.receiver = fn(instrValue.receiver);
+      }
       instrValue.tag = fn(instrValue.tag);
       instrValue.subexprs = instrValue.subexprs.map(fn);
       break;

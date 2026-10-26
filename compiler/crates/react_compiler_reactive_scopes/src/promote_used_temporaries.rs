@@ -37,8 +37,6 @@ struct State {
     tags: FxHashSet<DeclarationId>,
     promoted: FxHashSet<DeclarationId>,
     pruned: FxHashMap<DeclarationId, PrunedInfo>,
-    /// PropertyLoad/ComputedLoad lvalues, used by PromoteInterposedTemporaries
-    member_loads: FxHashSet<IdentifierId>,
 }
 
 struct PrunedInfo {
@@ -57,7 +55,6 @@ pub fn promote_used_temporaries(func: &mut ReactiveFunction, env: &mut Environme
         tags: FxHashSet::default(),
         promoted: FxHashSet::default(),
         pruned: FxHashMap::default(),
-        member_loads: FxHashSet::default(),
     };
 
     // Phase 1: collect promotable temporaries (jsx tags, pruned scope usage)
@@ -669,11 +666,13 @@ fn promote_interposed_instruction(
                     if let InstructionValue::MethodCall { property, .. } = iv {
                         consts.insert(property.identifier);
                     }
-                    if let InstructionValue::TaggedTemplateExpression { tag, .. } = iv {
-                        if state.member_loads.contains(&tag.identifier) {
-                            // Likewise for a member tag, so `this` is preserved
-                            consts.insert(tag.identifier);
-                        }
+                    if let InstructionValue::TaggedTemplateExpression {
+                        receiver: Some(_),
+                        tag,
+                        ..
+                    } = iv
+                    {
+                        consts.insert(tag.identifier);
                     }
 
                     // Visit operands
@@ -744,7 +743,6 @@ fn promote_interposed_instruction(
                 InstructionValue::PropertyLoad { object, .. }
                 | InstructionValue::ComputedLoad { object, .. } => {
                     if let Some(lvalue) = &instr.lvalue {
-                        state.member_loads.insert(lvalue.identifier);
                         if globals.contains(&object.identifier) {
                             globals.insert(lvalue.identifier);
                             consts.insert(lvalue.identifier);

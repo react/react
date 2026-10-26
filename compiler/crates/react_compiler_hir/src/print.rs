@@ -1267,6 +1267,7 @@ impl<'a> PrintFormatter<'a> {
                 self.line("}");
             }
             InstructionValue::TaggedTemplateExpression {
+                receiver,
                 tag,
                 subexprs,
                 quasis,
@@ -1274,6 +1275,9 @@ impl<'a> PrintFormatter<'a> {
             } => {
                 self.line("TaggedTemplateExpression {");
                 self.indent();
+                if let Some(receiver) = receiver {
+                    self.format_place_field("receiver", receiver);
+                }
                 self.format_place_field("tag", tag);
                 self.line("subexprs:");
                 self.indent();

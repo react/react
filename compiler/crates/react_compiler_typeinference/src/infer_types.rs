@@ -1143,7 +1143,15 @@ fn apply_instruction_operands(
                 }
             }
         }
-        InstructionValue::TaggedTemplateExpression { tag, subexprs, .. } => {
+        InstructionValue::TaggedTemplateExpression {
+            receiver,
+            tag,
+            subexprs,
+            ..
+        } => {
+            if let Some(receiver) = receiver {
+                resolve_identifier(receiver.identifier, identifiers, types, unifier);
+            }
             resolve_identifier(tag.identifier, identifiers, types, unifier);
             for sub in subexprs {
                 resolve_identifier(sub.identifier, identifiers, types, unifier);

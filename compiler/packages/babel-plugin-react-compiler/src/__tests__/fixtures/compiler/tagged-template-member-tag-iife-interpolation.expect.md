@@ -42,16 +42,17 @@ const obj = {
 // The IIFE is emitted as statements, but the tag load must stay attached to the call
 function Component(props) {
   const $ = _c(2);
-  let t0;
-  if ($[0] !== props.obj.tag) {
+  const t0 = props.obj;
+  let t1;
+  if ($[0] !== props.obj) {
     print(1);
-    t0 = props.obj.tag`${1}`;
-    $[0] = props.obj.tag;
-    $[1] = t0;
+    t1 = t0.tag`${1}`;
+    $[0] = props.obj;
+    $[1] = t1;
   } else {
-    t0 = $[1];
+    t1 = $[1];
   }
-  return t0;
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

@@ -15,7 +15,7 @@
 //! 3. MergeOverlappingReactiveScopes ensures scopes do not overlap.
 //! 4. BuildReactiveBlocks groups the statements for each scope.
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::Environment;
@@ -278,7 +278,6 @@ pub(crate) fn find_disjoint_mutable_values(
 ) -> DisjointSet<IdentifierId> {
     let mut scope_identifiers = DisjointSet::<IdentifierId>::new();
     let mut declarations: FxHashMap<DeclarationId, IdentifierId> = FxHashMap::default();
-    let mut member_loads: FxHashSet<IdentifierId> = FxHashSet::default();
 
     let enable_forest = env.config.enable_forest;
 
@@ -409,17 +408,13 @@ pub(crate) fn find_disjoint_mutable_values(
                     }
                 }
             }
-            match &instr.value {
-                InstructionValue::PropertyLoad { .. } | InstructionValue::ComputedLoad { .. } => {
-                    member_loads.insert(lvalue_id);
-                }
-                InstructionValue::TaggedTemplateExpression { tag, .. }
-                    if member_loads.contains(&tag.identifier) =>
-                {
-                    // As with MethodCall, keep obj.tag in the same scope so `this` is preserved
-                    operands.push(tag.identifier);
-                }
-                _ => {}
+            if let InstructionValue::TaggedTemplateExpression {
+                receiver: Some(_),
+                tag,
+                ..
+            } = &instr.value
+            {
+                operands.push(tag.identifier);
             }
 
             if !operands.is_empty() {

@@ -17,25 +17,18 @@ import DisjointSet from '../Utils/DisjointSet';
  * Ensures that method call instructions have scopes such that either:
  * - Both the MethodCall and its property have the same scope
  * - OR neither has a scope
- *
- * Tagged templates with a member expression tag are aligned the same way.
  */
 export function alignMethodCallScopes(fn: HIRFunction): void {
   const scopeMapping = new Map<IdentifierId, ReactiveScope | null>();
   const mergedScopes = new DisjointSet<ReactiveScope>();
-  const memberLoads = new Set<IdentifierId>();
 
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       const {lvalue, value} = instr;
-      if (value.kind === 'PropertyLoad' || value.kind === 'ComputedLoad') {
-        memberLoads.add(lvalue.identifier.id);
-      }
       const property =
         value.kind === 'MethodCall'
           ? value.property
-          : value.kind === 'TaggedTemplateExpression' &&
-              memberLoads.has(value.tag.identifier.id)
+          : value.kind === 'TaggedTemplateExpression' && value.receiver !== null
             ? value.tag
             : null;
       if (property !== null) {

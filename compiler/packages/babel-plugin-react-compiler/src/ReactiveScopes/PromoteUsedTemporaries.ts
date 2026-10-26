@@ -234,7 +234,6 @@ class PromoteInterposedTemporaries extends ReactiveFunctionVisitor<InterState> {
   #promotable: State;
   #consts: Set<IdentifierId> = new Set();
   #globals: Set<IdentifierId> = new Set();
-  #memberLoads: Set<IdentifierId> = new Set();
 
   /*
    * Unpromoted temporaries will be emitted at their use sites rather than as separate
@@ -343,9 +342,8 @@ class PromoteInterposedTemporaries extends ReactiveFunctionVisitor<InterState> {
         }
         if (
           instruction.value.kind === 'TaggedTemplateExpression' &&
-          this.#memberLoads.has(instruction.value.tag.identifier.id)
+          instruction.value.receiver !== null
         ) {
-          // Likewise for a member tag, so `this` is preserved
           this.#consts.add(instruction.value.tag.identifier.id);
         }
 
@@ -406,7 +404,6 @@ class PromoteInterposedTemporaries extends ReactiveFunctionVisitor<InterState> {
       case 'PropertyLoad':
       case 'ComputedLoad': {
         if (instruction.lvalue) {
-          this.#memberLoads.add(instruction.lvalue.identifier.id);
           if (this.#globals.has(instruction.value.object.identifier.id)) {
             this.#globals.add(instruction.lvalue.identifier.id);
             this.#consts.add(instruction.lvalue.identifier.id);

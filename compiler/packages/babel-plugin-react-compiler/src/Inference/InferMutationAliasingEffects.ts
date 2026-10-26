@@ -1849,7 +1849,6 @@ function computeSignatureForInstruction(
       break;
     }
     case 'TaggedTemplateExpression': {
-      // tag`a${x}` calls tag(strings, x), where strings is a new frozen array
       const strings = createTemporaryPlace(env, value.loc);
       effects.push({
         kind: 'Create',
@@ -1859,9 +1858,9 @@ function computeSignatureForInstruction(
       });
       effects.push({
         kind: 'Apply',
-        receiver: value.tag,
+        receiver: value.receiver ?? value.tag,
         function: value.tag,
-        mutatesFunction: true,
+        mutatesFunction: value.receiver === null,
         args: [strings, ...value.subexprs],
         into: lvalue,
         signature: getFunctionCallSignature(env, value.tag.identifier.type),

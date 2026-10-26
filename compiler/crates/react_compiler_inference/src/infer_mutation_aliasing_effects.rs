@@ -2281,9 +2281,12 @@ fn compute_signature_for_instruction(
             });
         }
         InstructionValue::TaggedTemplateExpression {
-            tag, subexprs, loc, ..
+            receiver,
+            tag,
+            subexprs,
+            loc,
+            ..
         } => {
-            // tag`a${x}` calls tag(strings, x), where strings is a new frozen array
             let strings = create_temp_place(env, *loc);
             effects.push(AliasingEffect::Create {
                 into: strings.clone(),
@@ -2294,9 +2297,9 @@ fn compute_signature_for_instruction(
                 .ok()
                 .flatten();
             effects.push(AliasingEffect::Apply {
-                receiver: tag.clone(),
+                receiver: receiver.as_ref().unwrap_or(tag).clone(),
                 function: tag.clone(),
-                mutates_function: true,
+                mutates_function: receiver.is_none(),
                 args: std::iter::once(PlaceOrSpreadOrHole::Place(strings))
                     .chain(subexprs.iter().cloned().map(PlaceOrSpreadOrHole::Place))
                     .collect(),

@@ -2479,9 +2479,20 @@ function lowerExpression(
         return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
       }
 
+      const tagPath = expr.get('tag');
+      let receiver: Place | null = null;
+      let tag: Place;
+      if (tagPath.isMemberExpression()) {
+        const memberExpr = lowerMemberExpression(builder, tagPath);
+        receiver = memberExpr.object;
+        tag = lowerValueToTemporary(builder, memberExpr.value);
+      } else {
+        tag = lowerExpressionToTemporary(builder, tagPath);
+      }
       return {
         kind: 'TaggedTemplateExpression',
-        tag: lowerExpressionToTemporary(builder, expr.get('tag')),
+        receiver,
+        tag,
         subexprs: expr
           .get('quasi')
           .get('expressions')

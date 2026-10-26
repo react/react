@@ -7,11 +7,9 @@
 //! - Both the MethodCall and its property have the same scope
 //! - OR neither has a scope
 //!
-//! Tagged templates with a member expression tag are aligned the same way.
-//!
 //! Ported from TypeScript `src/ReactiveScopes/AlignMethodCallScopes.ts`.
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{EvaluationOrder, HirFunction, IdentifierId, InstructionValue, ScopeId};
@@ -29,23 +27,18 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     // Maps an identifier to the scope it should be assigned to (or None to remove scope)
     let mut scope_mapping: FxHashMap<IdentifierId, Option<ScopeId>> = FxHashMap::default();
     let mut merged_scopes = DisjointSet::<ScopeId>::new();
-    let mut member_loads: FxHashSet<IdentifierId> = FxHashSet::default();
 
     // Phase 1: Walk instructions and collect scope relationships
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
             let property = match &instr.value {
-                InstructionValue::PropertyLoad { .. } | InstructionValue::ComputedLoad { .. } => {
-                    member_loads.insert(instr.lvalue.identifier);
-                    None
-                }
                 InstructionValue::MethodCall { property, .. } => Some(property.identifier),
-                InstructionValue::TaggedTemplateExpression { tag, .. }
-                    if member_loads.contains(&tag.identifier) =>
-                {
-                    Some(tag.identifier)
-                }
+                InstructionValue::TaggedTemplateExpression {
+                    receiver: Some(_),
+                    tag,
+                    ..
+                } => Some(tag.identifier),
                 _ => None,
             };
             if let Some(property_id) = property {

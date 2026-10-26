@@ -324,7 +324,13 @@ pub fn each_instruction_value_operand_with_functions(
                 result.push(ctx_place.clone());
             }
         }
-        InstructionValue::TaggedTemplateExpression { tag, subexprs, .. } => {
+        InstructionValue::TaggedTemplateExpression {
+            receiver,
+            tag,
+            subexprs,
+            ..
+        } => {
+            result.extend(receiver.iter().cloned());
             result.push(tag.clone());
             result.extend(subexprs.iter().cloned());
         }
@@ -767,7 +773,15 @@ pub fn map_instruction_value_operands(
             let func = &mut env.functions[lowered_func.func.0 as usize];
             func.context = func.context.iter().map(|d| f(d.clone())).collect();
         }
-        InstructionValue::TaggedTemplateExpression { tag, subexprs, .. } => {
+        InstructionValue::TaggedTemplateExpression {
+            receiver,
+            tag,
+            subexprs,
+            ..
+        } => {
+            if let Some(receiver) = receiver {
+                *receiver = f(receiver.clone());
+            }
             *tag = f(tag.clone());
             *subexprs = subexprs.iter().map(|s| f(s.clone())).collect();
         }
@@ -1607,7 +1621,15 @@ pub fn for_each_instruction_value_operand_mut(
         InstructionValue::FunctionExpression { .. } | InstructionValue::ObjectMethod { .. } => {
             // Context places require env access — callers handle separately.
         }
-        InstructionValue::TaggedTemplateExpression { tag, subexprs, .. } => {
+        InstructionValue::TaggedTemplateExpression {
+            receiver,
+            tag,
+            subexprs,
+            ..
+        } => {
+            if let Some(receiver) = receiver {
+                f(receiver);
+            }
             f(tag);
             for sub in subexprs.iter_mut() {
                 f(sub);

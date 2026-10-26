@@ -12,7 +12,6 @@ import {
   GeneratedSource,
   HIRFunction,
   Identifier,
-  IdentifierId,
   Instruction,
   InstructionId,
   MutableRange,
@@ -280,7 +279,6 @@ export function findDisjointMutableValues(
   fn: HIRFunction,
 ): DisjointSet<Identifier> {
   const scopeIdentifiers = new DisjointSet<Identifier>();
-  const memberLoads = new Set<IdentifierId>();
 
   const declarations = new Map<DeclarationId, Identifier>();
   function declareIdentifier(lvalue: Place): void {
@@ -415,15 +413,9 @@ export function findDisjointMutableValues(
         }
       }
       if (
-        instr.value.kind === 'PropertyLoad' ||
-        instr.value.kind === 'ComputedLoad'
-      ) {
-        memberLoads.add(instr.lvalue.identifier.id);
-      } else if (
         instr.value.kind === 'TaggedTemplateExpression' &&
-        memberLoads.has(instr.value.tag.identifier.id)
+        instr.value.receiver !== null
       ) {
-        // As with MethodCall, keep obj.tag in the same scope so `this` is preserved
         operands.push(instr.value.tag.identifier);
       }
       if (operands.length !== 0) {
