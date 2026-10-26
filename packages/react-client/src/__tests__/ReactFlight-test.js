@@ -4284,6 +4284,59 @@ describe('ReactFlight', () => {
     }
   });
 
+  it('uses the debug eval hook to reconstruct stackframes in dev when eval is not available', async () => {
+    function a() {
+      return b();
+    }
+    function b() {
+      return c();
+    }
+    function c() {
+      return new Error('boom');
+    }
+
+    // eslint-disable-next-line no-eval
+    const previousEval = globalThis.eval.bind(globalThis);
+    // eslint-disable-next-line no-eval
+    globalThis.eval = () => {
+      throw new Error('eval is disabled');
+    };
+    const debugEval = jest.fn(code => previousEval(code));
+    globalThis[Symbol.for('react.debug_eval')] = debugEval;
+
+    try {
+      const transport = ReactNoopFlightServer.render(
+        {model: a()},
+        {onError: () => 'digest'},
+      );
+
+      const root = await ReactNoopFlightClient.read(transport);
+      const receivedError = await root.model;
+
+      if (__DEV__) {
+        expect(debugEval).toHaveBeenCalledWith('null');
+        const stackLines = receivedError.stack.split('\n').slice(0, 4);
+        expect(normalizeCodeLocInfo(stackLines.join('\n'))).toEqual(
+          'Error: boom' +
+            '\n    in c (at **)' +
+            '\n    in b (at **)' +
+            '\n    in a (at **)',
+        );
+        // Unlike the fallback without eval, the frames point to the server
+        // source location rather than to React's own code.
+        for (let i = 1; i < stackLines.length; i++) {
+          expect(stackLines[i]).toContain('ReactFlight-test.js');
+        }
+      } else {
+        expect(debugEval).not.toHaveBeenCalled();
+      }
+    } finally {
+      // eslint-disable-next-line no-eval
+      globalThis.eval = previousEval;
+      delete globalThis[Symbol.for('react.debug_eval')];
+    }
+  });
+
   // @gate __DEV__  && enableComponentPerformanceTrack
   it('can render deep but cut off JSX in debug info', async () => {
     function createDeepJSX(n) {
