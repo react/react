@@ -4475,7 +4475,17 @@ export function getFirstHydratableChildWithinActivityInstance(
 export function getFirstHydratableChildWithinSuspenseInstance(
   parentInstance: SuspenseInstance,
 ): null | HydratableInstance {
-  return getNextHydratable(parentInstance.nextSibling);
+  let nextSibling = parentInstance.nextSibling;
+  if (
+    isSuspenseInstanceFallback(parentInstance) &&
+    nextSibling !== null &&
+    nextSibling.nodeType === ELEMENT_NODE &&
+    nextSibling.nodeName === 'TEMPLATE'
+  ) {
+    // Fizz's fallback metadata template precedes the actual fallback content.
+    nextSibling = nextSibling.nextSibling;
+  }
+  return getNextHydratable(nextSibling);
 }
 
 // If it were possible to have more than one scope singleton in a DOM tree
@@ -4729,6 +4739,21 @@ export function commitHydratedActivityInstance(
 export function commitHydratedSuspenseInstance(
   suspenseInstance: SuspenseInstance,
 ): void {
+  if (isSuspenseInstanceFallback(suspenseInstance)) {
+    const metadata = suspenseInstance.nextSibling;
+    const parentInstance = suspenseInstance.parentNode;
+    if (
+      parentInstance !== null &&
+      metadata !== null &&
+      metadata.nodeType === ELEMENT_NODE &&
+      metadata.nodeName === 'TEMPLATE'
+    ) {
+      // The client now owns this fallback. Retire the server bailout metadata
+      // while keeping the boundary markers, just like primary hydration.
+      parentInstance.removeChild(metadata);
+      suspenseInstance.data = SUSPENSE_START_DATA;
+    }
+  }
   // Retry if any event replaying was blocked on this.
   retryIfBlockedOn(suspenseInstance);
 }
