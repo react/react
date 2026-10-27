@@ -2216,7 +2216,6 @@ describe('ReactFlightDOM', () => {
           <style data-precedence="default" data-href="foo">
             {'body { color: red; }'}
           </style>
-          <link as="style" href="foo" rel="preload" />
         </head>
         <body>
           <div id="container">
