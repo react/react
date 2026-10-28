@@ -573,6 +573,89 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('keeps the painted fallback DOM when hydration suspends again on a client promise', async () => {
+    let resolveClientReady;
+    const clientReady = new Promise(resolve => {
+      resolveClientReady = resolve;
+    });
+
+    function ClientSide() {
+      use(ReactDOM.browser());
+      const text = use(clientReady);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Loading</span>}>
+            <ClientSide />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loading</span>
+      </div>,
+    );
+    const fallbackBeforeHydration = container.querySelector('span');
+    // Give the fallback DOM state that neither server HTML nor a re-render
+    // would set. If React remounts an identical fallback, this marker is lost.
+    fallbackBeforeHydration.setAttribute('data-kept', 'yes');
+
+    // Hydration: browser() passes on the client, then the client-only promise
+    // suspends. React must keep the fallback UI it already painted instead of
+    // tearing it down and mounting an identical fallback, which would restart
+    // CSS-driven progress animations (https://github.com/facebook/react/issues/37620).
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    // The preserved fallback still carries the marker we set on the node.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span data-kept="yes">Loading</span>
+      </div>,
+    );
+    expect(container.querySelector('span')).toBe(fallbackBeforeHydration);
+    expect(fallbackBeforeHydration.getAttribute('data-kept')).toBe('yes');
+
+    await act(() => {
+      resolveClientReady('Content');
+    });
+    await waitForAll([]);
+    jest.advanceTimersByTime(300);
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Content</span>
+      </div>,
+    );
+  });
+
   it('supports omitted and direct string browser reasons', async () => {
     const directReason = 'Only render this content in a browser';
     const withoutReason = ReactDOM.browser();
