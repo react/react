@@ -586,6 +586,14 @@ fn collect_temporaries_sidemap(
                     {
                         continue;
                     }
+                    // A property load that itself produces a ref (e.g. `props.myRef`
+                    // passed as `ref={...}`) must not be aliased to its object: doing
+                    // so would make Env::set() write the Ref type onto the object
+                    // (`props`), so sibling loads like `props.className` would be
+                    // typed as ref values.
+                    if is_ref_type(instr.lvalue.identifier, identifiers, types) {
+                        continue;
+                    }
                     let temp = env
                         .temporaries
                         .get(&object.identifier)
