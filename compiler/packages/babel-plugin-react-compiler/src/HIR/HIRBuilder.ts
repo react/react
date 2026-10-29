@@ -819,10 +819,12 @@ export function markInstructionIds(func: HIR): void {
   const visited = new Set<Instruction>();
   for (const [_, block] of func.blocks) {
     for (const instr of block.instructions) {
-      CompilerError.invariant(!visited.has(instr), {
-        reason: `${printInstruction(instr)} already visited!`,
-        loc: instr.loc,
-      });
+      if (visited.has(instr)) {
+        CompilerError.invariant(false, {
+          reason: `${printInstruction(instr)} already visited!`,
+          loc: instr.loc,
+        });
+      }
       visited.add(instr);
       instr.id = makeInstructionId(++id);
     }

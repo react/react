@@ -262,11 +262,13 @@ class State {
         this.scopes.set(scope.id, node);
       }
       const identifierNode = this.identifiers.get(identifier);
-      CompilerError.invariant(identifierNode !== undefined, {
-        reason: 'Expected identifier to be initialized',
-        description: `[${id}] operand=${printPlace(place)} for identifier declaration ${identifier}`,
-        loc: place.loc,
-      });
+      if (identifierNode === undefined) {
+        CompilerError.invariant(false, {
+          reason: 'Expected identifier to be initialized',
+          description: `[${id}] operand=${printPlace(place)} for identifier declaration ${identifier}`,
+          loc: place.loc,
+        });
+      }
       identifierNode.scopes.add(scope.id);
     }
   }

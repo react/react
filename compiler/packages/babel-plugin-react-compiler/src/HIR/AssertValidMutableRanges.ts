@@ -52,12 +52,11 @@ function validateMutableRange(
   range: MutableRange,
   description: string,
 ): void {
-  CompilerError.invariant(
-    (range.start === 0 && range.end === 0) || range.end > range.start,
-    {
+  if (!((range.start === 0 && range.end === 0) || range.end > range.start)) {
+    CompilerError.invariant(false, {
       reason: `Invalid mutable range: [${range.start}:${range.end}]`,
       description: `${printPlace(place)} in ${description}`,
       loc: place.loc,
-    },
-  );
+    });
+  }
 }

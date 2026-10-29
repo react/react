@@ -612,13 +612,15 @@ function codegenReactiveScope(
       firstOutputIndex = index;
     }
 
-    CompilerError.invariant(identifier.name != null, {
-      reason: `Expected scope declaration identifier to be named`,
-      description: `Declaration \`${printIdentifier(
-        identifier,
-      )}\` is unnamed in scope @${scope.id}`,
-      loc: GeneratedSource,
-    });
+    if (identifier.name == null) {
+      CompilerError.invariant(false, {
+        reason: `Expected scope declaration identifier to be named`,
+        description: `Declaration \`${printIdentifier(
+          identifier,
+        )}\` is unnamed in scope @${scope.id}`,
+        loc: GeneratedSource,
+      });
+    }
 
     const name = convertIdentifier(identifier);
     if (!cx.hasDeclared(identifier)) {
@@ -1102,11 +1104,13 @@ function codegenInstructionNullable(
           reason: 'Expected an identifier as a function declaration lvalue',
           loc: instr.value.loc,
         });
-        CompilerError.invariant(value?.type === 'FunctionExpression', {
-          reason: 'Expected a function as a function declaration value',
-          description: `Got ${value == null ? String(value) : value.type} at ${printInstruction(instr)}`,
-          loc: instr.value.loc,
-        });
+        if (value?.type !== 'FunctionExpression') {
+          CompilerError.invariant(false, {
+            reason: 'Expected a function as a function declaration value',
+            description: `Got ${value == null ? String(value) : value.type} at ${printInstruction(instr)}`,
+            loc: instr.value.loc,
+          });
+        }
         return createFunctionDeclaration(
           instr.loc,
           genLvalue,
@@ -2417,13 +2421,15 @@ function codegenPlace(cx: Context, place: Place): t.Expression | t.JSXText {
   if (tmp != null) {
     return tmp;
   }
-  CompilerError.invariant(place.identifier.name !== null || tmp !== undefined, {
-    reason: `[Codegen] No value found for temporary`,
-    description: `Value for '${printPlace(
-      place,
-    )}' was not set in the codegen context`,
-    loc: place.loc,
-  });
+  if (place.identifier.name === null && tmp === undefined) {
+    CompilerError.invariant(false, {
+      reason: `[Codegen] No value found for temporary`,
+      description: `Value for '${printPlace(
+        place,
+      )}' was not set in the codegen context`,
+      loc: place.loc,
+    });
+  }
   const identifier = convertIdentifier(place.identifier);
   identifier.loc = place.loc as any;
   return identifier;
