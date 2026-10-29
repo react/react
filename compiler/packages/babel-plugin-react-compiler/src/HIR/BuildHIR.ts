@@ -2198,7 +2198,7 @@ function lowerExpression(
         case 'MemberExpression': {
           // a.b.c += <right>
           const leftExpr = left as NodePath<t.MemberExpression>;
-          const {object, property, value} = lowerMemberExpression(
+          const {object, property, value} = lowerMemberExpressionForUpdate(
             builder,
             leftExpr,
           );
@@ -2641,7 +2641,7 @@ function lowerExpression(
       if (argument.isMemberExpression()) {
         const binaryOperator = expr.node.operator === '++' ? '+' : '-';
         const leftExpr = argument as NodePath<t.MemberExpression>;
-        const {object, property, value} = lowerMemberExpression(
+        const {object, property, value} = lowerMemberExpressionForUpdate(
           builder,
           leftExpr,
         );
@@ -3395,6 +3395,77 @@ function lowerMemberExpression(
     };
     return {object, property, value};
   }
+}
+
+/*
+ * Lowers the target of a compound assignment or update, such as
+ * `getObject()[getKey()] += 1`. The object and a computed property are used by
+ * both the load and the store, and codegen emits the expression of a temporary
+ * at each use, so they are stored to promoted temporaries to be evaluated only
+ * once. Identifiers, literals and property loads of those are left as is,
+ * since repeating them is safe.
+ */
+function lowerMemberExpressionForUpdate(
+  builder: HIRBuilder,
+  expr: NodePath<t.MemberExpression>,
+): LoweredMemberExpression {
+  const lowered = lowerMemberExpression(builder, expr);
+  const value = lowered.value;
+  if (value.kind !== 'PropertyLoad' && value.kind !== 'ComputedLoad') {
+    return lowered;
+  }
+  const object = isRepeatableExpression(expr.node.object)
+    ? lowered.object
+    : lowerToPromotedTemporary(builder, lowered.object);
+  if (value.kind === 'PropertyLoad') {
+    return {
+      object,
+      property: lowered.property,
+      value: {...value, object: {...object}},
+    };
+  }
+  const property = isRepeatableExpression(expr.node.property)
+    ? value.property
+    : lowerToPromotedTemporary(builder, value.property);
+  return {
+    object,
+    property,
+    value: {...value, object: {...object}, property: {...property}},
+  };
+}
+
+function isRepeatableExpression(node: t.Node): boolean {
+  if (t.isMemberExpression(node)) {
+    return (
+      isRepeatableExpression(node.object) &&
+      isRepeatableExpression(node.property)
+    );
+  }
+  return (
+    t.isIdentifier(node) ||
+    t.isStringLiteral(node) ||
+    t.isNumericLiteral(node) ||
+    t.isBooleanLiteral(node) ||
+    t.isNullLiteral(node) ||
+    t.isBigIntLiteral(node)
+  );
+}
+
+function lowerToPromotedTemporary(builder: HIRBuilder, value: Place): Place {
+  const place = buildTemporaryPlace(builder, value.loc);
+  promoteTemporary(place.identifier);
+  lowerValueToTemporary(builder, {
+    kind: 'StoreLocal',
+    lvalue: {kind: InstructionKind.Const, place: {...place}},
+    value: {...value},
+    type: null,
+    loc: value.loc,
+  });
+  return lowerValueToTemporary(builder, {
+    kind: 'LoadLocal',
+    place: {...place},
+    loc: value.loc,
+  });
 }
 
 function lowerJsxElementName(

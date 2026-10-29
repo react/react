@@ -667,6 +667,102 @@ fn lower_member_expression_impl(
     }
 }
 
+/// Lowers the target of a compound assignment or update, such as
+/// `getObject()[getKey()] += 1`. The object and a computed property are used by
+/// both the load and the store, and codegen emits the expression of a temporary
+/// at each use, so they are stored to promoted temporaries to be evaluated only
+/// once. Identifiers, literals and property loads of those are left as is,
+/// since repeating them is safe.
+/// Corresponds to TS `lowerMemberExpressionForUpdate`.
+fn lower_member_expression_for_update(
+    builder: &mut HirBuilder,
+    member: &react_compiler_ast::expressions::MemberExpression,
+) -> Result<LoweredMemberExpression, CompilerError> {
+    let lowered = lower_member_expression(builder, member)?;
+    match lowered.value {
+        InstructionValue::PropertyLoad { property, loc, .. } => {
+            let object = if is_repeatable_expression(&member.object) {
+                lowered.object
+            } else {
+                lower_to_promoted_temporary(builder, lowered.object)?
+            };
+            Ok(LoweredMemberExpression {
+                object: object.clone(),
+                property: lowered.property,
+                value: InstructionValue::PropertyLoad {
+                    object,
+                    property,
+                    loc,
+                },
+            })
+        }
+        InstructionValue::ComputedLoad { property, loc, .. } => {
+            let object = if is_repeatable_expression(&member.object) {
+                lowered.object
+            } else {
+                lower_to_promoted_temporary(builder, lowered.object)?
+            };
+            let property = if is_repeatable_expression(&member.property) {
+                property
+            } else {
+                lower_to_promoted_temporary(builder, property)?
+            };
+            Ok(LoweredMemberExpression {
+                object: object.clone(),
+                property: MemberProperty::Computed(property.clone()),
+                value: InstructionValue::ComputedLoad {
+                    object,
+                    property,
+                    loc,
+                },
+            })
+        }
+        value => Ok(LoweredMemberExpression {
+            object: lowered.object,
+            property: lowered.property,
+            value,
+        }),
+    }
+}
+
+fn is_repeatable_expression(expr: &react_compiler_ast::expressions::Expression) -> bool {
+    use react_compiler_ast::expressions::Expression;
+    match expr {
+        Expression::MemberExpression(member) => {
+            is_repeatable_expression(&member.object) && is_repeatable_expression(&member.property)
+        }
+        Expression::Identifier(_)
+        | Expression::StringLiteral(_)
+        | Expression::NumericLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::BigIntLiteral(_) => true,
+        _ => false,
+    }
+}
+
+fn lower_to_promoted_temporary(
+    builder: &mut HirBuilder,
+    value: Place,
+) -> Result<Place, CompilerError> {
+    let place = build_temporary_place(builder, value.loc.clone());
+    promote_temporary(builder, place.identifier);
+    let loc = value.loc.clone();
+    lower_value_to_temporary(
+        builder,
+        InstructionValue::StoreLocal {
+            lvalue: LValue {
+                kind: InstructionKind::Const,
+                place: place.clone(),
+            },
+            value,
+            type_annotation: None,
+            loc: loc.clone(),
+        },
+    )?;
+    lower_value_to_temporary(builder, InstructionValue::LoadLocal { place, loc })
+}
+
 // =============================================================================
 // lower_expression
 // =============================================================================
@@ -984,7 +1080,7 @@ fn lower_expression(
                     // Use the member expression's loc (not the update expression's)
                     // to match TS behavior where the inner operations use leftExpr.node.loc
                     let member_loc = convert_opt_loc(&member.base.loc);
-                    let lowered = lower_member_expression(builder, member)?;
+                    let lowered = lower_member_expression_for_update(builder, member)?;
                     let object = lowered.object;
                     let lowered_property = lowered.property;
                     let prev_value = lower_value_to_temporary(builder, lowered.value)?;
@@ -1573,7 +1669,7 @@ fn lower_expression(
                         // Match TS behavior: return the PropertyStore/ComputedStore value
                         // directly (let the caller lower it to a temporary)
                         let member_loc = convert_opt_loc(&member.base.loc);
-                        let lowered = lower_member_expression(builder, member)?;
+                        let lowered = lower_member_expression_for_update(builder, member)?;
                         let object = lowered.object;
                         let lowered_property = lowered.property;
                         let current_value = lower_value_to_temporary(builder, lowered.value)?;
