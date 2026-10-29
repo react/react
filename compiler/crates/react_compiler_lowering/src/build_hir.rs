@@ -2708,6 +2708,7 @@ fn lower_block_statement_inner(
         .scope_bindings_with_children(scope_id)
         .filter(|b| {
             !matches!(b.kind, AstBindingKind::Param | AstBindingKind::Module)
+                && b.declaration_type != "CatchClause"
                 && b.declaration_type != "FunctionExpression"
                 && b.declaration_type != "TypeAlias"
                 && b.declaration_type != "OpaqueType"
@@ -2852,9 +2853,9 @@ fn lower_block_statement_inner(
                 // are handled when those blocks are recursively lowered. TS
                 // never sees child-block bindings here (Babel's
                 // stmt.scope.bindings holds only the block's own scope), so the
-                // guard must NOT apply to own-scope bindings: catch params and
-                // for-in/for-of head vars belong to the block's scope without
-                // being declared by any direct statement, and TS hoists them.
+                // guard must NOT apply to own-scope bindings: for-in/for-of
+                // head vars belong to the block's scope without being declared
+                // by any direct statement, and TS hoists them.
                 let binding_data = &builder.scope_info().bindings[binding_id.0 as usize];
                 if binding_data.scope != scope_id
                     && !is_binding_in_block_direct_statements(binding_data, &block.body)
@@ -4534,10 +4535,15 @@ fn lower_assignment(
                                 description: None,
                             })?;
                         }
-                        if kind != InstructionKind::Const
-                            && kind != InstructionKind::Reassign
-                            && kind != InstructionKind::Let
-                            && kind != InstructionKind::Function
+                        let store_kind = if kind == InstructionKind::Catch {
+                            InstructionKind::Let
+                        } else {
+                            kind
+                        };
+                        if store_kind != InstructionKind::Const
+                            && store_kind != InstructionKind::Reassign
+                            && store_kind != InstructionKind::Let
+                            && store_kind != InstructionKind::Function
                         {
                             builder.record_error(CompilerErrorDetail {
                                 reason: "Unexpected context variable kind".to_string(),
@@ -4559,7 +4565,10 @@ fn lower_assignment(
                         let temp = lower_value_to_temporary(
                             builder,
                             InstructionValue::StoreContext {
-                                lvalue: LValue { place, kind },
+                                lvalue: LValue {
+                                    place,
+                                    kind: store_kind,
+                                },
                                 value,
                                 loc,
                             },
