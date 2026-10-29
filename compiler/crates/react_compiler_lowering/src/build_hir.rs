@@ -90,6 +90,24 @@ fn pattern_like_loc(
     }
 }
 
+/// Get the Babel-style type name of a PatternLike node (e.g. "Identifier", "ArrayPattern").
+fn pattern_like_type_name(pattern: &react_compiler_ast::patterns::PatternLike) -> &'static str {
+    use react_compiler_ast::patterns::PatternLike;
+    match pattern {
+        PatternLike::Identifier(_) => "Identifier",
+        PatternLike::ObjectPattern(_) => "ObjectPattern",
+        PatternLike::ArrayPattern(_) => "ArrayPattern",
+        PatternLike::AssignmentPattern(_) => "AssignmentPattern",
+        PatternLike::RestElement(_) => "RestElement",
+        PatternLike::MemberExpression(_) => "MemberExpression",
+        PatternLike::TSAsExpression(_) => "TSAsExpression",
+        PatternLike::TSSatisfiesExpression(_) => "TSSatisfiesExpression",
+        PatternLike::TSNonNullExpression(_) => "TSNonNullExpression",
+        PatternLike::TSTypeAssertion(_) => "TSTypeAssertion",
+        PatternLike::TypeCastExpression(_) => "TypeCastExpression",
+    }
+}
+
 /// Extract the HIR SourceLocation from an Expression AST node.
 fn expression_loc(expr: &react_compiler_ast::expressions::Expression) -> Option<SourceLocation> {
     use react_compiler_ast::expressions::Expression;
@@ -3549,6 +3567,27 @@ fn lower_statement(
         }
         Statement::ForInStatement(for_in) => {
             let loc = convert_opt_loc(&for_in.base.loc);
+            let var_decl = match for_in.left.as_ref() {
+                react_compiler_ast::statements::ForInOfLeft::VariableDeclaration(var_decl) => {
+                    var_decl
+                }
+                react_compiler_ast::statements::ForInOfLeft::Pattern(pattern) => {
+                    // Lowering assigns `left` even when the loop exits, which is only sound
+                    // for variables declared by the loop: an existing variable keeps its
+                    // previous value after the last iteration.
+                    builder.record_error(CompilerErrorDetail {
+                        category: ErrorCategory::Todo,
+                        reason: format!(
+                            "(BuildHIR::lowerStatement) Handle {} inits in ForInStatement",
+                            pattern_like_type_name(pattern)
+                        ),
+                        description: None,
+                        loc: pattern_like_hir_loc(pattern),
+                        suggestions: None,
+                    })?;
+                    return Ok(());
+                }
+            };
             let continuation_block = builder.reserve(BlockKind::Block);
             let continuation_id = continuation_block.id;
             let init_block = builder.reserve(BlockKind::Loop);
@@ -3585,14 +3624,7 @@ fn lower_statement(
             );
 
             // Lower the init: NextPropertyOf + assignment
-            let left_loc = match for_in.left.as_ref() {
-                react_compiler_ast::statements::ForInOfLeft::VariableDeclaration(var_decl) => {
-                    convert_opt_loc(&var_decl.base.loc).or(loc.clone())
-                }
-                react_compiler_ast::statements::ForInOfLeft::Pattern(pat) => {
-                    pattern_like_hir_loc(pat).or(loc.clone())
-                }
-            };
+            let left_loc = convert_opt_loc(&var_decl.base.loc).or(loc.clone());
             let next_property = lower_value_to_temporary(
                 builder,
                 InstructionValue::NextPropertyOf {
@@ -3601,41 +3633,29 @@ fn lower_statement(
                 },
             )?;
 
-            let assign_result = match for_in.left.as_ref() {
-                react_compiler_ast::statements::ForInOfLeft::VariableDeclaration(var_decl) => {
-                    if var_decl.declarations.len() != 1 {
-                        builder.record_error(CompilerErrorDetail {
-                            category: ErrorCategory::Invariant,
-                            reason: format!(
-                                "Expected only one declaration in ForInStatement init, got {}",
-                                var_decl.declarations.len()
-                            ),
-                            description: None,
-                            loc: left_loc.clone(),
-                            suggestions: None,
-                        })?;
-                    }
-                    if let Some(declarator) = var_decl.declarations.first() {
-                        lower_assignment(
-                            builder,
-                            left_loc.clone(),
-                            InstructionKind::Let,
-                            &declarator.id,
-                            next_property.clone(),
-                            AssignmentStyle::Assignment,
-                        )?
-                    } else {
-                        None
-                    }
-                }
-                react_compiler_ast::statements::ForInOfLeft::Pattern(pattern) => lower_assignment(
+            if var_decl.declarations.len() != 1 {
+                builder.record_error(CompilerErrorDetail {
+                    category: ErrorCategory::Invariant,
+                    reason: format!(
+                        "Expected only one declaration in ForInStatement init, got {}",
+                        var_decl.declarations.len()
+                    ),
+                    description: None,
+                    loc: left_loc.clone(),
+                    suggestions: None,
+                })?;
+            }
+            let assign_result = if let Some(declarator) = var_decl.declarations.first() {
+                lower_assignment(
                     builder,
                     left_loc.clone(),
-                    InstructionKind::Reassign,
-                    pattern,
+                    InstructionKind::Let,
+                    &declarator.id,
                     next_property.clone(),
                     AssignmentStyle::Assignment,
-                )?,
+                )?
+            } else {
+                None
             };
             // Use the assign result (StoreLocal temp) as the test, matching TS behavior
             let test_value = assign_result.unwrap_or(next_property);
@@ -3677,6 +3697,27 @@ fn lower_statement(
                 })?;
                 return Ok(());
             }
+            let var_decl = match for_of.left.as_ref() {
+                react_compiler_ast::statements::ForInOfLeft::VariableDeclaration(var_decl) => {
+                    var_decl
+                }
+                react_compiler_ast::statements::ForInOfLeft::Pattern(pattern) => {
+                    // Lowering assigns `left` even when the loop exits, which is only sound
+                    // for variables declared by the loop: an existing variable keeps its
+                    // previous value after the last iteration.
+                    builder.record_error(CompilerErrorDetail {
+                        category: ErrorCategory::Todo,
+                        reason: format!(
+                            "(BuildHIR::lowerStatement) Handle {} inits in ForOfStatement",
+                            pattern_like_type_name(pattern)
+                        ),
+                        description: None,
+                        loc: pattern_like_hir_loc(pattern),
+                        suggestions: None,
+                    })?;
+                    return Ok(());
+                }
+            };
 
             let body_loc = statement_loc(&for_of.body);
             let loop_block = builder.try_enter(BlockKind::Block, |builder, _block_id| {
@@ -3728,14 +3769,7 @@ fn lower_statement(
             );
 
             // Test block: IteratorNext, assign, branch
-            let left_loc = match for_of.left.as_ref() {
-                react_compiler_ast::statements::ForInOfLeft::VariableDeclaration(var_decl) => {
-                    convert_opt_loc(&var_decl.base.loc).or(loc.clone())
-                }
-                react_compiler_ast::statements::ForInOfLeft::Pattern(pat) => {
-                    pattern_like_hir_loc(pat).or(loc.clone())
-                }
-            };
+            let left_loc = convert_opt_loc(&var_decl.base.loc).or(loc.clone());
             let advance_iterator = lower_value_to_temporary(
                 builder,
                 InstructionValue::IteratorNext {
@@ -3745,41 +3779,29 @@ fn lower_statement(
                 },
             )?;
 
-            let assign_result = match for_of.left.as_ref() {
-                react_compiler_ast::statements::ForInOfLeft::VariableDeclaration(var_decl) => {
-                    if var_decl.declarations.len() != 1 {
-                        builder.record_error(CompilerErrorDetail {
-                            category: ErrorCategory::Invariant,
-                            reason: format!(
-                                "Expected only one declaration in ForOfStatement init, got {}",
-                                var_decl.declarations.len()
-                            ),
-                            description: None,
-                            loc: left_loc.clone(),
-                            suggestions: None,
-                        })?;
-                    }
-                    if let Some(declarator) = var_decl.declarations.first() {
-                        lower_assignment(
-                            builder,
-                            left_loc.clone(),
-                            InstructionKind::Let,
-                            &declarator.id,
-                            advance_iterator.clone(),
-                            AssignmentStyle::Assignment,
-                        )?
-                    } else {
-                        None
-                    }
-                }
-                react_compiler_ast::statements::ForInOfLeft::Pattern(pattern) => lower_assignment(
+            if var_decl.declarations.len() != 1 {
+                builder.record_error(CompilerErrorDetail {
+                    category: ErrorCategory::Invariant,
+                    reason: format!(
+                        "Expected only one declaration in ForOfStatement init, got {}",
+                        var_decl.declarations.len()
+                    ),
+                    description: None,
+                    loc: left_loc.clone(),
+                    suggestions: None,
+                })?;
+            }
+            let assign_result = if let Some(declarator) = var_decl.declarations.first() {
+                lower_assignment(
                     builder,
                     left_loc.clone(),
-                    InstructionKind::Reassign,
-                    pattern,
+                    InstructionKind::Let,
+                    &declarator.id,
                     advance_iterator.clone(),
                     AssignmentStyle::Assignment,
-                )?,
+                )?
+            } else {
+                None
             };
             // Use the assign result (StoreLocal temp) as the test, matching TS behavior
             let test_value = assign_result.unwrap_or(advance_iterator);

@@ -1129,6 +1129,23 @@ function lowerStatement(
         );
         return;
       }
+      const left = stmt.get('left');
+      if (!left.isVariableDeclaration()) {
+        /*
+         * Lowering assigns `left` even when the loop exits, which is only sound
+         * for variables declared by the loop: an existing variable keeps its
+         * previous value after the last iteration.
+         */
+        builder.recordError(
+          new CompilerErrorDetail({
+            reason: `(BuildHIR::lowerStatement) Handle ${left.type} inits in ForOfStatement`,
+            category: ErrorCategory.Todo,
+            loc: left.node.loc ?? null,
+            suggestions: null,
+          }),
+        );
+        return;
+      }
 
       const loopBlock = builder.enter('block', _blockId => {
         return builder.loop(label, initBlock.id, continuationBlock.id, () => {
@@ -1180,46 +1197,28 @@ function lowerStatement(
         testBlock,
       );
 
-      const left = stmt.get('left');
       const leftLoc = left.node.loc ?? GeneratedSource;
-      let test: Place;
       const advanceIterator = lowerValueToTemporary(builder, {
         kind: 'IteratorNext',
         loc: leftLoc,
         iterator: {...iterator},
         collection: {...value},
       });
-      if (left.isVariableDeclaration()) {
-        const declarations = left.get('declarations');
-        CompilerError.invariant(declarations.length === 1, {
-          reason: `Expected only one declaration in the init of a ForOfStatement, got ${declarations.length}`,
-          loc: left.node.loc ?? GeneratedSource,
-        });
-        const id = declarations[0].get('id');
-        const assign = lowerAssignment(
-          builder,
-          leftLoc,
-          InstructionKind.Let,
-          id,
-          advanceIterator,
-          'Assignment',
-        );
-        test = lowerValueToTemporary(builder, assign);
-      } else {
-        CompilerError.invariant(left.isLVal(), {
-          reason: 'Expected ForOf init to be a variable declaration or lval',
-          loc: leftLoc,
-        });
-        const assign = lowerAssignment(
-          builder,
-          leftLoc,
-          InstructionKind.Reassign,
-          left,
-          advanceIterator,
-          'Assignment',
-        );
-        test = lowerValueToTemporary(builder, assign);
-      }
+      const declarations = left.get('declarations');
+      CompilerError.invariant(declarations.length === 1, {
+        reason: `Expected only one declaration in the init of a ForOfStatement, got ${declarations.length}`,
+        loc: left.node.loc ?? GeneratedSource,
+      });
+      const id = declarations[0].get('id');
+      const assign = lowerAssignment(
+        builder,
+        leftLoc,
+        InstructionKind.Let,
+        id,
+        advanceIterator,
+        'Assignment',
+      );
+      const test = lowerValueToTemporary(builder, assign);
       builder.terminateWithContinuation(
         {
           id: makeInstructionId(0),
@@ -1236,6 +1235,23 @@ function lowerStatement(
     }
     case 'ForInStatement': {
       const stmt = stmtPath as NodePath<t.ForInStatement>;
+      const left = stmt.get('left');
+      if (!left.isVariableDeclaration()) {
+        /*
+         * Lowering assigns `left` even when the loop exits, which is only sound
+         * for variables declared by the loop: an existing variable keeps its
+         * previous value after the last iteration.
+         */
+        builder.recordError(
+          new CompilerErrorDetail({
+            reason: `(BuildHIR::lowerStatement) Handle ${left.type} inits in ForInStatement`,
+            category: ErrorCategory.Todo,
+            loc: left.node.loc ?? null,
+            suggestions: null,
+          }),
+        );
+        return;
+      }
       const continuationBlock = builder.reserve('block');
       const initBlock = builder.reserve('loop');
 
@@ -1272,45 +1288,27 @@ function lowerStatement(
        * right (Expression), so we synthesize a new InstrValue and assignment (potentially multiple
        * instructions when we handle other syntax like Patterns)
        */
-      const left = stmt.get('left');
       const leftLoc = left.node.loc ?? GeneratedSource;
-      let test: Place;
       const nextPropertyTemp = lowerValueToTemporary(builder, {
         kind: 'NextPropertyOf',
         loc: leftLoc,
         value,
       });
-      if (left.isVariableDeclaration()) {
-        const declarations = left.get('declarations');
-        CompilerError.invariant(declarations.length === 1, {
-          reason: `Expected only one declaration in the init of a ForInStatement, got ${declarations.length}`,
-          loc: left.node.loc ?? GeneratedSource,
-        });
-        const id = declarations[0].get('id');
-        const assign = lowerAssignment(
-          builder,
-          leftLoc,
-          InstructionKind.Let,
-          id,
-          nextPropertyTemp,
-          'Assignment',
-        );
-        test = lowerValueToTemporary(builder, assign);
-      } else {
-        CompilerError.invariant(left.isLVal(), {
-          reason: 'Expected ForIn init to be a variable declaration or lval',
-          loc: leftLoc,
-        });
-        const assign = lowerAssignment(
-          builder,
-          leftLoc,
-          InstructionKind.Reassign,
-          left,
-          nextPropertyTemp,
-          'Assignment',
-        );
-        test = lowerValueToTemporary(builder, assign);
-      }
+      const declarations = left.get('declarations');
+      CompilerError.invariant(declarations.length === 1, {
+        reason: `Expected only one declaration in the init of a ForInStatement, got ${declarations.length}`,
+        loc: left.node.loc ?? GeneratedSource,
+      });
+      const id = declarations[0].get('id');
+      const assign = lowerAssignment(
+        builder,
+        leftLoc,
+        InstructionKind.Let,
+        id,
+        nextPropertyTemp,
+        'Assignment',
+      );
+      const test = lowerValueToTemporary(builder, assign);
       builder.terminateWithContinuation(
         {
           id: makeInstructionId(0),
