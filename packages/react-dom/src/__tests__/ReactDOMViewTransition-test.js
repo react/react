@@ -15,6 +15,7 @@ let Suspense;
 let SuspenseList;
 let ViewTransition;
 let act;
+let assertConsoleErrorDev;
 let assertLog;
 let Scheduler;
 let textCache;
@@ -29,6 +30,7 @@ describe('ReactDOMViewTransition', () => {
     ReactDOMClient = require('react-dom/client');
     Scheduler = require('scheduler');
     act = require('internal-test-utils').act;
+    assertConsoleErrorDev = require('internal-test-utils').assertConsoleErrorDev;
     assertLog = require('internal-test-utils').assertLog;
     Suspense = React.Suspense;
     ViewTransition = React.ViewTransition;
@@ -1348,5 +1350,99 @@ describe('ReactDOMViewTransition', () => {
 
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
+
+    // @gate enableViewTransition
+    it('does not warn when a ViewTransition name changes to undefined or another name and another mounts with previous name', async () => {
+      function App({firstProps, secondProps}) {
+        return (
+          <div>
+            <ViewTransition {...firstProps}>
+              <div>First</div>
+            </ViewTransition>
+            {secondProps && (
+              <ViewTransition {...secondProps}>
+                <div>Second</div>
+              </ViewTransition>
+            )}
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      // Mount first with name="cover-1"
+      await act(() => {
+        root.render(<App firstProps={{name: 'cover-1'}} secondProps={null} />);
+      });
+
+      // Update first name to "cover-2"
+      await act(() => {
+        root.render(<App firstProps={{name: 'cover-2'}} secondProps={null} />);
+      });
+
+      // Mount second with "cover-1" (should not warn, since first is now "cover-2")
+      await act(() => {
+        root.render(
+          <App
+            firstProps={{name: 'cover-2'}}
+            secondProps={{name: 'cover-1'}}
+          />,
+        );
+      });
+
+      // Update first name to undefined
+      await act(() => {
+        root.render(
+          <App
+            firstProps={{name: undefined}}
+            secondProps={{name: 'cover-1'}}
+          />,
+        );
+      });
+
+      // Update second name to "cover-2" (should not warn, since first is now undefined)
+      await act(() => {
+        root.render(
+          <App
+            firstProps={{name: undefined}}
+            secondProps={{name: 'cover-2'}}
+          />,
+        );
+      });
+    });
+
+    // @gate enableViewTransition
+    it('warns when two ViewTransition components with the same name are mounted simultaneously', async () => {
+      function App() {
+        return (
+          <div>
+            <ViewTransition name="duplicate">
+              <div>First</div>
+            </ViewTransition>
+            <ViewTransition name="duplicate">
+              <div>Second</div>
+            </ViewTransition>
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<App />);
+      });
+
+      assertConsoleErrorDev([
+        'There are two <ViewTransition name="duplicate"> components with the same name mounted ' +
+          'at the same time. This is not supported and will cause View Transitions ' +
+          'to error. Try to use a more unique name e.g. by using a namespace prefix ' +
+          'and adding the id of an item to the name.\n' +
+          '    in ViewTransition (at **)\n' +
+          '    in App (at **)',
+        'The existing <ViewTransition name="duplicate"> duplicate has this stack trace.\n' +
+          '    in ViewTransition (at **)\n' +
+          '    in App (at **)',
+      ]);
+    });
   });
 });
+
