@@ -436,7 +436,13 @@ fn lower_identifier(
                 VariableBinding::ImportNamespace { name, module } => {
                     NonLocalBinding::ImportNamespace { name, module }
                 }
-                VariableBinding::ModuleLocal { name } => NonLocalBinding::ModuleLocal { name },
+                VariableBinding::ModuleLocal {
+                    name,
+                    is_non_hook_constant,
+                } => NonLocalBinding::ModuleLocal {
+                    name,
+                    is_non_hook_constant,
+                },
                 VariableBinding::Identifier { .. } => unreachable!(),
             };
             let instr_value = InstructionValue::LoadGlobal {

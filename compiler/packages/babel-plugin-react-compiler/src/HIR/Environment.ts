@@ -841,7 +841,9 @@ export class Environment {
     switch (binding.kind) {
       case 'ModuleLocal': {
         // don't resolve module locals
-        return isHookName(binding.name) ? this.#getCustomHookType() : null;
+        return isHookName(binding.name) && !binding.isNonHookConstant
+          ? this.#getCustomHookType()
+          : null;
       }
       case 'Global': {
         return (

@@ -471,8 +471,11 @@ impl Environment {
         loc: Option<SourceLocation>,
     ) -> Result<Option<Global>, CompilerError> {
         match binding {
-            NonLocalBinding::ModuleLocal { name, .. } => {
-                if is_hook_name(name) {
+            NonLocalBinding::ModuleLocal {
+                name,
+                is_non_hook_constant,
+            } => {
+                if is_hook_name(name) && !is_non_hook_constant {
                     Ok(Some(self.get_custom_hook_type()))
                 } else {
                     Ok(None)

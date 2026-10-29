@@ -157,7 +157,7 @@ pub fn format_non_local_binding(binding: &crate::NonLocalBinding) -> String {
         crate::NonLocalBinding::Global { name } => {
             format!("Global {{ name: \"{}\" }}", name)
         }
-        crate::NonLocalBinding::ModuleLocal { name } => {
+        crate::NonLocalBinding::ModuleLocal { name, .. } => {
             format!("ModuleLocal {{ name: \"{}\" }}", name)
         }
         crate::NonLocalBinding::ImportDefault { name, module } => {

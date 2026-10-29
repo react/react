@@ -60,6 +60,10 @@ pub struct BindingData {
     /// For import bindings: the source module and import details.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub import: Option<ImportBindingData>,
+    /// A never-reassigned binding initialized to a literal, array, or object.
+    /// Its name is not evidence that it is a hook.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_non_hook_constant: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

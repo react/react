@@ -1265,6 +1265,7 @@ fn build_outlined_scope_info(
                 declaration_start: Some(p),
                 declaration_node_id: None,
                 import: None,
+                is_non_hook_constant: false,
             });
             ref_to_binding.insert(p, binding_id);
         };
@@ -1357,6 +1358,7 @@ fn outlined_assign_pattern_positions(
                     declaration_start: Some(p),
                     declaration_node_id: Some(p),
                     import: None,
+                    is_non_hook_constant: false,
                 });
                 ref_to_binding.insert(p, binding_id);
             } else {

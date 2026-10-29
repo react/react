@@ -21,8 +21,8 @@ use react_compiler_hir::environment::{Environment, is_hook_name};
 use react_compiler_hir::object_shape::HookKind;
 use react_compiler_hir::visitors::{each_pattern_operand, each_terminal_operand};
 use react_compiler_hir::{
-    FunctionId, HirFunction, Identifier, IdentifierId, InstructionValue, ParamPattern, Place,
-    PropertyLiteral, Type, visitors,
+    FunctionId, HirFunction, Identifier, IdentifierId, InstructionValue, NonLocalBinding,
+    ParamPattern, Place, PropertyLiteral, Type, visitors,
 };
 
 /// Value classification for hook validation.
@@ -236,10 +236,20 @@ pub fn validate_hooks_usage(
             let lvalue_id = instr.lvalue.identifier;
 
             match &instr.value {
-                InstructionValue::LoadGlobal { .. } => {
+                InstructionValue::LoadGlobal { binding, .. } => {
                     if get_hook_kind_for_id(lvalue_id, &env.identifiers, &env.types, env)?.is_some()
                     {
                         value_kinds.insert(lvalue_id, Kind::KnownHook);
+                    } else if matches!(
+                        binding,
+                        NonLocalBinding::ModuleLocal {
+                            is_non_hook_constant: true,
+                            ..
+                        }
+                    ) {
+                        // A module-level constant initialized to a literal, array, or object
+                        // is a plain local value, so its hook-named properties are only PotentialHooks
+                        value_kinds.insert(lvalue_id, Kind::Local);
                     } else {
                         value_kinds.insert(lvalue_id, Kind::Global);
                     }
@@ -284,7 +294,13 @@ pub fn validate_hooks_usage(
                                 Kind::Local
                             }
                         }
-                        Kind::PotentialHook => Kind::PotentialHook,
+                        Kind::PotentialHook => {
+                            if is_hook_property {
+                                Kind::PotentialHook
+                            } else {
+                                Kind::Local
+                            }
+                        }
                         Kind::Global => {
                             if is_hook_property {
                                 Kind::KnownHook
@@ -367,7 +383,13 @@ pub fn validate_hooks_usage(
                         let kind = match object_kind {
                             Kind::Error => Kind::Error,
                             Kind::KnownHook => Kind::KnownHook,
-                            Kind::PotentialHook => Kind::PotentialHook,
+                            Kind::PotentialHook => {
+                                if is_hook_property {
+                                    Kind::PotentialHook
+                                } else {
+                                    Kind::Local
+                                }
+                            }
                             Kind::Global => {
                                 if is_hook_property {
                                     Kind::KnownHook

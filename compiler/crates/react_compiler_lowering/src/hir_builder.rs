@@ -1038,11 +1038,13 @@ impl<'a> HirBuilder<'a> {
                         },
                         None => VariableBinding::ModuleLocal {
                             name: name.to_string(),
+                            is_non_hook_constant: binding.is_non_hook_constant,
                         },
                     })
                 } else if !self.is_scope_within_compiled_function(binding.scope) {
                     Ok(VariableBinding::ModuleLocal {
                         name: name.to_string(),
+                        is_non_hook_constant: binding.is_non_hook_constant,
                     })
                 } else {
                     let binding_id = binding.id;

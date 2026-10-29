@@ -369,6 +369,7 @@ fn emit_outlined_jsx(
         value: InstructionValue::LoadGlobal {
             binding: NonLocalBinding::ModuleLocal {
                 name: outlined_tag.to_string(),
+                is_non_hook_constant: false,
             },
             loc: None,
         },

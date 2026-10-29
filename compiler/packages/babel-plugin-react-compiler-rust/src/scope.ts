@@ -6,7 +6,7 @@
  */
 
 import type {NodePath} from '@babel/core';
-import type * as t from '@babel/types';
+import * as t from '@babel/types';
 
 export interface ScopeData {
   id: number;
@@ -24,6 +24,7 @@ export interface BindingData {
   declarationStart?: number;
   declarationNodeId?: number;
   import?: ImportBindingData;
+  isNonHookConstant?: boolean;
 }
 
 export interface ImportBindingData {
@@ -205,6 +206,10 @@ export function extractScopeInfo(program: NodePath<t.Program>): ScopeInfo {
         if (importData) {
           bindingData.import = importData;
         }
+      }
+
+      if (isNonHookConstantBinding(babelBinding)) {
+        bindingData.isNonHookConstant = true;
       }
 
       bindings.push(bindingData);
@@ -430,6 +435,23 @@ function getBindingKind(binding: {kind: string; path: NodePath}): string {
     default:
       return 'unknown';
   }
+}
+
+/**
+ * A never-reassigned binding initialized to a literal, array, or object cannot be
+ * a hook, so its name is not evidence that it is one.
+ */
+function isNonHookConstantBinding(binding: {
+  constant: boolean;
+  path: NodePath;
+}): boolean {
+  if (!binding.constant || !binding.path.isVariableDeclarator()) {
+    return false;
+  }
+  const init = binding.path.node.init;
+  return (
+    t.isLiteral(init) || t.isArrayExpression(init) || t.isObjectExpression(init)
+  );
 }
 
 function getImportData(binding: {

@@ -221,6 +221,15 @@ export function validateHooksUsage(fn: HIRFunction): void {
            */
           if (getHookKind(fn.env, instr.lvalue.identifier) != null) {
             setKind(instr.lvalue, Kind.KnownHook);
+          } else if (
+            instr.value.binding.kind === 'ModuleLocal' &&
+            instr.value.binding.isNonHookConstant
+          ) {
+            /*
+             * A module-level constant initialized to a literal, array, or object is a
+             * plain local value, so its hook-named properties are only PotentialHooks
+             */
+            setKind(instr.lvalue, Kind.Local);
           } else {
             setKind(instr.lvalue, Kind.Global);
           }
@@ -275,10 +284,11 @@ export function validateHooksUsage(fn: HIRFunction): void {
               /**
                * function Component(props) {
                *   let useFoo;
-               *   let x = useFoo.useBar; // useFoo is PotentialHook, any property from it inherits PotentialHook
+               *   let x = useFoo.useBar; // useFoo is PotentialHook, hook-named property inherits PotentialHook
+               *   let y = useFoo.map; // else the property is a plain value
                * }
                */
-              kind = Kind.PotentialHook;
+              kind = isHookProperty ? Kind.PotentialHook : Kind.Local;
               break;
             }
             case Kind.Global: {
@@ -367,7 +377,7 @@ export function validateHooksUsage(fn: HIRFunction): void {
                 break;
               }
               case Kind.PotentialHook: {
-                kind = Kind.PotentialHook;
+                kind = isHookProperty ? Kind.PotentialHook : Kind.Local;
                 break;
               }
               case Kind.Global: {

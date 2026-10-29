@@ -1257,6 +1257,7 @@ pub enum VariableBinding {
     },
     ModuleLocal {
         name: String,
+        is_non_hook_constant: bool,
     },
 }
 
@@ -1275,8 +1276,11 @@ pub enum NonLocalBinding {
         name: String,
         module: String,
     },
+    /// `is_non_hook_constant`: a never-reassigned constant initialized to a literal,
+    /// array, or object, so its name is not evidence that it is a hook.
     ModuleLocal {
         name: String,
+        is_non_hook_constant: bool,
     },
     Global {
         name: String,

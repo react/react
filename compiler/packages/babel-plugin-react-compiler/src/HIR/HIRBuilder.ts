@@ -280,9 +280,15 @@ export default class HIRBuilder {
           module: importDeclaration.node.source.value,
         };
       } else {
+        const init = path.isVariableDeclarator() ? path.node.init : null;
         return {
           kind: 'ModuleLocal',
           name: originalName,
+          isNonHookConstant:
+            babelBinding.constant &&
+            (t.isLiteral(init) ||
+              t.isArrayExpression(init) ||
+              t.isObjectExpression(init)),
         };
       }
     }

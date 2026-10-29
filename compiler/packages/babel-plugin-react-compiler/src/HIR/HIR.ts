@@ -1258,8 +1258,12 @@ export type NonLocalBinding =
   | {kind: 'ImportNamespace'; name: string; module: string}
   // `import {bar as baz} from 'foo'`
   | NonLocalImportSpecifier
-  // let, const, function, etc declared in the module but outside the current component/hook
-  | {kind: 'ModuleLocal'; name: string}
+  /*
+   * let, const, function, etc declared in the module but outside the current component/hook.
+   * `isNonHookConstant`: never reassigned and initialized to a literal, array, or object,
+   * so its name is not evidence of a hook.
+   */
+  | {kind: 'ModuleLocal'; name: string; isNonHookConstant?: boolean}
   // an unresolved binding
   | {kind: 'Global'; name: string};
 
