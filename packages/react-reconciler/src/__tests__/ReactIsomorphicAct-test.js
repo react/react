@@ -16,6 +16,7 @@ let use;
 let Suspense;
 let DiscreteEventPriority;
 let startTransition;
+let waitForAll;
 let waitForMicrotasks;
 let Scheduler;
 let assertLog;
@@ -33,6 +34,7 @@ describe('isomorphic act()', () => {
     Suspense = React.Suspense;
     startTransition = React.startTransition;
 
+    waitForAll = require('internal-test-utils').waitForAll;
     waitForMicrotasks = require('internal-test-utils').waitForMicrotasks;
     assertLog = require('internal-test-utils').assertLog;
   });
@@ -358,5 +360,92 @@ describe('isomorphic act()', () => {
       resolvePromise();
     });
     expect(root).toMatchRenderedOutput('Async');
+  });
+
+  // @gate __DEV__
+  it('restores the previous act queue when a sync callback throws', async () => {
+    const root = ReactNoop.createRoot();
+    let setCount;
+    function Counter() {
+      const [count, setState] = React.useState(0);
+      setCount = setState;
+      return <Text text={count} />;
+    }
+    await act(() => {
+      root.render(<Counter />);
+    });
+    assertLog([0]);
+
+    expect(() =>
+      act(() => {
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+
+    // The scope that threw must not leave its queue installed. Otherwise every
+    // update scheduled afterwards is pushed onto that abandoned queue, which
+    // nothing ever flushes, so the update never renders.
+    spyOnDev(console, 'error').mockImplementation(() => {});
+    setCount(1);
+    await waitForAll([1]);
+  });
+
+  // @gate __DEV__
+  it('restores the previous act queue when an async callback rejects', async () => {
+    const root = ReactNoop.createRoot();
+    let setCount;
+    function Counter() {
+      const [count, setState] = React.useState(0);
+      setCount = setState;
+      return <Text text={count} />;
+    }
+    await act(() => {
+      root.render(<Counter />);
+    });
+    assertLog([0]);
+
+    let thrown;
+    try {
+      await act(async () => {
+        throw new Error('boom');
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown.message).toBe('boom');
+
+    // Same as above, for the rejection path.
+    spyOnDev(console, 'error').mockImplementation(() => {});
+    setCount(1);
+    await waitForAll([1]);
+  });
+
+  // @gate __DEV__
+  it('keeps the outer queue when a nested act callback throws', () => {
+    const root = ReactNoop.createRoot();
+    let setCount;
+    function Counter() {
+      const [count, setState] = React.useState(0);
+      setCount = setState;
+      return <Text text={count} />;
+    }
+    act(() => {
+      root.render(<Counter />);
+    });
+    assertLog([0]);
+
+    act(() => {
+      expect(() =>
+        act(() => {
+          throw new Error('boom');
+        }),
+      ).toThrow('boom');
+
+      // The nested scope restores the queue it found, which is the outer
+      // scope's. The outer scope still owns that queue, so it still flushes
+      // this update when it exits.
+      setCount(1);
+    });
+    assertLog([1]);
   });
 });
