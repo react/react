@@ -461,10 +461,10 @@ export function shouldAttemptEagerTransition(): boolean {
 }
 
 // The Fabric renderer is secondary to the existing React Native renderer.
-export const isPrimaryRenderer = false;
+export const isPrimaryRenderer: boolean = false;
 
 // The Fabric renderer shouldn't trigger missing act() warnings
-export const warnsIfNotActing = false;
+export const warnsIfNotActing: boolean = false;
 
 export const scheduleTimeout = setTimeout;
 export const cancelTimeout = clearTimeout;

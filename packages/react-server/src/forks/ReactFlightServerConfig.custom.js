@@ -22,7 +22,7 @@ export type HintCode = any;
 // eslint-disable-next-line no-unused-vars
 export type HintModel<T: any> = any;
 
-export const supportsRequestStorage = false;
+export const supportsRequestStorage: boolean = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;

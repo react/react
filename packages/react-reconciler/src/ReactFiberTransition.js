@@ -331,7 +331,6 @@ export function getSuspendedCache(): SpawnedCachePool | null {
   return {
     // We must also save the parent, so that when we resume we can detect
     // a refresh.
-    // $FlowFixMe[constant-condition]
     parent: isPrimaryRenderer
       ? CacheContext._currentValue
       : CacheContext._currentValue2,
@@ -348,7 +347,6 @@ export function getOffscreenDeferredCache(): SpawnedCachePool | null {
   return {
     // We must also store the parent, so that when we resume we can detect
     // a refresh.
-    // $FlowFixMe[constant-condition]
     parent: isPrimaryRenderer
       ? CacheContext._currentValue
       : CacheContext._currentValue2,
