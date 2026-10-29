@@ -29,7 +29,6 @@ import {
   disableLegacyMode,
   enableDefaultTransitionIndicator,
   enableGestureTransition,
-  enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {LegacyRoot} from './ReactRootTags';
@@ -208,10 +207,7 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
     case TransitionLane8:
     case TransitionLane9:
     case TransitionLane10:
-      if (enableParallelTransitions) {
-        return getHighestPriorityLane(lanes);
-      }
-      return lanes & TransitionUpdateLanes;
+      return getHighestPriorityLane(lanes);
     case TransitionLane11:
     case TransitionLane12:
     case TransitionLane13:

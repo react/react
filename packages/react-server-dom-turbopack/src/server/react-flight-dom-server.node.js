@@ -18,6 +18,7 @@ export {
   decodeAction,
   decodeFormState,
   registerServerReference,
+  registerServerObjectReference,
   registerClientReference,
   createClientModuleProxy,
   createTemporaryReferenceSet,

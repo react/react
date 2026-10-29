@@ -81,7 +81,7 @@ describe('ChangeEventPlugin', () => {
   // we are tracking the "current" input value, and only respect events
   // that occur after it changes. In most of these tests, we verify that we
   // keep track of the "current" value and only fire events when it changes.
-  // See https://github.com/facebook/react/pull/5746.
+  // See https://github.com/react/react/pull/5746.
 
   it('should consider initial text value to be current', async () => {
     let called = 0;
@@ -569,7 +569,7 @@ describe('ChangeEventPlugin', () => {
 
   it('does not crash for nodes with custom value property', async () => {
     let originalCreateElement;
-    // https://github.com/facebook/react/issues/10196
+    // https://github.com/react/react/issues/10196
     try {
       originalCreateElement = document.createElement;
       document.createElement = function () {

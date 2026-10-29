@@ -412,7 +412,7 @@ export const isPrimaryRenderer = false;
 // The ART renderer shouldn't trigger missing act() warnings
 export const warnsIfNotActing = false;
 
-export const supportsMutation = true;
+export const supportsMutation: boolean = true;
 
 export function appendChild(parentInstance, child) {
   if (child.parentNode === parentInstance) {

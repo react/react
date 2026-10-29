@@ -14,7 +14,6 @@ import type {EventSystemFlags} from '../EventSystemFlags';
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {FormStatus} from 'react-dom-bindings/src/shared/ReactDOMFormActions';
 
-import {enableTrustedTypesIntegration} from 'shared/ReactFeatureFlags';
 import {getFiberCurrentPropsFromNode} from '../../client/ReactDOMComponentTree';
 import {startHostTransition} from 'react-reconciler/src/ReactFiberReconciler';
 import {didCurrentEventScheduleTransition} from 'react-reconciler/src/ReactFiberRootScheduler';
@@ -39,9 +38,7 @@ function coerceFormActionProp(
     if (__DEV__) {
       checkAttributeStringCoercion(actionProp, 'action');
     }
-    return sanitizeURL(
-      enableTrustedTypesIntegration ? actionProp : '' + (actionProp as any),
-    ) as any;
+    return sanitizeURL(actionProp) as any;
   }
 }
 

@@ -162,21 +162,13 @@ describe('ReactServer', () => {
     if (__DEV__) {
       // The concrete location may change as this test is updated.
       // Just make sure they still point at the same code
-      if (gate(flags => flags.enableAsyncDebugInfo)) {
-        expect(ignoreListStack(ownerStack)).toEqual(
-          '' +
-            // Pointing at React.use(p2)
-            '\n    at Component (./ReactServer-test.js:94:13)' +
-            '\n    at Indirection (./ReactServer-test.js:101:44)' +
-            '\n    at App (./ReactServer-test.js:109:46)',
-        );
-      } else {
-        expect(ignoreListStack(ownerStack)).toEqual(
-          '' +
-            '\n    at Indirection (./ReactServer-test.js:101:44)' +
-            '\n    at App (./ReactServer-test.js:109:46)',
-        );
-      }
+      expect(ignoreListStack(ownerStack)).toEqual(
+        '' +
+          // Pointing at React.use(p2)
+          '\n    at Component (./ReactServer-test.js:94:13)' +
+          '\n    at Indirection (./ReactServer-test.js:101:44)' +
+          '\n    at App (./ReactServer-test.js:109:46)',
+      );
       expect(task).toEqual('\n<Component>');
     } else {
       expect(ownerStack).toBeNull();

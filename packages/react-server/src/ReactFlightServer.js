@@ -15,8 +15,8 @@ import {
   enableTaint,
   enableProfilerTimer,
   enableComponentPerformanceTrack,
-  enableAsyncDebugInfo,
   enableFlightWeakThenables,
+  enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -616,6 +616,9 @@ export type Request = {
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
   writtenObjects: WeakMap<Reference, string>,
+  writtenImportStrings: Map<string, string>,
+  // The combined length of the keys in writtenImportStrings.
+  writtenImportStringsSize: number,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -741,6 +744,8 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
+  this.writtenImportStrings = new Map();
+  this.writtenImportStringsSize = 0;
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -776,10 +781,7 @@ function RequestInstance(
   }
 
   let timeOrigin: number;
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     // We start by serializing the time origin. Any future timestamps will be
     // emitted relatively to this origin. Instead of using performance.timeOrigin
     // as this origin, we use the timestamp at the start of the request.
@@ -1091,10 +1093,7 @@ function createThenableTask(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1144,11 +1143,7 @@ function serializeThenable(
         const keyPath = task.keyPath;
         const implicitSlot = task.implicitSlot;
         const formatContext = task.formatContext;
-        const lastTimestamp =
-          enableProfilerTimer &&
-          (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ? task.time
-            : 0;
+        const lastTimestamp = enableProfilerTimer ? task.time : 0;
         const debugOwner = __DEV__ ? task.debugOwner : null;
         const debugStack = __DEV__ ? task.debugStack : null;
         const debugTask = __DEV__ ? task.debugTask : null;
@@ -1195,10 +1190,7 @@ function serializeThenable(
               debugStack,
               debugTask,
             );
-            if (
-              enableProfilerTimer &&
-              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ) {
+            if (enableProfilerTimer) {
               // If this is async we need to time when this task finishes.
               newTask.timed = true;
             }
@@ -1257,10 +1249,7 @@ function serializeThenable(
         },
         reason => {
           if (newTask.status === PENDING) {
-            if (
-              enableProfilerTimer &&
-              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ) {
+            if (enableProfilerTimer) {
               // If this is async we need to time when this task finishes.
               newTask.timed = true;
             }
@@ -1310,10 +1299,7 @@ function serializeReadableStream(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1413,10 +1399,7 @@ function serializeAsyncIterable(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1848,10 +1831,7 @@ function renderFunctionComponent<Props>(
       outlineComponentInfo(request, componentDebugInfo);
 
       // Track when we started rendering this component.
-      if (
-        enableProfilerTimer &&
-        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ) {
+      if (enableProfilerTimer) {
         advanceTaskTime(request, task, performance.now());
       }
 
@@ -1923,18 +1903,17 @@ function renderFunctionComponent<Props>(
     throw null;
   }
 
-  if (__DEV__ || (enableProfilerTimer && enableAsyncDebugInfo)) {
+  if (__DEV__ || enableProfilerTimer) {
     // Forward any debug information for any Promises that we use():ed during the render.
     // We do this at the end so that we don't keep doing this for each retry.
     const trackedThenables = getTrackedThenablesAfterRendering();
     if (trackedThenables !== null) {
-      const stacks: Array<Error> =
-        __DEV__ && enableAsyncDebugInfo
-          ? (trackedThenables as any)._stacks ||
-            ((trackedThenables as any)._stacks = [])
-          : (null as any);
+      const stacks: Array<Error> = __DEV__
+        ? (trackedThenables as any)._stacks ||
+          ((trackedThenables as any)._stacks = [])
+        : (null as any);
       for (let i = 0; i < trackedThenables.length; i++) {
-        const stack = __DEV__ && enableAsyncDebugInfo ? stacks[i] : null;
+        const stack = __DEV__ ? stacks[i] : null;
         forwardDebugInfoFromThenable(
           request,
           task,
@@ -2250,6 +2229,16 @@ let canEmitDebugInfo: boolean = false;
 let serializedSize = 0;
 const MAX_ROW_SIZE = 3200;
 
+// Bundler metadata repeats the same chunk URLs across every client reference of
+// a route, so strings in it at least this long get outlined and deduplicated
+// when they repeat. The threshold is bounded away from zero because outlining
+// something as short as an export name costs more than copying it.
+const MIN_DEDUPLICATED_IMPORT_STRING_LENGTH = 16;
+
+// Tracked strings are retained for the rest of the request, so their combined
+// length is capped.
+const MAX_DEDUPLICATED_IMPORT_STRINGS_SIZE = 32768;
+
 function deferTask(request: Request, task: Task): ReactJSONValue {
   // Like outlineTask but instead the item is scheduled to be serialized
   // after its parent in the stream.
@@ -2260,10 +2249,7 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -2281,10 +2267,7 @@ function outlineTask(request: Request, task: Task): ReactJSONValue {
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -2825,10 +2808,7 @@ function emitAsyncSequence(
 }
 
 function pingTask(request: Request, task: Task): void {
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     // If this was async we need to emit the time when it completes.
     task.timed = true;
   }
@@ -2913,10 +2893,7 @@ function createTaskWithID(
     | 'debugStack'
     | 'debugTask',
   > as any;
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     task.timed = false;
     task.time = lastTimestamp;
   }
@@ -2947,6 +2924,8 @@ function resolveModel(
   if (
     value !== null &&
     typeof value === 'object' &&
+    // Registered objects are opaque, including objects with a toJSON method.
+    !(enableFlightObjectReferences && isServerReference(value)) &&
     // $FlowFixMe[method-unbinding]
     typeof value.toJSON === 'function'
   ) {
@@ -3072,6 +3051,10 @@ function serializeServerReferenceID(id: number): string {
   return '$h' + id.toString(16);
 }
 
+function serializeServerObjectReferenceID(id: number): string {
+  return '$H' + id.toString(16);
+}
+
 function serializeSymbolReference(name: string): string {
   return '$S' + name;
 }
@@ -3172,9 +3155,15 @@ function serializeClientReference(
   try {
     const clientReferenceMetadata: ClientReferenceMetadata =
       resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+    // Stringify before claiming a chunk id so a throw can't leave it pending.
+    const json = stringifyImportMetadata(
+      request,
+      clientReferenceMetadata,
+      false,
+    );
     request.pendingChunks++;
     const importId = request.nextChunkId++;
-    emitImportChunk(request, importId, clientReferenceMetadata, false);
+    emitImportChunk(request, importId, json, false);
     writtenClientReferences.set(clientReferenceKey, importId);
     if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
       // If we're encoding the "type" of an element, we can refer
@@ -3222,9 +3211,14 @@ function serializeDebugClientReference(
   try {
     const clientReferenceMetadata: ClientReferenceMetadata =
       resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+    const json = stringifyImportMetadata(
+      request,
+      clientReferenceMetadata,
+      true,
+    );
     request.pendingDebugChunks++;
     const importId = request.nextChunkId++;
-    emitImportChunk(request, importId, clientReferenceMetadata, true);
+    emitImportChunk(request, importId, json, true);
     if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
       // If we're encoding the "type" of an element, we can refer
       // to that by a lazy reference instead of directly since React
@@ -3265,8 +3259,7 @@ function outlineModelWithFormatContext(
     false, // It makes no sense for that use case to be contextual.
     formatContext, // Except for FormatContext we optimistically use it.
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+    enableProfilerTimer
       ? performance.now() // TODO: This should really inherit the time from the task.
       : 0,
     null, // TODO: Currently we don't associate any debug information with
@@ -3281,63 +3274,76 @@ function serializeServerReference(
   request: Request,
   serverReference: ServerReference<any>,
 ): string {
+  const isObjectReference =
+    enableFlightObjectReferences && typeof serverReference === 'object';
   const writtenServerReferences = request.writtenServerReferences;
   const existingId = writtenServerReferences.get(serverReference);
   if (existingId !== undefined) {
-    return serializeServerReferenceID(existingId);
+    return isObjectReference
+      ? serializeServerObjectReferenceID(existingId)
+      : serializeServerReferenceID(existingId);
   }
 
-  const boundArgs: null | Array<any> = getServerReferenceBoundArguments(
-    request.bundlerConfig,
-    serverReference,
-  );
-  const bound = boundArgs === null ? null : Promise.resolve(boundArgs);
   const id = getServerReferenceId(request.bundlerConfig, serverReference);
-
-  let location: null | ReactFunctionLocation = null;
-  if (__DEV__) {
-    const error = getServerReferenceLocation(
-      request.bundlerConfig,
-      serverReference,
-    );
-    // $FlowFixMe[constant-condition]
-    if (error) {
-      const frames = parseStackTrace(error, 1);
-      if (frames.length > 0) {
-        const firstFrame = frames[0];
-        location = [
-          firstFrame[0],
-          firstFrame[1],
-          firstFrame[2], // The line and col of the callsite represents the
-          firstFrame[3], // enclosing line and col of the function.
-        ];
-      }
-    }
-  }
-
-  const serverReferenceMetadata: {
+  let serverReferenceMetadata: {
     id: ServerReferenceId,
-    bound: null | Promise<Array<any>>,
+    bound?: null | Promise<Array<any>>,
     name?: string, // DEV-only
     env?: string, // DEV-only
     location?: ReactFunctionLocation, // DEV-only
-  } =
-    __DEV__ && location !== null
-      ? {
-          id,
-          bound,
-          name:
-            typeof serverReference === 'function' ? serverReference.name : '',
-          env: (0, request.environmentName)(),
-          location,
+  };
+  if (isObjectReference) {
+    // Objects share the manifest lookup with functions, but have no bound
+    // arguments or function debug metadata.
+    serverReferenceMetadata = {id};
+  } else {
+    const boundArgs: null | Array<any> = getServerReferenceBoundArguments(
+      request.bundlerConfig,
+      serverReference,
+    );
+    const bound = boundArgs === null ? null : Promise.resolve(boundArgs);
+
+    let location: null | ReactFunctionLocation = null;
+    if (__DEV__) {
+      const error = getServerReferenceLocation(
+        request.bundlerConfig,
+        serverReference,
+      );
+      // $FlowFixMe[constant-condition]
+      if (error) {
+        const frames = parseStackTrace(error, 1);
+        if (frames.length > 0) {
+          const firstFrame = frames[0];
+          location = [
+            firstFrame[0],
+            firstFrame[1],
+            firstFrame[2], // The line and col of the callsite represents the
+            firstFrame[3], // enclosing line and col of the function.
+          ];
         }
-      : {
-          id,
-          bound,
-        };
+      }
+    }
+
+    serverReferenceMetadata =
+      __DEV__ && location !== null
+        ? {
+            id,
+            bound,
+            name:
+              typeof serverReference === 'function' ? serverReference.name : '',
+            env: (0, request.environmentName)(),
+            location,
+          }
+        : {
+            id,
+            bound,
+          };
+  }
   const metadataId = outlineModel(request, serverReferenceMetadata);
   writtenServerReferences.set(serverReference, metadataId);
-  return serializeServerReferenceID(metadataId);
+  return isObjectReference
+    ? serializeServerObjectReferenceID(metadataId)
+    : serializeServerReferenceID(metadataId);
 }
 
 function serializeTemporaryReference(
@@ -3518,8 +3524,7 @@ function serializeBlob(request: Request, blob: Blob): string {
     false,
     createRootFormatContext(),
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+    enableProfilerTimer
       ? performance.now() // TODO: This should really inherit the time from the task.
       : 0,
     null, // TODO: Currently we don't associate any debug information with
@@ -3594,6 +3599,41 @@ function escapeStringValue(value: string): string {
   }
 }
 
+function serializeImportString(request: Request, value: string): string {
+  // No maximum length because import strings are short and repeat often.
+  // Deduping model strings too would need one to skip very long strings.
+  if (value.length < MIN_DEDUPLICATED_IMPORT_STRING_LENGTH) {
+    return escapeStringValue(value);
+  }
+  const writtenStrings = request.writtenImportStrings;
+  const existing = writtenStrings.get(value);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const size = request.writtenImportStringsSize + value.length;
+  if (size > MAX_DEDUPLICATED_IMPORT_STRINGS_SIZE) {
+    // The map is full. Strings already outlined keep deduping; new ones are
+    // written out every time.
+    return escapeStringValue(value);
+  }
+  request.writtenImportStringsSize = size;
+  // Chunk names are almost always shared, so the first occurrence is outlined
+  // right away instead of waiting for a repeat.
+  request.pendingChunks++;
+  const outlinedId = request.nextChunkId++;
+  // $FlowFixMe[incompatible-type] stringify can return null
+  const json: string = stringify(escapeStringValue(value));
+  // The client reads import metadata synchronously, so this row has to have
+  // been written by the time the referencing row arrives. Import chunks are
+  // flushed ahead of regular ones, which regular chunks can't guarantee.
+  request.completedImportChunks.push(
+    stringToChunk(outlinedId.toString(16) + ':' + json + '\n'),
+  );
+  const ref = serializeByValueID(outlinedId);
+  writtenStrings.set(value, ref);
+  return ref;
+}
+
 let modelRoot: null | ReactClientValue = false;
 
 function renderModel(
@@ -3658,10 +3698,7 @@ function renderModel(
           task.implicitSlot,
           task.formatContext,
           request.abortableTasks,
-          enableProfilerTimer &&
-            (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ? task.time
-            : 0,
+          enableProfilerTimer ? task.time : 0,
           __DEV__ ? task.debugOwner : null,
           __DEV__ ? task.debugStack : null,
           __DEV__ ? task.debugTask : null,
@@ -3931,6 +3968,13 @@ function renderModelDestructive(
         parentPropertyName,
         value as any,
       );
+    }
+
+    if (enableFlightObjectReferences && isServerReference(value)) {
+      // An object registered as a Server Reference. This must be checked
+      // before the thenable case below so that a reference that happens to
+      // be a Promise is serialized by reference instead of being awaited.
+      return serializeServerReference(request, value as any);
     }
 
     if (request.temporaryReferences !== undefined) {
@@ -4492,9 +4536,11 @@ function serializeDebugErrorValue(
       const errorsId = outlineDebugModel(request, counter, errors);
       errorInfo.errors = serializeByValueID(errorsId);
     }
+    // +1 compared to the stack alone since errorInfo itself also counts
+    // against the limit.
     const id = outlineDebugModel(
       request,
-      {objectLimit: stack.length * 2 + 1},
+      {objectLimit: stack.length * 2 + 2},
       errorInfo,
     );
     return '$Z' + id.toString(16);
@@ -4584,14 +4630,140 @@ function emitErrorChunk(
   }
 }
 
+// Null on the debug channel, which can't reference rows in the main stream.
+let importStringRequest: null | Request = null;
+
+function importMetadataReplacer(key: string, value: mixed): mixed {
+  if (typeof value === 'string') {
+    const request = importStringRequest;
+    if (request === null) {
+      return escapeStringValue(value);
+    }
+    return serializeImportString(request, value);
+  }
+  return value;
+}
+
+function stringifyImportMetadataWithReplacer(
+  request: Request,
+  clientReferenceMetadata: ClientReferenceMetadata,
+  debug: boolean,
+): string {
+  const prevRequest = importStringRequest;
+  importStringRequest = __DEV__ && debug ? null : request;
+  try {
+    // $FlowFixMe[incompatible-type] stringify can return null
+    return stringify(clientReferenceMetadata, importMetadataReplacer);
+  } finally {
+    importStringRequest = prevRequest;
+  }
+}
+
+// Bundler metadata is two or three levels deep. The bound is only there so a
+// cycle ends up in stringify itself, which throws its own error for it.
+const MAX_IMPORT_METADATA_DEPTH = 16;
+
+const NOT_PLAIN_IMPORT_METADATA = {};
+
+// Copies the metadata with every string replaced by its serialized form, so
+// that stringify can run without a replacer. Anything stringify would treat
+// specially (toJSON, boxed primitives, class instances) makes this give up
+// instead, because the copy would not reproduce that treatment.
+function transformImportMetadata(
+  request: Request,
+  value: mixed,
+  depth: number,
+): mixed {
+  switch (typeof value) {
+    case 'string':
+      return serializeImportString(request, value);
+    case 'number':
+    case 'boolean':
+    case 'undefined':
+      return value;
+    case 'object': {
+      if (value === null) {
+        return null;
+      }
+      if (depth > MAX_IMPORT_METADATA_DEPTH) {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      if (typeof (value as any).toJSON === 'function') {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      if (isArray(value)) {
+        const length = value.length;
+        const copy: Array<mixed> = new Array(length);
+        for (let i = 0; i < length; i++) {
+          const element = value[i];
+          if (typeof element === 'string') {
+            copy[i] = serializeImportString(request, element);
+            continue;
+          }
+          const child = transformImportMetadata(request, element, depth + 1);
+          if (child === NOT_PLAIN_IMPORT_METADATA) {
+            return NOT_PLAIN_IMPORT_METADATA;
+          }
+          copy[i] = child;
+        }
+        return copy;
+      }
+      const proto = getPrototypeOf(value);
+      if (proto !== ObjectPrototype && proto !== null) {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      const keys = Object.keys(value);
+      const copy: {[string]: mixed} = {};
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        if (key in ObjectPrototype) {
+          // The copy inherits from Object.prototype, so assigning this key would
+          // hit an accessor like __proto__ or, if the prototype is frozen, throw.
+          return NOT_PLAIN_IMPORT_METADATA;
+        }
+        const element = (value as any)[key];
+        if (typeof element === 'string') {
+          copy[key] = serializeImportString(request, element);
+          continue;
+        }
+        const child = transformImportMetadata(request, element, depth + 1);
+        if (child === NOT_PLAIN_IMPORT_METADATA) {
+          return NOT_PLAIN_IMPORT_METADATA;
+        }
+        copy[key] = child;
+      }
+      return copy;
+    }
+    default:
+      return NOT_PLAIN_IMPORT_METADATA;
+  }
+}
+
+function stringifyImportMetadata(
+  request: Request,
+  clientReferenceMetadata: ClientReferenceMetadata,
+  debug: boolean,
+): string {
+  if (!(__DEV__ && debug)) {
+    const copy = transformImportMetadata(request, clientReferenceMetadata, 0);
+    if (copy !== NOT_PLAIN_IMPORT_METADATA) {
+      // $FlowFixMe[incompatible-type] stringify can return null
+      return stringify(copy);
+    }
+  }
+  return stringifyImportMetadataWithReplacer(
+    request,
+    clientReferenceMetadata,
+    debug,
+  );
+}
+
 function emitImportChunk(
   request: Request,
   id: number,
-  clientReferenceMetadata: ClientReferenceMetadata,
+  json: string,
   debug: boolean,
 ): void {
-  // $FlowFixMe[incompatible-type] stringify can return null
-  const json: string = stringify(clientReferenceMetadata);
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {
@@ -4882,7 +5054,7 @@ function serializeIONode(
       if (name.startsWith('Window.')) {
         name = name.slice(7);
       } else if (name.startsWith('<anonymous>.')) {
-        name = name.slice(7);
+        name = name.slice('<anonymous>.'.length);
       }
     }
   }
@@ -5802,7 +5974,7 @@ function forwardDebugInfoFromThenable(
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     const sequence = getAsyncSequenceFromPromise(thenable);
     if (sequence !== null) {
       emitAsyncSequence(request, task, sequence, debugInfo, owner, stack);
@@ -5823,7 +5995,7 @@ function forwardDebugInfoFromCurrentContext(
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     const sequence = getCurrentAsyncSequence();
     if (sequence !== null) {
       emitAsyncSequence(request, task, sequence, debugInfo, null, null);
@@ -5846,7 +6018,7 @@ function forwardDebugInfoFromAbortedTask(request: Request, task: Task): void {
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     let thenable: null | Thenable<any> = null;
     if (typeof model.then === 'function') {
       thenable = model as any;
@@ -5922,10 +6094,7 @@ function advanceTaskTime(
   task: Task,
   timestamp: number,
 ): void {
-  if (
-    !enableProfilerTimer ||
-    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
-  ) {
+  if (!enableProfilerTimer) {
     return;
   }
   // Emits a timing chunk, if the new timestamp is higher than the previous timestamp of this task.
@@ -5941,10 +6110,7 @@ function advanceTaskTime(
 }
 
 function markOperationEndTime(request: Request, task: Task, timestamp: number) {
-  if (
-    !enableProfilerTimer ||
-    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
-  ) {
+  if (!enableProfilerTimer) {
     return;
   }
   // This is like advanceTaskTime() but always emits a timing chunk even if it doesn't advance.
@@ -5978,6 +6144,18 @@ function emitChunk(
       }
     }
     emitTextChunk(request, id, value, false);
+    return;
+  }
+  if (
+    enableFlightObjectReferences &&
+    typeof value === 'object' &&
+    value !== null &&
+    isServerReference(value)
+  ) {
+    // Streamed values reach this function before model serialization. Keep
+    // registered binary objects opaque instead of emitting their bytes.
+    const json = stringify(serializeServerReference(request, value as any));
+    emitModelChunk(request, id, json);
     return;
   }
   if (value instanceof ArrayBuffer) {
@@ -6054,10 +6232,7 @@ function emitChunk(
 }
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     if (task.timed) {
       markOperationEndTime(request, task, performance.now());
     }
@@ -6136,10 +6311,7 @@ function retryTask(request: Request, task: Task): void {
       }
     }
     // We've finished rendering. Log the end time.
-    if (
-      enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-    ) {
+    if (enableProfilerTimer) {
       if (task.timed) {
         markOperationEndTime(request, task, performance.now());
       }
@@ -6278,10 +6450,7 @@ function finishAbortedTask(
   }
   forwardDebugInfoFromAbortedTask(request, task);
   // Track when we aborted this task as its end time.
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     if (task.timed) {
       markOperationEndTime(request, task, request.abortTime);
     }
@@ -6488,6 +6657,25 @@ function flushCompletedChunks(request: Request): void {
     flushBuffered(destination);
   }
   if (request.pendingChunks === 0) {
+    // There are no pending chunks left, so the render is complete and its cache
+    // signal is aborted here. Debug chunks can still be pending, but they carry
+    // development-only instrumentation rather than the render's output.
+    //
+    // This runs before the stream bookkeeping below, because that bookkeeping
+    // can close the main stream and set the status to CLOSED while debug chunks
+    // are outstanding. The abort only happens below ABORTING, so a later flush
+    // would skip it. Repeated flushes are safe, because aborting an aborted
+    // controller does nothing a second time.
+    //
+    // The taint queue stays untouched here. Debug chunks are checked against
+    // the taint registry as they are written, and a deferred debug object can
+    // be written long after this point.
+    if (request.status < ABORTING) {
+      const abortReason = new Error(
+        'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
+      );
+      request.cacheController.abort(abortReason);
+    }
     if (__DEV__) {
       const debugDestination = request.debugDestination;
       if (request.pendingDebugChunks === 0) {
@@ -6517,12 +6705,6 @@ function flushCompletedChunks(request: Request): void {
     // We're done.
     if (enableTaint) {
       cleanupTaintQueue(request);
-    }
-    if (request.status < ABORTING) {
-      const abortReason = new Error(
-        'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
-      );
-      request.cacheController.abort(abortReason);
     }
     if (request.destination !== null) {
       request.status = CLOSED;
@@ -6659,6 +6841,34 @@ function finishAbort(
   }
 }
 
+// Aborts the request when the caller's signal aborts. The cache controller's
+// signal bounds the listener's lifetime, so the runtime removes the listener as
+// soon as that signal aborts. The cache controller aborts at every point that
+// ends the render: a fatal error, the completion of the flush loop, and abort()
+// itself. From any of those points on, abort() returns early, so the listener
+// has nothing left to do.
+//
+// The listener has to be removed, because it would otherwise keep the whole
+// Request reachable for as long as the caller's signal lives. A composite
+// signal from AbortSignal.any() is itself retained by the runtime while it has
+// any abort listener attached.
+//
+// A request whose stream is neither consumed nor cancelled never ends, so its
+// listener stays attached for as long as the caller's signal lives.
+export function attachAbortSignal(request: Request, signal: AbortSignal): void {
+  if (signal.aborted) {
+    abort(request, signal.reason);
+    return;
+  }
+  signal.addEventListener(
+    'abort',
+    () => {
+      abort(request, signal.reason);
+    },
+    {signal: request.cacheController.signal},
+  );
+}
+
 export function abort(request: Request, reason: mixed): void {
   // We define any status below OPEN as OPEN equivalent
   if (request.status > OPEN) {
@@ -6666,10 +6876,7 @@ export function abort(request: Request, reason: mixed): void {
   }
   try {
     request.status = ABORTING;
-    if (
-      enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-    ) {
+    if (enableProfilerTimer) {
       request.abortTime = performance.now();
     }
     request.cacheController.abort(reason);

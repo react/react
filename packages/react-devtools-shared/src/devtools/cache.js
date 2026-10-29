@@ -20,7 +20,7 @@ import {createContext} from 'react';
 // TODO (cache) Remove this cache; it is outdated and will not work with newer APIs like startTransition.
 
 // Cache implementation was forked from the React repo:
-// https://github.com/facebook/react/blob/main/packages/react-cache/src/ReactCacheOld.js
+// https://github.com/react/react/blob/main/packages/react-cache/src/ReactCacheOld.js
 //
 // This cache is simpler than react-cache in that:
 // 1. Individual items don't need to be invalidated.

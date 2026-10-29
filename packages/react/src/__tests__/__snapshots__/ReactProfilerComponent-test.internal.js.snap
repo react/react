@@ -1,4 +1,4 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
 exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:disabled should render children 1`] = `"<div><span>outside span</span><span>inside span</span><span>function component</span></div>"`;
 

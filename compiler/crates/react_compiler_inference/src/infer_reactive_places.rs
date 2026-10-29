@@ -672,8 +672,10 @@ fn apply_reactive_flags_replay(
                             }
                         });
                     }
-                    InstructionValue::PrefixUpdate { lvalue, .. }
-                    | InstructionValue::PostfixUpdate { lvalue, .. } => {
+                    InstructionValue::PrefixUpdateLocal { lvalue, .. }
+                    | InstructionValue::PrefixUpdateContext { lvalue, .. }
+                    | InstructionValue::PostfixUpdateContext { lvalue, .. }
+                    | InstructionValue::PostfixUpdateLocal { lvalue, .. } => {
                         let id = lvalue.identifier;
                         if !stable_sidemap.is_stable(id) && reactive_ids.contains(&id) {
                             lvalue.reactive = true;

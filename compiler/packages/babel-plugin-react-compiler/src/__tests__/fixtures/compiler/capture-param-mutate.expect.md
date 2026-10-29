@@ -3,20 +3,20 @@
 
 ```javascript
 function getNativeLogFunction(level) {
-  return function () {
+  return function (...args) {
     let str;
-    if (arguments.length === 1 && typeof arguments[0] === 'string') {
-      str = arguments[0];
+    if (args.length === 1 && typeof args[0] === 'string') {
+      str = args[0];
     } else {
       str = Array.prototype.map
-        .call(arguments, function (arg) {
+        .call(args, function (arg) {
           return inspect(arg, {
             depth: 10,
           });
         })
         .join(', ');
     }
-    const firstArg = arguments[0];
+    const firstArg = args[0];
     let logLevel = level;
     if (
       typeof firstArg === 'string' &&
@@ -29,7 +29,7 @@ function getNativeLogFunction(level) {
       global.__inspectorLog(
         INSPECTOR_LEVELS[logLevel],
         str,
-        [].slice.call(arguments),
+        [].slice.call(args),
         INSPECTOR_FRAMES_TO_SKIP
       );
     }
@@ -50,15 +50,16 @@ function getNativeLogFunction(level) {
   const $ = _c(2);
   let t0;
   if ($[0] !== level) {
-    t0 = function () {
+    t0 = function (...t1) {
+      const args = t1;
       let str;
-      if (arguments.length === 1 && typeof arguments[0] === "string") {
-        str = arguments[0];
+      if (args.length === 1 && typeof args[0] === "string") {
+        str = args[0];
       } else {
-        str = Array.prototype.map.call(arguments, _temp).join(", ");
+        str = Array.prototype.map.call(args, _temp).join(", ");
       }
 
-      const firstArg = arguments[0];
+      const firstArg = args[0];
       let logLevel = level;
       if (
         typeof firstArg === "string" &&
@@ -72,7 +73,7 @@ function getNativeLogFunction(level) {
         global.__inspectorLog(
           INSPECTOR_LEVELS[logLevel],
           str,
-          [].slice.call(arguments),
+          [].slice.call(args),
           INSPECTOR_FRAMES_TO_SKIP,
         );
       }

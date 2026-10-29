@@ -47,7 +47,7 @@ const rule = {
       description:
         'verifies the list of dependencies for Hooks like useEffect and similar',
       recommended: true,
-      url: 'https://github.com/facebook/react/issues/14920',
+      url: 'https://github.com/react/react/issues/14920',
     },
     fixable: 'code',
     hasSuggestions: true,

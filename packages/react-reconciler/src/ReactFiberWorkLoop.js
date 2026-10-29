@@ -59,7 +59,6 @@ import {
   enableViewTransition,
   enableGestureTransition,
   enableDefaultTransitionIndicator,
-  enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
@@ -1335,9 +1334,7 @@ function recoverFromConcurrentError(
   // Before rendering again, save the errors from the previous attempt.
   const errorsFromFirstAttempt = workInProgressRootConcurrentErrors;
 
-  // $FlowFixMe[constant-condition]
   const wasRootDehydrated = supportsHydration && isRootDehydrated(root);
-  // $FlowFixMe[constant-condition]
   if (wasRootDehydrated) {
     // The shell failed to hydrate. Set a flag to force a client rendering
     // during the next attempt. To do this, we call prepareFreshStack now
@@ -1355,12 +1352,26 @@ function recoverFromConcurrentError(
   }
 
   const exitStatus = renderRootSync(root, errorRetryLanes, false);
-  // A status of RootSuspendedAtTheShell means the retry unwound to the root
-  // without completing (e.g. something suspended in the shell), so the tree is
-  // incomplete and must not be treated as recovered — committing it would
-  // corrupt the current tree. Fall through and return the status as-is so the
-  // root stays suspended.
-  if (exitStatus !== RootErrored && exitStatus !== RootSuspendedAtTheShell) {
+  if (exitStatus === RootSuspendedAtTheShell) {
+    // The retry unwound to the root without completing (e.g. something
+    // suspended in the shell), so the tree is incomplete and must not be
+    // treated as recovered — committing it would corrupt the current tree.
+    // Return the status as-is so the root stays suspended.
+    //
+    // On a dehydrated root, the retry is the client render, not a check for
+    // data races, so we leave error recovery enabled.
+    if (!wasRootDehydrated) {
+      // The retry couldn't finish, so it can't tell us whether the error was
+      // caused by a data race. Disable error recovery for these lanes so the
+      // next attempt commits the error boundary instead of retrying again.
+      // That includes any deferred lane the retry spawned, which would
+      // otherwise error and retry the same way.
+      root.errorRecoveryDisabledLanes = mergeLanes(
+        root.errorRecoveryDisabledLanes,
+        mergeLanes(originallyAttemptedLanes, workInProgressDeferredLane),
+      );
+    }
+  } else if (exitStatus !== RootErrored) {
     // Successfully finished rendering on retry
 
     if (workInProgressRootDidAttachPingListener && !wasRootDehydrated) {
@@ -1805,10 +1816,8 @@ function markRootSuspended(
   spawnedLane: Lane,
   didAttemptEntireTree: boolean,
 ) {
-  if (enableParallelTransitions) {
-    // When suspending, we should always mark the entangled lanes as suspended.
-    suspendedLanes = getEntangledLanes(root, suspendedLanes);
-  }
+  // When suspending, we should always mark the entangled lanes as suspended.
+  suspendedLanes = getEntangledLanes(root, suspendedLanes);
 
   // When suspending, we should always exclude lanes that were pinged or (more
   // rarely, since we try to avoid it) updated during the render phase.
@@ -4392,7 +4401,6 @@ function flushSpawnedWork(): void {
 
   // Eagerly flush any event replaying that we unblocked within this commit.
   // This ensures that those are observed before we render any new changes.
-  // $FlowFixMe[constant-condition]
   if (supportsHydration) {
     flushHydrationEvents();
   }

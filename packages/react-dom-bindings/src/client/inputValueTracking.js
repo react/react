@@ -93,7 +93,7 @@ function trackValueOnNode(
   // We could've passed this the first time
   // but it triggers a bug in IE11 and Edge 14/15.
   // Calling defineProperty() again should be equivalent.
-  // https://github.com/facebook/react/issues/11768
+  // https://github.com/react/react/issues/11768
   Object.defineProperty(node, valueField, {
     enumerable: descriptor.enumerable,
   });

@@ -397,7 +397,7 @@ pub fn validate_hooks_usage(
                     // Set kind for instr.lvalue
                     let kind = get_kind_for_place(&instr.lvalue, &value_kinds, &env.identifiers);
                     value_kinds.insert(lvalue_id, kind);
-                    // Also set kind for value-level lvalues (e.g. DeclareLocal, PrefixUpdate, PostfixUpdate)
+                    // Also set kind for value-level lvalues (e.g. declarations and updates).
                     for lv in visitors::each_instruction_value_lvalue(&instr.value) {
                         let lv_kind = get_kind_for_place(&lv, &value_kinds, &env.identifiers);
                         value_kinds.insert(lv.identifier, lv_kind);

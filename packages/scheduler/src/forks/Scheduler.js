@@ -535,7 +535,7 @@ if (typeof localSetImmediate === 'function') {
   // Unlike MessageChannel, it doesn't prevent a Node.js process from exiting.
   // (Even though this is a DOM fork of the Scheduler, you could get here
   // with a mix of Node.js 15+, which has a MessageChannel, and jsdom.)
-  // https://github.com/facebook/react/issues/20756
+  // https://github.com/react/react/issues/20756
   //
   // But also, it runs earlier which is the semantic we want.
   // If other browsers ever implement it, it's better to use it.

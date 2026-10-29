@@ -332,36 +332,21 @@ describe('ReactTransition', () => {
     await act(() => {
       resolveText('B: 1');
     });
-    assertLog(
-      gate('enableParallelTransitions')
-        ? ['B: 1', 'Suspend! [A: 1]']
-        : ['Suspend! [A: 1]', 'B: 1'],
-    );
+    assertLog(['B: 1', 'Suspend! [A: 1]']);
     expect(root).toMatchRenderedOutput(
-      gate('enableParallelTransitions') ? (
-        <>
-          <span>
-            <span>Pending A...</span>A: 0
-          </span>
-          <span>B: 1</span>
-        </>
-      ) : (
-        <>
-          <span>
-            <span>Pending A...</span>A: 0
-          </span>
-          <span>
-            <span>Pending B...</span>B: 0
-          </span>
-        </>
-      ),
+      <>
+        <span>
+          <span>Pending A...</span>A: 0
+        </span>
+        <span>B: 1</span>
+      </>,
     );
 
     // Resolve A
     await act(() => {
       resolveText('A: 1');
     });
-    assertLog(gate('enableParallelTransitions') ? ['A: 1'] : ['A: 1', 'B: 1']);
+    assertLog(['A: 1']);
     expect(root).toMatchRenderedOutput(
       <>
         <span>A: 1</span>
@@ -484,36 +469,21 @@ describe('ReactTransition', () => {
     await act(() => {
       resolveText('B: 1');
     });
-    assertLog(
-      gate('enableParallelTransitions')
-        ? ['B: 1', 'Suspend! [A: 1]']
-        : ['Suspend! [A: 1]', 'B: 1'],
-    );
+    assertLog(['B: 1', 'Suspend! [A: 1]']);
     expect(root).toMatchRenderedOutput(
-      gate('enableParallelTransitions') ? (
-        <>
-          <span>
-            <span>Pending A...</span>A: 0
-          </span>
-          <span>B: 1</span>
-        </>
-      ) : (
-        <>
-          <span>
-            <span>Pending A...</span>A: 0
-          </span>
-          <span>
-            <span>Pending B...</span>B: 0
-          </span>
-        </>
-      ),
+      <>
+        <span>
+          <span>Pending A...</span>A: 0
+        </span>
+        <span>B: 1</span>
+      </>,
     );
 
     // Resolve A
     await act(() => {
       resolveText('A: 1');
     });
-    assertLog(gate('enableParallelTransitions') ? ['A: 1'] : ['A: 1', 'B: 1']);
+    assertLog(['A: 1']);
     expect(root).toMatchRenderedOutput(
       <>
         <span>A: 1</span>

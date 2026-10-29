@@ -56,7 +56,7 @@ describe('utils', () => {
     });
 
     // Simulate a reported bug:
-    // https://github.com/facebook/react/issues/16685
+    // https://github.com/react/react/issues/16685
     // @reactVersion >= 16.0
     it('should return a fallback when the name prop is not a string', () => {
       const FauxComponent = {name: {}};
@@ -392,6 +392,19 @@ describe('utils', () => {
         'webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/components/react-dev-overlay/hot-reloader-client.js',
         307,
         11,
+      ]);
+    });
+
+    it('should strip the async prefix from a frame name', () => {
+      expect(
+        extractLocationFromComponentStack(
+          '    at async Comments (https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js:5:9236)',
+        ),
+      ).toEqual([
+        'Comments',
+        'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
+        5,
+        9236,
       ]);
     });
 

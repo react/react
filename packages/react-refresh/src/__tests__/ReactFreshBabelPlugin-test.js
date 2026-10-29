@@ -517,7 +517,7 @@ describe('ReactFreshBabelPlugin', () => {
         envName,
         skipEnvCheck: false,
       }),
-    ).toThrowError(
+    ).toThrow(
       'React Refresh Babel transform should only be enabled in development environment. ' +
         'Instead, the environment is: "' +
         envName +

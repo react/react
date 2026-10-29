@@ -46,7 +46,17 @@ export type AliasingEffect =
    * [1] Except for `let` values that are reassigned and closed over by a function, but we
    * handle this explicitly with StoreContext/LoadContext.
    */
-  | {kind: 'Freeze'; value: Place; reason: ValueReason}
+  | {
+      kind: 'Freeze';
+      value: Place;
+      reason: ValueReason;
+      /**
+       * Set when the value was already frozen, so the freeze had no effect on the
+       * inferred value kinds. The effect is retained so that ref validation can see
+       * the declared signature, but it must not affect operand effects.
+       */
+      alreadyFrozen?: boolean;
+    }
   /**
    * Mutate the value and any direct aliases (not captures). Errors if the value is not mutable.
    */
@@ -219,7 +229,12 @@ export function hashEffect(effect: AliasingEffect): string {
       ].join(':');
     }
     case 'Freeze': {
-      return [effect.kind, effect.value.identifier.id, effect.reason].join(':');
+      return [
+        effect.kind,
+        effect.value.identifier.id,
+        effect.reason,
+        effect.alreadyFrozen === true,
+      ].join(':');
     }
     case 'Impure':
     case 'Render': {

@@ -39,7 +39,7 @@ describe('create-react-class-integration', () => {
   it('should throw when `render` is not specified', () => {
     expect(function () {
       createReactClass({});
-    }).toThrowError('Class specification must implement a `render` method.');
+    }).toThrow('Class specification must implement a `render` method.');
   });
 
   it('should copy prop types onto the Constructor', () => {
@@ -180,7 +180,7 @@ describe('create-react-class-integration', () => {
           return <span />;
         },
       });
-    }).toThrowError(
+    }).toThrow(
       'ReactClass: You are attempting to define a reserved property, ' +
         '`getDefaultProps`, that shouldn\'t be on the "statics" key. Define ' +
         'it as an instance property instead; it will still be accessible on ' +
@@ -353,7 +353,7 @@ describe('create-react-class-integration', () => {
         act(() => {
           root.render(<Component />);
         }),
-      ).rejects.toThrowError(
+      ).rejects.toThrow(
         'Component.getInitialState(): must return an object or null',
       );
     }

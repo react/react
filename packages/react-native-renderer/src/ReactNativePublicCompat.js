@@ -16,6 +16,7 @@ import {
   getNodeFromPublicInstance,
   getNativeTagFromPublicInstance,
   getInternalInstanceHandleFromPublicInstance,
+  fabricUIManager,
 } from 'react-native/react-private-interface';
 
 import {
@@ -148,7 +149,7 @@ export function dispatchCommand(
   const node = getNodeFromPublicInstance(handle);
 
   if (node != null) {
-    nativeFabricUIManager.dispatchCommand(node, command, args);
+    fabricUIManager.dispatchCommand(node, command, args);
   } else {
     if (__DEV__) {
       console.error(
@@ -163,7 +164,7 @@ export function sendAccessibilityEvent(handle: any, eventType: string) {
   const node = getNodeFromPublicInstance(handle);
 
   if (node != null) {
-    nativeFabricUIManager.sendAccessibilityEvent(node, eventType);
+    fabricUIManager.sendAccessibilityEvent(node, eventType);
   } else {
     if (__DEV__) {
       console.error(

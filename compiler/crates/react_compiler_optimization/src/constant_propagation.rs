@@ -252,6 +252,13 @@ fn evaluate_phi(phi: &Phi, constants: &Constants) -> Option<Constant> {
                     if !js_strict_equal(a, b) {
                         return None;
                     }
+                    // Strict equality alone would merge 0 and -0, which are not
+                    // interchangeable. Keep rejecting NaN as before.
+                    if let (PrimitiveValue::Number(a), PrimitiveValue::Number(b)) = (a, b) {
+                        if a.value().is_sign_negative() != b.value().is_sign_negative() {
+                            return None;
+                        }
+                    }
                 }
                 (
                     Constant::LoadGlobal { binding: a, .. },
@@ -382,7 +389,14 @@ fn evaluate_instruction(
             }
             None
         }
-        InstructionValue::PostfixUpdate {
+        InstructionValue::PostfixUpdateLocal {
+            lvalue,
+            operation,
+            value,
+            loc,
+            ..
+        }
+        | InstructionValue::PostfixUpdateContext {
             lvalue,
             operation,
             value,
@@ -416,7 +430,14 @@ fn evaluate_instruction(
             }
             None
         }
-        InstructionValue::PrefixUpdate {
+        InstructionValue::PrefixUpdateLocal {
+            lvalue,
+            operation,
+            value,
+            loc,
+            ..
+        }
+        | InstructionValue::PrefixUpdateContext {
             lvalue,
             operation,
             value,
@@ -905,7 +926,7 @@ fn evaluate_binary_op(
         },
         BinaryOperator::Exponent => match (lhs, rhs) {
             (PrimitiveValue::Number(l), PrimitiveValue::Number(r)) => Some(PrimitiveValue::Number(
-                FloatValue::new(l.value().powf(r.value())),
+                FloatValue::new(js_exponentiate(l.value(), r.value())),
             )),
             _ => None,
         },
@@ -1093,22 +1114,84 @@ fn js_abstract_equal(lhs: &PrimitiveValue, rhs: &PrimitiveValue) -> bool {
 // JavaScript Number.toString() approximation
 // =============================================================================
 
+/// ECMAScript Number::exponentiate (`**`). `f64::powf` follows IEEE 754, which
+/// returns 1 for `1 ** NaN` and `(±1) ** ±Infinity`; JavaScript returns NaN.
+fn js_exponentiate(base: f64, exponent: f64) -> f64 {
+    if base.abs() == 1.0 && !exponent.is_finite() {
+        return f64::NAN;
+    }
+    base.powf(exponent)
+}
+
 /// ECMAScript ToInt32: convert f64 to i32 with modular (wrapping) semantics.
 fn js_to_int32(n: f64) -> i32 {
     if n.is_nan() || n.is_infinite() || n == 0.0 {
         return 0;
     }
-    // Truncate, then wrap to 32 bits
-    let int64 = (n.trunc() as i64) & 0xFFFFFFFF;
-    // Reinterpret as signed i32
-    if int64 >= 0x80000000 {
-        (int64 as u32) as i32
-    } else {
-        int64 as i32
-    }
+    // Rust saturates f64-to-i64 conversions, but JavaScript ToInt32 wraps modulo 2^32.
+    let wrapped = n.trunc().rem_euclid((1_u64 << 32) as f64);
+    wrapped as u32 as i32
 }
 
 /// ECMAScript ToUint32: convert f64 to u32 with modular (wrapping) semantics.
 fn js_to_uint32(n: f64) -> u32 {
     js_to_int32(n) as u32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use react_compiler_hir::{BlockId, Effect};
+
+    #[test]
+    fn phi_numeric_constants_preserve_signed_zero() {
+        for (left, right, should_fold) in [
+            (0.0, -0.0, false),
+            (-0.0, 0.0, false),
+            (0.0, 0.0, true),
+            (-0.0, -0.0, true),
+            (42.0, 42.0, true),
+            (f64::NAN, f64::NAN, false),
+        ] {
+            let place = |id| Place {
+                identifier: IdentifierId(id),
+                effect: Effect::Read,
+                reactive: false,
+                loc: None,
+            };
+            let phi = Phi {
+                place: place(2),
+                operands: [(BlockId(0), place(0)), (BlockId(1), place(1))]
+                    .into_iter()
+                    .collect(),
+            };
+            let constants = [(IdentifierId(0), left), (IdentifierId(1), right)]
+                .into_iter()
+                .map(|(id, value)| {
+                    (
+                        id,
+                        Constant::Primitive {
+                            value: PrimitiveValue::Number(FloatValue::new(value)),
+                            loc: None,
+                        },
+                    )
+                })
+                .collect();
+            let result = evaluate_phi(&phi, &constants);
+            assert_eq!(result.is_some(), should_fold, "{left:?}, {right:?}");
+            if let Some(Constant::Primitive {
+                value: PrimitiveValue::Number(value),
+                ..
+            }) = result
+            {
+                assert_eq!(value.value().to_bits(), left.to_bits());
+            }
+        }
+
+        // Phi merging must not change the semantics of JavaScript equality.
+        assert!(js_strict_equal(
+            &PrimitiveValue::Number(FloatValue::new(0.0)),
+            &PrimitiveValue::Number(FloatValue::new(-0.0)),
+        ));
+    }
 }

@@ -18,7 +18,7 @@ export function injectInternals(internals: Object): boolean {
   if (hook.isDisabled) {
     // This isn't a real property on the hook, but it can be set to opt out
     // of DevTools integration and associated warnings and logs.
-    // https://github.com/facebook/react/issues/3877
+    // https://github.com/react/react/issues/3877
     return true;
   }
   if (!hook.supportsFlight) {

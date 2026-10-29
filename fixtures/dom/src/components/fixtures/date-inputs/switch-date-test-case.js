@@ -3,7 +3,7 @@ const React = window.React;
 const startDate = new Date();
 /**
  * This test case was originally provided by @richsoni,
- * https://github.com/facebook/react/issues/8116
+ * https://github.com/react/react/issues/8116
  */
 class SwitchDateTestCase extends React.Component {
   state = {

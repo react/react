@@ -455,11 +455,12 @@ function validateNoRefAccessInRenderImpl(
             break;
           }
           case 'MethodCall':
+          case 'NewExpression':
           case 'CallExpression': {
             const callee =
-              instr.value.kind === 'CallExpression'
-                ? instr.value.callee
-                : instr.value.property;
+              instr.value.kind === 'MethodCall'
+                ? instr.value.property
+                : instr.value.callee;
             const hookKind = getHookKindForType(fn.env, callee.identifier.type);
             let returnType: RefAccessType = {kind: 'None'};
             const fnType = env.get(callee.identifier.id);
@@ -754,8 +755,18 @@ function validateNoRefAccessInRenderImpl(
             if (refId !== null && nullish) {
               env.set(instr.lvalue.identifier.id, {kind: 'Guard', refId});
             } else {
+              /*
+               * A binary operator such as `===` or `!==` never invokes a
+               * function operand, so a value that merely *reads* a ref when
+               * called (RefAccessType Structure with readRefEffect) is not
+               * itself a ref access here. Only flag a direct ref value, e.g.
+               * `ref.current === other`. Using the broader
+               * validateNoRefValueAccess would flag comparisons like
+               * `someCallback !== previousCallback` even though comparing
+               * function identity never reads `.current`.
+               */
               for (const operand of eachInstructionValueOperand(instr.value)) {
-                validateNoRefValueAccess(errors, env, operand);
+                validateNoDirectRefValueAccess(errors, operand, env);
               }
             }
             break;

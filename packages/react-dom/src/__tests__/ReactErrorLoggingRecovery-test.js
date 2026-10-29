@@ -8,7 +8,7 @@
  * @jest-environment node
  */
 
-// This is a regression test for https://github.com/facebook/react/issues/13188.
+// This is a regression test for https://github.com/react/react/issues/13188.
 // It reproduces a combination of conditions that led to a problem.
 
 if (global.window) {
