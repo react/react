@@ -96,6 +96,12 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
         ReactSharedInternals.isBatchingLegacy = prevIsBatchingLegacy;
       }
       popActScope(prevActQueue, prevActScopeDepth);
+      // Restore the queue that was active before this scope. The success paths
+      // keep the queue installed until they've flushed it, and clear it
+      // themselves afterwards. A scope that errors out never flushes, so
+      // leaving its queue installed would redirect every later update outside
+      // of `act` to a queue that nothing drains.
+      ReactSharedInternals.actQueue = prevActQueue;
       const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
       ReactSharedInternals.thrownErrors.length = 0;
       throw thrownError;
@@ -164,6 +170,9 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
             },
             error => {
               popActScope(prevActQueue, prevActScopeDepth);
+              // See the comment on the sync error path above. The callback
+              // rejected, so this scope will never flush its queue either.
+              ReactSharedInternals.actQueue = prevActQueue;
               if (ReactSharedInternals.thrownErrors.length > 0) {
                 const thrownError = aggregateErrors(
                   ReactSharedInternals.thrownErrors,
