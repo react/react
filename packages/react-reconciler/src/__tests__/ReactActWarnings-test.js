@@ -19,6 +19,7 @@ let startTransition;
 let getCacheForType;
 let caches;
 let assertConsoleErrorDev;
+let use;
 
 // These tests are mostly concerned with concurrent roots. The legacy root
 // behavior is covered by other older test suites and is unchanged from
@@ -35,6 +36,7 @@ describe('act warnings', () => {
     startTransition = React.startTransition;
     getCacheForType = React.unstable_getCacheForType;
     caches = [];
+    use = React.use;
 
     const InternalTestUtils = require('internal-test-utils');
     waitForAll = InternalTestUtils.waitForAll;
@@ -440,5 +442,33 @@ describe('act warnings', () => {
           'Learn more at https://react.dev/link/wrap-tests-with-act',
       ]);
     });
+  });
+
+  // @gate __DEV__
+  it('warns with a stack if suspend is not wrapped in async act', async () => {
+    function Use({promise}) {
+      use(promise);
+    }
+    function App({promise}) {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Use promise={promise} />
+        </Suspense>
+      );
+    }
+
+    await withActEnvironment(true, () => {
+      const root = ReactNoop.createRoot();
+      const promise = new Promise(() => {});
+      act(() => {
+        root.render(<App promise={promise} />);
+      });
+    });
+    assertConsoleErrorDev([
+      'Error: A component suspended inside an `act` scope, but the `act` call was not awaited. ' +
+        'When testing React components that depend on asynchronous data, you must await the result:\n\n' +
+        'await act(() => ...)\n' +
+        '    in **/ReactActWarnings-test.js:**:** (at **)',
+    ]);
   });
 });
