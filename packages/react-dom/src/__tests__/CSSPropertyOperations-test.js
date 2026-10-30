@@ -297,6 +297,16 @@ describe('CSSPropertyOperations', () => {
     document.body.removeChild(container);
   });
 
+  it('should not append `px` to `math-depth`', () => {
+    // `math-depth` takes an integer, not a length. JSDOM's CSSStyleDeclaration
+    // does not know this property and silently drops it, so this is asserted
+    // through the server renderer, which shares the same unitless table.
+    const html = ReactDOMServer.renderToString(
+      <div style={{mathDepth: 2}}>x</div>,
+    );
+    expect(html).toContain('"math-depth:2"');
+  });
+
   it('should not add units to CSS custom properties', async () => {
     class Comp extends React.Component {
       render() {

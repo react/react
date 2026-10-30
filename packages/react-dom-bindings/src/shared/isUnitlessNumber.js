@@ -40,6 +40,7 @@ const unitlessNumbers = new Set([
   'fontWeight',
   'lineClamp',
   'lineHeight',
+  'mathDepth',
   'opacity',
   'order',
   'orphans',
