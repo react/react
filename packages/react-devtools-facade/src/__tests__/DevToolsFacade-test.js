@@ -2101,6 +2101,51 @@ describe('react-devtools-facade', () => {
       expect(report.committedAt).toBe(overview[0].committedAt);
     });
 
+    it('getCommitReport does not report components in a bailed out subtree', () => {
+      const renders = [];
+      function Static() {
+        renders.push('Static');
+        return <span>static</span>;
+      }
+      function Wrapper() {
+        renders.push('Wrapper');
+        return <Static />;
+      }
+      let setCount;
+      function Counter() {
+        const [count, _setCount] = React.useState(0);
+        setCount = _setCount;
+        renders.push('Counter');
+        return <div>{count}</div>;
+      }
+      function App() {
+        return (
+          <>
+            <Wrapper />
+            <Counter />
+          </>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<App />);
+      });
+
+      renders.length = 0;
+      startProfiling('bailout-trace');
+      act(() => {
+        setCount(1);
+      });
+      stopProfiling();
+      expect(renders).toEqual(['Counter']);
+
+      const names = getCommitReport('bailout-trace', 0)
+        .components.map(c => c.name)
+        .sort();
+      expect(names).toEqual(['Counter', 'div']);
+    });
+
     it('getCommitReport returns an error for an unknown trace', () => {
       expect(getCommitReport('nope', 0)).toEqual({
         error: 'Unknown trace "nope"',
