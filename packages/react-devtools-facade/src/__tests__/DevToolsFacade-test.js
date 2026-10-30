@@ -1850,6 +1850,71 @@ describe('react-devtools-facade', () => {
       });
     });
 
+    it('returns the host component for hoistables without a resource', () => {
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(
+          <>
+            <title>Facade title</title>
+            <meta name="facade-test" content="value" />
+            <link rel="author" href="https://example.com/facade-test" />
+          </>,
+        );
+      });
+
+      const tree = getComponentTree();
+      ['title', 'meta', 'link'].forEach(tag => {
+        const element = document.head.querySelector(tag);
+        expect(element).not.toBe(null);
+        const host = tree.find(n => n.name === tag);
+        const result = getComponentByHostInstance(element);
+
+        expect(result).toEqual(getComponentByUid(host.uid));
+        expect(result).toMatchObject({
+          uid: host.uid,
+          type: 'host',
+          name: tag,
+        });
+      });
+
+      act(() => {
+        root.unmount();
+      });
+    });
+
+    it('returns the host component for hoistables backed by a resource', () => {
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(
+          <style href="facade-test-style" precedence="default">
+            {'body {}'}
+          </style>,
+        );
+      });
+
+      const style = document.head.querySelector(
+        'style[data-href="facade-test-style"]',
+      );
+      expect(style).not.toBe(null);
+      const host = getComponentTree().find(n => n.name === 'style');
+      const result = getComponentByHostInstance(style);
+
+      expect(result).toEqual(getComponentByUid(host.uid));
+      expect(result).toMatchObject({
+        uid: host.uid,
+        type: 'host',
+        name: 'style',
+        props: {href: 'facade-test-style', precedence: 'default'},
+      });
+
+      act(() => {
+        root.unmount();
+      });
+      // Style resources outlive the root, so remove it to keep the shared
+      // document clean for later tests.
+      style.remove();
+    });
+
     it('returns an error when no roots are mounted', () => {
       expect(getComponentByHostInstance({})).toEqual({
         error: 'No mounted React roots found',

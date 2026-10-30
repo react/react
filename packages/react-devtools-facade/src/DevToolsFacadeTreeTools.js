@@ -400,11 +400,12 @@ export function createTreeTools(
 
     if (fiber.tag === HostHoistable) {
       const resource = fiber.memoizedState;
-      if (
-        resource != null &&
-        typeof resource === 'object' &&
-        (resource as any).instance != null
-      ) {
+      if (resource == null) {
+        // Hoistables that aren't backed by a Resource (e.g. <title>, <meta>)
+        // keep their instance on stateNode, like a HostComponent.
+        return fiber.stateNode;
+      }
+      if (typeof resource === 'object' && (resource as any).instance != null) {
         return (resource as any).instance;
       }
     }
