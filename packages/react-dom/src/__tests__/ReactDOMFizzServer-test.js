@@ -5514,8 +5514,7 @@ describe('ReactDOMFizzServer', () => {
       'script[src="src-of-external-runtime"]',
     );
     expect(scripts).toHaveLength(1);
-    // FIXME: crossOrigin dropped by React
-    expect(scripts[0].crossOrigin).toBe(null);
+    expect(scripts[0].crossOrigin).toBe('anonymous');
   });
 
   // @gate shouldUseFizzExternalRuntime
