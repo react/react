@@ -17395,6 +17395,26 @@ function requireLib () {
 
 var libExports = requireLib();
 
+const GeneratedSource = Symbol();
+function getSourceLocation(node, fallback = GeneratedSource) {
+    if ((node === null || node === void 0 ? void 0 : node.loc) == null) {
+        return fallback;
+    }
+    return { loc: node.loc, start: node.start, end: node.end };
+}
+function getBabelLocation(source) {
+    if (typeof source === 'symbol') {
+        return source;
+    }
+    return 'loc' in source ? source.loc : source;
+}
+function areSourceLocationsEqual(left, right) {
+    return (left === right ||
+        (left !== GeneratedSource &&
+            right !== GeneratedSource &&
+            left.loc === right.loc));
+}
+
 /*! *****************************************************************************
 Copyright (c) Microsoft Corporation.
 
@@ -17675,9 +17695,15 @@ var CompilerSuggestionOperation;
     CompilerSuggestionOperation[CompilerSuggestionOperation["Remove"] = 2] = "Remove";
     CompilerSuggestionOperation[CompilerSuggestionOperation["Replace"] = 3] = "Replace";
 })(CompilerSuggestionOperation || (CompilerSuggestionOperation = {}));
+function toBabelDiagnosticDetail(detail) {
+    if (detail.kind === 'hint') {
+        return detail;
+    }
+    return Object.assign(Object.assign({}, detail), { loc: detail.loc != null ? getBabelLocation(detail.loc) : null });
+}
 class CompilerDiagnostic {
     constructor(options) {
-        this.options = options;
+        this.options = Object.assign(Object.assign({}, options), { details: options.details.map(toBabelDiagnosticDetail) });
     }
     static create(options) {
         return new CompilerDiagnostic(Object.assign(Object.assign({}, options), { details: [] }));
@@ -17698,7 +17724,9 @@ class CompilerDiagnostic {
         return this.options.category;
     }
     withDetails(...details) {
-        this.options.details.push(...details);
+        for (const detail of details) {
+            this.options.details.push(toBabelDiagnosticDetail(detail));
+        }
         return this;
     }
     primaryLocation() {
@@ -17764,7 +17792,7 @@ class CompilerDiagnostic {
 }
 class CompilerErrorDetail {
     constructor(options) {
-        this.options = options;
+        this.options = Object.assign(Object.assign({}, options), { loc: options.loc != null ? getBabelLocation(options.loc) : null });
     }
     get reason() {
         return this.options.reason;
@@ -18478,7 +18506,6 @@ function isReservedWord(identifierName) {
         STRICT_MODE_RESTRICTED_WORDS.has(identifierName));
 }
 
-const GeneratedSource = Symbol();
 function isStatementBlockKind(kind) {
     return kind === 'block' || kind === 'catch';
 }
@@ -19538,7 +19565,8 @@ function printType(type) {
         return `:T${type.kind}`;
     }
 }
-function printSourceLocation(loc) {
+function printSourceLocation(source) {
+    const loc = getBabelLocation(source);
     if (typeof loc === 'symbol') {
         return 'generated';
     }
@@ -21158,7 +21186,7 @@ class HIRBuilder {
         }
     }
     resolveBinding(node) {
-        var _a, _b, _c;
+        var _a, _b;
         if (node.name === 'fbt') {
             this.recordError(new CompilerErrorDetail({
                 category: ErrorCategory.Todo,
@@ -21194,7 +21222,7 @@ class HIRBuilder {
                     },
                     scope: null,
                     type: makeType(),
-                    loc: (_c = node.loc) !== null && _c !== void 0 ? _c : GeneratedSource,
+                    loc: getSourceLocation(node),
                 };
                 __classPrivateFieldGet(this, _HIRBuilder_env, "f").programContext.addNewReference(name);
                 __classPrivateFieldGet(this, _HIRBuilder_bindings, "f").set(name, { node, identifier });
@@ -22657,7 +22685,7 @@ function signatureArgument(id) {
 }
 
 function lower(func, env, bindings = null, capturedRefs = new Map()) {
-    var _a, _b, _c;
+    var _a;
     const builder = new HIRBuilder(env, {
         bindings,
         context: capturedRefs,
@@ -22681,7 +22709,8 @@ function lower(func, env, bindings = null, capturedRefs = new Map()) {
     }
     const params = [];
     func.get('params').forEach(param => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        var _a, _b;
+        const loc = getSourceLocation(param.node);
         if (param.isIdentifier()) {
             const binding = builder.resolveIdentifier(param);
             if (binding.kind !== 'Identifier') {
@@ -22701,7 +22730,7 @@ function lower(func, env, bindings = null, capturedRefs = new Map()) {
                 identifier: binding.identifier,
                 effect: Effect.Unknown,
                 reactive: false,
-                loc: (_b = param.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
+                loc,
             };
             params.push(place);
         }
@@ -22710,28 +22739,28 @@ function lower(func, env, bindings = null, capturedRefs = new Map()) {
             param.isAssignmentPattern()) {
             const place = {
                 kind: 'Identifier',
-                identifier: builder.makeTemporary((_c = param.node.loc) !== null && _c !== void 0 ? _c : GeneratedSource),
+                identifier: builder.makeTemporary(loc),
                 effect: Effect.Unknown,
                 reactive: false,
-                loc: (_d = param.node.loc) !== null && _d !== void 0 ? _d : GeneratedSource,
+                loc,
             };
             promoteTemporary(place.identifier);
             params.push(place);
-            lowerAssignment(builder, (_e = param.node.loc) !== null && _e !== void 0 ? _e : GeneratedSource, InstructionKind.Let, param, place, 'Assignment');
+            lowerAssignment(builder, loc, InstructionKind.Let, param, place, 'Assignment');
         }
         else if (param.isRestElement()) {
             const place = {
                 kind: 'Identifier',
-                identifier: builder.makeTemporary((_f = param.node.loc) !== null && _f !== void 0 ? _f : GeneratedSource),
+                identifier: builder.makeTemporary(loc),
                 effect: Effect.Unknown,
                 reactive: false,
-                loc: (_g = param.node.loc) !== null && _g !== void 0 ? _g : GeneratedSource,
+                loc,
             };
             params.push({
                 kind: 'Spread',
                 place,
             });
-            lowerAssignment(builder, (_h = param.node.loc) !== null && _h !== void 0 ? _h : GeneratedSource, InstructionKind.Let, param.get('argument'), place, 'Assignment');
+            lowerAssignment(builder, loc, InstructionKind.Let, param.get('argument'), place, 'Assignment');
         }
         else {
             builder.recordError(CompilerDiagnostic.create({
@@ -22740,7 +22769,7 @@ function lower(func, env, bindings = null, capturedRefs = new Map()) {
                 description: `[BuildHIR] Add support for ${param.node.type} parameters`,
             }).withDetails({
                 kind: 'error',
-                loc: (_j = param.node.loc) !== null && _j !== void 0 ? _j : null,
+                loc: (_b = param.node.loc) !== null && _b !== void 0 ? _b : null,
                 message: 'Unsupported parameter type',
             }));
         }
@@ -22799,25 +22828,26 @@ function lower(func, env, bindings = null, capturedRefs = new Map()) {
         effects: null,
     }, null);
     const hirBody = builder.build();
+    const loc = getSourceLocation(func.node);
     return {
         id: validatedId,
         nameHint: null,
         params,
         fnType: bindings == null ? env.fnType : 'Other',
         returnTypeAnnotation: null,
-        returns: createTemporaryPlace(env, (_b = func.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource),
+        returns: createTemporaryPlace(env, loc),
         body: hirBody,
         context,
         generator: func.node.generator === true,
         async: func.node.async === true,
-        loc: (_c = func.node.loc) !== null && _c !== void 0 ? _c : GeneratedSource,
+        loc,
         env,
         aliasingEffects: null,
         directives,
     };
 }
 function lowerStatement(builder, stmtPath, label = null) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0;
     const stmtNode = stmtPath.node;
     switch (stmtNode.type) {
         case 'ThrowStatement': {
@@ -22836,7 +22866,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 kind: 'throw',
                 value,
                 id: makeInstructionId(0),
-                loc: (_b = stmt.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             };
             builder.terminate(terminal, 'block');
             return;
@@ -22858,7 +22888,7 @@ function lowerStatement(builder, stmtPath, label = null) {
             const terminal = {
                 kind: 'return',
                 returnVariant: 'Explicit',
-                loc: (_c = stmt.node.loc) !== null && _c !== void 0 ? _c : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
                 value,
                 id: makeInstructionId(0),
                 effects: null,
@@ -22870,7 +22900,6 @@ function lowerStatement(builder, stmtPath, label = null) {
             const stmt = stmtPath;
             const continuationBlock = builder.reserve('block');
             const consequentBlock = builder.enter('block', _blockId => {
-                var _a;
                 const consequent = stmt.get('consequent');
                 lowerStatement(builder, consequent);
                 return {
@@ -22878,21 +22907,20 @@ function lowerStatement(builder, stmtPath, label = null) {
                     block: continuationBlock.id,
                     variant: GotoVariant.Break,
                     id: makeInstructionId(0),
-                    loc: (_a = consequent.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                    loc: getSourceLocation(consequent.node),
                 };
             });
             let alternateBlock;
             const alternate = stmt.get('alternate');
             if (hasNode(alternate)) {
                 alternateBlock = builder.enter('block', _blockId => {
-                    var _a, _b;
                     lowerStatement(builder, alternate);
                     return {
                         kind: 'goto',
                         block: continuationBlock.id,
                         variant: GotoVariant.Break,
                         id: makeInstructionId(0),
-                        loc: (_b = (_a = alternate.node) === null || _a === void 0 ? void 0 : _a.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
+                        loc: getSourceLocation(alternate.node),
                     };
                 });
             }
@@ -22907,7 +22935,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 alternate: alternateBlock,
                 fallthrough: continuationBlock.id,
                 id: makeInstructionId(0),
-                loc: (_d = stmt.node.loc) !== null && _d !== void 0 ? _d : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             };
             builder.terminateWithContinuation(terminal, continuationBlock);
             return;
@@ -22963,7 +22991,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                     CompilerError.invariant(binding != null, {
                         reason: 'Expected to find binding for hoisted identifier',
                         description: `Could not find a binding for ${id.node.name}`,
-                        loc: (_e = id.node.loc) !== null && _e !== void 0 ? _e : GeneratedSource,
+                        loc: (_b = id.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
                     });
                     if (builder.environment.isHoistedIdentifier(binding.identifier)) {
                         continue;
@@ -22984,7 +23012,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                             reason: 'Unsupported declaration type for hoisting',
                             description: `variable "${binding.identifier.name}" declared with ${binding.path.type}`,
                             suggestions: null,
-                            loc: (_f = id.parentPath.node.loc) !== null && _f !== void 0 ? _f : GeneratedSource,
+                            loc: (_c = id.parentPath.node.loc) !== null && _c !== void 0 ? _c : GeneratedSource,
                         }));
                         continue;
                     }
@@ -22994,21 +23022,21 @@ function lowerStatement(builder, stmtPath, label = null) {
                             reason: 'Handle non-const declarations for hoisting',
                             description: `variable "${binding.identifier.name}" declared with ${binding.kind}`,
                             suggestions: null,
-                            loc: (_g = id.parentPath.node.loc) !== null && _g !== void 0 ? _g : GeneratedSource,
+                            loc: (_d = id.parentPath.node.loc) !== null && _d !== void 0 ? _d : GeneratedSource,
                         }));
                         continue;
                     }
                     const identifier = builder.resolveIdentifier(id);
                     CompilerError.invariant(identifier.kind === 'Identifier', {
                         reason: 'Expected hoisted binding to be a local identifier, not a global',
-                        loc: (_h = id.node.loc) !== null && _h !== void 0 ? _h : GeneratedSource,
+                        loc: (_e = id.node.loc) !== null && _e !== void 0 ? _e : GeneratedSource,
                     });
                     const place = {
                         effect: Effect.Unknown,
                         identifier: identifier.identifier,
                         kind: 'Identifier',
                         reactive: false,
-                        loc: (_j = id.node.loc) !== null && _j !== void 0 ? _j : GeneratedSource,
+                        loc: getSourceLocation(id.node),
                     };
                     lowerValueToTemporary(builder, {
                         kind: 'DeclareContext',
@@ -23016,7 +23044,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                             kind,
                             place,
                         },
-                        loc: (_k = id.node.loc) !== null && _k !== void 0 ? _k : GeneratedSource,
+                        loc: getSourceLocation(id.node),
                     });
                     builder.environment.addHoistedIdentifier(binding.identifier);
                 }
@@ -23026,25 +23054,25 @@ function lowerStatement(builder, stmtPath, label = null) {
         }
         case 'BreakStatement': {
             const stmt = stmtPath;
-            const block = builder.lookupBreak((_m = (_l = stmt.node.label) === null || _l === void 0 ? void 0 : _l.name) !== null && _m !== void 0 ? _m : null);
+            const block = builder.lookupBreak((_g = (_f = stmt.node.label) === null || _f === void 0 ? void 0 : _f.name) !== null && _g !== void 0 ? _g : null);
             builder.terminate({
                 kind: 'goto',
                 block,
                 variant: GotoVariant.Break,
                 id: makeInstructionId(0),
-                loc: (_o = stmt.node.loc) !== null && _o !== void 0 ? _o : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             }, 'block');
             return;
         }
         case 'ContinueStatement': {
             const stmt = stmtPath;
-            const block = builder.lookupContinue((_q = (_p = stmt.node.label) === null || _p === void 0 ? void 0 : _p.name) !== null && _q !== void 0 ? _q : null);
+            const block = builder.lookupContinue((_j = (_h = stmt.node.label) === null || _h === void 0 ? void 0 : _h.name) !== null && _j !== void 0 ? _j : null);
             builder.terminate({
                 kind: 'goto',
                 block,
                 variant: GotoVariant.Continue,
                 id: makeInstructionId(0),
-                loc: (_r = stmt.node.loc) !== null && _r !== void 0 ? _r : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             }, 'block');
             return;
         }
@@ -23053,27 +23081,27 @@ function lowerStatement(builder, stmtPath, label = null) {
             const testBlock = builder.reserve('loop');
             const continuationBlock = builder.reserve('block');
             const initBlock = builder.enter('loop', _blockId => {
-                var _a, _b, _c, _d, _e, _f;
+                var _a;
                 const init = stmt.get('init');
                 if (init.node == null) {
                     lowerValueToTemporary(builder, {
                         kind: 'Primitive',
                         value: undefined,
-                        loc: (_a = stmt.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                        loc: getSourceLocation(stmt.node),
                     });
                     return {
                         kind: 'goto',
                         block: testBlock.id,
                         variant: GotoVariant.Break,
                         id: makeInstructionId(0),
-                        loc: (_b = stmt.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
+                        loc: getSourceLocation(stmt.node),
                     };
                 }
                 if (!init.isVariableDeclaration()) {
                     builder.recordError(new CompilerErrorDetail({
                         reason: '(BuildHIR::lowerStatement) Handle non-variable initialization in ForStatement',
                         category: ErrorCategory.Todo,
-                        loc: (_c = stmt.node.loc) !== null && _c !== void 0 ? _c : null,
+                        loc: (_a = stmt.node.loc) !== null && _a !== void 0 ? _a : null,
                         suggestions: null,
                     }));
                     if (init.isExpression()) {
@@ -23084,7 +23112,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                         block: testBlock.id,
                         variant: GotoVariant.Break,
                         id: makeInstructionId(0),
-                        loc: (_e = (_d = init.node) === null || _d === void 0 ? void 0 : _d.loc) !== null && _e !== void 0 ? _e : GeneratedSource,
+                        loc: getSourceLocation(init.node),
                     };
                 }
                 lowerStatement(builder, init);
@@ -23093,27 +23121,25 @@ function lowerStatement(builder, stmtPath, label = null) {
                     block: testBlock.id,
                     variant: GotoVariant.Break,
                     id: makeInstructionId(0),
-                    loc: (_f = init.node.loc) !== null && _f !== void 0 ? _f : GeneratedSource,
+                    loc: getSourceLocation(init.node),
                 };
             });
             let updateBlock = null;
             const update = stmt.get('update');
             if (hasNode(update)) {
                 updateBlock = builder.enter('loop', _blockId => {
-                    var _a, _b;
                     lowerExpressionToTemporary(builder, update);
                     return {
                         kind: 'goto',
                         block: testBlock.id,
                         variant: GotoVariant.Break,
                         id: makeInstructionId(0),
-                        loc: (_b = (_a = update.node) === null || _a === void 0 ? void 0 : _a.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
+                        loc: getSourceLocation(update.node),
                     };
                 });
             }
             const bodyBlock = builder.enter('block', _blockId => {
                 return builder.loop(label, updateBlock !== null && updateBlock !== void 0 ? updateBlock : testBlock.id, continuationBlock.id, () => {
-                    var _a;
                     const body = stmt.get('body');
                     lowerStatement(builder, body);
                     return {
@@ -23121,13 +23147,13 @@ function lowerStatement(builder, stmtPath, label = null) {
                         block: updateBlock !== null && updateBlock !== void 0 ? updateBlock : testBlock.id,
                         variant: GotoVariant.Continue,
                         id: makeInstructionId(0),
-                        loc: (_a = body.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                        loc: getSourceLocation(body.node),
                     };
                 });
             });
             builder.terminateWithContinuation({
                 kind: 'for',
-                loc: (_s = stmtNode.loc) !== null && _s !== void 0 ? _s : GeneratedSource,
+                loc: getSourceLocation(stmtNode),
                 init: initBlock,
                 test: testBlock.id,
                 update: updateBlock,
@@ -23140,7 +23166,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerStatement) Handle empty test in ForStatement`,
                     category: ErrorCategory.Todo,
-                    loc: (_t = stmt.node.loc) !== null && _t !== void 0 ? _t : null,
+                    loc: (_k = stmt.node.loc) !== null && _k !== void 0 ? _k : null,
                     suggestions: null,
                 }));
                 builder.terminateWithContinuation({
@@ -23148,13 +23174,13 @@ function lowerStatement(builder, stmtPath, label = null) {
                     test: lowerValueToTemporary(builder, {
                         kind: 'Primitive',
                         value: true,
-                        loc: (_u = stmt.node.loc) !== null && _u !== void 0 ? _u : GeneratedSource,
+                        loc: getSourceLocation(stmt.node),
                     }),
                     consequent: bodyBlock,
                     alternate: continuationBlock.id,
                     fallthrough: continuationBlock.id,
                     id: makeInstructionId(0),
-                    loc: (_v = stmt.node.loc) !== null && _v !== void 0 ? _v : GeneratedSource,
+                    loc: getSourceLocation(stmt.node),
                 }, continuationBlock);
             }
             else {
@@ -23165,7 +23191,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                     alternate: continuationBlock.id,
                     fallthrough: continuationBlock.id,
                     id: makeInstructionId(0),
-                    loc: (_w = stmt.node.loc) !== null && _w !== void 0 ? _w : GeneratedSource,
+                    loc: getSourceLocation(stmt.node),
                 }, continuationBlock);
             }
             return;
@@ -23176,7 +23202,6 @@ function lowerStatement(builder, stmtPath, label = null) {
             const continuationBlock = builder.reserve('block');
             const loopBlock = builder.enter('block', _blockId => {
                 return builder.loop(label, conditionalBlock.id, continuationBlock.id, () => {
-                    var _a;
                     const body = stmt.get('body');
                     lowerStatement(builder, body);
                     return {
@@ -23184,11 +23209,11 @@ function lowerStatement(builder, stmtPath, label = null) {
                         block: conditionalBlock.id,
                         variant: GotoVariant.Continue,
                         id: makeInstructionId(0),
-                        loc: (_a = body.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                        loc: getSourceLocation(body.node),
                     };
                 });
             });
-            const loc = (_x = stmt.node.loc) !== null && _x !== void 0 ? _x : GeneratedSource;
+            const loc = getSourceLocation(stmt.node);
             builder.terminateWithContinuation({
                 kind: 'while',
                 loc,
@@ -23205,7 +23230,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 alternate: continuationBlock.id,
                 fallthrough: conditionalBlock.id,
                 id: makeInstructionId(0),
-                loc: (_y = stmt.node.loc) !== null && _y !== void 0 ? _y : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             };
             builder.terminateWithContinuation(terminal, continuationBlock);
             return;
@@ -23226,7 +23251,6 @@ function lowerStatement(builder, stmtPath, label = null) {
                 default: {
                     const continuationBlock = builder.reserve('block');
                     const block = builder.enter('block', () => {
-                        var _a;
                         const body = stmt.get('body');
                         builder.label(label, continuationBlock.id, () => {
                             lowerStatement(builder, body);
@@ -23236,7 +23260,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                             block: continuationBlock.id,
                             variant: GotoVariant.Break,
                             id: makeInstructionId(0),
-                            loc: (_a = body.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                            loc: getSourceLocation(body.node),
                         };
                     });
                     builder.terminateWithContinuation({
@@ -23244,7 +23268,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                         block,
                         fallthrough: continuationBlock.id,
                         id: makeInstructionId(0),
-                        loc: (_z = stmt.node.loc) !== null && _z !== void 0 ? _z : GeneratedSource,
+                        loc: getSourceLocation(stmt.node),
                     }, continuationBlock);
                 }
             }
@@ -23264,7 +23288,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                         builder.recordError(new CompilerErrorDetail({
                             reason: `Expected at most one \`default\` branch in a switch statement, this code should have failed to parse`,
                             category: ErrorCategory.Syntax,
-                            loc: (_0 = case_.node.loc) !== null && _0 !== void 0 ? _0 : null,
+                            loc: (_l = case_.node.loc) !== null && _l !== void 0 ? _l : null,
                             suggestions: null,
                         }));
                         break;
@@ -23273,7 +23297,6 @@ function lowerStatement(builder, stmtPath, label = null) {
                 }
                 const block = builder.enter('block', _blockId => {
                     return builder.switch(label, continuationBlock.id, () => {
-                        var _a;
                         case_
                             .get('consequent')
                             .forEach(consequent => lowerStatement(builder, consequent));
@@ -23282,7 +23305,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                             block: fallthrough,
                             variant: GotoVariant.Break,
                             id: makeInstructionId(0),
-                            loc: (_a = case_.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                            loc: getSourceLocation(case_.node),
                         };
                     });
                 });
@@ -23307,7 +23330,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 cases,
                 fallthrough: continuationBlock.id,
                 id: makeInstructionId(0),
-                loc: (_1 = stmt.node.loc) !== null && _1 !== void 0 ? _1 : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             }, continuationBlock);
             return;
         }
@@ -23320,7 +23343,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerStatement) Handle ${nodeKind} kinds in VariableDeclaration`,
                     category: ErrorCategory.Todo,
-                    loc: (_2 = stmt.node.loc) !== null && _2 !== void 0 ? _2 : null,
+                    loc: (_m = stmt.node.loc) !== null && _m !== void 0 ? _m : null,
                     suggestions: null,
                 }));
             }
@@ -23332,7 +23355,10 @@ function lowerStatement(builder, stmtPath, label = null) {
                 const init = declaration.get('init');
                 if (hasNode(init)) {
                     const value = lowerExpressionToTemporary(builder, init);
-                    lowerAssignment(builder, (_3 = stmt.node.loc) !== null && _3 !== void 0 ? _3 : GeneratedSource, kind, id, value, id.isObjectPattern() || id.isArrayPattern()
+                    lowerAssignmentAt(builder, {
+                        instructionLoc: getSourceLocation(stmt.node),
+                        valueLoc: getSourceLocation(declaration.node),
+                    }, kind, id, value, id.isObjectPattern() || id.isArrayPattern()
                         ? 'Destructure'
                         : 'Assignment');
                 }
@@ -23342,7 +23368,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerAssignment) Could not find binding for declaration.`,
                             category: ErrorCategory.Invariant,
-                            loc: (_4 = id.node.loc) !== null && _4 !== void 0 ? _4 : null,
+                            loc: (_o = id.node.loc) !== null && _o !== void 0 ? _o : null,
                             suggestions: null,
                         }));
                     }
@@ -23352,7 +23378,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                             identifier: binding.identifier,
                             kind: 'Identifier',
                             reactive: false,
-                            loc: (_5 = id.node.loc) !== null && _5 !== void 0 ? _5 : GeneratedSource,
+                            loc: getSourceLocation(id.node),
                         };
                         if (builder.isContextIdentifier(id)) {
                             if (kind === InstructionKind.Const) {
@@ -23360,7 +23386,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                                 builder.recordError(new CompilerErrorDetail({
                                     reason: `Expect \`const\` declaration not to be reassigned`,
                                     category: ErrorCategory.Syntax,
-                                    loc: (_6 = id.node.loc) !== null && _6 !== void 0 ? _6 : null,
+                                    loc: (_p = id.node.loc) !== null && _p !== void 0 ? _p : null,
                                     suggestions: [
                                         {
                                             description: 'Change to a `let` declaration',
@@ -23377,7 +23403,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                                     kind: InstructionKind.Let,
                                     place,
                                 },
-                                loc: (_7 = id.node.loc) !== null && _7 !== void 0 ? _7 : GeneratedSource,
+                                loc: getSourceLocation(id.node),
                             });
                         }
                         else {
@@ -23401,7 +23427,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                                     place,
                                 },
                                 type,
-                                loc: (_8 = id.node.loc) !== null && _8 !== void 0 ? _8 : GeneratedSource,
+                                loc: getSourceLocation(id.node),
                             });
                         }
                     }
@@ -23411,7 +23437,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                         reason: `Expected variable declaration to be an identifier if no initializer was provided`,
                         description: `Got a \`${id.type}\``,
                         category: ErrorCategory.Syntax,
-                        loc: (_9 = stmt.node.loc) !== null && _9 !== void 0 ? _9 : null,
+                        loc: (_q = stmt.node.loc) !== null && _q !== void 0 ? _q : null,
                         suggestions: null,
                     }));
                 }
@@ -23430,7 +23456,6 @@ function lowerStatement(builder, stmtPath, label = null) {
             const continuationBlock = builder.reserve('block');
             const loopBlock = builder.enter('block', _loopBlockId => {
                 return builder.loop(label, conditionalBlock.id, continuationBlock.id, () => {
-                    var _a;
                     const body = stmt.get('body');
                     lowerStatement(builder, body);
                     return {
@@ -23438,11 +23463,11 @@ function lowerStatement(builder, stmtPath, label = null) {
                         block: conditionalBlock.id,
                         variant: GotoVariant.Continue,
                         id: makeInstructionId(0),
-                        loc: (_a = body.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                        loc: getSourceLocation(body.node),
                     };
                 });
             });
-            const loc = (_10 = stmt.node.loc) !== null && _10 !== void 0 ? _10 : GeneratedSource;
+            const loc = getSourceLocation(stmt.node);
             builder.terminateWithContinuation({
                 kind: 'do-while',
                 loc,
@@ -23469,11 +23494,11 @@ function lowerStatement(builder, stmtPath, label = null) {
             stmt.skip();
             CompilerError.invariant(stmt.get('id').type === 'Identifier', {
                 reason: 'function declarations must have a name',
-                loc: (_11 = stmt.node.loc) !== null && _11 !== void 0 ? _11 : GeneratedSource,
+                loc: (_r = stmt.node.loc) !== null && _r !== void 0 ? _r : GeneratedSource,
             });
             const id = stmt.get('id');
             const fn = lowerValueToTemporary(builder, lowerFunctionToValue(builder, stmt));
-            lowerAssignment(builder, (_12 = stmt.node.loc) !== null && _12 !== void 0 ? _12 : GeneratedSource, InstructionKind.Function, id, fn, 'Assignment');
+            lowerAssignment(builder, getSourceLocation(stmt.node), InstructionKind.Function, id, fn, 'Assignment');
             return;
         }
         case 'ForOfStatement': {
@@ -23485,14 +23510,13 @@ function lowerStatement(builder, stmtPath, label = null) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerStatement) Handle for-await loops`,
                     category: ErrorCategory.Todo,
-                    loc: (_13 = stmt.node.loc) !== null && _13 !== void 0 ? _13 : null,
+                    loc: (_s = stmt.node.loc) !== null && _s !== void 0 ? _s : null,
                     suggestions: null,
                 }));
                 return;
             }
             const loopBlock = builder.enter('block', _blockId => {
                 return builder.loop(label, initBlock.id, continuationBlock.id, () => {
-                    var _a;
                     const body = stmt.get('body');
                     lowerStatement(builder, body);
                     return {
@@ -23500,11 +23524,11 @@ function lowerStatement(builder, stmtPath, label = null) {
                         block: initBlock.id,
                         variant: GotoVariant.Continue,
                         id: makeInstructionId(0),
-                        loc: (_a = body.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                        loc: getSourceLocation(body.node),
                     };
                 });
             });
-            const loc = (_14 = stmt.node.loc) !== null && _14 !== void 0 ? _14 : GeneratedSource;
+            const loc = getSourceLocation(stmt.node);
             const value = lowerExpressionToTemporary(builder, stmt.get('right'));
             builder.terminateWithContinuation({
                 kind: 'for-of',
@@ -23525,10 +23549,10 @@ function lowerStatement(builder, stmtPath, label = null) {
                 kind: 'goto',
                 block: testBlock.id,
                 variant: GotoVariant.Break,
-                loc: (_15 = stmt.node.loc) !== null && _15 !== void 0 ? _15 : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             }, testBlock);
             const left = stmt.get('left');
-            const leftLoc = (_16 = left.node.loc) !== null && _16 !== void 0 ? _16 : GeneratedSource;
+            const leftLoc = getSourceLocation(left.node);
             let test;
             const advanceIterator = lowerValueToTemporary(builder, {
                 kind: 'IteratorNext',
@@ -23540,7 +23564,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 const declarations = left.get('declarations');
                 CompilerError.invariant(declarations.length === 1, {
                     reason: `Expected only one declaration in the init of a ForOfStatement, got ${declarations.length}`,
-                    loc: (_17 = left.node.loc) !== null && _17 !== void 0 ? _17 : GeneratedSource,
+                    loc: (_t = left.node.loc) !== null && _t !== void 0 ? _t : GeneratedSource,
                 });
                 const id = declarations[0].get('id');
                 const assign = lowerAssignment(builder, leftLoc, InstructionKind.Let, id, advanceIterator, 'Assignment');
@@ -23560,7 +23584,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 test,
                 consequent: loopBlock,
                 alternate: continuationBlock.id,
-                loc: (_18 = stmt.node.loc) !== null && _18 !== void 0 ? _18 : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
                 fallthrough: continuationBlock.id,
             }, continuationBlock);
             return;
@@ -23571,7 +23595,6 @@ function lowerStatement(builder, stmtPath, label = null) {
             const initBlock = builder.reserve('loop');
             const loopBlock = builder.enter('block', _blockId => {
                 return builder.loop(label, initBlock.id, continuationBlock.id, () => {
-                    var _a;
                     const body = stmt.get('body');
                     lowerStatement(builder, body);
                     return {
@@ -23579,11 +23602,11 @@ function lowerStatement(builder, stmtPath, label = null) {
                         block: initBlock.id,
                         variant: GotoVariant.Continue,
                         id: makeInstructionId(0),
-                        loc: (_a = body.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                        loc: getSourceLocation(body.node),
                     };
                 });
             });
-            const loc = (_19 = stmt.node.loc) !== null && _19 !== void 0 ? _19 : GeneratedSource;
+            const loc = getSourceLocation(stmt.node);
             const value = lowerExpressionToTemporary(builder, stmt.get('right'));
             builder.terminateWithContinuation({
                 kind: 'for-in',
@@ -23594,7 +23617,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 id: makeInstructionId(0),
             }, initBlock);
             const left = stmt.get('left');
-            const leftLoc = (_20 = left.node.loc) !== null && _20 !== void 0 ? _20 : GeneratedSource;
+            const leftLoc = getSourceLocation(left.node);
             let test;
             const nextPropertyTemp = lowerValueToTemporary(builder, {
                 kind: 'NextPropertyOf',
@@ -23605,7 +23628,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 const declarations = left.get('declarations');
                 CompilerError.invariant(declarations.length === 1, {
                     reason: `Expected only one declaration in the init of a ForInStatement, got ${declarations.length}`,
-                    loc: (_21 = left.node.loc) !== null && _21 !== void 0 ? _21 : GeneratedSource,
+                    loc: (_u = left.node.loc) !== null && _u !== void 0 ? _u : GeneratedSource,
                 });
                 const id = declarations[0].get('id');
                 const assign = lowerAssignment(builder, leftLoc, InstructionKind.Let, id, nextPropertyTemp, 'Assignment');
@@ -23626,13 +23649,13 @@ function lowerStatement(builder, stmtPath, label = null) {
                 consequent: loopBlock,
                 alternate: continuationBlock.id,
                 fallthrough: continuationBlock.id,
-                loc: (_22 = stmt.node.loc) !== null && _22 !== void 0 ? _22 : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             }, continuationBlock);
             return;
         }
         case 'DebuggerStatement': {
             const stmt = stmtPath;
-            const loc = (_23 = stmt.node.loc) !== null && _23 !== void 0 ? _23 : GeneratedSource;
+            const loc = getSourceLocation(stmt.node);
             builder.push({
                 id: makeInstructionId(0),
                 lvalue: buildTemporaryPlace(builder, loc),
@@ -23656,7 +23679,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerStatement) Handle TryStatement without a catch clause`,
                     category: ErrorCategory.Todo,
-                    loc: (_24 = stmt.node.loc) !== null && _24 !== void 0 ? _24 : null,
+                    loc: (_v = stmt.node.loc) !== null && _v !== void 0 ? _v : null,
                     suggestions: null,
                 }));
                 return;
@@ -23665,7 +23688,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerStatement) Handle TryStatement with a finalizer ('finally') clause`,
                     category: ErrorCategory.Todo,
-                    loc: (_25 = stmt.node.loc) !== null && _25 !== void 0 ? _25 : null,
+                    loc: (_w = stmt.node.loc) !== null && _w !== void 0 ? _w : null,
                     suggestions: null,
                 }));
             }
@@ -23674,10 +23697,10 @@ function lowerStatement(builder, stmtPath, label = null) {
             if (hasNode(handlerBindingPath)) {
                 const place = {
                     kind: 'Identifier',
-                    identifier: builder.makeTemporary((_26 = handlerBindingPath.node.loc) !== null && _26 !== void 0 ? _26 : GeneratedSource),
+                    identifier: builder.makeTemporary(getSourceLocation(handlerBindingPath.node)),
                     effect: Effect.Unknown,
                     reactive: false,
-                    loc: (_27 = handlerBindingPath.node.loc) !== null && _27 !== void 0 ? _27 : GeneratedSource,
+                    loc: getSourceLocation(handlerBindingPath.node),
                 };
                 promoteTemporary(place.identifier);
                 lowerValueToTemporary(builder, {
@@ -23687,7 +23710,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                         place: Object.assign({}, place),
                     },
                     type: null,
-                    loc: (_28 = handlerBindingPath.node.loc) !== null && _28 !== void 0 ? _28 : GeneratedSource,
+                    loc: getSourceLocation(handlerBindingPath.node),
                 });
                 handlerBinding = {
                     path: handlerBindingPath,
@@ -23695,9 +23718,8 @@ function lowerStatement(builder, stmtPath, label = null) {
                 };
             }
             const handler = builder.enter('catch', _blockId => {
-                var _a, _b;
                 if (handlerBinding !== null) {
-                    lowerAssignment(builder, (_a = handlerBinding.path.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource, InstructionKind.Catch, handlerBinding.path, Object.assign({}, handlerBinding.place), 'Assignment');
+                    lowerAssignment(builder, getSourceLocation(handlerBinding.path.node), InstructionKind.Catch, handlerBinding.path, Object.assign({}, handlerBinding.place), 'Assignment');
                 }
                 lowerStatement(builder, handlerPath.get('body'));
                 return {
@@ -23705,11 +23727,10 @@ function lowerStatement(builder, stmtPath, label = null) {
                     block: continuationBlock.id,
                     variant: GotoVariant.Break,
                     id: makeInstructionId(0),
-                    loc: (_b = handlerPath.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
+                    loc: getSourceLocation(handlerPath.node),
                 };
             });
             const block = builder.enter('block', _blockId => {
-                var _a;
                 const block = stmt.get('block');
                 builder.enterTryCatch(handler, () => {
                     lowerStatement(builder, block);
@@ -23719,7 +23740,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                     block: continuationBlock.id,
                     variant: GotoVariant.Try,
                     id: makeInstructionId(0),
-                    loc: (_a = block.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                    loc: getSourceLocation(block.node),
                 };
             });
             builder.terminateWithContinuation({
@@ -23729,7 +23750,7 @@ function lowerStatement(builder, stmtPath, label = null) {
                 handler,
                 fallthrough: continuationBlock.id,
                 id: makeInstructionId(0),
-                loc: (_29 = stmt.node.loc) !== null && _29 !== void 0 ? _29 : GeneratedSource,
+                loc: getSourceLocation(stmt.node),
             }, continuationBlock);
             return;
         }
@@ -23738,12 +23759,12 @@ function lowerStatement(builder, stmtPath, label = null) {
                 reason: `JavaScript 'with' syntax is not supported`,
                 description: `'with' syntax is considered deprecated and removed from JavaScript standards, consider alternatives`,
                 category: ErrorCategory.UnsupportedSyntax,
-                loc: (_30 = stmtPath.node.loc) !== null && _30 !== void 0 ? _30 : null,
+                loc: (_x = stmtPath.node.loc) !== null && _x !== void 0 ? _x : null,
                 suggestions: null,
             }));
             lowerValueToTemporary(builder, {
                 kind: 'UnsupportedNode',
-                loc: (_31 = stmtPath.node.loc) !== null && _31 !== void 0 ? _31 : GeneratedSource,
+                loc: getSourceLocation(stmtPath.node),
                 node: stmtPath.node,
             });
             return;
@@ -23753,12 +23774,12 @@ function lowerStatement(builder, stmtPath, label = null) {
                 reason: 'Inline `class` declarations are not supported',
                 description: `Move class declarations outside of components/hooks`,
                 category: ErrorCategory.UnsupportedSyntax,
-                loc: (_32 = stmtPath.node.loc) !== null && _32 !== void 0 ? _32 : null,
+                loc: (_y = stmtPath.node.loc) !== null && _y !== void 0 ? _y : null,
                 suggestions: null,
             }));
             lowerValueToTemporary(builder, {
                 kind: 'UnsupportedNode',
-                loc: (_33 = stmtPath.node.loc) !== null && _33 !== void 0 ? _33 : GeneratedSource,
+                loc: getSourceLocation(stmtPath.node),
                 node: stmtPath.node,
             });
             return;
@@ -23767,7 +23788,7 @@ function lowerStatement(builder, stmtPath, label = null) {
         case 'TSEnumDeclaration': {
             lowerValueToTemporary(builder, {
                 kind: 'UnsupportedNode',
-                loc: (_34 = stmtPath.node.loc) !== null && _34 !== void 0 ? _34 : GeneratedSource,
+                loc: getSourceLocation(stmtPath.node),
                 node: stmtPath.node,
             });
             return;
@@ -23781,12 +23802,12 @@ function lowerStatement(builder, stmtPath, label = null) {
             builder.recordError(new CompilerErrorDetail({
                 reason: 'JavaScript `import` and `export` statements may only appear at the top level of a module',
                 category: ErrorCategory.Syntax,
-                loc: (_35 = stmtPath.node.loc) !== null && _35 !== void 0 ? _35 : null,
+                loc: (_z = stmtPath.node.loc) !== null && _z !== void 0 ? _z : null,
                 suggestions: null,
             }));
             lowerValueToTemporary(builder, {
                 kind: 'UnsupportedNode',
-                loc: (_36 = stmtPath.node.loc) !== null && _36 !== void 0 ? _36 : GeneratedSource,
+                loc: getSourceLocation(stmtPath.node),
                 node: stmtPath.node,
             });
             return;
@@ -23795,12 +23816,12 @@ function lowerStatement(builder, stmtPath, label = null) {
             builder.recordError(new CompilerErrorDetail({
                 reason: 'TypeScript `namespace` statements may only appear at the top level of a module',
                 category: ErrorCategory.Syntax,
-                loc: (_37 = stmtPath.node.loc) !== null && _37 !== void 0 ? _37 : null,
+                loc: (_0 = stmtPath.node.loc) !== null && _0 !== void 0 ? _0 : null,
                 suggestions: null,
             }));
             lowerValueToTemporary(builder, {
                 kind: 'UnsupportedNode',
-                loc: (_38 = stmtPath.node.loc) !== null && _38 !== void 0 ? _38 : GeneratedSource,
+                loc: getSourceLocation(stmtPath.node),
                 node: stmtPath.node,
             });
             return;
@@ -23830,8 +23851,7 @@ function lowerStatement(builder, stmtPath, label = null) {
     }
 }
 function lowerObjectMethod(builder, property) {
-    var _a;
-    const loc = (_a = property.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
+    const loc = getSourceLocation(property.node);
     const loweredFunc = lowerFunction(builder, property);
     return {
         kind: 'ObjectMethod',
@@ -23876,13 +23896,13 @@ function lowerObjectPropertyKey(builder, property) {
     return null;
 }
 function lowerExpression(builder, exprPath) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3;
     const exprNode = exprPath.node;
-    const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
+    const exprLoc = getSourceLocation(exprNode);
     switch (exprNode.type) {
         case 'Identifier': {
             const expr = exprPath;
-            const place = lowerIdentifier(builder, expr);
+            const place = lowerIdentifier(builder, expr, exprLoc);
             return {
                 kind: getLoadKind(builder, expr),
                 place,
@@ -23922,7 +23942,7 @@ function lowerExpression(builder, exprPath) {
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerExpression) Handle ${valuePath.type} values in ObjectExpression`,
                             category: ErrorCategory.Todo,
-                            loc: (_b = valuePath.node.loc) !== null && _b !== void 0 ? _b : null,
+                            loc: (_a = valuePath.node.loc) !== null && _a !== void 0 ? _a : null,
                             suggestions: null,
                         }));
                         continue;
@@ -23947,7 +23967,7 @@ function lowerExpression(builder, exprPath) {
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerExpression) Handle ${propertyPath.node.kind} functions in ObjectExpression`,
                             category: ErrorCategory.Todo,
-                            loc: (_c = propertyPath.node.loc) !== null && _c !== void 0 ? _c : null,
+                            loc: (_b = propertyPath.node.loc) !== null && _b !== void 0 ? _b : null,
                             suggestions: null,
                         }));
                         continue;
@@ -23969,7 +23989,7 @@ function lowerExpression(builder, exprPath) {
                     builder.recordError(new CompilerErrorDetail({
                         reason: `(BuildHIR::lowerExpression) Handle ${propertyPath.type} properties in ObjectExpression`,
                         category: ErrorCategory.Todo,
-                        loc: (_d = propertyPath.node.loc) !== null && _d !== void 0 ? _d : null,
+                        loc: (_c = propertyPath.node.loc) !== null && _c !== void 0 ? _c : null,
                         suggestions: null,
                     }));
                     continue;
@@ -24002,7 +24022,7 @@ function lowerExpression(builder, exprPath) {
                     builder.recordError(new CompilerErrorDetail({
                         reason: `(BuildHIR::lowerExpression) Handle ${element.type} elements in ArrayExpression`,
                         category: ErrorCategory.Todo,
-                        loc: (_e = element.node.loc) !== null && _e !== void 0 ? _e : null,
+                        loc: (_d = element.node.loc) !== null && _d !== void 0 ? _d : null,
                         suggestions: null,
                     }));
                     continue;
@@ -24022,7 +24042,7 @@ function lowerExpression(builder, exprPath) {
                     reason: `Expected an expression as the \`new\` expression receiver (v8 intrinsics are not supported)`,
                     description: `Got a \`${calleePath.node.type}\``,
                     category: ErrorCategory.Syntax,
-                    loc: (_f = calleePath.node.loc) !== null && _f !== void 0 ? _f : null,
+                    loc: (_e = calleePath.node.loc) !== null && _e !== void 0 ? _e : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24038,7 +24058,7 @@ function lowerExpression(builder, exprPath) {
         }
         case 'OptionalCallExpression': {
             const expr = exprPath;
-            return lowerOptionalCallExpression(builder, expr, null);
+            return lowerOptionalCallExpression(builder, expr, null, exprLoc);
         }
         case 'CallExpression': {
             const expr = exprPath;
@@ -24047,7 +24067,7 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `Expected Expression, got ${calleePath.type} in CallExpression (v8 intrinsics not supported). This error is likely caused by a bug in React Compiler. Please file an issue`,
                     category: ErrorCategory.Todo,
-                    loc: (_g = calleePath.node.loc) !== null && _g !== void 0 ? _g : null,
+                    loc: (_f = calleePath.node.loc) !== null && _f !== void 0 ? _f : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24082,7 +24102,7 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerExpression) Expected Expression, got ${leftPath.type} lval in BinaryExpression`,
                     category: ErrorCategory.Todo,
-                    loc: (_h = leftPath.node.loc) !== null && _h !== void 0 ? _h : null,
+                    loc: (_g = leftPath.node.loc) !== null && _g !== void 0 ? _g : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24094,7 +24114,7 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerExpression) Pipe operator not supported`,
                     category: ErrorCategory.Todo,
-                    loc: (_j = leftPath.node.loc) !== null && _j !== void 0 ? _j : null,
+                    loc: (_h = leftPath.node.loc) !== null && _h !== void 0 ? _h : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24109,7 +24129,6 @@ function lowerExpression(builder, exprPath) {
         }
         case 'SequenceExpression': {
             const expr = exprPath;
-            const exprLoc = (_k = expr.node.loc) !== null && _k !== void 0 ? _k : GeneratedSource;
             const continuationBlock = builder.reserve(builder.currentBlockKind());
             const place = buildTemporaryPlace(builder, exprLoc);
             const sequenceBlock = builder.enter('sequence', _ => {
@@ -24154,12 +24173,10 @@ function lowerExpression(builder, exprPath) {
         }
         case 'ConditionalExpression': {
             const expr = exprPath;
-            const exprLoc = (_l = expr.node.loc) !== null && _l !== void 0 ? _l : GeneratedSource;
             const continuationBlock = builder.reserve(builder.currentBlockKind());
             const testBlock = builder.reserve('value');
             const place = buildTemporaryPlace(builder, exprLoc);
             const consequentBlock = builder.enter('value', _blockId => {
-                var _a;
                 const consequentPath = expr.get('consequent');
                 const consequent = lowerExpressionToTemporary(builder, consequentPath);
                 lowerValueToTemporary(builder, {
@@ -24174,11 +24191,10 @@ function lowerExpression(builder, exprPath) {
                     block: continuationBlock.id,
                     variant: GotoVariant.Break,
                     id: makeInstructionId(0),
-                    loc: (_a = consequentPath.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                    loc: getSourceLocation(consequentPath.node),
                 };
             });
             const alternateBlock = builder.enter('value', _blockId => {
-                var _a;
                 const alternatePath = expr.get('alternate');
                 const alternate = lowerExpressionToTemporary(builder, alternatePath);
                 lowerValueToTemporary(builder, {
@@ -24193,7 +24209,7 @@ function lowerExpression(builder, exprPath) {
                     block: continuationBlock.id,
                     variant: GotoVariant.Break,
                     id: makeInstructionId(0),
-                    loc: (_a = alternatePath.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                    loc: getSourceLocation(alternatePath.node),
                 };
             });
             builder.terminateWithContinuation({
@@ -24217,11 +24233,10 @@ function lowerExpression(builder, exprPath) {
         }
         case 'LogicalExpression': {
             const expr = exprPath;
-            const exprLoc = (_m = expr.node.loc) !== null && _m !== void 0 ? _m : GeneratedSource;
             const continuationBlock = builder.reserve(builder.currentBlockKind());
             const testBlock = builder.reserve('value');
             const place = buildTemporaryPlace(builder, exprLoc);
-            const leftPlace = buildTemporaryPlace(builder, (_o = expr.get('left').node.loc) !== null && _o !== void 0 ? _o : GeneratedSource);
+            const leftPlace = buildTemporaryPlace(builder, getSourceLocation(expr.get('left').node));
             const consequent = builder.enter('value', () => {
                 lowerValueToTemporary(builder, {
                     kind: 'StoreLocal',
@@ -24292,7 +24307,7 @@ function lowerExpression(builder, exprPath) {
             if (operator === '=') {
                 const left = expr.get('left');
                 if (left.isLVal()) {
-                    return lowerAssignment(builder, (_p = left.node.loc) !== null && _p !== void 0 ? _p : GeneratedSource, InstructionKind.Reassign, left, lowerExpressionToTemporary(builder, expr.get('right')), left.isArrayPattern() || left.isObjectPattern()
+                    return lowerAssignment(builder, getSourceLocation(left.node), InstructionKind.Reassign, left, lowerExpressionToTemporary(builder, expr.get('right')), left.isArrayPattern() || left.isObjectPattern()
                         ? 'Destructure'
                         : 'Assignment');
                 }
@@ -24301,7 +24316,7 @@ function lowerExpression(builder, exprPath) {
                         reason: `(BuildHIR::lowerExpression) Unsupported syntax on the left side of an AssignmentExpression`,
                         description: `Expected an LVal, got: ${left.type}`,
                         category: ErrorCategory.Todo,
-                        loc: (_q = left.node.loc) !== null && _q !== void 0 ? _q : null,
+                        loc: (_j = left.node.loc) !== null && _j !== void 0 ? _j : null,
                         suggestions: null,
                     }));
                     return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24326,7 +24341,7 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerExpression) Handle ${operator} operators in AssignmentExpression`,
                     category: ErrorCategory.Todo,
-                    loc: (_r = expr.node.loc) !== null && _r !== void 0 ? _r : null,
+                    loc: (_k = expr.node.loc) !== null && _k !== void 0 ? _k : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24394,7 +24409,7 @@ function lowerExpression(builder, exprPath) {
                         operator: binaryOperator,
                         left: Object.assign({}, previousValuePlace),
                         right: lowerExpressionToTemporary(builder, expr.get('right')),
-                        loc: (_s = leftExpr.node.loc) !== null && _s !== void 0 ? _s : GeneratedSource,
+                        loc: getSourceLocation(leftExpr.node),
                     });
                     if (typeof property === 'string' || typeof property === 'number') {
                         return {
@@ -24402,7 +24417,7 @@ function lowerExpression(builder, exprPath) {
                             object: Object.assign({}, object),
                             property: makePropertyLiteral(property),
                             value: Object.assign({}, newValuePlace),
-                            loc: (_t = leftExpr.node.loc) !== null && _t !== void 0 ? _t : GeneratedSource,
+                            loc: getSourceLocation(leftExpr.node),
                         };
                     }
                     else {
@@ -24411,7 +24426,7 @@ function lowerExpression(builder, exprPath) {
                             object: Object.assign({}, object),
                             property: Object.assign({}, property),
                             value: Object.assign({}, newValuePlace),
-                            loc: (_u = leftExpr.node.loc) !== null && _u !== void 0 ? _u : GeneratedSource,
+                            loc: getSourceLocation(leftExpr.node),
                         };
                     }
                 }
@@ -24419,7 +24434,7 @@ function lowerExpression(builder, exprPath) {
                     builder.recordError(new CompilerErrorDetail({
                         reason: `(BuildHIR::lowerExpression) Expected Identifier or MemberExpression, got ${expr.type} lval in AssignmentExpression`,
                         category: ErrorCategory.Todo,
-                        loc: (_v = expr.node.loc) !== null && _v !== void 0 ? _v : null,
+                        loc: (_l = expr.node.loc) !== null && _l !== void 0 ? _l : null,
                         suggestions: null,
                     }));
                     return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24428,19 +24443,19 @@ function lowerExpression(builder, exprPath) {
         }
         case 'OptionalMemberExpression': {
             const expr = exprPath;
-            const { value } = lowerOptionalMemberExpression(builder, expr, null);
+            const { value } = lowerOptionalMemberExpression(builder, expr, null, exprLoc);
             return { kind: 'LoadLocal', place: value, loc: value.loc };
         }
         case 'MemberExpression': {
             const expr = exprPath;
-            const { value } = lowerMemberExpression(builder, expr);
+            const { value } = lowerMemberExpression(builder, expr, null, exprLoc);
             const place = lowerValueToTemporary(builder, value);
             return { kind: 'LoadLocal', place, loc: place.loc };
         }
         case 'JSXElement': {
             const expr = exprPath;
             const opening = expr.get('openingElement');
-            const openingLoc = (_w = opening.node.loc) !== null && _w !== void 0 ? _w : GeneratedSource;
+            const openingLoc = getSourceLocation(opening.node);
             const tag = lowerJsxElementName(builder, opening.get('name'));
             const props = [];
             for (const attribute of opening.get('attributes')) {
@@ -24453,7 +24468,7 @@ function lowerExpression(builder, exprPath) {
                     builder.recordError(new CompilerErrorDetail({
                         reason: `(BuildHIR::lowerExpression) Handle ${attribute.type} attributes in JSXElement`,
                         category: ErrorCategory.Todo,
-                        loc: (_x = attribute.node.loc) !== null && _x !== void 0 ? _x : null,
+                        loc: (_m = attribute.node.loc) !== null && _m !== void 0 ? _m : null,
                         suggestions: null,
                     }));
                     continue;
@@ -24466,7 +24481,7 @@ function lowerExpression(builder, exprPath) {
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerExpression) Unexpected colon in attribute name \`${propName}\``,
                             category: ErrorCategory.Todo,
-                            loc: (_y = namePath.node.loc) !== null && _y !== void 0 ? _y : null,
+                            loc: (_o = namePath.node.loc) !== null && _o !== void 0 ? _o : null,
                             suggestions: null,
                         }));
                     }
@@ -24474,7 +24489,7 @@ function lowerExpression(builder, exprPath) {
                 else {
                     CompilerError.invariant(namePath.isJSXNamespacedName(), {
                         reason: 'Refinement',
-                        loc: (_z = namePath.node.loc) !== null && _z !== void 0 ? _z : GeneratedSource,
+                        loc: (_p = namePath.node.loc) !== null && _p !== void 0 ? _p : GeneratedSource,
                     });
                     const namespace = namePath.node.namespace.name;
                     const name = namePath.node.name.name;
@@ -24489,7 +24504,7 @@ function lowerExpression(builder, exprPath) {
                     value = lowerValueToTemporary(builder, {
                         kind: 'Primitive',
                         value: true,
-                        loc: (_0 = attribute.node.loc) !== null && _0 !== void 0 ? _0 : GeneratedSource,
+                        loc: getSourceLocation(attribute.node),
                     });
                 }
                 else {
@@ -24497,7 +24512,7 @@ function lowerExpression(builder, exprPath) {
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerExpression) Handle ${valueExpr.type} attribute values in JSXElement`,
                             category: ErrorCategory.Todo,
-                            loc: (_2 = (_1 = valueExpr.node) === null || _1 === void 0 ? void 0 : _1.loc) !== null && _2 !== void 0 ? _2 : null,
+                            loc: (_r = (_q = valueExpr.node) === null || _q === void 0 ? void 0 : _q.loc) !== null && _r !== void 0 ? _r : null,
                             suggestions: null,
                         }));
                         continue;
@@ -24507,7 +24522,7 @@ function lowerExpression(builder, exprPath) {
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerExpression) Handle ${expression.type} expressions in JSXExpressionContainer within JSXElement`,
                             category: ErrorCategory.Todo,
-                            loc: (_3 = valueExpr.node.loc) !== null && _3 !== void 0 ? _3 : null,
+                            loc: (_s = valueExpr.node.loc) !== null && _s !== void 0 ? _s : null,
                             suggestions: null,
                         }));
                         continue;
@@ -24526,7 +24541,7 @@ function lowerExpression(builder, exprPath) {
                 if (tagIdentifier != null) {
                     CompilerError.invariant(tagIdentifier.kind !== 'Identifier', {
                         reason: `<${tagName}> tags should be module-level imports`,
-                        loc: (_4 = openingIdentifier.node.loc) !== null && _4 !== void 0 ? _4 : GeneratedSource,
+                        loc: (_t = openingIdentifier.node.loc) !== null && _t !== void 0 ? _t : GeneratedSource,
                     });
                 }
                 const fbtLocations = {
@@ -24539,17 +24554,16 @@ function lowerExpression(builder, exprPath) {
                         path.skip();
                     },
                     JSXNamespacedName(path) {
-                        var _a, _b, _c;
                         if (path.node.namespace.name === tagName) {
                             switch (path.node.name.name) {
                                 case 'enum':
-                                    fbtLocations.enum.push((_a = path.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource);
+                                    fbtLocations.enum.push(getSourceLocation(path.node));
                                     break;
                                 case 'plural':
-                                    fbtLocations.plural.push((_b = path.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource);
+                                    fbtLocations.plural.push(getSourceLocation(path.node));
                                     break;
                                 case 'pronoun':
-                                    fbtLocations.pronoun.push((_c = path.node.loc) !== null && _c !== void 0 ? _c : GeneratedSource);
+                                    fbtLocations.pronoun.push(getSourceLocation(path.node));
                                     break;
                             }
                         }
@@ -24585,7 +24599,7 @@ function lowerExpression(builder, exprPath) {
                 children: children.length === 0 ? null : children,
                 loc: exprLoc,
                 openingLoc: openingLoc,
-                closingLoc: (_6 = (_5 = expr.get('closingElement').node) === null || _5 === void 0 ? void 0 : _5.loc) !== null && _6 !== void 0 ? _6 : GeneratedSource,
+                closingLoc: getSourceLocation(expr.get('closingElement').node),
             };
         }
         case 'JSXFragment': {
@@ -24611,21 +24625,21 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: '(BuildHIR::lowerExpression) Handle tagged template with interpolations',
                     category: ErrorCategory.Todo,
-                    loc: (_7 = exprPath.node.loc) !== null && _7 !== void 0 ? _7 : null,
+                    loc: (_u = exprPath.node.loc) !== null && _u !== void 0 ? _u : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
             }
             CompilerError.invariant(expr.get('quasi').get('quasis').length == 1, {
                 reason: "there should be only one quasi as we don't support interpolations yet",
-                loc: (_8 = expr.node.loc) !== null && _8 !== void 0 ? _8 : GeneratedSource,
+                loc: (_v = expr.node.loc) !== null && _v !== void 0 ? _v : GeneratedSource,
             });
             const value = expr.get('quasi').get('quasis').at(0).node.value;
             if (value.raw !== value.cooked) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: '(BuildHIR::lowerExpression) Handle tagged template where cooked value is different from raw value',
                     category: ErrorCategory.Todo,
-                    loc: (_9 = exprPath.node.loc) !== null && _9 !== void 0 ? _9 : null,
+                    loc: (_w = exprPath.node.loc) !== null && _w !== void 0 ? _w : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24645,7 +24659,7 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `Unexpected quasi and subexpression lengths in template literal`,
                     category: ErrorCategory.Syntax,
-                    loc: (_10 = exprPath.node.loc) !== null && _10 !== void 0 ? _10 : null,
+                    loc: (_x = exprPath.node.loc) !== null && _x !== void 0 ? _x : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24654,7 +24668,7 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerAssignment) Handle TSType in TemplateLiteral.`,
                     category: ErrorCategory.Todo,
-                    loc: (_11 = exprPath.node.loc) !== null && _11 !== void 0 ? _11 : null,
+                    loc: (_y = exprPath.node.loc) !== null && _y !== void 0 ? _y : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24694,7 +24708,7 @@ function lowerExpression(builder, exprPath) {
                     builder.recordError(new CompilerErrorDetail({
                         reason: `Only object properties can be deleted`,
                         category: ErrorCategory.Syntax,
-                        loc: (_12 = expr.node.loc) !== null && _12 !== void 0 ? _12 : null,
+                        loc: (_z = expr.node.loc) !== null && _z !== void 0 ? _z : null,
                         suggestions: [
                             {
                                 description: 'Remove this line',
@@ -24710,7 +24724,7 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `Throw expressions are not supported`,
                     category: ErrorCategory.Syntax,
-                    loc: (_13 = expr.node.loc) !== null && _13 !== void 0 ? _13 : null,
+                    loc: (_0 = expr.node.loc) !== null && _0 !== void 0 ? _0 : null,
                     suggestions: [
                         {
                             description: 'Remove this line',
@@ -24791,7 +24805,7 @@ function lowerExpression(builder, exprPath) {
                         value: 1,
                         loc: GeneratedSource,
                     }),
-                    loc: (_14 = leftExpr.node.loc) !== null && _14 !== void 0 ? _14 : GeneratedSource,
+                    loc: getSourceLocation(leftExpr.node),
                 });
                 let newValuePlace;
                 if (typeof property === 'string' || typeof property === 'number') {
@@ -24800,7 +24814,7 @@ function lowerExpression(builder, exprPath) {
                         object: Object.assign({}, object),
                         property: makePropertyLiteral(property),
                         value: Object.assign({}, updatedValue),
-                        loc: (_15 = leftExpr.node.loc) !== null && _15 !== void 0 ? _15 : GeneratedSource,
+                        loc: getSourceLocation(leftExpr.node),
                     });
                 }
                 else {
@@ -24809,7 +24823,7 @@ function lowerExpression(builder, exprPath) {
                         object: Object.assign({}, object),
                         property: Object.assign({}, property),
                         value: Object.assign({}, updatedValue),
-                        loc: (_16 = leftExpr.node.loc) !== null && _16 !== void 0 ? _16 : GeneratedSource,
+                        loc: getSourceLocation(leftExpr.node),
                     });
                 }
                 return {
@@ -24823,12 +24837,12 @@ function lowerExpression(builder, exprPath) {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerExpression) Handle UpdateExpression with ${argument.type} argument`,
                     category: ErrorCategory.Todo,
-                    loc: (_17 = exprPath.node.loc) !== null && _17 !== void 0 ? _17 : null,
+                    loc: (_1 = exprPath.node.loc) !== null && _1 !== void 0 ? _1 : null,
                     suggestions: null,
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
             }
-            const lvalue = lowerIdentifierForAssignment(builder, (_18 = argument.node.loc) !== null && _18 !== void 0 ? _18 : GeneratedSource, InstructionKind.Reassign, argument);
+            const lvalue = lowerIdentifierForAssignment(builder, getSourceLocation(argument.node), InstructionKind.Reassign, argument);
             if (lvalue === null) {
                 if (!builder.environment.hasErrors()) {
                     builder.recordError(new CompilerErrorDetail({
@@ -24876,7 +24890,7 @@ function lowerExpression(builder, exprPath) {
                 kind: 'RegExpLiteral',
                 pattern: expr.node.pattern,
                 flags: expr.node.flags,
-                loc: (_19 = expr.node.loc) !== null && _19 !== void 0 ? _19 : GeneratedSource,
+                loc: getSourceLocation(expr.node),
             };
         }
         case 'TSInstantiationExpression':
@@ -24892,13 +24906,13 @@ function lowerExpression(builder, exprPath) {
                     kind: 'MetaProperty',
                     meta: expr.node.meta.name,
                     property: expr.node.property.name,
-                    loc: (_20 = expr.node.loc) !== null && _20 !== void 0 ? _20 : GeneratedSource,
+                    loc: getSourceLocation(expr.node),
                 };
             }
             builder.recordError(new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerExpression) Handle MetaProperty expressions other than import.meta`,
                 category: ErrorCategory.Todo,
-                loc: (_21 = exprPath.node.loc) !== null && _21 !== void 0 ? _21 : null,
+                loc: (_2 = exprPath.node.loc) !== null && _2 !== void 0 ? _2 : null,
                 suggestions: null,
             }));
             return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24907,17 +24921,15 @@ function lowerExpression(builder, exprPath) {
             builder.recordError(new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerExpression) Handle ${exprPath.type} expressions`,
                 category: ErrorCategory.Todo,
-                loc: (_22 = exprPath.node.loc) !== null && _22 !== void 0 ? _22 : null,
+                loc: (_3 = exprPath.node.loc) !== null && _3 !== void 0 ? _3 : null,
                 suggestions: null,
             }));
             return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
         }
     }
 }
-function lowerOptionalMemberExpression(builder, expr, parentAlternate) {
-    var _a;
+function lowerOptionalMemberExpression(builder, expr, parentAlternate, loc = getSourceLocation(expr.node)) {
     const optional = expr.node.optional;
-    const loc = (_a = expr.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
     const place = buildTemporaryPlace(builder, loc);
     const continuationBlock = builder.reserve(builder.currentBlockKind());
     const consequent = builder.reserve('value');
@@ -24973,7 +24985,7 @@ function lowerOptionalMemberExpression(builder, expr, parentAlternate) {
         loc: GeneratedSource,
     });
     builder.enterReserved(consequent, () => {
-        const { value } = lowerMemberExpression(builder, expr, object);
+        const { value } = lowerMemberExpression(builder, expr, object, loc);
         const temp = lowerValueToTemporary(builder, value);
         lowerValueToTemporary(builder, {
             kind: 'StoreLocal',
@@ -25000,11 +25012,9 @@ function lowerOptionalMemberExpression(builder, expr, parentAlternate) {
     }, continuationBlock);
     return { object, value: place };
 }
-function lowerOptionalCallExpression(builder, expr, parentAlternate) {
-    var _a;
+function lowerOptionalCallExpression(builder, expr, parentAlternate, loc = getSourceLocation(expr.node)) {
     const optional = expr.node.optional;
     const calleePath = expr.get('callee');
-    const loc = (_a = expr.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
     const place = buildTemporaryPlace(builder, loc);
     const continuationBlock = builder.reserve(builder.currentBlockKind());
     const consequent = builder.reserve('value');
@@ -25288,10 +25298,9 @@ function lowerArguments(builder, expr) {
     }
     return args;
 }
-function lowerMemberExpression(builder, expr, loweredObject = null) {
-    var _a, _b, _c;
+function lowerMemberExpression(builder, expr, loweredObject = null, exprLoc = getSourceLocation(expr.node)) {
+    var _a, _b;
     const exprNode = expr.node;
-    const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
     const objectNode = expr.get('object');
     const propertyNode = expr.get('property');
     const object = loweredObject !== null && loweredObject !== void 0 ? loweredObject : lowerExpressionToTemporary(builder, objectNode);
@@ -25307,7 +25316,7 @@ function lowerMemberExpression(builder, expr, loweredObject = null) {
             builder.recordError(new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerMemberExpression) Handle ${propertyNode.type} property`,
                 category: ErrorCategory.Todo,
-                loc: (_b = propertyNode.node.loc) !== null && _b !== void 0 ? _b : null,
+                loc: (_a = propertyNode.node.loc) !== null && _a !== void 0 ? _a : null,
                 suggestions: null,
             }));
             return {
@@ -25329,7 +25338,7 @@ function lowerMemberExpression(builder, expr, loweredObject = null) {
             builder.recordError(new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerMemberExpression) Expected Expression, got ${propertyNode.type} property`,
                 category: ErrorCategory.Todo,
-                loc: (_c = propertyNode.node.loc) !== null && _c !== void 0 ? _c : null,
+                loc: (_b = propertyNode.node.loc) !== null && _b !== void 0 ? _b : null,
                 suggestions: null,
             }));
             return {
@@ -25353,9 +25362,9 @@ function lowerMemberExpression(builder, expr, loweredObject = null) {
     }
 }
 function lowerJsxElementName(builder, exprPath) {
-    var _a, _b, _c;
+    var _a, _b;
     const exprNode = exprPath.node;
-    const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
+    const exprLoc = getSourceLocation(exprNode);
     if (exprPath.isJSXIdentifier()) {
         const tag = exprPath.node.name;
         if (!tag.match(/^[a-z]/)) {
@@ -25386,7 +25395,7 @@ function lowerJsxElementName(builder, exprPath) {
                 reason: `Expected JSXNamespacedName to have no colons in the namespace or name`,
                 description: `Got \`${namespace}\` : \`${name}\``,
                 category: ErrorCategory.Syntax,
-                loc: (_b = exprPath.node.loc) !== null && _b !== void 0 ? _b : null,
+                loc: (_a = exprPath.node.loc) !== null && _a !== void 0 ? _a : null,
                 suggestions: null,
             }));
         }
@@ -25401,7 +25410,7 @@ function lowerJsxElementName(builder, exprPath) {
         builder.recordError(new CompilerErrorDetail({
             reason: `(BuildHIR::lowerJsxElementName) Handle ${exprPath.type} tags`,
             category: ErrorCategory.Todo,
-            loc: (_c = exprPath.node.loc) !== null && _c !== void 0 ? _c : null,
+            loc: (_b = exprPath.node.loc) !== null && _b !== void 0 ? _b : null,
             suggestions: null,
         }));
         return lowerValueToTemporary(builder, {
@@ -25412,8 +25421,8 @@ function lowerJsxElementName(builder, exprPath) {
     }
 }
 function lowerJsxMemberExpression(builder, exprPath) {
-    var _a, _b, _c;
-    const loc = (_a = exprPath.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
+    var _a;
+    const loc = getSourceLocation(exprPath.node);
     const object = exprPath.get('object');
     let objectPlace;
     if (object.isJSXMemberExpression()) {
@@ -25422,13 +25431,13 @@ function lowerJsxMemberExpression(builder, exprPath) {
     else {
         CompilerError.invariant(object.isJSXIdentifier(), {
             reason: `TypeScript refinement fail: expected 'JsxIdentifier', got \`${object.node.type}\``,
-            loc: (_b = object.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
+            loc: (_a = object.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
         });
         const kind = getLoadKind(builder, object);
         objectPlace = lowerValueToTemporary(builder, {
             kind: kind,
             place: lowerIdentifier(builder, object),
-            loc: (_c = exprPath.node.loc) !== null && _c !== void 0 ? _c : GeneratedSource,
+            loc: getSourceLocation(exprPath.node),
         });
     }
     const property = exprPath.get('property').node.name;
@@ -25440,9 +25449,9 @@ function lowerJsxMemberExpression(builder, exprPath) {
     });
 }
 function lowerJsxElement(builder, exprPath) {
-    var _a, _b, _c;
+    var _a, _b;
     const exprNode = exprPath.node;
-    const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
+    const exprLoc = getSourceLocation(exprNode);
     if (exprPath.isJSXElement() || exprPath.isJSXFragment()) {
         return lowerExpressionToTemporary(builder, exprPath);
     }
@@ -25454,7 +25463,7 @@ function lowerJsxElement(builder, exprPath) {
         else {
             CompilerError.invariant(expression.isExpression(), {
                 reason: `(BuildHIR::lowerJsxElement) Expected Expression but found ${expression.type}!`,
-                loc: (_b = expression.node.loc) !== null && _b !== void 0 ? _b : GeneratedSource,
+                loc: (_a = expression.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
             });
             return lowerExpressionToTemporary(builder, expression);
         }
@@ -25481,7 +25490,7 @@ function lowerJsxElement(builder, exprPath) {
         builder.recordError(new CompilerErrorDetail({
             reason: `(BuildHIR::lowerJsxElement) Unhandled JsxElement, got: ${exprPath.type}`,
             category: ErrorCategory.Todo,
-            loc: (_c = exprPath.node.loc) !== null && _c !== void 0 ? _c : null,
+            loc: (_b = exprPath.node.loc) !== null && _b !== void 0 ? _b : null,
             suggestions: null,
         }));
         const place = lowerValueToTemporary(builder, {
@@ -25528,9 +25537,8 @@ function trimJsxText(original) {
     }
 }
 function lowerFunctionToValue(builder, expr) {
-    var _a;
     const exprNode = expr.node;
-    const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
+    const exprLoc = getSourceLocation(exprNode);
     const loweredFunc = lowerFunction(builder, expr);
     return {
         kind: 'FunctionExpression',
@@ -25553,24 +25561,22 @@ function lowerExpressionToTemporary(builder, exprPath) {
     const value = lowerExpression(builder, exprPath);
     return lowerValueToTemporary(builder, value);
 }
-function lowerValueToTemporary(builder, value) {
+function lowerValueToTemporary(builder, value, loc = value.loc) {
     if (value.kind === 'LoadLocal' && value.place.identifier.name === null) {
         return value.place;
     }
-    const place = buildTemporaryPlace(builder, value.loc);
+    const place = buildTemporaryPlace(builder, loc);
     builder.push({
         id: makeInstructionId(0),
         lvalue: Object.assign({}, place),
         value: value,
         effects: null,
-        loc: value.loc,
+        loc,
     });
     return place;
 }
-function lowerIdentifier(builder, exprPath) {
-    var _a, _b, _c;
-    const exprNode = exprPath.node;
-    const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
+function lowerIdentifier(builder, exprPath, exprLoc = getSourceLocation(exprPath.node)) {
+    var _a, _b;
     const binding = builder.resolveIdentifier(exprPath);
     switch (binding.kind) {
         case 'Identifier': {
@@ -25589,7 +25595,7 @@ function lowerIdentifier(builder, exprPath) {
                     reason: `The 'eval' function is not supported`,
                     description: 'Eval is an anti-pattern in JavaScript, and the code executed cannot be evaluated by React Compiler',
                     category: ErrorCategory.UnsupportedSyntax,
-                    loc: (_b = exprPath.node.loc) !== null && _b !== void 0 ? _b : null,
+                    loc: (_a = exprPath.node.loc) !== null && _a !== void 0 ? _a : null,
                     suggestions: null,
                 }));
             }
@@ -25598,7 +25604,7 @@ function lowerIdentifier(builder, exprPath) {
                     reason: `Implicit 'arguments' is not supported`,
                     description: 'React Compiler does not support compiling functions that reference the implicit arguments object',
                     category: ErrorCategory.UnsupportedSyntax,
-                    loc: (_c = exprPath.node.loc) !== null && _c !== void 0 ? _c : null,
+                    loc: (_b = exprPath.node.loc) !== null && _b !== void 0 ? _b : null,
                     suggestions: null,
                 }));
             }
@@ -25667,7 +25673,11 @@ function lowerIdentifierForAssignment(builder, loc, kind, path) {
     return place;
 }
 function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4;
+    return lowerAssignmentAt(builder, { instructionLoc: loc, valueLoc: loc }, kind, lvaluePath, value, assignmentKind);
+}
+function lowerAssignmentAt(builder, source, kind, lvaluePath, value, assignmentKind) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
+    const loc = source.instructionLoc;
     const lvalueNode = lvaluePath.node;
     switch (lvalueNode.type) {
         case 'Identifier': {
@@ -25676,7 +25686,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
             if (place === null) {
                 return {
                     kind: 'UnsupportedNode',
-                    loc: (_a = lvalue.node.loc) !== null && _a !== void 0 ? _a : GeneratedSource,
+                    loc: getSourceLocation(lvalue.node),
                     node: lvalue.node,
                 };
             }
@@ -25696,7 +25706,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                     builder.recordError(new CompilerErrorDetail({
                         reason: `Expected \`const\` declaration not to be reassigned`,
                         category: ErrorCategory.Syntax,
-                        loc: (_b = lvalue.node.loc) !== null && _b !== void 0 ? _b : null,
+                        loc: (_a = lvalue.node.loc) !== null && _a !== void 0 ? _a : null,
                         suggestions: null,
                     }));
                 }
@@ -25707,13 +25717,13 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                     builder.recordError(new CompilerErrorDetail({
                         reason: `Unexpected context variable kind`,
                         category: ErrorCategory.Syntax,
-                        loc: (_c = lvalue.node.loc) !== null && _c !== void 0 ? _c : null,
+                        loc: (_b = lvalue.node.loc) !== null && _b !== void 0 ? _b : null,
                         suggestions: null,
                     }));
                     temporary = lowerValueToTemporary(builder, {
                         kind: 'UnsupportedNode',
                         node: lvalueNode,
-                        loc: (_d = lvalueNode.loc) !== null && _d !== void 0 ? _d : GeneratedSource,
+                        loc: getSourceLocation(lvalueNode),
                     });
                 }
                 else {
@@ -25721,8 +25731,8 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         kind: 'StoreContext',
                         lvalue: { place: Object.assign({}, place), kind },
                         value,
-                        loc,
-                    });
+                        loc: source.valueLoc,
+                    }, loc);
                 }
             }
             else {
@@ -25744,15 +25754,15 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                     lvalue: { place: Object.assign({}, place), kind },
                     value,
                     type,
-                    loc,
-                });
+                    loc: source.valueLoc,
+                }, loc);
             }
             return { kind: 'LoadLocal', place: temporary, loc: temporary.loc };
         }
         case 'MemberExpression': {
             CompilerError.invariant(kind === InstructionKind.Reassign, {
                 reason: 'MemberExpression may only appear in an assignment expression',
-                loc: (_e = lvaluePath.node.loc) !== null && _e !== void 0 ? _e : GeneratedSource,
+                loc: (_c = lvaluePath.node.loc) !== null && _c !== void 0 ? _c : GeneratedSource,
             });
             const lvalue = lvaluePath;
             const property = lvalue.get('property');
@@ -25781,7 +25791,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                     builder.recordError(new CompilerErrorDetail({
                         reason: `(BuildHIR::lowerAssignment) Handle ${property.type} properties in MemberExpression`,
                         category: ErrorCategory.Todo,
-                        loc: (_f = property.node.loc) !== null && _f !== void 0 ? _f : null,
+                        loc: (_d = property.node.loc) !== null && _d !== void 0 ? _d : null,
                         suggestions: null,
                     }));
                     return { kind: 'UnsupportedNode', node: lvalueNode, loc };
@@ -25793,7 +25803,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                     builder.recordError(new CompilerErrorDetail({
                         reason: '(BuildHIR::lowerAssignment) Expected private name to appear as a non-computed property',
                         category: ErrorCategory.Todo,
-                        loc: (_g = property.node.loc) !== null && _g !== void 0 ? _g : null,
+                        loc: (_e = property.node.loc) !== null && _e !== void 0 ? _e : null,
                         suggestions: null,
                     }));
                     return { kind: 'UnsupportedNode', node: lvalueNode, loc };
@@ -25833,7 +25843,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         !forceTemporaries &&
                         (assignmentKind === 'Assignment' ||
                             getStoreKind(builder, argument) === 'StoreLocal')) {
-                        const identifier = lowerIdentifierForAssignment(builder, (_h = element.node.loc) !== null && _h !== void 0 ? _h : GeneratedSource, kind, argument);
+                        const identifier = lowerIdentifierForAssignment(builder, getSourceLocation(element.node), kind, argument);
                         if (identifier === null) {
                             continue;
                         }
@@ -25841,7 +25851,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                             builder.recordError(new CompilerErrorDetail({
                                 category: ErrorCategory.Todo,
                                 reason: 'Expected reassignment of globals to enable forceTemporaries',
-                                loc: (_j = element.node.loc) !== null && _j !== void 0 ? _j : GeneratedSource,
+                                loc: (_f = element.node.loc) !== null && _f !== void 0 ? _f : GeneratedSource,
                             }));
                             continue;
                         }
@@ -25851,7 +25861,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         });
                     }
                     else {
-                        const temp = buildTemporaryPlace(builder, (_k = element.node.loc) !== null && _k !== void 0 ? _k : GeneratedSource);
+                        const temp = buildTemporaryPlace(builder, getSourceLocation(element.node));
                         promoteTemporary(temp.identifier);
                         items.push({
                             kind: 'Spread',
@@ -25864,7 +25874,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                     !forceTemporaries &&
                     (assignmentKind === 'Assignment' ||
                         getStoreKind(builder, element) === 'StoreLocal')) {
-                    const identifier = lowerIdentifierForAssignment(builder, (_l = element.node.loc) !== null && _l !== void 0 ? _l : GeneratedSource, kind, element);
+                    const identifier = lowerIdentifierForAssignment(builder, getSourceLocation(element.node), kind, element);
                     if (identifier === null) {
                         continue;
                     }
@@ -25872,14 +25882,14 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         builder.recordError(new CompilerErrorDetail({
                             category: ErrorCategory.Todo,
                             reason: 'Expected reassignment of globals to enable forceTemporaries',
-                            loc: (_m = element.node.loc) !== null && _m !== void 0 ? _m : GeneratedSource,
+                            loc: (_g = element.node.loc) !== null && _g !== void 0 ? _g : GeneratedSource,
                         }));
                         continue;
                     }
                     items.push(identifier);
                 }
                 else {
-                    const temp = buildTemporaryPlace(builder, (_o = element.node.loc) !== null && _o !== void 0 ? _o : GeneratedSource);
+                    const temp = buildTemporaryPlace(builder, getSourceLocation(element.node));
                     promoteTemporary(temp.identifier);
                     items.push(Object.assign({}, temp));
                     followups.push({ place: temp, path: element });
@@ -25892,14 +25902,14 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                     pattern: {
                         kind: 'ArrayPattern',
                         items,
-                        loc: (_p = lvalue.node.loc) !== null && _p !== void 0 ? _p : GeneratedSource,
+                        loc: getSourceLocation(lvalue.node),
                     },
                 },
                 value,
-                loc,
-            });
+                loc: source.valueLoc,
+            }, loc);
             for (const { place, path } of followups) {
-                lowerAssignment(builder, (_q = path.node.loc) !== null && _q !== void 0 ? _q : loc, kind, path, place, assignmentKind);
+                lowerAssignment(builder, getSourceLocation(path.node, loc), kind, path, place, assignmentKind);
             }
             return { kind: 'LoadLocal', place: temporary, loc: value.loc };
         }
@@ -25921,14 +25931,14 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerAssignment) Handle ${argument.node.type} rest element in ObjectPattern`,
                             category: ErrorCategory.Todo,
-                            loc: (_r = argument.node.loc) !== null && _r !== void 0 ? _r : null,
+                            loc: (_h = argument.node.loc) !== null && _h !== void 0 ? _h : null,
                             suggestions: null,
                         }));
                         continue;
                     }
                     if (forceTemporaries ||
                         getStoreKind(builder, argument) === 'StoreContext') {
-                        const temp = buildTemporaryPlace(builder, (_s = property.node.loc) !== null && _s !== void 0 ? _s : GeneratedSource);
+                        const temp = buildTemporaryPlace(builder, getSourceLocation(property.node));
                         promoteTemporary(temp.identifier);
                         properties.push({
                             kind: 'Spread',
@@ -25937,7 +25947,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         followups.push({ place: temp, path: argument });
                     }
                     else {
-                        const identifier = lowerIdentifierForAssignment(builder, (_t = property.node.loc) !== null && _t !== void 0 ? _t : GeneratedSource, kind, argument);
+                        const identifier = lowerIdentifierForAssignment(builder, getSourceLocation(property.node), kind, argument);
                         if (identifier === null) {
                             continue;
                         }
@@ -25945,7 +25955,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                             builder.recordError(new CompilerErrorDetail({
                                 category: ErrorCategory.Todo,
                                 reason: 'Expected reassignment of globals to enable forceTemporaries',
-                                loc: (_u = property.node.loc) !== null && _u !== void 0 ? _u : GeneratedSource,
+                                loc: (_j = property.node.loc) !== null && _j !== void 0 ? _j : GeneratedSource,
                             }));
                             continue;
                         }
@@ -25960,7 +25970,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerAssignment) Handle ${property.type} properties in ObjectPattern`,
                             category: ErrorCategory.Todo,
-                            loc: (_v = property.node.loc) !== null && _v !== void 0 ? _v : null,
+                            loc: (_k = property.node.loc) !== null && _k !== void 0 ? _k : null,
                             suggestions: null,
                         }));
                         continue;
@@ -25969,7 +25979,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerAssignment) Handle computed properties in ObjectPattern`,
                             category: ErrorCategory.Todo,
-                            loc: (_w = property.node.loc) !== null && _w !== void 0 ? _w : null,
+                            loc: (_l = property.node.loc) !== null && _l !== void 0 ? _l : null,
                             suggestions: null,
                         }));
                         continue;
@@ -25983,7 +25993,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         builder.recordError(new CompilerErrorDetail({
                             reason: `(BuildHIR::lowerAssignment) Expected object property value to be an LVal, got: ${element.type}`,
                             category: ErrorCategory.Todo,
-                            loc: (_x = element.node.loc) !== null && _x !== void 0 ? _x : null,
+                            loc: (_m = element.node.loc) !== null && _m !== void 0 ? _m : null,
                             suggestions: null,
                         }));
                         continue;
@@ -25992,7 +26002,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         !forceTemporaries &&
                         (assignmentKind === 'Assignment' ||
                             getStoreKind(builder, element) === 'StoreLocal')) {
-                        const identifier = lowerIdentifierForAssignment(builder, (_y = element.node.loc) !== null && _y !== void 0 ? _y : GeneratedSource, kind, element);
+                        const identifier = lowerIdentifierForAssignment(builder, getSourceLocation(element.node), kind, element);
                         if (identifier === null) {
                             continue;
                         }
@@ -26000,7 +26010,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                             builder.recordError(new CompilerErrorDetail({
                                 category: ErrorCategory.Todo,
                                 reason: 'Expected reassignment of globals to enable forceTemporaries',
-                                loc: (_z = element.node.loc) !== null && _z !== void 0 ? _z : GeneratedSource,
+                                loc: (_o = element.node.loc) !== null && _o !== void 0 ? _o : GeneratedSource,
                             }));
                             continue;
                         }
@@ -26012,7 +26022,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                         });
                     }
                     else {
-                        const temp = buildTemporaryPlace(builder, (_0 = element.node.loc) !== null && _0 !== void 0 ? _0 : GeneratedSource);
+                        const temp = buildTemporaryPlace(builder, getSourceLocation(element.node));
                         promoteTemporary(temp.identifier);
                         properties.push({
                             kind: 'ObjectProperty',
@@ -26031,20 +26041,20 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
                     pattern: {
                         kind: 'ObjectPattern',
                         properties,
-                        loc: (_1 = lvalue.node.loc) !== null && _1 !== void 0 ? _1 : GeneratedSource,
+                        loc: getSourceLocation(lvalue.node),
                     },
                 },
                 value,
-                loc,
-            });
+                loc: source.valueLoc,
+            }, loc);
             for (const { place, path } of followups) {
-                lowerAssignment(builder, (_2 = path.node.loc) !== null && _2 !== void 0 ? _2 : loc, kind, path, place, assignmentKind);
+                lowerAssignment(builder, getSourceLocation(path.node, loc), kind, path, place, assignmentKind);
             }
             return { kind: 'LoadLocal', place: temporary, loc: value.loc };
         }
         case 'AssignmentPattern': {
             const lvalue = lvaluePath;
-            const loc = (_3 = lvalue.node.loc) !== null && _3 !== void 0 ? _3 : GeneratedSource;
+            const loc = getSourceLocation(lvalue.node);
             const temp = buildTemporaryPlace(builder, loc);
             const testBlock = builder.reserve('value');
             const continuationBlock = builder.reserve(builder.currentBlockKind());
@@ -26115,7 +26125,7 @@ function lowerAssignment(builder, loc, kind, lvaluePath, value, assignmentKind) 
             builder.recordError(new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerAssignment) Handle ${lvaluePath.type} assignments`,
                 category: ErrorCategory.Todo,
-                loc: (_4 = lvaluePath.node.loc) !== null && _4 !== void 0 ? _4 : null,
+                loc: (_p = lvaluePath.node.loc) !== null && _p !== void 0 ? _p : null,
                 suggestions: null,
             }));
             return { kind: 'UnsupportedNode', node: lvalueNode, loc };
@@ -26140,7 +26150,6 @@ function gatherCapturedContext(fn, componentScope) {
         to: componentScope,
     });
     function handleMaybeDependency(path) {
-        var _a, _b;
         let baseIdentifier;
         if (path.isJSXOpeningElement()) {
             const name = path.get('name');
@@ -26162,7 +26171,7 @@ function gatherCapturedContext(fn, componentScope) {
         if (binding !== undefined &&
             pureScopes.has(binding.scope) &&
             !capturedIds.has(binding.identifier)) {
-            capturedIds.set(binding.identifier, (_b = (_a = path.node.loc) !== null && _a !== void 0 ? _a : binding.identifier.loc) !== null && _b !== void 0 ? _b : GeneratedSource);
+            capturedIds.set(binding.identifier, getSourceLocation(path.node.loc != null ? path.node : binding.identifier));
         }
     }
     fn.traverse({
@@ -31482,7 +31491,7 @@ class FlowTypeEnv {
     }
     setType(identifier, type) {
         if (typeof identifier.loc !== 'symbol' &&
-            __classPrivateFieldGet(this, _FlowTypeEnv_flowTypes, "f").has(serializeLoc(identifier.loc))) {
+            __classPrivateFieldGet(this, _FlowTypeEnv_flowTypes, "f").has(serializeLoc(identifier.loc.loc))) {
             return;
         }
         __classPrivateFieldGet(this, _FlowTypeEnv_types, "f").set(identifier.id, type);
@@ -31490,7 +31499,7 @@ class FlowTypeEnv {
     getType(identifier) {
         const result = this.getTypeOrNull(identifier);
         if (result == null) {
-            throw new Error(`Type not found for ${identifier.id}, ${typeof identifier.loc === 'symbol' ? 'generated loc' : serializeLoc(identifier.loc)}`);
+            throw new Error(`Type not found for ${identifier.id}, ${typeof identifier.loc === 'symbol' ? 'generated loc' : serializeLoc(identifier.loc.loc)}`);
         }
         return result;
     }
@@ -31498,7 +31507,7 @@ class FlowTypeEnv {
         var _a;
         const result = (_a = __classPrivateFieldGet(this, _FlowTypeEnv_types, "f").get(identifier.id)) !== null && _a !== void 0 ? _a : null;
         if (result == null && typeof identifier.loc !== 'symbol') {
-            const flowType = __classPrivateFieldGet(this, _FlowTypeEnv_flowTypes, "f").get(serializeLoc(identifier.loc));
+            const flowType = __classPrivateFieldGet(this, _FlowTypeEnv_flowTypes, "f").get(serializeLoc(identifier.loc.loc));
             return flowType !== null && flowType !== void 0 ? flowType : null;
         }
         return result;
@@ -31507,7 +31516,7 @@ class FlowTypeEnv {
         if (typeof loc === 'symbol') {
             return null;
         }
-        const flowType = __classPrivateFieldGet(this, _FlowTypeEnv_flowTypes, "f").get(serializeLoc(loc));
+        const flowType = __classPrivateFieldGet(this, _FlowTypeEnv_flowTypes, "f").get(serializeLoc(loc.loc));
         return flowType !== null && flowType !== void 0 ? flowType : null;
     }
     nextNominalId() {
@@ -32468,17 +32477,21 @@ function mergeLocation(l, r) {
     }
     else {
         return {
-            filename: l.filename,
-            identifierName: l.identifierName,
-            start: {
-                index: Math.min(l.start.index, r.start.index),
-                line: Math.min(l.start.line, r.start.line),
-                column: Math.min(l.start.column, r.start.column),
-            },
-            end: {
-                index: Math.max(l.end.index, r.end.index),
-                line: Math.max(l.end.line, r.end.line),
-                column: Math.max(l.end.column, r.end.column),
+            start: undefined,
+            end: undefined,
+            loc: {
+                filename: l.loc.filename,
+                identifierName: l.loc.identifierName,
+                start: {
+                    index: Math.min(l.loc.start.index, r.loc.start.index),
+                    line: Math.min(l.loc.start.line, r.loc.start.line),
+                    column: Math.min(l.loc.start.column, r.loc.start.column),
+                },
+                end: {
+                    index: Math.max(l.loc.end.index, r.loc.end.index),
+                    line: Math.max(l.loc.end.line, r.loc.end.line),
+                    column: Math.max(l.loc.end.column, r.loc.end.column),
+                },
             },
         };
     }
@@ -36411,7 +36424,9 @@ function codegenReactiveScope(cx, statements, scope, block) {
         });
         const name = convertIdentifier(identifier);
         if (!cx.hasDeclared(identifier)) {
-            statements.push(libExports$1.variableDeclaration('let', [createVariableDeclarator(name, null)]));
+            statements.push(libExports$1.variableDeclaration('let', [
+                createVariableDeclarator(identifier.loc, name, null),
+            ]));
         }
         cacheLoads.push({ name, index, value: name });
         cx.declare(identifier);
@@ -36730,7 +36745,7 @@ function codegenInstructionNullable(cx, instr) {
                     loc: instr.value.loc,
                 });
                 return createVariableDeclaration(instr.loc, 'const', [
-                    createVariableDeclarator(codegenLValue(cx, lvalue), value),
+                    createVariableDeclarator(instr.value.loc, codegenLValue(cx, lvalue), value),
                 ]);
             }
             case InstructionKind.Function: {
@@ -36757,7 +36772,7 @@ function codegenInstructionNullable(cx, instr) {
                     loc: instr.value.loc,
                 });
                 return createVariableDeclaration(instr.loc, 'let', [
-                    createVariableDeclarator(codegenLValue(cx, lvalue), value),
+                    createVariableDeclarator(instr.value.loc, codegenLValue(cx, lvalue), value),
                 ]);
             }
             case InstructionKind.Reassign: {
@@ -36885,12 +36900,28 @@ function codegenDependency(cx, dependency) {
     }
     return object;
 }
+function setSourceLocation(node, source) {
+    if (source == null || source === GeneratedSource) {
+        return;
+    }
+    node.loc = source.loc;
+    if (source.start === undefined) {
+        delete node.start;
+    }
+    else {
+        node.start = source.start;
+    }
+    if (source.end === undefined) {
+        delete node.end;
+    }
+    else {
+        node.end = source.end;
+    }
+}
 function withLoc(fn) {
     return (loc, ...args) => {
         const node = fn(...args);
-        if (loc != null && loc != GeneratedSource) {
-            node.loc = loc;
-        }
+        setSourceLocation(node, loc);
         return node;
     };
 }
@@ -36900,6 +36931,7 @@ const createObjectPattern = withLoc(libExports$1.objectPattern);
 const createBinaryExpression = withLoc(libExports$1.binaryExpression);
 const createExpressionStatement = withLoc(libExports$1.expressionStatement);
 const createVariableDeclaration = withLoc(libExports$1.variableDeclaration);
+const createVariableDeclarator = withLoc(libExports$1.variableDeclarator);
 const createFunctionDeclaration = withLoc(libExports$1.functionDeclaration);
 const createWhileStatement = withLoc(libExports$1.whileStatement);
 const createDoWhileStatement = withLoc(libExports$1.doWhileStatement);
@@ -36927,19 +36959,6 @@ const createTryStatement = withLoc(libExports$1.tryStatement);
 const createBreakStatement = withLoc(libExports$1.breakStatement);
 const createContinueStatement = withLoc(libExports$1.continueStatement);
 const createReturnStatement = withLoc(libExports$1.returnStatement);
-function createVariableDeclarator(id, init) {
-    var _a, _b;
-    const node = libExports$1.variableDeclarator(id, init);
-    if (id.loc && (init === null || (init === null || init === void 0 ? void 0 : init.loc))) {
-        node.loc = {
-            start: id.loc.start,
-            end: (_b = (_a = init === null || init === void 0 ? void 0 : init.loc) === null || _a === void 0 ? void 0 : _a.end) !== null && _b !== void 0 ? _b : id.loc.end,
-            filename: id.loc.filename,
-            identifierName: undefined,
-        };
-    }
-    return node;
-}
 function createHookGuard(guard, context, stmts, before, after) {
     const guardFnName = context.addImportSpecifier(guard).name;
     function createHookGuardImpl(kind) {
@@ -36949,9 +36968,7 @@ function createHookGuard(guard, context, stmts, before, after) {
 }
 function createCallExpression(env, callee, args, loc, isHook) {
     const callExpr = libExports$1.callExpression(callee, args);
-    if (loc != null && loc != GeneratedSource) {
-        callExpr.loc = loc;
-    }
+    setSourceLocation(callExpr, loc);
     const hookGuard = env.config.enableEmitHookGuards;
     if (hookGuard != null && isHook && env.outputMode === 'client') {
         const iife = libExports$1.functionExpression(null, [], libExports$1.blockStatement([
@@ -36984,14 +37001,14 @@ function codegenInstruction(cx, instr, value) {
         }
         else {
             return createVariableDeclaration(instr.loc, 'const', [
-                createVariableDeclarator(convertIdentifier(instr.lvalue.identifier), expressionValue),
+                createVariableDeclarator(instr.loc, convertIdentifier(instr.lvalue.identifier), expressionValue),
             ]);
         }
     }
 }
 function convertValueToExpression(value) {
     if (value.type === 'JSXText') {
-        return createStringLiteral(value.loc, value.value);
+        return createStringLiteral(getSourceLocation(value), value.value);
     }
     return value;
 }
@@ -37418,9 +37435,7 @@ function codegenInstructionValue(cx, instrValue) {
             assertExhaustive$1(instrValue, `Unexpected instruction value kind \`${instrValue.kind}\``);
         }
     }
-    if (instrValue.loc != null && instrValue.loc != GeneratedSource) {
-        value.loc = instrValue.loc;
-    }
+    setSourceLocation(value, instrValue.loc);
     return value;
 }
 const STRING_REQUIRES_EXPR_CONTAINER_PATTERN = /[\u{0000}-\u{001F}\u{007F}\u{0080}-\u{FFFF}\u{010000}-\u{10FFFF}]|"|\\/u;
@@ -37442,7 +37457,7 @@ function codegenJsxAttribute(cx, attribute) {
                     value = innerValue;
                     if (STRING_REQUIRES_EXPR_CONTAINER_PATTERN.test(value.value) &&
                         !cx.fbtOperands.has(attribute.place.identifier.id)) {
-                        value = createJsxExpressionContainer(value.loc, value);
+                        value = createJsxExpressionContainer(getSourceLocation(value), value);
                     }
                     break;
                 }
@@ -37633,17 +37648,15 @@ function codegenPlace(cx, place) {
         description: `Value for '${printPlace(place)}' was not set in the codegen context`,
         loc: place.loc,
     });
-    const identifier = convertIdentifier(place.identifier);
-    identifier.loc = place.loc;
-    return identifier;
+    return convertIdentifier(place.identifier, place.loc);
 }
-function convertIdentifier(identifier) {
+function convertIdentifier(identifier, loc = identifier.loc) {
     CompilerError.invariant(identifier.name !== null && identifier.name.kind === 'named', {
         reason: `Expected temporaries to be promoted to named identifiers in an earlier pass`,
         description: `identifier ${identifier.id} is unnamed`,
         loc: GeneratedSource,
     });
-    return createIdentifier(identifier.loc, identifier.name.value);
+    return createIdentifier(loc, identifier.name.value);
 }
 function compareScopeDependency(a, b) {
     var _a, _b;
@@ -39536,7 +39549,8 @@ function applyEffect(context, state, _effect, initialized, effects) {
                         reason: 'Cannot access variable before it is declared',
                         description: `${variable !== null && variable !== void 0 ? variable : 'This variable'} is accessed before it is declared, which prevents the earlier access from updating when this value changes over time`,
                     });
-                    if (hoistedAccess != null && hoistedAccess.loc != effect.value.loc) {
+                    if (hoistedAccess != null &&
+                        !areSourceLocationsEqual(hoistedAccess.loc, effect.value.loc)) {
                         diagnostic.withDetails({
                             kind: 'error',
                             loc: hoistedAccess.loc,
@@ -44553,13 +44567,15 @@ function validateHooksUsage(fn) {
             fn.env.recordError(errorDetail);
         }
         else {
-            errorsByPlace.set(loc, errorDetail);
+            errorsByPlace.set(loc.loc, errorDetail);
         }
     }
     function recordConditionalHookError(place) {
         setKind(place, Kind.Error);
         const reason = 'Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)';
-        const previousError = typeof place.loc !== 'symbol' ? errorsByPlace.get(place.loc) : undefined;
+        const previousError = typeof place.loc !== 'symbol'
+            ? errorsByPlace.get(place.loc.loc)
+            : undefined;
         if (previousError === undefined || previousError.reason !== reason) {
             trackError(place.loc, new CompilerErrorDetail({
                 category: ErrorCategory.Hooks,
@@ -44571,7 +44587,9 @@ function validateHooksUsage(fn) {
         }
     }
     function recordInvalidHookUsageError(place) {
-        const previousError = typeof place.loc !== 'symbol' ? errorsByPlace.get(place.loc) : undefined;
+        const previousError = typeof place.loc !== 'symbol'
+            ? errorsByPlace.get(place.loc.loc)
+            : undefined;
         if (previousError === undefined) {
             trackError(place.loc, new CompilerErrorDetail({
                 category: ErrorCategory.Hooks,
@@ -44583,7 +44601,9 @@ function validateHooksUsage(fn) {
         }
     }
     function recordDynamicHookUsageError(place) {
-        const previousError = typeof place.loc !== 'symbol' ? errorsByPlace.get(place.loc) : undefined;
+        const previousError = typeof place.loc !== 'symbol'
+            ? errorsByPlace.get(place.loc.loc)
+            : undefined;
         if (previousError === undefined) {
             trackError(place.loc, new CompilerErrorDetail({
                 category: ErrorCategory.Hooks,
@@ -45016,7 +45036,9 @@ function tyEqual(a, b) {
                 reason: 'Expected ref value',
                 loc: GeneratedSource,
             });
-            return a.loc == b.loc;
+            return a.loc === undefined || b.loc === undefined
+                ? a.loc === b.loc
+                : areSourceLocationsEqual(a.loc, b.loc);
         case 'Structure': {
             CompilerError.invariant(b.kind === 'Structure', {
                 reason: 'Expected structure',
@@ -48934,7 +48956,7 @@ function maybeRecordSetState(instr, loads, usages) {
         }
         const rootSetState = getRootSetState(operand.identifier.id, loads);
         if (rootSetState !== null && usages.get(rootSetState) === undefined) {
-            usages.set(rootSetState, new Set([operand.loc]));
+            usages.set(rootSetState, new Set([getBabelLocation(operand.loc)]));
         }
     }
 }
@@ -48982,7 +49004,8 @@ function recordInstructionDerivations(instr, context, isFirstPass) {
         if (context.setStateLoads.has(operand.identifier.id)) {
             const rootSetStateId = getRootSetState(operand.identifier.id, context.setStateLoads);
             if (rootSetStateId !== null) {
-                (_a = context.setStateUsages.get(rootSetStateId)) === null || _a === void 0 ? void 0 : _a.add(operand.loc);
+                (_a = context.setStateUsages
+                    .get(rootSetStateId)) === null || _a === void 0 ? void 0 : _a.add(getBabelLocation(operand.loc));
             }
         }
         const operandMetadata = context.derivationCache.cache.get(operand.identifier.id);
@@ -49143,7 +49166,7 @@ function validateEffect(effectFunction, dependencies, context) {
         if (dep.kind === 'Identifier') {
             const root = getRootSetState(dep.identifier.id, context.setStateLoads);
             if (root !== null) {
-                effectSetStateUsages.set(root, new Set([dep.loc]));
+                effectSetStateUsages.set(root, new Set([getBabelLocation(dep.loc)]));
             }
         }
     }
@@ -49168,7 +49191,8 @@ function validateEffect(effectFunction, dependencies, context) {
                 if (context.setStateLoads.has(operand.identifier.id)) {
                     const rootSetStateId = getRootSetState(operand.identifier.id, context.setStateLoads);
                     if (rootSetStateId !== null) {
-                        (_a = effectSetStateUsages.get(rootSetStateId)) === null || _a === void 0 ? void 0 : _a.add(operand.loc);
+                        (_a = effectSetStateUsages
+                            .get(rootSetStateId)) === null || _a === void 0 ? void 0 : _a.add(getBabelLocation(operand.loc));
                     }
                 }
             }
@@ -49791,11 +49815,11 @@ function validateDependencies(inferred, manualDependencies, reactive, manualMemo
         let suggestion = null;
         if (manualMemoLoc != null &&
             typeof manualMemoLoc !== 'symbol' &&
-            manualMemoLoc.start.index != null &&
-            manualMemoLoc.end.index != null) {
+            manualMemoLoc.loc.start.index != null &&
+            manualMemoLoc.loc.end.index != null) {
             suggestion = {
                 description: 'Update dependencies',
-                range: [manualMemoLoc.start.index, manualMemoLoc.end.index],
+                range: [manualMemoLoc.loc.start.index, manualMemoLoc.loc.end.index],
                 op: CompilerSuggestionOperation.Replace,
                 text: `[${inferred
                     .filter(dep => dep.kind === 'Local' &&
@@ -51030,6 +51054,12 @@ function createNewFunctionNode(originalFn, compiledFn) {
         default: {
             assertExhaustive$1(originalFn.node, `Creating unhandled function: ${originalFn.node}`);
         }
+    }
+    if (originalFn.node.start !== undefined) {
+        transformedFn.start = originalFn.node.start;
+    }
+    if (originalFn.node.end !== undefined) {
+        transformedFn.end = originalFn.node.end;
     }
     return transformedFn;
 }
