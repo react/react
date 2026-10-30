@@ -7,13 +7,13 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<f99f3712d3ca30676304fc7b02a24ba7>>
+ * @generated SignedSource<<879bb05f7306e79d1bc78053f4482457>>
  */
 
 "use strict";
 __DEV__ &&
   (function () {
-    function JSCompiler_object_inline_createNodeMock_1203() {
+    function JSCompiler_object_inline_createNodeMock_1206() {
       return null;
     }
     function findHook(fiber, id) {
@@ -12906,7 +12906,11 @@ __DEV__ &&
     function prepareFreshStack(root, lanes) {
       var timeoutHandle = root.timeoutHandle;
       -1 !== timeoutHandle &&
-        ((root.timeoutHandle = -1), cancelTimeout(timeoutHandle));
+        ((root.timeoutHandle = -1),
+        cancelTimeout(timeoutHandle),
+        (timeoutHandle = pendingEffectsLanes),
+        (root.pingedLanes |= root.suspendedLanes & timeoutHandle),
+        (root.warmLanes &= ~timeoutHandle));
       timeoutHandle = root.cancelPendingCommit;
       null !== timeoutHandle &&
         ((root.cancelPendingCommit = null), timeoutHandle());
@@ -17147,10 +17151,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-a703ca64-20261030",
+        version: "19.3.0-native-fb-65cf7ab7-20261030",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-a703ca64-20261030"
+        reconcilerVersion: "19.3.0-native-fb-65cf7ab7-20261030"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -17173,7 +17177,7 @@ __DEV__ &&
     exports._Scheduler = Scheduler;
     exports.act = act;
     exports.create = function (element, options) {
-      var createNodeMock = JSCompiler_object_inline_createNodeMock_1203,
+      var createNodeMock = JSCompiler_object_inline_createNodeMock_1206,
         isConcurrent = !1,
         isStrictMode = !1;
       "object" === typeof options &&
@@ -17296,5 +17300,5 @@ __DEV__ &&
             flushSyncWorkAcrossRoots_impl(0, !0));
       }
     };
-    exports.version = "19.3.0-native-fb-a703ca64-20261030";
+    exports.version = "19.3.0-native-fb-65cf7ab7-20261030";
   })();

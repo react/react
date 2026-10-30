@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<eea43108e0a921da8352be904321ef12>>
+ * @generated SignedSource<<4d9ee955664fdc9d65b1ffb88b60c6ab>>
  */
 
 "use strict";
@@ -15639,7 +15639,10 @@ __DEV__ &&
       previousRenderStartTime = root.timeoutHandle;
       previousRenderStartTime !== noTimeout &&
         ((root.timeoutHandle = noTimeout),
-        cancelTimeout(previousRenderStartTime));
+        cancelTimeout(previousRenderStartTime),
+        (previousRenderStartTime = pendingEffectsLanes),
+        (root.pingedLanes |= root.suspendedLanes & previousRenderStartTime),
+        (root.warmLanes &= ~previousRenderStartTime));
       previousRenderStartTime = root.cancelPendingCommit;
       null !== previousRenderStartTime &&
         ((root.cancelPendingCommit = null), previousRenderStartTime());
@@ -21378,10 +21381,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-a703ca64-20261030",
+        version: "19.3.0-native-fb-65cf7ab7-20261030",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-a703ca64-20261030"
+        reconcilerVersion: "19.3.0-native-fb-65cf7ab7-20261030"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

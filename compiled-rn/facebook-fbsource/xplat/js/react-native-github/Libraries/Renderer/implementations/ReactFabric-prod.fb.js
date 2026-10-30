@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<6ebccb880ae1ea670ed3429c4adbd484>>
+ * @generated SignedSource<<eb627f066c66d8b3a006d6f67d726eaa>>
  */
 
 "use strict";
@@ -10843,7 +10843,11 @@ function resetWorkInProgressStack() {
 function prepareFreshStack(root, lanes) {
   var timeoutHandle = root.timeoutHandle;
   -1 !== timeoutHandle &&
-    ((root.timeoutHandle = -1), cancelTimeout(timeoutHandle));
+    ((root.timeoutHandle = -1),
+    cancelTimeout(timeoutHandle),
+    (timeoutHandle = pendingEffectsLanes),
+    (root.pingedLanes |= root.suspendedLanes & timeoutHandle),
+    (root.warmLanes &= ~timeoutHandle));
   timeoutHandle = root.cancelPendingCommit;
   null !== timeoutHandle &&
     ((root.cancelPendingCommit = null), timeoutHandle());
@@ -12457,26 +12461,26 @@ batchedUpdatesImpl = function (fn, a) {
   }
 };
 var roots = new Map(),
-  internals$jscomp$inline_1348 = {
+  internals$jscomp$inline_1351 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-a703ca64-20261030",
+    version: "19.3.0-native-fb-65cf7ab7-20261030",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-a703ca64-20261030"
+    reconcilerVersion: "19.3.0-native-fb-65cf7ab7-20261030"
   };
 null !== extraDevToolsConfig &&
-  (internals$jscomp$inline_1348.rendererConfig = extraDevToolsConfig);
+  (internals$jscomp$inline_1351.rendererConfig = extraDevToolsConfig);
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_1691 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_1697 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_1691.isDisabled &&
-    hook$jscomp$inline_1691.supportsFiber
+    !hook$jscomp$inline_1697.isDisabled &&
+    hook$jscomp$inline_1697.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_1691.inject(
-        internals$jscomp$inline_1348
+      (rendererID = hook$jscomp$inline_1697.inject(
+        internals$jscomp$inline_1351
       )),
-        (injectedHook = hook$jscomp$inline_1691);
+        (injectedHook = hook$jscomp$inline_1697);
     } catch (err) {}
 }
 exports.createPortal = function (children, containerTag) {

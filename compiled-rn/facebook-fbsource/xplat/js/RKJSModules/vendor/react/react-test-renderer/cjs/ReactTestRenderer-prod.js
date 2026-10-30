@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<891ce4e833a1887d50e423b7d6950a6a>>
+ * @generated SignedSource<<eb2053adbb1f70bb093f20d8be013cce>>
  */
 
 "use strict";
@@ -9625,7 +9625,11 @@ function resetWorkInProgressStack() {
 function prepareFreshStack(root, lanes) {
   var timeoutHandle = root.timeoutHandle;
   -1 !== timeoutHandle &&
-    ((root.timeoutHandle = -1), cancelTimeout(timeoutHandle));
+    ((root.timeoutHandle = -1),
+    cancelTimeout(timeoutHandle),
+    (timeoutHandle = pendingEffectsLanes),
+    (root.pingedLanes |= root.suspendedLanes & timeoutHandle),
+    (root.warmLanes &= ~timeoutHandle));
   timeoutHandle = root.cancelPendingCommit;
   null !== timeoutHandle &&
     ((root.cancelPendingCommit = null), timeoutHandle());
@@ -11095,24 +11099,24 @@ function wrapFiber(fiber) {
     fiberToWrapper.set(fiber, wrapper));
   return wrapper;
 }
-var internals$jscomp$inline_1561 = {
+var internals$jscomp$inline_1567 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-a703ca64-20261030",
+  version: "19.3.0-native-fb-65cf7ab7-20261030",
   rendererPackageName: "react-test-renderer",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-a703ca64-20261030"
+  reconcilerVersion: "19.3.0-native-fb-65cf7ab7-20261030"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_1562 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_1568 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_1562.isDisabled &&
-    hook$jscomp$inline_1562.supportsFiber
+    !hook$jscomp$inline_1568.isDisabled &&
+    hook$jscomp$inline_1568.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_1562.inject(
-        internals$jscomp$inline_1561
+      (rendererID = hook$jscomp$inline_1568.inject(
+        internals$jscomp$inline_1567
       )),
-        (injectedHook = hook$jscomp$inline_1562);
+        (injectedHook = hook$jscomp$inline_1568);
     } catch (err) {}
 }
 exports._Scheduler = Scheduler;
@@ -11236,4 +11240,4 @@ exports.unstable_batchedUpdates = function (fn, a) {
         flushSyncWorkAcrossRoots_impl(0, !0));
   }
 };
-exports.version = "19.3.0-native-fb-a703ca64-20261030";
+exports.version = "19.3.0-native-fb-65cf7ab7-20261030";
