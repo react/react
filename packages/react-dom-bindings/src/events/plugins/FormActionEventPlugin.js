@@ -42,6 +42,17 @@ function coerceFormActionProp(
   }
 }
 
+function getFormMethod(form: HTMLFormElement): string {
+  // In HTML DOM, form controls can shadow `form.method` if named "method".
+  // Fall back to reading the attribute or defaulting to "get".
+  const method = (form: any).method;
+  if (typeof method === 'string') {
+    return method;
+  }
+  const attr = form.getAttribute('method');
+  return attr != null ? attr : 'get';
+}
+
 /**
  * This plugin invokes action functions on forms, inputs and buttons if
  * the form doesn't prevent default.
@@ -107,7 +118,7 @@ function extractEvents(
         const pendingState: FormStatus = {
           pending: true,
           data: formData,
-          method: form.method,
+          method: getFormMethod(form),
           action: action,
         };
         if (__DEV__) {
@@ -136,7 +147,7 @@ function extractEvents(
       const pendingState: FormStatus = {
         pending: true,
         data: formData,
-        method: form.method,
+        method: getFormMethod(form),
         action: action,
       };
       if (__DEV__) {
@@ -172,7 +183,7 @@ export function dispatchReplayedFormAction(
   const pendingState: FormStatus = {
     pending: true,
     data: formData,
-    method: form.method,
+    method: getFormMethod(form),
     action: action,
   };
   if (__DEV__) {

@@ -2401,4 +2401,38 @@ describe('ReactDOMForm', () => {
 
     assertLog(['[unrelated form] pending: false, state: 1']);
   });
+
+  it('handles forms with elements named "reset" or "method" without crashing', async () => {
+    const formRef = React.createRef();
+
+    function Status() {
+      const {pending, method} = useFormStatus();
+      return `pending: ${pending}, method: ${method}`;
+    }
+
+    async function action() {
+      // noop
+    }
+
+    function App() {
+      return (
+        <form action={action} ref={formRef} method="post">
+          <input name="username" defaultValue="hello" />
+          <input type="reset" name="reset" value="Reset" />
+          <input type="hidden" name="method" value="DELETE" />
+          <input type="submit" />
+          <Status />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    expect(container.textContent).toContain('pending: false');
+
+    await submit(formRef.current);
+
+    expect(container.textContent).toContain('pending: false, method: null');
+  });
 });
