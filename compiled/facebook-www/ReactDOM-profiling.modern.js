@@ -14492,6 +14492,15 @@ function markRootUpdated(root, updatedLanes) {
       : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
     throwIfInfiniteUpdateLoopDetected(!0));
 }
+function markRootPinged(root, pingedLanes) {
+  root.pingedLanes |= root.suspendedLanes & pingedLanes;
+  root.warmLanes &= ~pingedLanes;
+  enableInfiniteRenderLoopDetection &&
+    (executionContext & 2
+      ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
+      : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
+    throwIfInfiniteUpdateLoopDetected(!0));
+}
 function markRootSuspended(
   root,
   suspendedLanes,
@@ -14777,7 +14786,9 @@ function prepareFreshStack(root, lanes) {
     logAnimatingPhase(idleClampTime, renderStartTime));
   previousRenderStartTime = root.timeoutHandle;
   -1 !== previousRenderStartTime &&
-    ((root.timeoutHandle = -1), cancelTimeout(previousRenderStartTime));
+    ((root.timeoutHandle = -1),
+    cancelTimeout(previousRenderStartTime),
+    markRootPinged(root, pendingEffectsLanes));
   previousRenderStartTime = root.cancelPendingCommit;
   null !== previousRenderStartTime &&
     ((root.cancelPendingCommit = null), previousRenderStartTime());
@@ -16039,13 +16050,7 @@ function attachPingListener(root, wakeable, lanes) {
 function pingSuspendedRoot(root, wakeable, pingedLanes) {
   var pingCache = root.pingCache;
   null !== pingCache && pingCache.delete(wakeable);
-  root.pingedLanes |= root.suspendedLanes & pingedLanes;
-  root.warmLanes &= ~pingedLanes;
-  enableInfiniteRenderLoopDetection &&
-    (executionContext & 2
-      ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
-      : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
-    throwIfInfiniteUpdateLoopDetected(!0));
+  markRootPinged(root, pingedLanes);
   0 !== (pingedLanes & 127)
     ? 0 > blockingUpdateTime &&
       ((blockingClampTime = blockingUpdateTime = now()),
@@ -22673,14 +22678,14 @@ function getCrossOriginStringAs(as, input) {
 }
 var isomorphicReactPackageVersion$jscomp$inline_2408 = React.version;
 if (
-  "19.3.0-www-modern-64df855d-20261030" !==
+  "19.3.0-www-modern-65cf7ab7-20261030" !==
   isomorphicReactPackageVersion$jscomp$inline_2408
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2408,
-      "19.3.0-www-modern-64df855d-20261030"
+      "19.3.0-www-modern-65cf7ab7-20261030"
     )
   );
 Internals.findDOMNode = function (componentOrElement) {
@@ -22698,25 +22703,25 @@ Internals.Events = [
 ];
 var internals$jscomp$inline_2410 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-64df855d-20261030",
+  version: "19.3.0-www-modern-65cf7ab7-20261030",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-64df855d-20261030"
+  reconcilerVersion: "19.3.0-www-modern-65cf7ab7-20261030"
 };
 enableSchedulingProfiler &&
   ((internals$jscomp$inline_2410.getLaneLabelMap = getLaneLabelMap),
   (internals$jscomp$inline_2410.injectProfilingHooks = injectProfilingHooks));
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_2942 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_2939 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_2942.isDisabled &&
-    hook$jscomp$inline_2942.supportsFiber
+    !hook$jscomp$inline_2939.isDisabled &&
+    hook$jscomp$inline_2939.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_2942.inject(
+      (rendererID = hook$jscomp$inline_2939.inject(
         internals$jscomp$inline_2410
       )),
-        (injectedHook = hook$jscomp$inline_2942);
+        (injectedHook = hook$jscomp$inline_2939);
     } catch (err) {}
 }
 function defaultOnDefaultTransitionIndicator() {
@@ -23146,7 +23151,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-www-modern-64df855d-20261030";
+exports.version = "19.3.0-www-modern-65cf7ab7-20261030";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

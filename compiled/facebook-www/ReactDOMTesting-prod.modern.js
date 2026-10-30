@@ -13183,6 +13183,15 @@ function markRootUpdated(root, updatedLanes) {
       : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
     throwIfInfiniteUpdateLoopDetected(!0));
 }
+function markRootPinged(root, pingedLanes) {
+  root.pingedLanes |= root.suspendedLanes & pingedLanes;
+  root.warmLanes &= ~pingedLanes;
+  enableInfiniteRenderLoopDetection &&
+    (executionContext & 2
+      ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
+      : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
+    throwIfInfiniteUpdateLoopDetected(!0));
+}
 function markRootSuspended(
   root,
   suspendedLanes,
@@ -13230,7 +13239,9 @@ function resetWorkInProgressStack() {
 function prepareFreshStack(root, lanes) {
   var timeoutHandle = root.timeoutHandle;
   -1 !== timeoutHandle &&
-    ((root.timeoutHandle = -1), cancelTimeout(timeoutHandle));
+    ((root.timeoutHandle = -1),
+    cancelTimeout(timeoutHandle),
+    markRootPinged(root, pendingEffectsLanes));
   timeoutHandle = root.cancelPendingCommit;
   null !== timeoutHandle &&
     ((root.cancelPendingCommit = null), timeoutHandle());
@@ -14212,13 +14223,7 @@ function attachPingListener(root, wakeable, lanes) {
 function pingSuspendedRoot(root, wakeable, pingedLanes) {
   var pingCache = root.pingCache;
   null !== pingCache && pingCache.delete(wakeable);
-  root.pingedLanes |= root.suspendedLanes & pingedLanes;
-  root.warmLanes &= ~pingedLanes;
-  enableInfiniteRenderLoopDetection &&
-    (executionContext & 2
-      ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
-      : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
-    throwIfInfiniteUpdateLoopDetected(!0));
+  markRootPinged(root, pingedLanes);
   workInProgressRoot === root &&
     (workInProgressRootRenderLanes & pingedLanes) === pingedLanes &&
     (4 === workInProgressRootExitStatus ||
@@ -20806,14 +20811,14 @@ function getCrossOriginStringAs(as, input) {
 }
 var isomorphicReactPackageVersion$jscomp$inline_2090 = React.version;
 if (
-  "19.3.0-www-modern-64df855d-20261030" !==
+  "19.3.0-www-modern-65cf7ab7-20261030" !==
   isomorphicReactPackageVersion$jscomp$inline_2090
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2090,
-      "19.3.0-www-modern-64df855d-20261030"
+      "19.3.0-www-modern-65cf7ab7-20261030"
     )
   );
 Internals.findDOMNode = function (componentOrElement) {
@@ -20829,24 +20834,24 @@ Internals.Events = [
     return fn(a);
   }
 ];
-var internals$jscomp$inline_2629 = {
+var internals$jscomp$inline_2626 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-64df855d-20261030",
+  version: "19.3.0-www-modern-65cf7ab7-20261030",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-64df855d-20261030"
+  reconcilerVersion: "19.3.0-www-modern-65cf7ab7-20261030"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_2630 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_2627 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_2630.isDisabled &&
-    hook$jscomp$inline_2630.supportsFiber
+    !hook$jscomp$inline_2627.isDisabled &&
+    hook$jscomp$inline_2627.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_2630.inject(
-        internals$jscomp$inline_2629
+      (rendererID = hook$jscomp$inline_2627.inject(
+        internals$jscomp$inline_2626
       )),
-        (injectedHook = hook$jscomp$inline_2630);
+        (injectedHook = hook$jscomp$inline_2627);
     } catch (err) {}
 }
 function defaultOnDefaultTransitionIndicator() {
@@ -21426,4 +21431,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-www-modern-64df855d-20261030";
+exports.version = "19.3.0-www-modern-65cf7ab7-20261030";

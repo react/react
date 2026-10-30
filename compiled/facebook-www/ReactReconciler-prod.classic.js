@@ -11926,6 +11926,15 @@ module.exports = function ($$$config) {
         : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
       throwIfInfiniteUpdateLoopDetected(!0));
   }
+  function markRootPinged(root, pingedLanes) {
+    root.pingedLanes |= root.suspendedLanes & pingedLanes;
+    root.warmLanes &= ~pingedLanes;
+    enableInfiniteRenderLoopDetection &&
+      (executionContext & 2
+        ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
+        : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
+      throwIfInfiniteUpdateLoopDetected(!0));
+  }
   function markRootSuspended(
     root,
     suspendedLanes,
@@ -11973,7 +11982,9 @@ module.exports = function ($$$config) {
   function prepareFreshStack(root, lanes) {
     var timeoutHandle = root.timeoutHandle;
     timeoutHandle !== noTimeout &&
-      ((root.timeoutHandle = noTimeout), cancelTimeout(timeoutHandle));
+      ((root.timeoutHandle = noTimeout),
+      cancelTimeout(timeoutHandle),
+      markRootPinged(root, pendingEffectsLanes));
     timeoutHandle = root.cancelPendingCommit;
     null !== timeoutHandle &&
       ((root.cancelPendingCommit = null), timeoutHandle());
@@ -12877,13 +12888,7 @@ module.exports = function ($$$config) {
   function pingSuspendedRoot(root, wakeable, pingedLanes) {
     var pingCache = root.pingCache;
     null !== pingCache && pingCache.delete(wakeable);
-    root.pingedLanes |= root.suspendedLanes & pingedLanes;
-    root.warmLanes &= ~pingedLanes;
-    enableInfiniteRenderLoopDetection &&
-      (executionContext & 2
-        ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
-        : executionContext & 4 && (didIncludeCommitPhaseUpdate = !0),
-      throwIfInfiniteUpdateLoopDetected(!0));
+    markRootPinged(root, pingedLanes);
     workInProgressRoot === root &&
       (workInProgressRootRenderLanes & pingedLanes) === pingedLanes &&
       (4 === workInProgressRootExitStatus ||
@@ -14722,7 +14727,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-classic-64df855d-20261030"
+      reconcilerVersion: "19.3.0-www-classic-65cf7ab7-20261030"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);

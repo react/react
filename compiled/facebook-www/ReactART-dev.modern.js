@@ -15447,6 +15447,16 @@ __DEV__ &&
             (didIncludeCommitPhaseUpdate = !0),
         throwIfInfiniteUpdateLoopDetected(!0));
     }
+    function markRootPinged(root, pingedLanes) {
+      root.pingedLanes |= root.suspendedLanes & pingedLanes;
+      root.warmLanes &= ~pingedLanes;
+      enableInfiniteRenderLoopDetection &&
+        (executionContext & RenderContext
+          ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
+          : executionContext & CommitContext &&
+            (didIncludeCommitPhaseUpdate = !0),
+        throwIfInfiniteUpdateLoopDetected(!0));
+    }
     function markRootSuspended(
       root,
       suspendedLanes,
@@ -15843,7 +15853,9 @@ __DEV__ &&
         logAnimatingPhase(idleClampTime, renderStartTime, animatingTask));
       previousRenderStartTime = root.timeoutHandle;
       -1 !== previousRenderStartTime &&
-        ((root.timeoutHandle = -1), cancelTimeout(previousRenderStartTime));
+        ((root.timeoutHandle = -1),
+        cancelTimeout(previousRenderStartTime),
+        markRootPinged(root, pendingEffectsLanes));
       previousRenderStartTime = root.cancelPendingCommit;
       null !== previousRenderStartTime &&
         ((root.cancelPendingCommit = null), previousRenderStartTime());
@@ -17273,14 +17285,7 @@ __DEV__ &&
     function pingSuspendedRoot(root, wakeable, pingedLanes) {
       var pingCache = root.pingCache;
       null !== pingCache && pingCache.delete(wakeable);
-      root.pingedLanes |= root.suspendedLanes & pingedLanes;
-      root.warmLanes &= ~pingedLanes;
-      enableInfiniteRenderLoopDetection &&
-        (executionContext & RenderContext
-          ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
-          : executionContext & CommitContext &&
-            (didIncludeCommitPhaseUpdate = !0),
-        throwIfInfiniteUpdateLoopDetected(!0));
+      markRootPinged(root, pingedLanes);
       0 !== (pingedLanes & 127)
         ? 0 > blockingUpdateTime &&
           ((blockingClampTime = blockingUpdateTime = now()),
@@ -20427,10 +20432,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-modern-64df855d-20261030",
+        version: "19.3.0-www-modern-65cf7ab7-20261030",
         rendererPackageName: "react-art",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-modern-64df855d-20261030"
+        reconcilerVersion: "19.3.0-www-modern-65cf7ab7-20261030"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -20465,7 +20470,7 @@ __DEV__ &&
     exports.Shape = Shape;
     exports.Surface = Surface;
     exports.Text = Text;
-    exports.version = "19.3.0-www-modern-64df855d-20261030";
+    exports.version = "19.3.0-www-modern-65cf7ab7-20261030";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

@@ -17779,6 +17779,16 @@ __DEV__ &&
             (didIncludeCommitPhaseUpdate = !0),
         throwIfInfiniteUpdateLoopDetected(!0));
     }
+    function markRootPinged(root, pingedLanes) {
+      root.pingedLanes |= root.suspendedLanes & pingedLanes;
+      root.warmLanes &= ~pingedLanes;
+      enableInfiniteRenderLoopDetection &&
+        (executionContext & RenderContext
+          ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
+          : executionContext & CommitContext &&
+            (didIncludeCommitPhaseUpdate = !0),
+        throwIfInfiniteUpdateLoopDetected(!0));
+    }
     function markRootSuspended(
       root,
       suspendedLanes,
@@ -18179,7 +18189,8 @@ __DEV__ &&
       previousRenderStartTime = root.timeoutHandle;
       previousRenderStartTime !== noTimeout &&
         ((root.timeoutHandle = noTimeout),
-        cancelTimeout(previousRenderStartTime));
+        cancelTimeout(previousRenderStartTime),
+        markRootPinged(root, pendingEffectsLanes));
       previousRenderStartTime = root.cancelPendingCommit;
       null !== previousRenderStartTime &&
         ((root.cancelPendingCommit = null), previousRenderStartTime());
@@ -19602,14 +19613,7 @@ __DEV__ &&
     function pingSuspendedRoot(root, wakeable, pingedLanes) {
       var pingCache = root.pingCache;
       null !== pingCache && pingCache.delete(wakeable);
-      root.pingedLanes |= root.suspendedLanes & pingedLanes;
-      root.warmLanes &= ~pingedLanes;
-      enableInfiniteRenderLoopDetection &&
-        (executionContext & RenderContext
-          ? (workInProgressRootDidIncludeRecursiveRenderUpdate = !0)
-          : executionContext & CommitContext &&
-            (didIncludeCommitPhaseUpdate = !0),
-        throwIfInfiniteUpdateLoopDetected(!0));
+      markRootPinged(root, pingedLanes);
       0 !== (pingedLanes & 127)
         ? 0 > blockingUpdateTime &&
           ((blockingClampTime = blockingUpdateTime = now()),
@@ -23429,7 +23433,7 @@ __DEV__ &&
         version: rendererVersion,
         rendererPackageName: rendererPackageName,
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-64df855d-20261030"
+        reconcilerVersion: "19.3.0-www-classic-65cf7ab7-20261030"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

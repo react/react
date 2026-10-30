@@ -13,7 +13,7 @@
 "use strict";
 __DEV__ &&
   (function () {
-    function JSCompiler_object_inline_createNodeMock_1435() {
+    function JSCompiler_object_inline_createNodeMock_1438() {
       return null;
     }
     function findHook(fiber, id) {
@@ -14612,7 +14612,11 @@ __DEV__ &&
         logAnimatingPhase(idleClampTime, renderStartTime, animatingTask));
       previousRenderStartTime = root.timeoutHandle;
       -1 !== previousRenderStartTime &&
-        ((root.timeoutHandle = -1), cancelTimeout(previousRenderStartTime));
+        ((root.timeoutHandle = -1),
+        cancelTimeout(previousRenderStartTime),
+        (previousRenderStartTime = pendingEffectsLanes),
+        (root.pingedLanes |= root.suspendedLanes & previousRenderStartTime),
+        (root.warmLanes &= ~previousRenderStartTime));
       previousRenderStartTime = root.cancelPendingCommit;
       null !== previousRenderStartTime &&
         ((root.cancelPendingCommit = null), previousRenderStartTime());
@@ -19155,10 +19159,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-64df855d-20261030",
+        version: "19.3.0-www-classic-65cf7ab7-20261030",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-64df855d-20261030"
+        reconcilerVersion: "19.3.0-www-classic-65cf7ab7-20261030"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -19179,7 +19183,7 @@ __DEV__ &&
     exports._Scheduler = Scheduler;
     exports.act = act;
     exports.create = function (element, options) {
-      var createNodeMock = JSCompiler_object_inline_createNodeMock_1435,
+      var createNodeMock = JSCompiler_object_inline_createNodeMock_1438,
         isConcurrentOnly = !0 !== global.IS_REACT_NATIVE_TEST_ENVIRONMENT,
         isConcurrent = isConcurrentOnly,
         isStrictMode = !1;
@@ -19294,5 +19298,5 @@ __DEV__ &&
     exports.unstable_batchedUpdates = function (fn, a) {
       return fn(a);
     };
-    exports.version = "19.3.0-www-classic-64df855d-20261030";
+    exports.version = "19.3.0-www-classic-65cf7ab7-20261030";
   })();
