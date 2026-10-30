@@ -10581,13 +10581,16 @@ __DEV__ &&
     exports.renderToStream = function (children, options) {
       var destination = { buffer: "", done: !1, fatal: !1, error: null };
       var resumableState = options ? options.identifierPrefix : void 0;
-      var streamingFormat = ScriptStreamingFormat;
-      void 0 !== (options ? options.unstable_externalRuntimeSrc : void 0) &&
-        (streamingFormat = 1);
+      var externalRuntimeConfig = options
+          ? options.unstable_externalRuntimeSrc
+          : void 0,
+        streamingFormat = ScriptStreamingFormat;
+      void 0 !== externalRuntimeConfig && (streamingFormat = 1);
       resumableState = {
         idPrefix: void 0 === resumableState ? "" : resumableState,
         nextFormID: 0,
         streamingFormat: streamingFormat,
+        externalRuntimeConfig: externalRuntimeConfig,
         bootstrapScriptContent: options
           ? options.bootstrapScriptContent
           : void 0,
@@ -10605,38 +10608,46 @@ __DEV__ &&
         moduleUnknownResources: {},
         moduleScriptResources: {}
       };
-      streamingFormat = options ? options.unstable_externalRuntimeSrc : void 0;
-      var idPrefix = resumableState.idPrefix,
-        bootstrapChunks = [],
-        externalRuntimeScript = null,
+      externalRuntimeConfig = options
+        ? options.unstable_externalRuntimeSrc
+        : void 0;
+      var idPrefix = resumableState.idPrefix;
+      streamingFormat = [];
+      var externalRuntimeScript = null,
         bootstrapScriptContent = resumableState.bootstrapScriptContent,
         bootstrapScripts = resumableState.bootstrapScripts,
         bootstrapModules = resumableState.bootstrapModules;
       void 0 !== bootstrapScriptContent &&
-        (bootstrapChunks.push("<script"),
-        pushCompletedShellIdAttribute(bootstrapChunks, resumableState),
-        bootstrapChunks.push(
+        (streamingFormat.push("<script"),
+        pushCompletedShellIdAttribute(streamingFormat, resumableState),
+        streamingFormat.push(
           endOfStartTag,
           escapeEntireInlineScriptContent(bootstrapScriptContent),
           endInlineScript
         ));
-      void 0 !== streamingFormat &&
-        ("string" === typeof streamingFormat
-          ? ((externalRuntimeScript = { src: streamingFormat, chunks: [] }),
+      void 0 !== externalRuntimeConfig &&
+        ("string" === typeof externalRuntimeConfig
+          ? ((externalRuntimeScript = {
+              src: externalRuntimeConfig,
+              chunks: []
+            }),
             pushScriptImpl(externalRuntimeScript.chunks, {
-              src: streamingFormat,
+              src: externalRuntimeConfig,
               async: !0,
               integrity: void 0,
               nonce: void 0
             }))
-          : ((externalRuntimeScript = { src: streamingFormat.src, chunks: [] }),
+          : ((externalRuntimeScript = {
+              src: externalRuntimeConfig.src,
+              chunks: []
+            }),
             pushScriptImpl(externalRuntimeScript.chunks, {
-              src: streamingFormat.src,
+              src: externalRuntimeConfig.src,
               async: !0,
-              integrity: streamingFormat.integrity,
+              integrity: externalRuntimeConfig.integrity,
               nonce: void 0
             })));
-      streamingFormat = {
+      externalRuntimeConfig = {
         placeholderPrefix: idPrefix + "P:",
         segmentPrefix: idPrefix + "S:",
         boundaryPrefix: idPrefix + "B:",
@@ -10644,7 +10655,7 @@ __DEV__ &&
         startInlineStyle: "<style",
         preamble: createPreambleState(),
         externalRuntimeScript: externalRuntimeScript,
-        bootstrapChunks: bootstrapChunks,
+        bootstrapChunks: streamingFormat,
         importMapChunks: [],
         onHeaders: void 0,
         headers: null,
@@ -10703,29 +10714,29 @@ __DEV__ &&
                     : ""));
           preloadBootstrapScriptOrModule(
             resumableState,
-            streamingFormat,
+            externalRuntimeConfig,
             bootstrapScriptContent,
             props
           );
-          bootstrapChunks.push(
+          streamingFormat.push(
             '<script src="',
             escapeTextForBrowser(bootstrapScriptContent),
             attributeEnd
           );
           "string" === typeof integrity &&
-            bootstrapChunks.push(
+            streamingFormat.push(
               ' integrity="',
               escapeTextForBrowser(integrity),
               attributeEnd
             );
           "string" === typeof crossOrigin &&
-            bootstrapChunks.push(
+            streamingFormat.push(
               ' crossorigin="',
               escapeTextForBrowser(crossOrigin),
               attributeEnd
             );
-          pushCompletedShellIdAttribute(bootstrapChunks, resumableState);
-          bootstrapChunks.push(' async="">\x3c/script>');
+          pushCompletedShellIdAttribute(streamingFormat, resumableState);
+          streamingFormat.push(' async="">\x3c/script>');
         }
       if (void 0 !== bootstrapModules)
         for (
@@ -10755,30 +10766,30 @@ __DEV__ &&
                       : "")),
             preloadBootstrapScriptOrModule(
               resumableState,
-              streamingFormat,
+              externalRuntimeConfig,
               externalRuntimeScript,
               integrity
             ),
-            bootstrapChunks.push(
+            streamingFormat.push(
               '<script type="module" src="',
               escapeTextForBrowser(externalRuntimeScript),
               attributeEnd
             ),
             "string" === typeof crossOrigin &&
-              bootstrapChunks.push(
+              streamingFormat.push(
                 ' integrity="',
                 escapeTextForBrowser(crossOrigin),
                 attributeEnd
               ),
             "string" === typeof bootstrapScriptContent &&
-              bootstrapChunks.push(
+              streamingFormat.push(
                 ' crossorigin="',
                 escapeTextForBrowser(bootstrapScriptContent),
                 attributeEnd
               ),
-            pushCompletedShellIdAttribute(bootstrapChunks, resumableState),
-            bootstrapChunks.push(' async="">\x3c/script>');
-      bootstrapChunks = createFormatContext(ROOT_HTML_MODE, null, 0, null);
+            pushCompletedShellIdAttribute(streamingFormat, resumableState),
+            streamingFormat.push(' async="">\x3c/script>');
+      streamingFormat = createFormatContext(ROOT_HTML_MODE, null, 0, null);
       bootstrapModules = options ? options.progressiveChunkSize : void 0;
       bootstrapScripts = options.onError;
       options = options.onBrowserBailout;
@@ -10788,8 +10799,8 @@ __DEV__ &&
         (lastResetTime = idPrefix));
       options = new RequestInstance(
         resumableState,
+        externalRuntimeConfig,
         streamingFormat,
-        bootstrapChunks,
         bootstrapModules,
         bootstrapScripts,
         options,
@@ -10803,7 +10814,7 @@ __DEV__ &&
         options,
         0,
         null,
-        bootstrapChunks,
+        streamingFormat,
         !1,
         !1
       );
@@ -10819,7 +10830,7 @@ __DEV__ &&
         null,
         options.abortableTasks,
         null,
-        bootstrapChunks,
+        streamingFormat,
         null,
         emptyTreeContext,
         null,

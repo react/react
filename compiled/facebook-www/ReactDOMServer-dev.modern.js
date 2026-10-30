@@ -755,6 +755,7 @@ __DEV__ &&
         idPrefix: void 0 === identifierPrefix ? "" : identifierPrefix,
         nextFormID: 0,
         streamingFormat: streamingFormat,
+        externalRuntimeConfig: externalRuntimeConfig,
         bootstrapScriptContent: bootstrapScriptContent,
         bootstrapScripts: bootstrapScripts,
         bootstrapModules: bootstrapModules,
@@ -10740,5 +10741,5 @@ __DEV__ &&
         'The server used "renderToString" which does not support Suspense. If you intended for this Suspense boundary to render the fallback content on the server consider throwing an Error somewhere within the Suspense boundary. If you intended to have the server wait for the suspended component please switch to "renderToReadableStream" which supports Suspense on the server'
       );
     };
-    exports.version = "19.3.0-www-modern-a703ca64-20261030";
+    exports.version = "19.3.0-www-modern-64df855d-20261030";
   })();
