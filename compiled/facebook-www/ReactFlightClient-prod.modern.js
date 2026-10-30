@@ -860,14 +860,6 @@ function initializeBlockedChunk(response, chunk, value, reason) {
   null !== resolveListeners &&
     wakeChunk(response, resolveListeners, value, chunk);
 }
-function initializeChunkIfUnblocked(response, handler) {
-  if (0 === handler.deps && !handler.errored) {
-    var chunk = handler.chunk;
-    null !== chunk &&
-      "blocked" === chunk.status &&
-      initializeBlockedChunk(response, chunk, handler.value, handler.reason);
-  }
-}
 function fulfillReference(response, reference, value) {
   var handler = reference.handler,
     parentObject = reference.parentObject,
@@ -982,7 +974,17 @@ function fulfillReference(response, reference, value) {
     return;
   }
   handler.deps--;
-  initializeChunkIfUnblocked(response, handler);
+  0 !== handler.deps ||
+    handler.errored ||
+    ((reference = handler.chunk),
+    null !== reference &&
+      "blocked" === reference.status &&
+      initializeBlockedChunk(
+        response,
+        reference,
+        handler.value,
+        handler.reason
+      ));
 }
 function rejectReference(response, handler, error) {
   handler.errored ||
@@ -1029,78 +1031,12 @@ function waitForReference(
   return null;
 }
 function loadServerReference(response, metaData, parentObject, key) {
-  if ("then" === key) return null;
-  var id = metaData.id;
-  if ("string" !== typeof id) return null;
+  if ("then" === key || "string" !== typeof metaData.id) return null;
   if (!response._serverReferenceConfig)
     return createBoundServerReference(metaData, response._callServer);
-  var serverReference = {
-      $$typeof: Symbol.for("react.client.reference"),
-      $$id: id,
-      $$hblp: null
-    },
-    bound = metaData.bound;
-  if ((metaData = preloadModule(serverReference)))
-    bound instanceof ReactPromise &&
-      (metaData = Promise.all([metaData, bound]));
-  else if (bound instanceof ReactPromise) metaData = Promise.resolve(bound);
-  else
-    return (
-      (metaData = requireModule(serverReference)),
-      registerBoundServerReference(metaData, id, bound),
-      metaData
-    );
-  if (initializingHandler) {
-    var handler = initializingHandler;
-    handler.deps++;
-  } else
-    handler = initializingHandler = {
-      parent: null,
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: !1
-    };
-  metaData.then(
-    function () {
-      var resolvedValue = requireModule(serverReference);
-      if (bound) {
-        var promiseValue = bound.value;
-        promiseValue = isArrayImpl(promiseValue) ? promiseValue.slice(0) : [];
-        promiseValue.unshift(null);
-        resolvedValue = resolvedValue.bind.apply(resolvedValue, promiseValue);
-      }
-      registerBoundServerReference(resolvedValue, id, bound);
-      "__proto__" !== key && (parentObject[key] = resolvedValue);
-      "" === key && null === handler.value && (handler.value = resolvedValue);
-      if (
-        parentObject[0] === REACT_ELEMENT_TYPE &&
-        "object" === typeof handler.value &&
-        null !== handler.value &&
-        handler.value.$$typeof === REACT_ELEMENT_TYPE
-      )
-        switch (((promiseValue = handler.value), key)) {
-          case "3":
-            promiseValue.props = resolvedValue;
-        }
-      handler.deps--;
-      initializeChunkIfUnblocked(response, handler);
-    },
-    function (error) {
-      if (!handler.errored) {
-        var erroredHandler = handler;
-        erroredHandler.errored = !0;
-        erroredHandler.value = null;
-        erroredHandler.reason = error;
-        erroredHandler = handler.chunk;
-        null !== erroredHandler &&
-          "blocked" === erroredHandler.status &&
-          triggerErrorOnChunk(response, erroredHandler, error);
-      }
-    }
+  throw Error(
+    "Server-reference decoding is not supported by the FB Flight bundler."
   );
-  return null;
 }
 var EMPTY_REFERENCE_PATH = [];
 function getOutlinedModel(response, reference, parentObject, key, map) {

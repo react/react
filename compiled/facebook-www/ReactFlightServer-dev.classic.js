@@ -3819,12 +3819,10 @@ __DEV__ &&
       });
       enqueueFlush(request);
     }
-    function resolveServerReference(config, id) {
-      return {
-        $$typeof: Symbol.for("react.client.reference"),
-        $$id: id,
-        $$hblp: null
-      };
+    function resolveServerReference() {
+      throw Error(
+        "Server-reference decoding is not supported by the FB Flight bundler."
+      );
     }
     function preloadModule(metadata) {
       if (!canUseDOM) return null;
@@ -4012,26 +4010,30 @@ __DEV__ &&
       );
     }
     function loadServerReference$1(response, metaData, parentObject, key) {
-      var id = metaData.id;
-      if ("string" !== typeof id || "then" === key) return null;
+      if ("string" !== typeof metaData.id || "then" === key) return null;
       var cachedPromise = response._serverReferenceCache.get(metaData);
       if (void 0 !== cachedPromise)
         return readServerReference(response, cachedPromise, parentObject, key);
       var blockedPromise = new ReactPromise("blocked", null, null);
       response._serverReferenceCache.set(metaData, blockedPromise);
-      var serverReference = resolveServerReference(response._bundlerConfig, id);
-      id = metaData.bound;
-      if ((cachedPromise = preloadModule(serverReference)))
-        id instanceof ReactPromise &&
-          (cachedPromise = Promise.all([cachedPromise, id]));
-      else if (id instanceof ReactPromise) cachedPromise = Promise.resolve(id);
+      var serverReference = resolveServerReference();
+      cachedPromise = metaData.bound;
+      var serverReferencePromise = preloadModule(serverReference);
+      if (serverReferencePromise)
+        cachedPromise instanceof ReactPromise &&
+          (serverReferencePromise = Promise.all([
+            serverReferencePromise,
+            cachedPromise
+          ]));
+      else if (cachedPromise instanceof ReactPromise)
+        serverReferencePromise = Promise.resolve(cachedPromise);
       else
         return (
-          (id = requireServerReference(response, serverReference)),
-          resolveServerReferenceChunk(response, blockedPromise, id),
+          (cachedPromise = requireServerReference(response, serverReference)),
+          resolveServerReferenceChunk(response, blockedPromise, cachedPromise),
           readServerReference(response, blockedPromise, parentObject, key)
         );
-      cachedPromise.then(
+      serverReferencePromise.then(
         function () {
           try {
             var value = requireServerReference(response, serverReference);
@@ -5059,9 +5061,8 @@ __DEV__ &&
       reportGlobalError(response, Error("Connection closed."));
     }
     function loadServerReference(bundlerConfig, metaData) {
-      var id = metaData.id;
-      if ("string" !== typeof id) return null;
-      var serverReference = resolveServerReference(bundlerConfig, id);
+      if ("string" !== typeof metaData.id) return null;
+      var serverReference = resolveServerReference();
       bundlerConfig = preloadModule(serverReference);
       metaData = metaData.bound;
       return metaData instanceof Promise

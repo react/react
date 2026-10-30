@@ -31,13 +31,6 @@ __DEV__ &&
         }
       }
     }
-    function resolveServerReference(config, id) {
-      return {
-        $$typeof: Symbol.for("react.client.reference"),
-        $$id: id,
-        $$hblp: null
-      };
-    }
     function preloadModule(metadata) {
       if (!canUseDOM) return null;
       var jsr = require("JSResource")(metadata.$$id);
@@ -2102,19 +2095,6 @@ __DEV__ &&
         : (filterDebugInfo(response, chunk),
           moveDebugInfoFromChunkToInnerValue(chunk, value));
     }
-    function initializeChunkIfUnblocked(response, handler) {
-      if (0 === handler.deps && !handler.errored) {
-        var chunk = handler.chunk;
-        null !== chunk &&
-          "blocked" === chunk.status &&
-          initializeBlockedChunk(
-            response,
-            chunk,
-            handler.value,
-            handler.reason
-          );
-      }
-    }
     function fulfillReference(response, reference, value, fulfilledChunk) {
       var handler = reference.handler,
         parentObject = reference.parentObject,
@@ -2243,7 +2223,17 @@ __DEV__ &&
         return;
       }
       handler.deps--;
-      initializeChunkIfUnblocked(response, handler);
+      0 !== handler.deps ||
+        handler.errored ||
+        ((reference = handler.chunk),
+        null !== reference &&
+          "blocked" === reference.status &&
+          initializeBlockedChunk(
+            response,
+            reference,
+            handler.value,
+            handler.reason
+          ));
     }
     function rejectReference(response, handler, error) {
       if (!handler.errored) {
@@ -2318,9 +2308,7 @@ __DEV__ &&
       return null;
     }
     function loadServerReference(response, metaData, parentObject, key) {
-      if ("then" === key) return null;
-      var id = metaData.id;
-      if ("string" !== typeof id) return null;
+      if ("then" === key || "string" !== typeof metaData.id) return null;
       if (!response._serverReferenceConfig)
         return createBoundServerReference(
           metaData,
@@ -2328,100 +2316,9 @@ __DEV__ &&
           response._encodeFormAction,
           response._debugFindSourceMapURL
         );
-      var serverReference = resolveServerReference(
-          response._serverReferenceConfig,
-          id
-        ),
-        bound = metaData.bound;
-      if ((metaData = preloadModule(serverReference)))
-        bound instanceof ReactPromise &&
-          (metaData = Promise.all([metaData, bound]));
-      else if (bound instanceof ReactPromise) metaData = Promise.resolve(bound);
-      else
-        return (
-          (metaData = requireModule(serverReference)),
-          registerBoundServerReference(metaData, id, bound),
-          metaData
-        );
-      if (initializingHandler) {
-        var handler = initializingHandler;
-        handler.deps++;
-      } else
-        handler = initializingHandler = {
-          parent: null,
-          chunk: null,
-          value: null,
-          reason: null,
-          deps: 1,
-          errored: !1
-        };
-      metaData.then(
-        function () {
-          var resolvedValue = requireModule(serverReference);
-          if (bound) {
-            var promiseValue = bound.value;
-            promiseValue = isArrayImpl(promiseValue)
-              ? promiseValue.slice(0)
-              : [];
-            promiseValue.unshift(null);
-            resolvedValue = resolvedValue.bind.apply(
-              resolvedValue,
-              promiseValue
-            );
-          }
-          registerBoundServerReference(resolvedValue, id, bound);
-          "__proto__" !== key && (parentObject[key] = resolvedValue);
-          "" === key &&
-            null === handler.value &&
-            (handler.value = resolvedValue);
-          if (
-            parentObject[0] === REACT_ELEMENT_TYPE &&
-            "object" === typeof handler.value &&
-            null !== handler.value &&
-            handler.value.$$typeof === REACT_ELEMENT_TYPE
-          )
-            switch (((promiseValue = handler.value), key)) {
-              case "3":
-                promiseValue.props = resolvedValue;
-                break;
-              case "4":
-                promiseValue._owner = resolvedValue;
-            }
-          handler.deps--;
-          initializeChunkIfUnblocked(response, handler);
-        },
-        function (error) {
-          if (!handler.errored) {
-            var blockedValue = handler.value,
-              erroredHandler = handler;
-            erroredHandler.errored = !0;
-            erroredHandler.value = null;
-            erroredHandler.reason = error;
-            erroredHandler = handler.chunk;
-            if (
-              null !== erroredHandler &&
-              "blocked" === erroredHandler.status
-            ) {
-              if (
-                "object" === typeof blockedValue &&
-                null !== blockedValue &&
-                blockedValue.$$typeof === REACT_ELEMENT_TYPE
-              ) {
-                var erroredComponent = {
-                  name: getComponentNameFromType(blockedValue.type) || "",
-                  owner: blockedValue._owner
-                };
-                erroredComponent.debugStack = blockedValue._debugStack;
-                supportsCreateTask &&
-                  (erroredComponent.debugTask = blockedValue._debugTask);
-                erroredHandler._debugInfo.push(erroredComponent);
-              }
-              triggerErrorOnChunk(response, erroredHandler, error);
-            }
-          }
-        }
+      throw Error(
+        "Server-reference decoding is not supported by the FB Flight bundler."
       );
-      return null;
     }
     function resolveLazy(value) {
       for (
@@ -5246,10 +5143,10 @@ __DEV__ &&
       return hook.checkDCE ? !0 : !1;
     })({
       bundleType: 1,
-      version: "19.3.0-www-modern-952f45b7-20261030",
+      version: "19.3.0-www-modern-16453bcd-20261030",
       rendererPackageName: "react-flight-server-fb",
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-952f45b7-20261030",
+      reconcilerVersion: "19.3.0-www-modern-16453bcd-20261030",
       getCurrentComponentInfo: function () {
         return currentOwnerInDEV;
       }
