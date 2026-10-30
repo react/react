@@ -14265,7 +14265,9 @@ function resolveRetryWakeable(boundaryFiber, wakeable) {
       retryCache = boundaryFiber.stateNode;
       break;
     case 22:
-      retryCache = boundaryFiber.stateNode._retryCache;
+      retryCache = boundaryFiber.stateNode;
+      if (null === retryCache) return;
+      retryCache = retryCache._retryCache;
       break;
     default:
       throw Error(formatProdErrorMessage(314));
@@ -20811,14 +20813,14 @@ function getCrossOriginStringAs(as, input) {
 }
 var isomorphicReactPackageVersion$jscomp$inline_2090 = React.version;
 if (
-  "19.3.0-www-modern-65cf7ab7-20261030" !==
+  "19.3.0-www-modern-952f45b7-20261030" !==
   isomorphicReactPackageVersion$jscomp$inline_2090
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2090,
-      "19.3.0-www-modern-65cf7ab7-20261030"
+      "19.3.0-www-modern-952f45b7-20261030"
     )
   );
 Internals.findDOMNode = function (componentOrElement) {
@@ -20836,10 +20838,10 @@ Internals.Events = [
 ];
 var internals$jscomp$inline_2626 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-65cf7ab7-20261030",
+  version: "19.3.0-www-modern-952f45b7-20261030",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-65cf7ab7-20261030"
+  reconcilerVersion: "19.3.0-www-modern-952f45b7-20261030"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_2627 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -21431,4 +21433,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-www-modern-65cf7ab7-20261030";
+exports.version = "19.3.0-www-modern-952f45b7-20261030";

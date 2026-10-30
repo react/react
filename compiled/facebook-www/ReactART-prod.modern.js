@@ -10933,7 +10933,9 @@ function resolveRetryWakeable(boundaryFiber, wakeable) {
       retryCache = boundaryFiber.stateNode;
       break;
     case 22:
-      retryCache = boundaryFiber.stateNode._retryCache;
+      retryCache = boundaryFiber.stateNode;
+      if (null === retryCache) return;
+      retryCache = retryCache._retryCache;
       break;
     default:
       throw Error(formatProdErrorMessage(314));
@@ -11464,10 +11466,10 @@ var slice = Array.prototype.slice,
   })(React.Component);
 var internals$jscomp$inline_1580 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-65cf7ab7-20261030",
+  version: "19.3.0-www-modern-952f45b7-20261030",
   rendererPackageName: "react-art",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-65cf7ab7-20261030"
+  reconcilerVersion: "19.3.0-www-modern-952f45b7-20261030"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1581 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11493,4 +11495,4 @@ exports.RadialGradient = RadialGradient;
 exports.Shape = TYPES.SHAPE;
 exports.Surface = Surface;
 exports.Text = Text;
-exports.version = "19.3.0-www-modern-65cf7ab7-20261030";
+exports.version = "19.3.0-www-modern-952f45b7-20261030";

@@ -19670,7 +19670,9 @@ __DEV__ &&
           retryCache = boundaryFiber.stateNode;
           break;
         case 22:
-          retryCache = boundaryFiber.stateNode._retryCache;
+          retryCache = boundaryFiber.stateNode;
+          if (null === retryCache) return;
+          retryCache = retryCache._retryCache;
           break;
         default:
           throw Error(
@@ -23433,7 +23435,7 @@ __DEV__ &&
         version: rendererVersion,
         rendererPackageName: rendererPackageName,
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-65cf7ab7-20261030"
+        reconcilerVersion: "19.3.0-www-classic-952f45b7-20261030"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);
