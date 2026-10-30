@@ -264,7 +264,7 @@ export type ResumableState = {
   idPrefix: string,
   nextFormID: number,
   streamingFormat: StreamingFormat,
-  externalRuntimeConfig?: string | BootstrapScriptDescriptor | void,
+  externalRuntimeConfig: string | BootstrapScriptDescriptor | void,
 
   // We carry the bootstrap intializers in resumable state in case we postpone in the shell
   // of a prerender. On resume we will reinitialize the bootstrap scripts if necessary.
