@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<a4b463a6e89f8d25fd26ed7ea47d6b5c>>
+ * @generated SignedSource<<ac326fe12f599870b8449ba288f4a944>>
  */
 
 /*
@@ -21638,14 +21638,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2483 = React.version;
 if (
-  "19.3.0-native-fb-c5ec5c6d-20261029" !==
+  "19.3.0-native-fb-a703ca64-20261030" !==
   isomorphicReactPackageVersion$jscomp$inline_2483
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2483,
-      "19.3.0-native-fb-c5ec5c6d-20261029"
+      "19.3.0-native-fb-a703ca64-20261030"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -21667,10 +21667,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2490 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-c5ec5c6d-20261029",
+  version: "19.3.0-native-fb-a703ca64-20261030",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-c5ec5c6d-20261029",
+  reconcilerVersion: "19.3.0-native-fb-a703ca64-20261030",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$351 = 0;
@@ -21793,4 +21793,4 @@ exports.hydrateRoot = function (container, initialChildren, options) {
   listenToAllSupportedEvents(container);
   return new ReactDOMHydrationRoot(initialChildren);
 };
-exports.version = "19.3.0-native-fb-c5ec5c6d-20261029";
+exports.version = "19.3.0-native-fb-a703ca64-20261030";
