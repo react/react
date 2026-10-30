@@ -693,8 +693,10 @@ describe('ReactDOMFizzStaticBrowser', () => {
     const doc = new JSDOM(html).window.document;
     expect(doc.querySelectorAll('template[data-rci]')).toHaveLength(1);
     const scripts = doc.querySelectorAll('script[src="/react-runtime.js"]');
-    // FIXME: Resuming an empty prelude should emit the external runtime script.
-    expect(scripts).toHaveLength(0);
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0].hasAttribute('async')).toBe(true);
+    expect(scripts[0].getAttribute('integrity')).toBe('sha256-runtime');
+    expect(scripts[0].getAttribute('nonce')).toBe('resume-nonce');
   });
 
   it('can resume render of a prerender', async () => {
