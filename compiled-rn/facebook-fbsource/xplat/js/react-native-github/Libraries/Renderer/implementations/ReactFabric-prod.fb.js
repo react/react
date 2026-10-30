@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<eb627f066c66d8b3a006d6f67d726eaa>>
+ * @generated SignedSource<<094f95097b222f96e04c74fc2e80be2b>>
  */
 
 "use strict";
@@ -11653,7 +11653,9 @@ function resolveRetryWakeable(boundaryFiber, wakeable) {
       retryCache = boundaryFiber.stateNode;
       break;
     case 22:
-      retryCache = boundaryFiber.stateNode._retryCache;
+      retryCache = boundaryFiber.stateNode;
+      if (null === retryCache) return;
+      retryCache = retryCache._retryCache;
       break;
     default:
       throw Error(
@@ -12463,10 +12465,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1351 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-65cf7ab7-20261030",
+    version: "19.3.0-native-fb-952f45b7-20261030",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-65cf7ab7-20261030"
+    reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1351.rendererConfig = extraDevToolsConfig);

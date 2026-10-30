@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<eb2053adbb1f70bb093f20d8be013cce>>
+ * @generated SignedSource<<1afa56ba9054ec2107bca1ee284d1e8b>>
  */
 
 "use strict";
@@ -10433,7 +10433,9 @@ function resolveRetryWakeable(boundaryFiber, wakeable) {
       retryCache = boundaryFiber.stateNode;
       break;
     case 22:
-      retryCache = boundaryFiber.stateNode._retryCache;
+      retryCache = boundaryFiber.stateNode;
+      if (null === retryCache) return;
+      retryCache = retryCache._retryCache;
       break;
     default:
       throw Error(
@@ -11101,10 +11103,10 @@ function wrapFiber(fiber) {
 }
 var internals$jscomp$inline_1567 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-65cf7ab7-20261030",
+  version: "19.3.0-native-fb-952f45b7-20261030",
   rendererPackageName: "react-test-renderer",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-65cf7ab7-20261030"
+  reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1568 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11240,4 +11242,4 @@ exports.unstable_batchedUpdates = function (fn, a) {
         flushSyncWorkAcrossRoots_impl(0, !0));
   }
 };
-exports.version = "19.3.0-native-fb-65cf7ab7-20261030";
+exports.version = "19.3.0-native-fb-952f45b7-20261030";

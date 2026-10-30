@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<4d9ee955664fdc9d65b1ffb88b60c6ab>>
+ * @generated SignedSource<<9fcfba8050f834bf6f2be4b5ab243727>>
  */
 
 "use strict";
@@ -17139,7 +17139,9 @@ __DEV__ &&
           retryCache = boundaryFiber.stateNode;
           break;
         case 22:
-          retryCache = boundaryFiber.stateNode._retryCache;
+          retryCache = boundaryFiber.stateNode;
+          if (null === retryCache) return;
+          retryCache = retryCache._retryCache;
           break;
         default:
           throw Error(
@@ -21381,10 +21383,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-65cf7ab7-20261030",
+        version: "19.3.0-native-fb-952f45b7-20261030",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-65cf7ab7-20261030"
+        reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

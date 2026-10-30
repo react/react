@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<879bb05f7306e79d1bc78053f4482457>>
+ * @generated SignedSource<<eab9a366d5653d0eb41ac83e14a4eaa3>>
  */
 
 "use strict";
@@ -14047,7 +14047,9 @@ __DEV__ &&
           retryCache = boundaryFiber.stateNode;
           break;
         case 22:
-          retryCache = boundaryFiber.stateNode._retryCache;
+          retryCache = boundaryFiber.stateNode;
+          if (null === retryCache) return;
+          retryCache = retryCache._retryCache;
           break;
         default:
           throw Error(
@@ -17151,10 +17153,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-65cf7ab7-20261030",
+        version: "19.3.0-native-fb-952f45b7-20261030",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-65cf7ab7-20261030"
+        reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -17300,5 +17302,5 @@ __DEV__ &&
             flushSyncWorkAcrossRoots_impl(0, !0));
       }
     };
-    exports.version = "19.3.0-native-fb-65cf7ab7-20261030";
+    exports.version = "19.3.0-native-fb-952f45b7-20261030";
   })();
