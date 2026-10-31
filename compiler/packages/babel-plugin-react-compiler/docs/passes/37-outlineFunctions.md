@@ -13,6 +13,7 @@ A function with no captured context is completely self-contained - it only uses 
 - Functions must have `context.length === 0` (no captured variables)
 - Functions must be anonymous (no `id` property)
 - Functions must not be FBT macro operands (tracked by `fbtOperands` parameter)
+- Functions must not carry an opt-out directive (`'use no memo'` / `'use no forget'`); opted-out functions are also not recursed into, so their inner functions are never outlined
 
 ## Output Guarantees
 - Pure function expressions are replaced with `LoadGlobal` of the outlined function
@@ -94,6 +95,16 @@ const b = function() {};     // Outlined if no context
 Self-referencing functions cannot be outlined (they would have themselves in context):
 ```javascript
 const fib = (n) => n <= 1 ? n : fib(n-1) + fib(n-2);  // References self
+```
+
+### Opt-Out Directives
+Functions with an opt-out directive are skipped entirely — neither outlined nor recursed into:
+```javascript
+const helper = (x) => {
+  'use no memo';
+  const inner = (y) => y + 1;  // Not outlined either
+  return inner(x);
+};
 ```
 
 ## TODOs

@@ -39,6 +39,7 @@ use react_compiler_diagnostics::CompilerErrorDetail;
 use react_compiler_diagnostics::CompilerErrorOrDiagnostic;
 use react_compiler_diagnostics::ErrorCategory;
 use react_compiler_diagnostics::SourceLocation;
+use react_compiler_hir::OPT_OUT_DIRECTIVES;
 use react_compiler_hir::ReactFunctionType;
 use react_compiler_hir::environment_config::EnvironmentConfig;
 use react_compiler_lowering::FunctionNode;
@@ -78,9 +79,6 @@ const DEFAULT_ESLINT_SUPPRESSIONS: &[&str] =
 
 /// Directives that opt a function into memoization
 const OPT_IN_DIRECTIVES: &[&str] = &["use forget", "use memo"];
-
-/// Directives that opt a function out of memoization
-const OPT_OUT_DIRECTIVES: &[&str] = &["use no forget", "use no memo"];
 
 // -----------------------------------------------------------------------
 // Internal types
