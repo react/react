@@ -69,7 +69,9 @@ export function getSuspenseInstanceFromFiber(
 ): null | SuspenseInstance {
   if (fiber.tag === SuspenseComponent) {
     let suspenseState: SuspenseState | null = fiber.memoizedState;
-    if (suspenseState === null) {
+    if (suspenseState === null || suspenseState.dehydrated === null) {
+      // A fallback may have hydrated without resolving the primary content.
+      // Before it commits, events must still wait on the current instance.
       const current = fiber.alternate;
       if (current !== null) {
         suspenseState = current.memoizedState;
