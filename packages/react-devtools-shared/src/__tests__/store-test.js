@@ -4157,4 +4157,47 @@ describe('Store', () => {
     styleID = agent.getIDForHostInstance(style).id;
     expect(store.containsElement(styleID)).toBe(true);
   });
+
+  // @reactVersion >= 18.0
+  it('releases host instances deleted from a component that stays mounted', async () => {
+    const divRef = React.createRef();
+    const spanRef = React.createRef();
+    function Item({id, show}) {
+      return show ? (
+        <div key={id} ref={divRef}>
+          <span ref={spanRef} />
+        </div>
+      ) : null;
+    }
+
+    await act(() => render(<Item id={1} show={true} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Item>
+    `);
+    const itemID = store.getElementIDAtIndex(0);
+    const firstDiv = divRef.current;
+    const firstSpan = spanRef.current;
+    expect(agent.getIDForHostInstance(firstDiv).id).toBe(itemID);
+    expect(agent.getIDForHostInstance(firstSpan).id).toBe(itemID);
+
+    // Replace the host subtree with a new keyed one.
+    await act(() => render(<Item id={2} show={true} />));
+    const secondDiv = divRef.current;
+    const secondSpan = spanRef.current;
+    expect(secondDiv).not.toBe(firstDiv);
+    expect(agent.getIDForHostInstance(secondDiv).id).toBe(itemID);
+    expect(agent.getIDForHostInstance(secondSpan).id).toBe(itemID);
+    expect(agent.getIDForHostInstance(firstDiv)).toBe(null);
+    expect(agent.getIDForHostInstance(firstSpan)).toBe(null);
+
+    // Remove the host subtree.
+    await act(() => render(<Item id={2} show={false} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Item>
+    `);
+    expect(agent.getIDForHostInstance(secondDiv)).toBe(null);
+    expect(agent.getIDForHostInstance(secondSpan)).toBe(null);
+  });
 });

@@ -4464,6 +4464,24 @@ export function attach(
         trackDebugInfoFromHostComponent(nearestInstance, nextFiber);
       }
 
+      const deletions = nextFiber.deletions;
+      if (prevFiber !== nextFiber && deletions != null) {
+        // Filtered Fibers (like host components) that were deleted in this commit
+        // don't have an instance in the remaining set, so they won't get untracked
+        // when the remaining children are unmounted. If their nearest instance stays
+        // mounted, we'd hold on to the deleted host instances until it unmounts or
+        // forever. Release them here instead.
+        const nearestInstance = reconcilingParent;
+        if (nearestInstance !== null) {
+          for (let i = 0; i < deletions.length; i++) {
+            const deletedFiber = deletions[i];
+            if (shouldFilterFiber(deletedFiber)) {
+              untrackFiber(nearestInstance, deletedFiber);
+            }
+          }
+        }
+      }
+
       // The behavior of timed-out legacy Suspense trees is unique. Without the Offscreen wrapper.
       // Rather than unmount the timed out content (and possibly lose important state),
       // React re-parents this content within a hidden Fragment while the fallback is showing.
