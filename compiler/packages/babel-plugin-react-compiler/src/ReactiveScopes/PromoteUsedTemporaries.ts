@@ -297,6 +297,7 @@ class PromoteInterposedTemporaries extends ReactiveFunctionVisitor<InterState> {
     switch (instruction.value.kind) {
       case 'CallExpression':
       case 'MethodCall':
+      case 'TaggedTemplateExpression':
       case 'Await':
       case 'PropertyStore':
       case 'PropertyDelete':

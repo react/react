@@ -723,8 +723,10 @@ pub enum InstructionValue {
         loc: Option<SourceLocation>,
     },
     TaggedTemplateExpression {
+        receiver: Option<Place>,
         tag: Place,
-        value: TemplateQuasi,
+        subexprs: Vec<Place>,
+        quasis: Vec<TemplateQuasi>,
         loc: Option<SourceLocation>,
     },
     TemplateLiteral {

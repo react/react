@@ -412,6 +412,12 @@ export function findDisjointMutableValues(
           }
         }
       }
+      if (
+        instr.value.kind === 'TaggedTemplateExpression' &&
+        instr.value.receiver !== null
+      ) {
+        operands.push(instr.value.tag.identifier);
+      }
       if (operands.length !== 0) {
         scopeIdentifiers.union(operands);
       }

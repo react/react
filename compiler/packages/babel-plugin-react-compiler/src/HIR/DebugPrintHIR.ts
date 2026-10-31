@@ -617,11 +617,24 @@ export class DebugPrinter {
       case 'TaggedTemplateExpression': {
         this.line('TaggedTemplateExpression {');
         this.indent();
+        if (instrValue.receiver !== null) {
+          this.formatPlaceField('receiver', instrValue.receiver);
+        }
         this.formatPlaceField('tag', instrValue.tag);
-        this.line(`raw: ${JSON.stringify(instrValue.value.raw)}`);
-        this.line(
-          `cooked: ${instrValue.value.cooked !== undefined ? JSON.stringify(instrValue.value.cooked) : 'undefined'}`,
-        );
+        this.line('subexprs:');
+        this.indent();
+        instrValue.subexprs.forEach((sub, i) => {
+          this.formatPlaceField(`[${i}]`, sub);
+        });
+        this.dedent();
+        this.line('quasis:');
+        this.indent();
+        instrValue.quasis.forEach((q, i) => {
+          this.line(
+            `[${i}] { raw: ${JSON.stringify(q.raw)}, cooked: ${q.cooked !== undefined ? JSON.stringify(q.cooked) : 'undefined'} }`,
+          );
+        });
+        this.dedent();
         this.line(`loc: ${this.formatLoc(instrValue.loc)}`);
         this.dedent();
         this.line('}');

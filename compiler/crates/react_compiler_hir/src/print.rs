@@ -1267,21 +1267,38 @@ impl<'a> PrintFormatter<'a> {
                 self.line("}");
             }
             InstructionValue::TaggedTemplateExpression {
+                receiver,
                 tag,
-                value: val,
+                subexprs,
+                quasis,
                 loc,
             } => {
                 self.line("TaggedTemplateExpression {");
                 self.indent();
+                if let Some(receiver) = receiver {
+                    self.format_place_field("receiver", receiver);
+                }
                 self.format_place_field("tag", tag);
-                self.line(&format!("raw: {}", format_js_string(&val.raw)));
-                self.line(&format!(
-                    "cooked: {}",
-                    match &val.cooked {
-                        Some(c) => format_js_string(c),
-                        None => "undefined".to_string(),
-                    }
-                ));
+                self.line("subexprs:");
+                self.indent();
+                for (i, sub) in subexprs.iter().enumerate() {
+                    self.format_place_field(&format!("[{}]", i), sub);
+                }
+                self.dedent();
+                self.line("quasis:");
+                self.indent();
+                for (i, q) in quasis.iter().enumerate() {
+                    self.line(&format!(
+                        "[{}] {{ raw: {}, cooked: {} }}",
+                        i,
+                        format_js_string(&q.raw),
+                        match &q.cooked {
+                            Some(c) => format_js_string(c),
+                            None => "undefined".to_string(),
+                        }
+                    ));
+                }
+                self.dedent();
                 self.line(&format!("loc: {}", format_loc(loc)));
                 self.dedent();
                 self.line("}");
