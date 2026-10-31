@@ -243,6 +243,17 @@ describe('ReactJSXRuntime', () => {
     ]);
   });
 
+  it('should warn when an empty `key` is being accessed', () => {
+    const element = JSXRuntime.jsx('div', {}, '');
+    void element.props.key;
+    assertConsoleErrorDev([
+      'div: `key` is not a prop. Trying to access it will result ' +
+        'in `undefined` being returned. If you need to access the same ' +
+        'value within the child component, you should pass it as a different ' +
+        'prop. (https://react.dev/link/special-props)',
+    ]);
+  });
+
   it('should warn when unkeyed children are passed to jsx', async () => {
     const container = document.createElement('div');
 
