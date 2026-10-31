@@ -167,6 +167,26 @@ let isInHookUserCodeInDev = false;
 // In DEV, this is the name of the currently executing primitive hook
 let currentHookNameInDev: ?string;
 
+type HooksState = {
+  currentlyRenderingComponent: Object | null,
+  currentlyRenderingTask: Task | null,
+  currentlyRenderingRequest: Request | null,
+  currentlyRenderingKeyPath: KeyNode | null,
+  firstWorkInProgressHook: Hook | null,
+  workInProgressHook: Hook | null,
+  isReRender: boolean,
+  didScheduleRenderPhaseUpdate: boolean,
+  localIdCounter: number,
+  actionStateCounter: number,
+  actionStateMatchingIndex: number,
+  thenableIndexCounter: number,
+  thenableState: ThenableState | null,
+  renderPhaseUpdates: Map<UpdateQueue<any>, Update<any>> | null,
+  numberOfReRenders: number,
+  isInHookUserCodeInDev: boolean,
+  currentHookNameInDev: ?string,
+};
+
 function resolveCurrentlyRenderingComponent(): Object {
   if (currentlyRenderingComponent === null) {
     throw new Error(
@@ -362,6 +382,48 @@ export function getActionStateMatchingIndex(): number {
   // Conceptually, it's part of the return value of finishHooks; it's only a
   // separate function to avoid using an array tuple.
   return actionStateMatchingIndex;
+}
+
+export function getCurrentHooksState(): HooksState {
+  return {
+    currentlyRenderingComponent,
+    currentlyRenderingTask,
+    currentlyRenderingRequest,
+    currentlyRenderingKeyPath,
+    firstWorkInProgressHook,
+    workInProgressHook,
+    isReRender,
+    didScheduleRenderPhaseUpdate,
+    localIdCounter,
+    actionStateCounter,
+    actionStateMatchingIndex,
+    thenableIndexCounter,
+    thenableState,
+    renderPhaseUpdates,
+    numberOfReRenders,
+    isInHookUserCodeInDev,
+    currentHookNameInDev,
+  };
+}
+
+export function restoreHooksState(state: HooksState): void {
+  currentlyRenderingComponent = state.currentlyRenderingComponent;
+  currentlyRenderingTask = state.currentlyRenderingTask;
+  currentlyRenderingRequest = state.currentlyRenderingRequest;
+  currentlyRenderingKeyPath = state.currentlyRenderingKeyPath;
+  firstWorkInProgressHook = state.firstWorkInProgressHook;
+  workInProgressHook = state.workInProgressHook;
+  isReRender = state.isReRender;
+  didScheduleRenderPhaseUpdate = state.didScheduleRenderPhaseUpdate;
+  localIdCounter = state.localIdCounter;
+  actionStateCounter = state.actionStateCounter;
+  actionStateMatchingIndex = state.actionStateMatchingIndex;
+  thenableIndexCounter = state.thenableIndexCounter;
+  thenableState = state.thenableState;
+  renderPhaseUpdates = state.renderPhaseUpdates;
+  numberOfReRenders = state.numberOfReRenders;
+  isInHookUserCodeInDev = state.isInHookUserCodeInDev;
+  currentHookNameInDev = state.currentHookNameInDev;
 }
 
 // Reset the internal hooks state if an error occurs while rendering a component
