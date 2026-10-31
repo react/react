@@ -133,6 +133,12 @@ export function enqueueConcurrentHookUpdateAndEagerlyBailout<S, A>(
   // only reason we queue it is in case there's a subsequent higher priority
   // update that causes it to be rebased.
   const lane = NoLane;
+  // We're not scheduling any work, so nothing will ever render this update at
+  // the lane it was dispatched at. Clear the lane on the update itself, too.
+  // Otherwise a render at some other lane would skip the update, re-schedule
+  // its lane, and then replay the queue from a base state that doesn't include
+  // the updates that were made during that render.
+  update.lane = lane;
   const concurrentQueue: ConcurrentQueue = queue as any;
   const concurrentUpdate: ConcurrentUpdate = update as any;
   enqueueUpdate(fiber, concurrentQueue, concurrentUpdate, lane);
