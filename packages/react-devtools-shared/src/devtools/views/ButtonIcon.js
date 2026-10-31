@@ -216,7 +216,11 @@ export default function ButtonIcon({className = '', type}: Props): React.Node {
       height="24"
       viewBox={viewBox}>
       <path d="M0 0h24v24H0z" fill="none" />
-      <path fill="currentColor" d={pathData} />
+      {typeof pathData === 'string' ? (
+        <path fill="currentColor" d={pathData} />
+      ) : (
+        pathData
+      )}
     </svg>
   );
 }
