@@ -2256,7 +2256,19 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
   );
 
   pingTask(request, newTask);
-  return serializeLazyID(newTask.id);
+  const lazyReference = serializeLazyID(newTask.id);
+  const model = task.model;
+  const writtenObjects = request.writtenObjects;
+  if (
+    typeof model === 'object' &&
+    model !== null &&
+    writtenObjects.get(model) === serializeByValueID(newTask.id)
+  ) {
+    // Like outlineTask: later occurrences of the deferred element are lazy
+    // too, or the model holding them would wait for it to render.
+    writtenObjects.set(model, lazyReference);
+  }
+  return lazyReference;
 }
 
 function outlineTask(request: Request, task: Task): ReactJSONValue {
@@ -2281,7 +2293,20 @@ function outlineTask(request: Request, task: Task): ReactJSONValue {
   }
   // This didn't complete synchronously so it wouldn't have even if we didn't
   // outline it, so this would reduce to a lazy reference even in prod.
-  return serializeLazyID(newTask.id);
+  const lazyReference = serializeLazyID(newTask.id);
+  const model = task.model;
+  const writtenObjects = request.writtenObjects;
+  if (
+    typeof model === 'object' &&
+    model !== null &&
+    writtenObjects.get(model) === serializeByValueID(newTask.id)
+  ) {
+    // createTask registered the element by the new task's ID. Later
+    // occurrences of the same element would then wait for the component to
+    // render before the model holding them can resolve. They are lazy too.
+    writtenObjects.set(model, lazyReference);
+  }
+  return lazyReference;
 }
 
 function outlineHaltedTask(
@@ -3267,6 +3292,18 @@ function outlineModelWithFormatContext(
     null, // have any context on the server but can on the client.
   );
   retryTask(request, newTask);
+  if (
+    newTask.status !== COMPLETED &&
+    typeof value === 'object' &&
+    value !== null &&
+    ((value as any).$$typeof === REACT_ELEMENT_TYPE ||
+      (value as any).$$typeof === REACT_LAZY_TYPE) &&
+    request.writtenObjects.get(value) === serializeByValueID(newTask.id)
+  ) {
+    // Like outlineTask: an element that did not render synchronously is lazy
+    // for later occurrences, or the model holding them would wait for it.
+    request.writtenObjects.set(value, serializeLazyID(newTask.id));
+  }
   return newTask.id;
 }
 
@@ -3457,12 +3494,17 @@ function serializeIterator(
 function serializeTypedArray(
   request: Request,
   tag: string,
+  value: ArrayBuffer | $ArrayBufferView,
   typedArray: $ArrayBufferView,
 ): string {
   request.pendingChunks++;
   const bufferId = request.nextChunkId++;
   emitTypedArrayChunk(request, bufferId, tag, typedArray, false);
-  return serializeByValueID(bufferId);
+  const reference = serializeByValueID(bufferId);
+  // A destination may transfer the bytes rather than copy them, which detaches
+  // the buffer, so any other place that holds the value refers to this row.
+  request.writtenObjects.set(value, reference);
+  return reference;
 }
 
 function serializeDebugTypedArray(
@@ -4095,55 +4137,55 @@ function renderModelDestructive(
       return serializeErrorValue(request, value);
     }
     if (value instanceof ArrayBuffer) {
-      return serializeTypedArray(request, 'A', new Uint8Array(value));
+      return serializeTypedArray(request, 'A', value, new Uint8Array(value));
     }
     if (value instanceof Int8Array) {
       // char
-      return serializeTypedArray(request, 'O', value);
+      return serializeTypedArray(request, 'O', value, value);
     }
     if (value instanceof Uint8Array) {
       // unsigned char
-      return serializeTypedArray(request, 'o', value);
+      return serializeTypedArray(request, 'o', value, value);
     }
     if (value instanceof Uint8ClampedArray) {
       // unsigned clamped char
-      return serializeTypedArray(request, 'U', value);
+      return serializeTypedArray(request, 'U', value, value);
     }
     if (value instanceof Int16Array) {
       // sort
-      return serializeTypedArray(request, 'S', value);
+      return serializeTypedArray(request, 'S', value, value);
     }
     if (value instanceof Uint16Array) {
       // unsigned short
-      return serializeTypedArray(request, 's', value);
+      return serializeTypedArray(request, 's', value, value);
     }
     if (value instanceof Int32Array) {
       // long
-      return serializeTypedArray(request, 'L', value);
+      return serializeTypedArray(request, 'L', value, value);
     }
     if (value instanceof Uint32Array) {
       // unsigned long
-      return serializeTypedArray(request, 'l', value);
+      return serializeTypedArray(request, 'l', value, value);
     }
     if (value instanceof Float32Array) {
       // float
-      return serializeTypedArray(request, 'G', value);
+      return serializeTypedArray(request, 'G', value, value);
     }
     if (value instanceof Float64Array) {
       // double
-      return serializeTypedArray(request, 'g', value);
+      return serializeTypedArray(request, 'g', value, value);
     }
     if (value instanceof BigInt64Array) {
       // number
-      return serializeTypedArray(request, 'M', value);
+      return serializeTypedArray(request, 'M', value, value);
     }
     if (value instanceof BigUint64Array) {
       // unsigned number
       // We use "m" instead of "n" since JSON can start with "null"
-      return serializeTypedArray(request, 'm', value);
+      return serializeTypedArray(request, 'm', value, value);
     }
     if (value instanceof DataView) {
-      return serializeTypedArray(request, 'V', value);
+      return serializeTypedArray(request, 'V', value, value);
     }
     // TODO: Blob is not available in old Node. Remove the typeof check later.
     if (typeof Blob === 'function' && value instanceof Blob) {
@@ -5540,7 +5582,12 @@ function renderDebugModel(
 
     const iteratorFn = getIteratorFn(value);
     if (iteratorFn) {
-      return Array.from(value as any);
+      const iterator = iteratorFn.call(value);
+      if (iterator !== value) {
+        return Array.from(iterator as any);
+      }
+      // An iterator can only be read once, and the model that holds it will
+      // read it. Describe it by its shape below instead of consuming it.
     }
 
     const proto = getPrototypeOf(value);

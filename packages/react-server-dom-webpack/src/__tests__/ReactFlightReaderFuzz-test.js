@@ -2513,22 +2513,10 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
     }
   }
 
-  // Two writer bugs in DEV keep server components and sync iterators out of
-  // the random graphs: a suspended server component that occurs twice waits
-  // for its render, and debug info drains an iterator before the model is
-  // written.
-  // These leaves wait for fixes further up the stack: a large typed array held
-  // in two places arrives empty the second time, an object key whose value is
-  // undefined is dropped, and a cycle through a property name with a colon
+  // These leaves wait for fixes further up the stack: an object key whose value
+  // is undefined is dropped, and a cycle through a property name with a colon
   // overflows the writer's stack.
-  const unsupportedMoves = [
-    'component',
-    'failing component',
-    'iterator',
-    'large binary',
-    'undefined',
-    'colon',
-  ];
+  const unsupportedMoves = ['undefined', 'colon'];
 
   describe('generated graphs', () => {
     seeds.forEach(seed => {
@@ -2745,9 +2733,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // Writer bug, DEV only.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('iterator resolved by a Promise', () =>
+    it('iterator resolved by a Promise', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2951,9 +2937,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'component', other: 'data'},
       }));
 
-    // Writer bug, DEV only.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('suspended server component element used twice', () =>
+    it('suspended server component element used twice', () =>
       runGraph({
         nodes: {
           body: {value: 'shared'},
