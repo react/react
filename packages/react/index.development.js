@@ -33,6 +33,7 @@ export {
   PureComponent,
   StrictMode,
   Suspense,
+  unstable_ServerErrorBoundary,
   cloneElement,
   createContext,
   createElement,

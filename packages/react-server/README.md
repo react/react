@@ -18,6 +18,44 @@ This is an experimental package for creating custom React streaming server rende
 
 This part of the Readme is not fully developed yet
 
+### Experimental server error recovery
+
+`unstable_ServerErrorBoundary` is an experimental React boundary with a static
+error fallback:
+
+```jsx
+import {unstable_ServerErrorBoundary as ServerErrorBoundary} from 'react';
+
+<Layout>
+  <ServerErrorBoundary fallback={<p>Content is unavailable.</p>}>
+    <Content />
+  </ServerErrorBoundary>
+</Layout>
+```
+
+Fizz waits for the boundary's children before completing its surrounding shell.
+If they throw, Fizz reports the error through `onError` and includes the fallback
+in the HTML, preserving the surrounding layout. A pending Promise does not render
+the error fallback. An explicit nested `Suspense` still owns its loading fallback
+and its existing server error recovery behavior.
+
+The boundary uses the existing Suspense HTML markers. Hydration retries the
+children; a persistent client error is caught by the boundary. Change its `key`
+to reset a caught error. Errors or suspensions in the fallback propagate to the
+parent. The fallback receives no error object; use the renderer's error callbacks
+for diagnostics.
+
+Aborting a live render while the shell is still waiting does not turn pending
+content into an error fallback. An aborted prerender can postpone the shell and
+resume it later through the existing prerender/resume APIs.
+
+The symbol can be passed through Flight. Errors from Server Components continue
+to use Flight's existing error records, which Fizz and the client can handle at
+this boundary. This does not add HTTP status handling or distinguish framework
+control-flow errors such as redirects and not-found signals. Frameworks must
+decide where to place this boundary and how those signals should be handled.
+Once an HTTP response has started, its status cannot be changed by this boundary.
+
 ## `Flight` Usage
 
 To use `react-server` for React Server Components you must set up an implementation package alongside `react-client`. Use an existing implementation such as `react-server-dom-webpack` as a guide.

@@ -29,6 +29,7 @@ export const enableCreateEventHandleAPI: boolean = false;
 export const enableSuspenseCallback: boolean = false;
 export const disableTextareaChildren: boolean = false;
 export const enableSuspenseAvoidThisFallback: boolean = false;
+export const enableServerErrorBoundary: boolean = __EXPERIMENTAL__;
 export const enableCPUSuspense: boolean = false;
 export const enableNoCloningMemoCache: boolean = false;
 export const enableLegacyFBSupport: boolean = false;
