@@ -3292,6 +3292,27 @@ export function hydrateProperties(
     trapClickOnNonInteractiveElement(domElement as any as HTMLElement);
   }
 
+  if (isCustomElement(tag, props)) {
+    // Custom events are attached as native listeners on the element. This is
+    // normally done while setting the initial properties, which we skip when
+    // hydrating, so we need to attach the listeners here.
+    for (const propKey in props) {
+      if (
+        propKey[0] === 'o' &&
+        propKey[1] === 'n' &&
+        props.hasOwnProperty(propKey) &&
+        typeof props[propKey] === 'function' &&
+        !registrationNameDependencies.hasOwnProperty(propKey)
+      ) {
+        setValueForPropertyOnCustomComponent(
+          domElement,
+          propKey,
+          props[propKey],
+        );
+      }
+    }
+  }
+
   return true;
 }
 
