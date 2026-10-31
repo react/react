@@ -1865,7 +1865,12 @@ function replaySuspenseBoundary(
     // We use the safe form because we don't handle suspending here. Only error handling.
     renderNode(request, task, content, -1);
 
-    if (task.replay.pendingTasks === 1 && task.replay.nodes.length > 0) {
+    if (
+      resumedBoundary.status !== POSTPONED &&
+      !request.aborted &&
+      task.replay.pendingTasks === 1 &&
+      task.replay.nodes.length > 0
+    ) {
       throw new Error(
         "Couldn't find all resumable slots by key/index during replaying. " +
           "The tree doesn't match so React will fallback to client rendering.",
@@ -3323,6 +3328,9 @@ function replayElement(
       try {
         renderElement(request, task, keyPath, type, props, ref);
         if (
+          (task.blockedBoundary === null ||
+            task.blockedBoundary.status !== POSTPONED) &&
+          !request.aborted &&
           task.replay.pendingTasks === 1 &&
           task.replay.nodes.length > 0
           // TODO check remaining slots
@@ -3880,7 +3888,13 @@ function replayFragment(
     task.replay = {nodes: childNodes, slots: childSlots, pendingTasks: 1};
     try {
       renderChildrenArray(request, task, children, -1);
-      if (task.replay.pendingTasks === 1 && task.replay.nodes.length > 0) {
+      if (
+        (task.blockedBoundary === null ||
+          task.blockedBoundary.status !== POSTPONED) &&
+        !request.aborted &&
+        task.replay.pendingTasks === 1 &&
+        task.replay.nodes.length > 0
+      ) {
         throw new Error(
           "Couldn't find all resumable slots by key/index during replaying. " +
             "The tree doesn't match so React will fallback to client rendering.",
@@ -4280,6 +4294,41 @@ function trackPostpone(
   }
 }
 
+function trackPostponeReplay(
+  request: Request,
+  trackedPostpones: PostponedHoles,
+  task: Task,
+): void {
+  const boundary = task.blockedBoundary;
+  if (boundary === null) {
+    return;
+  }
+  const boundaryNode = trackPostponedBoundary(
+    request,
+    trackedPostpones,
+    boundary,
+  );
+  const replay = task.replay;
+  if (replay !== null) {
+    if (boundaryNode[2].length === 0) {
+      boundaryNode[2] = replay.nodes;
+    } else if (boundaryNode[2] !== replay.nodes) {
+      for (let i = 0; i < replay.nodes.length; i++) {
+        boundaryNode[2].push(replay.nodes[i]);
+      }
+    }
+    if (boundaryNode[3] === null) {
+      boundaryNode[3] = replay.slots;
+    } else if (
+      typeof boundaryNode[3] === 'object' &&
+      typeof replay.slots === 'object' &&
+      replay.slots !== null
+    ) {
+      assign(boundaryNode[3], replay.slots);
+    }
+  }
+}
+
 // In case a boundary errors, we need to stop tracking it because we won't
 // resume it.
 function untrackBoundary(request: Request, boundary: SuspenseBoundary) {
@@ -4405,6 +4454,32 @@ function postponeNewSuspendedRenderTask(
   }
 }
 
+function postponeNewSuspendedReplayTask(
+  request: Request,
+  task: ReplayTask,
+  thenableState: ThenableState | null,
+): void {
+  // Preserve the replay progress so far and track a postponed hole for the
+  // remaining replay nodes/slots. The request has already been aborted, so
+  // this new task must be finished now rather than scheduled for another attempt.
+  const postponedTask = spawnNewSuspendedReplayTask(
+    request,
+    task,
+    thenableState,
+  );
+  if (__DEV__) {
+    abortTaskDEV(postponedTask, request);
+  } else {
+    abortTask(postponedTask, request);
+  }
+  postponedTask.abortSet.delete(postponedTask);
+  if (__DEV__) {
+    finishAbortedTaskDEV(postponedTask, request, request.fatalError);
+  } else {
+    finishAbortedTask(postponedTask, request, request.fatalError);
+  }
+}
+
 // This is a non-destructive form of rendering a node. If it suspends it spawns
 // a new task and restores the context of this task to what it was before.
 function renderNode(
@@ -4448,9 +4523,44 @@ function renderNode(
           : thrownValue;
 
       if (request.aborted) {
-        // We are aborting so we can just bubble up to the task by falling through
+        if (
+          request.trackedPostpones !== null &&
+          task.blockedBoundary !== null
+        ) {
+          const thenableState =
+            thrownValue === SuspenseException
+              ? getThenableStateAfterSuspending()
+              : null;
+          postponeNewSuspendedReplayTask(
+            request,
+            // $FlowFixMe[incompatible-type]: Refined.
+            task,
+            thenableState,
+          );
+
+          // Restore the context. We assume that this will be restored by the inner
+          // functions in case nothing throws so we don't use "finally" here.
+          task.formatContext = previousFormatContext;
+          if (!disableLegacyContext) {
+            task.legacyContext = previousLegacyContext;
+          }
+          task.context = previousContext;
+          task.keyPath = previousKeyPath;
+          task.treeContext = previousTreeContext;
+          task.componentStack = previousComponentStack;
+          task.replay = previousReplaySet;
+          if (__DEV__) {
+            task.debugTask = previousDebugTask;
+          }
+          // Restore all active ReactContexts to what they were before.
+          switchContext(previousContext);
+          return;
+        }
+      } else if (
+        typeof x === 'object' &&
         // $FlowFixMe[invalid-compare]
-      } else if (typeof x === 'object' && x !== null) {
+        x !== null
+      ) {
         // $FlowFixMe[method-unbinding]
         if (typeof x.then === 'function') {
           const wakeable: Wakeable = x as any;
@@ -5064,22 +5174,31 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
     // boundary the message is referring to
     const trackedPostpones = request.trackedPostpones;
     if (boundary.status !== CLIENT_RENDERED) {
-      if (
-        !isRecoverableReason &&
-        trackedPostpones !== null &&
-        segment !== null
-      ) {
-        // We are aborting a prerender and must halt this boundary.
-        // We treat this like other postpones during prerendering
-        logRecoverableError(request, error, errorInfo, task.debugTask);
-        trackPostpone(request, trackedPostpones, task, segment);
-        // If this boundary was still pending then we haven't already cancelled its fallbacks.
-        // We'll need to abort the fallbacks, which will also error that parent boundary.
-        boundary.fallbackAbortableTasks.forEach(fallbackTask =>
-          finishAbortedTask(fallbackTask, request, error),
-        );
-        boundary.fallbackAbortableTasks.clear();
-        return finishedTask(request, boundary, task.row, segment);
+      if (!isRecoverableReason && trackedPostpones !== null) {
+        if (segment !== null) {
+          // We are aborting a prerender and must halt this boundary.
+          // We treat this like other postpones during prerendering
+          logRecoverableError(request, error, errorInfo, task.debugTask);
+          trackPostpone(request, trackedPostpones, task, segment);
+          // If this boundary was still pending then we haven't already cancelled its fallbacks.
+          // We'll need to abort the fallbacks, which will also error that parent boundary.
+          boundary.fallbackAbortableTasks.forEach(fallbackTask =>
+            finishAbortedTask(fallbackTask, request, error),
+          );
+          boundary.fallbackAbortableTasks.clear();
+          return finishedTask(request, boundary, task.row, segment);
+        } else if (task.replay !== null) {
+          // We are aborting a prerender during replay and must halt this boundary.
+          // We treat this like other postpones during prerendering
+          logRecoverableError(request, error, errorInfo, task.debugTask);
+          trackPostponeReplay(request, trackedPostpones, task);
+          boundary.fallbackAbortableTasks.forEach(fallbackTask =>
+            finishAbortedTask(fallbackTask, request, error),
+          );
+          boundary.fallbackAbortableTasks.clear();
+          task.replay.pendingTasks--;
+          return finishedTask(request, boundary, task.row, null);
+        }
       }
       boundary.status = CLIENT_RENDERED;
       // We are aborting a render or resume which should put boundaries
@@ -5636,7 +5755,13 @@ function retryReplayTask(request: Request, task: ReplayTask): void {
       retryNode(request, task);
     }
 
-    if (task.replay.pendingTasks === 1 && task.replay.nodes.length > 0) {
+    if (
+      (task.blockedBoundary === null ||
+        task.blockedBoundary.status !== POSTPONED) &&
+      !request.aborted &&
+      task.replay.pendingTasks === 1 &&
+      task.replay.nodes.length > 0
+    ) {
       throw new Error(
         "Couldn't find all resumable slots by key/index during replaying. " +
           "The tree doesn't match so React will fallback to client rendering.",
