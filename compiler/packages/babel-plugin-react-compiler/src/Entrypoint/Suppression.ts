@@ -86,13 +86,19 @@ export function findProgramSuppressions(
   let enableComment: t.Comment | null = null;
   let source: SuppressionSource | null = null;
 
-  let disableNextLinePattern: RegExp | null = null;
+  let disableLinePattern: RegExp | null = null;
   let disablePattern: RegExp | null = null;
   let enablePattern: RegExp | null = null;
   if (ruleNames != null && ruleNames.length !== 0) {
     const rulePattern = `(${ruleNames.join('|')})`;
-    disableNextLinePattern = new RegExp(
-      `eslint-disable-next-line ${rulePattern}`,
+    /*
+     * `eslint-disable-line` and `eslint-disable-next-line` are both single-line
+     * suppressions, so the range they describe starts and ends at the comment
+     * itself. They differ only in which line ESLint applies them to, which does
+     * not affect whether the suppression falls within a given function.
+     */
+    disableLinePattern = new RegExp(
+      `eslint-disable-(next-)?line ${rulePattern}`,
     );
     disablePattern = new RegExp(`eslint-disable ${rulePattern}`);
     enablePattern = new RegExp(`eslint-enable ${rulePattern}`);
@@ -113,8 +119,8 @@ export function findProgramSuppressions(
        * CommentLine within the block.
        */
       disableComment == null &&
-      disableNextLinePattern != null &&
-      disableNextLinePattern.test(comment.value)
+      disableLinePattern != null &&
+      disableLinePattern.test(comment.value)
     ) {
       disableComment = comment;
       enableComment = comment;
