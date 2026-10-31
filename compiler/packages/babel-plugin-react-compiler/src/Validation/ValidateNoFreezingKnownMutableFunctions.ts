@@ -47,6 +47,15 @@ export function validateNoFreezingKnownMutableFunctions(fn: HIRFunction): void {
     IdentifierId,
     Extract<AliasingEffect, {kind: 'Mutate'} | {kind: 'MutateTransitive'}>
   > = new Map();
+  /**
+   * Maps each object literal to the identifiers of its statically-known property
+   * values, so that reads like `handlers.onClick` can be traced back to the
+   * function assigned to that property.
+   */
+  const objectProperties: Map<
+    IdentifierId,
+    Map<string, IdentifierId>
+  > = new Map();
 
   function visitOperand(operand: Place): void {
     if (operand.effect === Effect.Freeze) {
@@ -80,70 +89,157 @@ export function validateNoFreezingKnownMutableFunctions(fn: HIRFunction): void {
     }
   }
 
+  /**
+   * Records whether `loweredFunc` is a function with known mutations, associating
+   * that fact with `lvalue`. Handles both function expressions and object methods,
+   * which are otherwise the same for the purposes of this check.
+   */
+  function recordKnownMutability(
+    lvalue: Place,
+    loweredFunc: HIRFunction,
+  ): void {
+    if (loweredFunc.aliasingEffects == null) {
+      return;
+    }
+    const context = new Set(loweredFunc.context.map(p => p.identifier.id));
+    effects: for (const effect of loweredFunc.aliasingEffects) {
+      switch (effect.kind) {
+        case 'Mutate':
+        case 'MutateTransitive': {
+          const knownMutation = contextMutationEffects.get(
+            effect.value.identifier.id,
+          );
+          if (knownMutation != null) {
+            contextMutationEffects.set(lvalue.identifier.id, knownMutation);
+          } else if (
+            context.has(effect.value.identifier.id) &&
+            !isRefOrRefLikeMutableType(effect.value.identifier.type)
+          ) {
+            contextMutationEffects.set(lvalue.identifier.id, effect);
+            break effects;
+          }
+          break;
+        }
+        case 'MutateConditionally':
+        case 'MutateTransitiveConditionally': {
+          const knownMutation = contextMutationEffects.get(
+            effect.value.identifier.id,
+          );
+          if (knownMutation != null) {
+            contextMutationEffects.set(lvalue.identifier.id, knownMutation);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * Copies the known-mutability of `from` to `into` for values which alias each
+   * other without an intervening instruction, ie through locals and properties.
+   */
+  function propagateAlias(from: IdentifierId, into: IdentifierId): void {
+    const effect = contextMutationEffects.get(from);
+    if (effect != null) {
+      contextMutationEffects.set(into, effect);
+    }
+    const properties = objectProperties.get(from);
+    if (properties != null) {
+      objectProperties.set(into, properties);
+    }
+  }
+
+  /**
+   * Returns the identifier of the value stored in a statically-known property of
+   * an object literal, if the object is known to be such a literal.
+   */
+  function getObjectPropertyValue(
+    object: IdentifierId,
+    property: string,
+  ): IdentifierId | null {
+    const properties = objectProperties.get(object);
+    if (properties == null) {
+      return null;
+    }
+    return properties.get(property) ?? null;
+  }
+
   for (const block of fn.body.blocks.values()) {
     for (const instr of block.instructions) {
       const {lvalue, value} = instr;
       switch (value.kind) {
         case 'LoadLocal': {
-          const effect = contextMutationEffects.get(value.place.identifier.id);
-          if (effect != null) {
-            contextMutationEffects.set(lvalue.identifier.id, effect);
-          }
+          propagateAlias(value.place.identifier.id, lvalue.identifier.id);
           break;
         }
         case 'StoreLocal': {
-          const effect = contextMutationEffects.get(value.value.identifier.id);
-          if (effect != null) {
-            contextMutationEffects.set(lvalue.identifier.id, effect);
-            contextMutationEffects.set(
-              value.lvalue.place.identifier.id,
-              effect,
-            );
+          propagateAlias(value.value.identifier.id, lvalue.identifier.id);
+          propagateAlias(
+            value.value.identifier.id,
+            value.lvalue.place.identifier.id,
+          );
+          break;
+        }
+        case 'FunctionExpression':
+        case 'ObjectMethod': {
+          recordKnownMutability(lvalue, value.loweredFunc.func);
+          break;
+        }
+        case 'ObjectExpression': {
+          const properties: Map<string, IdentifierId> = new Map();
+          for (const property of value.properties) {
+            if (
+              property.kind === 'ObjectProperty' &&
+              property.key.kind !== 'computed'
+            ) {
+              properties.set(
+                String(property.key.name),
+                property.place.identifier.id,
+              );
+            }
+          }
+          objectProperties.set(lvalue.identifier.id, properties);
+          for (const operand of eachInstructionValueOperand(value)) {
+            visitOperand(operand);
           }
           break;
         }
-        case 'FunctionExpression': {
-          if (value.loweredFunc.func.aliasingEffects != null) {
-            const context = new Set(
-              value.loweredFunc.func.context.map(p => p.identifier.id),
-            );
-            effects: for (const effect of value.loweredFunc.func
-              .aliasingEffects) {
-              switch (effect.kind) {
-                case 'Mutate':
-                case 'MutateTransitive': {
-                  const knownMutation = contextMutationEffects.get(
-                    effect.value.identifier.id,
-                  );
-                  if (knownMutation != null) {
-                    contextMutationEffects.set(
-                      lvalue.identifier.id,
-                      knownMutation,
-                    );
-                  } else if (
-                    context.has(effect.value.identifier.id) &&
-                    !isRefOrRefLikeMutableType(effect.value.identifier.type)
-                  ) {
-                    contextMutationEffects.set(lvalue.identifier.id, effect);
-                    break effects;
-                  }
-                  break;
-                }
-                case 'MutateConditionally':
-                case 'MutateTransitiveConditionally': {
-                  const knownMutation = contextMutationEffects.get(
-                    effect.value.identifier.id,
-                  );
-                  if (knownMutation != null) {
-                    contextMutationEffects.set(
-                      lvalue.identifier.id,
-                      knownMutation,
-                    );
-                  }
-                  break;
+        case 'PropertyLoad': {
+          const propertyValue = getObjectPropertyValue(
+            value.object.identifier.id,
+            String(value.property),
+          );
+          if (propertyValue != null) {
+            propagateAlias(propertyValue, lvalue.identifier.id);
+          }
+          for (const operand of eachInstructionValueOperand(value)) {
+            visitOperand(operand);
+          }
+          break;
+        }
+        case 'Destructure': {
+          /**
+           * `const {onClick} = handlers` aliases the function stored in the
+           * `onClick` property of `handlers`.
+           */
+          if (value.lvalue.pattern.kind === 'ObjectPattern') {
+            for (const property of value.lvalue.pattern.properties) {
+              if (
+                property.kind === 'ObjectProperty' &&
+                property.key.kind !== 'computed'
+              ) {
+                const propertyValue = getObjectPropertyValue(
+                  value.value.identifier.id,
+                  String(property.key.name),
+                );
+                if (propertyValue != null) {
+                  propagateAlias(propertyValue, property.place.identifier.id);
                 }
               }
             }
+          }
+          for (const operand of eachInstructionValueOperand(value)) {
+            visitOperand(operand);
           }
           break;
         }
