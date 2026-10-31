@@ -7,6 +7,7 @@
  * @flow
  */
 
+// Note: Fix Profiler unmount duration calculation during profiling session (#37264)
 import Agent from './agent';
 
 import type {DevToolsHook, RendererID, RendererInterface} from './types';
