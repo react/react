@@ -60,18 +60,39 @@ class Node<T> implements StackInterface<T> {
   }
 
   find(fn: (value: T) => boolean): boolean {
-    return fn(this.#value) ? true : this.#next.find(fn);
+    if (fn(this.#value)) {
+      return true;
+    }
+    let current = this.#next;
+    while (current instanceof Node) {
+      if (fn(current.#value)) {
+        return true;
+      }
+      current = current.#next;
+    }
+    return false;
   }
 
   contains(value: T): boolean {
-    return (
-      value === this.#value ||
-      (this.#next !== null && this.#next.contains(value))
-    );
+    if (value === this.#value) {
+      return true;
+    }
+    let current = this.#next;
+    while (current instanceof Node) {
+      if (value === current.#value) {
+        return true;
+      }
+      current = current.#next;
+    }
+    return false;
   }
   each(fn: (value: T) => void): void {
     fn(this.#value);
-    this.#next.each(fn);
+    let current = this.#next;
+    while (current instanceof Node) {
+      fn(current.#value);
+      current = current.#next;
+    }
   }
 
   get value(): T {
@@ -79,7 +100,13 @@ class Node<T> implements StackInterface<T> {
   }
 
   print(fn: (node: T) => string): string {
-    return fn(this.#value) + this.#next.print(fn);
+    const output = [fn(this.#value)];
+    let current = this.#next;
+    while (current instanceof Node) {
+      output.push(fn(current.#value));
+      current = current.#next;
+    }
+    return output.join('');
   }
 }
 
