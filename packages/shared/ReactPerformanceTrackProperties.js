@@ -325,6 +325,22 @@ export function addObjectDiffToProperties(
   properties: Array<[string, string]>,
   indent: number,
 ): boolean {
+  // The same pair of objects may appear under several prop names (e.g. an
+  // object that aliases one large collection under multiple keys). Track
+  // which pairs have already been diffed so that repeats are noted instead
+  // of re-walked; without this the cost of the diff scales with the number
+  // of aliases even though they add no new objects.
+  const visitedPairs: WeakMap<Object, Set<Object>> = new WeakMap();
+  return diffObjects(prev, next, properties, indent, visitedPairs);
+}
+
+function diffObjects(
+  prev: Object,
+  next: Object,
+  properties: Array<[string, string]>,
+  indent: number,
+  visitedPairs: WeakMap<Object, Set<Object>>,
+): boolean {
   // Note: We diff even non-owned properties here but things that are shared end up just the same.
   // If a property is added or removed, we just emit the property name and omit the value it had.
   // Mainly for performance. We need to minimize to only relevant information.
@@ -416,12 +432,33 @@ export function addObjectDiffToProperties(
                 nextKind === '[object Array]' ? 'Array' : '',
               ];
               properties.push(entry);
+
+              const seenNextValues = visitedPairs.get(prevValue);
+              const isRepeatedPair =
+                seenNextValues !== undefined && seenNextValues.has(nextValue);
+              if (seenNextValues === undefined) {
+                visitedPairs.set(prevValue, new Set([nextValue]));
+              } else {
+                seenNextValues.add(nextValue);
+              }
+
+              if (isRepeatedPair) {
+                // This exact (prev, next) pair was already diffed elsewhere in
+                // this update. Its deep-equality result has already been
+                // accounted for, so just note the repeat instead of re-walking
+                // the subtree.
+                entry[1] =
+                  'Repeats a value pair already shown; the diff is omitted.';
+                continue;
+              }
+
               const prevLength = properties.length;
-              const nestedEqual = addObjectDiffToProperties(
+              const nestedEqual = diffObjects(
                 prevValue,
                 nextValue,
                 properties,
                 indent + 1,
+                visitedPairs,
               );
               if (!nestedEqual) {
                 isDeeplyEqual = false;
