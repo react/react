@@ -272,6 +272,41 @@ describe('CSSPropertyOperations', () => {
     ]);
   });
 
+  it('should not append `px` to numbers that are not lengths', async () => {
+    // `font-size-adjust` and `shape-image-threshold` take a plain number.
+    // Appending `px` produces an invalid declaration, which the browser drops,
+    // so the style would silently not apply.
+    const styles = {
+      fontSizeAdjust: 0.5,
+      shapeImageThreshold: 0.5,
+    };
+
+    const html = ReactDOMServer.renderToString(<div style={styles} />);
+    expect(html).toContain('"font-size-adjust:0.5;shape-image-threshold:0.5"');
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<div style={styles} />);
+    });
+    const style = container.firstChild.style;
+    expect(style.fontSizeAdjust).toBe('0.5');
+    expect(style.shapeImageThreshold).toBe('0.5');
+    root.unmount();
+    document.body.removeChild(container);
+  });
+
+  it('should not append `px` to `math-depth`', () => {
+    // `math-depth` takes an integer, not a length. JSDOM's CSSStyleDeclaration
+    // does not know this property and silently drops it, so this is asserted
+    // through the server renderer, which shares the same unitless table.
+    const html = ReactDOMServer.renderToString(
+      <div style={{mathDepth: 2}}>x</div>,
+    );
+    expect(html).toContain('"math-depth:2"');
+  });
+
   it('should not add units to CSS custom properties', async () => {
     class Comp extends React.Component {
       render() {
