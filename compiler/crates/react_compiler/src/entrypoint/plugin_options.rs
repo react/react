@@ -106,6 +106,29 @@ pub enum CompilerOutputMode {
     Lint,
 }
 
+impl PluginOptions {
+    /// Fold the JS-resolved `is_dev` / `enable_reanimated` flags into the
+    /// environment config.
+    ///
+    /// These flags can only be computed on the JS side, since they depend on
+    /// `process.env` / `__DEV__` and on the Babel plugin list. This mirrors
+    /// what the TypeScript Babel plugin does in `BabelPlugin.ts`:
+    ///
+    /// - in development, enable the Fast Refresh memo-cache reset unless the
+    ///   user explicitly passed `enableResetCacheOnSourceFileChanges: false`;
+    /// - when Reanimated is detected, enable its custom type definitions.
+    pub fn apply_js_resolved_flags(&mut self) {
+        if self.is_dev && self.environment.enable_reset_cache_on_source_file_changes != Some(false)
+        {
+            self.environment.enable_reset_cache_on_source_file_changes = Some(true);
+        }
+        if self.enable_reanimated {
+            self.environment
+                .enable_custom_type_definition_for_reanimated = true;
+        }
+    }
+}
+
 impl CompilerOutputMode {
     pub fn from_opts(opts: &PluginOptions) -> Self {
         match opts.output_mode.as_deref() {
@@ -114,5 +137,89 @@ impl CompilerOutputMode {
             _ if opts.no_emit => Self::Lint,
             _ => Self::Client,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_options() -> PluginOptions {
+        PluginOptions {
+            should_compile: true,
+            enable_reanimated: false,
+            is_dev: false,
+            filename: None,
+            compilation_mode: default_compilation_mode(),
+            panic_threshold: default_panic_threshold(),
+            target: default_target(),
+            gating: None,
+            dynamic_gating: None,
+            no_emit: false,
+            output_mode: None,
+            eslint_suppression_rules: None,
+            flow_suppressions: true,
+            ignore_use_no_forget: false,
+            custom_opt_out_directives: None,
+            environment: EnvironmentConfig::default(),
+            source_code: None,
+            profiling: false,
+            debug: false,
+        }
+    }
+
+    #[test]
+    fn dev_enables_reset_cache_by_default() {
+        let mut opts = base_options();
+        opts.is_dev = true;
+        opts.apply_js_resolved_flags();
+        assert_eq!(
+            opts.environment.enable_reset_cache_on_source_file_changes,
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn dev_does_not_override_explicit_false() {
+        let mut opts = base_options();
+        opts.is_dev = true;
+        opts.environment.enable_reset_cache_on_source_file_changes = Some(false);
+        opts.apply_js_resolved_flags();
+        assert_eq!(
+            opts.environment.enable_reset_cache_on_source_file_changes,
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn production_leaves_reset_cache_unset() {
+        let mut opts = base_options();
+        opts.apply_js_resolved_flags();
+        assert_eq!(
+            opts.environment.enable_reset_cache_on_source_file_changes,
+            None
+        );
+    }
+
+    #[test]
+    fn reanimated_enables_custom_type_definitions() {
+        let mut opts = base_options();
+        opts.enable_reanimated = true;
+        opts.apply_js_resolved_flags();
+        assert!(
+            opts.environment
+                .enable_custom_type_definition_for_reanimated
+        );
+    }
+
+    #[test]
+    fn no_reanimated_leaves_custom_type_definitions_disabled() {
+        let mut opts = base_options();
+        opts.apply_js_resolved_flags();
+        assert!(
+            !opts
+                .environment
+                .enable_custom_type_definition_for_reanimated
+        );
     }
 }
