@@ -5330,6 +5330,17 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
         key = getScriptKey(href);
         break;
     }
+    if (as === 'style') {
+      const resource =
+        getResourcesFromRoot(ownerDocument).hoistableStyles.get(key);
+      if (resource && resource.type === 'style') {
+        // This href is already represented by a hoistable <style> (an inlined
+        // stylesheet). A stylesheet with this href would dedupe against it,
+        // so there is nothing to preload.
+        return;
+      }
+    }
+
     if (!preloadPropsMap.has(key)) {
       const preloadProps = Object.assign(
         {
