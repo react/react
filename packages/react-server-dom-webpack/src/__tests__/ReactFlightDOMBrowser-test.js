@@ -424,6 +424,176 @@ describe('ReactFlightDOMBrowser', () => {
     expect(container.innerHTML).toBe('<div><span>12345</span>12345</div>');
   });
 
+  it('waits for a Set referenced through unfinished element props', async () => {
+    let resolvePayload;
+    let resolveComponent;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(
+      function Widget() {
+        return null;
+      },
+      'widget',
+      '/widget.js',
+      new Promise(resolve => (resolveComponent = resolve)),
+    );
+    const data = {};
+    const element = <Widget data={data} items={new Set([payload])} />;
+    data.alias = element.props;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {element, items: element.props.items},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    const observed = [];
+    await act(() => {
+      response.then(
+        value =>
+          observed.push(
+            value.items instanceof Set ? Array.from(value.items) : value.items,
+          ),
+        error => observed.push(error),
+      );
+    });
+    expect(observed).toEqual([]);
+
+    await act(() => resolvePayload());
+    expect(observed).toEqual([['ready']]);
+    await act(() => resolveComponent());
+  });
+
+  it('waits for shared props contents without waiting for the component module', async () => {
+    let resolvePayload;
+    let resolveComponent;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(
+      function Widget() {
+        return null;
+      },
+      'widget',
+      '/widget.js',
+      new Promise(resolve => (resolveComponent = resolve)),
+    );
+    const data = {};
+    const element = <Widget data={data} payload={payload} />;
+    data.alias = element.props;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {element, props: element.props},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    const observed = [];
+    await act(() => {
+      response.then(value => {
+        // Capture the field when it is delivered. A later write must not
+        // hide a callback that received an unfinished props object.
+        observed.push(value.props.payload);
+      });
+    });
+    expect(observed).toEqual([]);
+
+    await act(() => resolvePayload());
+    expect(observed).toEqual(['ready']);
+
+    // The component is still unavailable, but its shared data is complete.
+    await act(() => resolveComponent());
+    expect(observed).toEqual(['ready']);
+  });
+
+  it('can render an element reached through its own data after it suspends', async () => {
+    let resolvePayload;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(function Widget({payload: value}) {
+      return <b>{value}</b>;
+    });
+    const data = {};
+    const element = <Widget data={data} payload={payload} />;
+    data.self = element;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({element, data}, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    let received;
+    await act(() => {
+      response.then(value => {
+        received = value;
+      });
+    });
+    // The model reaches `data` through the element's props, so it completes
+    // with the element.
+    expect(received).toBeUndefined();
+
+    await act(() => resolvePayload());
+    // The element's own slot holds the Lazy node that stood in for it while
+    // its props loaded; the path to it through its data leads to the element.
+    expect(received.data.self).toBe(received.element._payload.value);
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<Suspense fallback="Loading">{received.data.self}</Suspense>);
+    });
+    expect(container.innerHTML).toBe('<b>ready</b>');
+  });
+
+  it('completes a cyclic Set exposed by separate Promise results', async () => {
+    let resolveSet;
+    let resolveArray;
+    const set = new Set();
+    const array = [set];
+    set.add(set);
+    set.add(array);
+    const model = {
+      set: new Promise(resolve => (resolveSet = resolve)),
+      array: new Promise(resolve => (resolveArray = resolve)),
+    };
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    await serverAct(() => resolveSet(set));
+    await serverAct(() => resolveArray(array));
+
+    const observed = [];
+    await act(() => {
+      response.then(value => {
+        value.set.then(received => {
+          const [self, back] = Array.from(received);
+          observed.push([received.size, self instanceof Set, back[0].size]);
+        });
+        value.array.then(received => {
+          const [self, back] = Array.from(received[0]);
+          observed.push([received[0].size, self instanceof Set, back[0].size]);
+        });
+      });
+    });
+    expect(observed).toEqual([
+      [2, true, 2],
+      [2, true, 2],
+    ]);
+  });
+
   it('should resolve deduped objects in nested children of blocked models', async () => {
     let resolveOuterClientComponentChunk;
     let resolveInnerClientComponentChunk;
@@ -3064,9 +3234,9 @@ describe('ReactFlightDOMBrowser', () => {
               [
                 "Object.<anonymous>",
                 "/packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js",
-                2992,
+                3162,
                 19,
-                2976,
+                3146,
                 89,
               ],
             ],

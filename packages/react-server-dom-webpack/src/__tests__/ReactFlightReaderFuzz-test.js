@@ -1568,6 +1568,17 @@ const nodeKinds = [
   'component',
 ];
 
+const leafKinds = [
+  'value',
+  'date',
+  'binary',
+  'text',
+  'blob',
+  'special',
+  'host',
+  'module',
+];
+
 function kindOf(node) {
   const kind = nodeKinds.find(candidate => candidate in node);
   if (kind === undefined) {
@@ -1692,8 +1703,13 @@ function generateGraph(seed, {without = []} = {}) {
       node[kindOf(node)].push(item);
     }
   };
+  // A stream item is written inline, with no reference for a container inside
+  // it to break a cycle with, so items hold leaves and handles.
   const item = () =>
-    add({array: [pickFrom(targets)]}, {target: false, kind: 'item'});
+    add(
+      {array: [pickFrom(targets.filter(name => !containers.includes(name)))]},
+      {target: false, kind: 'item'},
+    );
 
   add({value: 'value'});
   add({value: 'other value'});
@@ -1836,7 +1852,12 @@ function generateGraph(seed, {without = []} = {}) {
         break;
       }
       case 'error': {
-        nodes[addError()].cause = pickFrom(targets);
+        // In DEV the writer outlines a cause every time the Error is written,
+        // so a cause that reaches the Error again recurses; causes are leaves.
+        const leaves = targets.filter(name =>
+          leafKinds.includes(kindOf(nodes[name])),
+        );
+        nodes[addError()].cause = pickFrom(leaves);
         break;
       }
       case 'aggregate error': {
@@ -2492,14 +2513,24 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
     }
   }
 
-  // Most random graphs fail on the current reader, so they are skipped until
-  // the reader completes values by their contents rather than by chunk. A
-  // graph does not even need a cycle for that: once two branches share a
-  // value, the writer refers to it through the row that holds it, and the
-  // reader handles that like a cycle. Until then only the known cases below
-  // run.
-  // eslint-disable-next-line jest/no-disabled-tests
-  describe.skip('generated graphs', () => {
+  // Two writer bugs in DEV keep server components and sync iterators out of
+  // the random graphs: a suspended server component that occurs twice waits
+  // for its render, and debug info drains an iterator before the model is
+  // written.
+  // These leaves wait for fixes further up the stack: a large typed array held
+  // in two places arrives empty the second time, an object key whose value is
+  // undefined is dropped, and a cycle through a property name with a colon
+  // overflows the writer's stack.
+  const unsupportedMoves = [
+    'component',
+    'failing component',
+    'iterator',
+    'large binary',
+    'undefined',
+    'colon',
+  ];
+
+  describe('generated graphs', () => {
     seeds.forEach(seed => {
       for (let variant = 0; variant < 2; variant++) {
         const demandCount = sweep ? demands.length : 1;
@@ -2507,7 +2538,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
           // eslint-disable-next-line jest/valid-title
           it(caseName('graph', seed, demands[d], variant), () =>
             runGraph({
-              ...generateGraph(seed),
+              ...generateGraph(seed, {without: unsupportedMoves}),
               family: 'graph',
               seed,
               demand: demands[d],
@@ -2525,9 +2556,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   // fails today; the comment above it says whether the reader or the writer
   // is at fault.
   describe('known cases', () => {
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('Set containing itself', () =>
+    it('Set containing itself', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2536,9 +2565,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'set', other: 'set'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('Map containing itself', () =>
+    it('Map containing itself', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2553,9 +2580,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'map', other: 'map'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('two collections containing each other', () =>
+    it('two collections containing each other', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2566,9 +2591,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'a', other: 'b'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('function bound to its array', () =>
+    it('function bound to its array', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2578,9 +2601,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'container', other: 'container'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('function bound to its Map', () =>
+    it('function bound to its Map', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2595,9 +2616,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'container', other: 'container'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('cycle first exposed through a bound function', () =>
+    it('cycle first exposed through a bound function', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2607,9 +2626,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'fn', other: 'fn'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('cycle first exposed through a Promise of a bound function', () =>
+    it('cycle first exposed through a Promise of a bound function', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2620,9 +2637,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'exposure', other: 'exposure'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('cycle first exposed through a stream item with a bound function', () =>
+    it('cycle first exposed through a stream item with a bound function', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2754,9 +2769,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'holder', other: 'holder'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('Blob beside a cycle', () =>
+    it('Blob beside a cycle', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2778,9 +2791,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   });
 
   describe('known cases with elements, components or Errors', () => {
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('props object referenced again while a prop is loading', () =>
+    it('props object referenced again while a prop is loading', () =>
       runGraph({
         nodes: {
           payload: {module: 'export-0'},
@@ -2804,9 +2815,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'element', other: 'selected'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('element reaching itself through its props', () =>
+    it('element reaching itself through its props', () =>
       runGraph({
         nodes: {
           payload: {module: 'export-0'},
@@ -2815,6 +2824,58 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
           element: {element: 'value'},
         },
         roots: {entry: 'element', other: 'data'},
+      }));
+
+    it('waits that loop before the check that merges them', () =>
+      runGraph({
+        nodes: {
+          value1: {value: 'other value'},
+          value2: {value: ''},
+          value3: {value: 42},
+          text0: {text: 'text-898'},
+          blob0: {blob: 'blob-116'},
+          host0: {host: 'atom'},
+          module1: {module: 'export-1', async: true},
+          array0: {array: ['array0']},
+          set0: {set: ['map1']},
+          map0: {
+            map: [
+              ['blob0', 'bytes0'],
+              ['value3', 'props0'],
+              ['module1', 'iterable0'],
+              ['set0', 'value2'],
+              ['array0', 'value1'],
+            ],
+          },
+          map1: {
+            map: [
+              ['host0', 'host0'],
+              ['element0', 'host0'],
+              ['array0', 'host0'],
+              ['blob0', 'text0'],
+            ],
+          },
+          bytes0: {bytes: 2},
+          element0: {element: 'host0'},
+          props0: {props: 'element0'},
+          iterable0: {iterable: []},
+        },
+        roots: {entry: 'map0', other: 'array0'},
+        afterEof: true,
+        rootPromise: true,
+        events: [
+          'bytes0 chunk 1',
+          'load module1',
+          'bytes0 chunk 0',
+          'start iterable0',
+          'load element0',
+          'evaluate module1',
+          'resolve the root Promise',
+          'resolve an unrelated Promise',
+        ],
+        packetSizes: [3, 89, 2624],
+        yieldBetweenPackets: false,
+        demand: 'early',
       }));
 
     it('all leaf kinds beside a cycle and a loading module', () =>
@@ -2913,9 +2974,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'failing', other: 'fine'},
       }));
 
-    // Reader bug, DEV only.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('Error whose cause is still loading', () =>
+    it('Error whose cause is still loading', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2925,9 +2984,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'holder', other: 'holder'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('Error with cyclic cause', () =>
+    it('Error with cyclic cause', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},

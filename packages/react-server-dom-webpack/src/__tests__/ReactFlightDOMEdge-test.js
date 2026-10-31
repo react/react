@@ -453,6 +453,251 @@ describe('ReactFlightDOMEdge', () => {
     expect(result.boundMethod()).toBe('hi, there');
   });
 
+  it('delivers a Set containing itself with its entries already installed', async () => {
+    const set = new Set();
+    set.add(set);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(set),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        const self = Array.from(value)[0];
+        observed.push([value.size, self instanceof Set && self.size]);
+      });
+    });
+    expect(observed).toEqual([[1, 1]]);
+  });
+
+  it('delivers a Map containing itself with its entries already installed', async () => {
+    const map = new Map();
+    map.set('self', map);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(map),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        const self = value.get('self');
+        observed.push([value.size, self instanceof Map && self.size]);
+      });
+    });
+    expect(observed).toEqual([[1, 1]]);
+  });
+
+  // @gate __DEV__
+  it('fills in the cause of an Error that loads after the Error', async () => {
+    let resolveCause;
+    const {value: cause} = clientExports(
+      {value: 'cause'},
+      'cause',
+      '/cause.js',
+      new Promise(resolve => (resolveCause = resolve)),
+    );
+    const error = new Error('failed', {cause});
+    const aggregate = new AggregateError([cause], 'all failed');
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {error, aggregate},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => observed.push(value));
+    });
+    // The Errors wait for their cause and errors like any other field.
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveCause());
+    expect(observed.length).toBe(1);
+    expect(observed[0].error.cause).toBe('cause');
+    expect(observed[0].aggregate.errors).toEqual(['cause']);
+  });
+
+  it('resolves a server reference whose bound argument also appears elsewhere in the response', async () => {
+    let resolveModule;
+    const {read} = serverExports(
+      {
+        read(settings) {
+          return settings.theme;
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    // The bound argument is written once, inside the bound arguments row,
+    // and the model refers to it from there. The model therefore waits on
+    // the function and the function's arguments wait on the model.
+    const settings = {theme: 'dark'};
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {read: read.bind(null, settings), settings},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: webpackServerMap,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => observed.push(value.read()));
+    });
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveModule());
+    expect(observed).toEqual(['dark']);
+    const result = await response;
+    expect(result.settings).toEqual(settings);
+  });
+
+  it('waits for a bound argument that loads after one the root also holds', async () => {
+    let resolveModule;
+    const {read} = serverExports(
+      {
+        read(first, second) {
+          return [first, second];
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    let resolveFirst;
+    const {value: first} = clientExports(
+      {value: 'first'},
+      'first',
+      '/first.js',
+      new Promise(resolve => (resolveFirst = resolve)),
+    );
+    let resolveSecond;
+    const {value: second} = clientExports(
+      {value: 'second'},
+      'second',
+      '/second.js',
+      new Promise(resolve => (resolveSecond = resolve)),
+    );
+    // The root waits on the first module and on the bound arguments, whose
+    // row arrives after it and waits on both modules. Loading the first wakes
+    // the root and the arguments together.
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {read: read.bind(null, first, second), first},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: webpackServerMap,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => observed.push(value.read()));
+      resolveModule();
+    });
+    await serverAct(() => resolveFirst());
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveSecond());
+    expect(observed).toEqual([['first', 'second']]);
+  });
+
+  it('binds a server reference to its containing array after the module loads', async () => {
+    let resolveModule;
+    const {read} = serverExports(
+      {
+        read(array, other) {
+          return [array.length, array[1].length, other];
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    const array = [];
+    array.push(read.bind(null, array, null), array);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(array, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: webpackServerMap,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        observed.push(value[0]());
+      });
+    });
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveModule());
+    expect(observed).toEqual([[2, 2, null]]);
+  });
+
+  it('rejects a later Promise of an object holding a Map whose entry failed to load', async () => {
+    let rejectLoad;
+    const {value: failing} = clientExports(
+      {value: 'failing'},
+      'failing',
+      '/failing.js',
+      new Promise((resolve, reject) => (rejectLoad = reject)),
+    );
+    const map = new Map([['key', failing]]);
+    // The copy is written as a reference to the holder's slot.
+    const copy = {map};
+    let resolveLater;
+    const later = new Promise(resolve => (resolveLater = resolve));
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {data: Promise.resolve({holder: {map}, copy}), later},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const root = await response;
+    const observed = [];
+    root.data.then(
+      () => observed.push('data fulfilled'),
+      error => observed.push('data: ' + error.message),
+    );
+    root.later.then(
+      () => observed.push('later fulfilled'),
+      error => observed.push('later: ' + error.message),
+    );
+
+    await serverAct(() => rejectLoad(new Error('failed to load')));
+    expect(observed).toEqual(['data: failed to load']);
+
+    await serverAct(() => resolveLater(copy));
+    expect(observed).toEqual(['data: failed to load', 'later: failed to load']);
+  });
+
   it('should load a server reference on a consuming server and pass it back', async () => {
     function greet(name) {
       return 'hi, ' + name;
