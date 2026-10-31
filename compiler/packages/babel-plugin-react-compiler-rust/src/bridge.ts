@@ -82,6 +82,42 @@ function getRustCompile(): (
 }
 
 /**
+ * A well-formed marker: the literal prefix, exactly 4 uppercase hex digits,
+ * then the literal suffix. Must match `from_marker_string` /
+ * `to_marker_string` on the Rust side (react_compiler_diagnostics::js_string).
+ */
+const MARKER_RE = /__SURROGATE_([0-9A-F]{4})__/g;
+
+/**
+ * The escaped form of a marker: what a *literal* marker-shaped occurrence in
+ * user text is rewritten to before a JSON payload is handed to Rust, so it
+ * can't be confused with a marker minted by `escapeLiteralMarkers`'s caller
+ * below for an actual lone surrogate. Rust unescapes this back to the plain
+ * literal text in `from_marker_string`, and re-escapes any literal
+ * marker-shaped text it emits back out in `to_marker_string`, so this needs
+ * to be unescaped again here on the way back (see `restoreJsonSurrogates`).
+ */
+const ESCAPED_MARKER_RE = /__SURROGATE_ESCAPED_([0-9A-F]{4})__/g;
+
+/**
+ * Rewrite literal occurrences of the marker pattern (e.g. user source
+ * containing the text "__SURROGATE_D83D__") into the escaped form, so they
+ * can't be mistaken for a marker that `sanitizeJsonSurrogates` mints for an
+ * actual lone surrogate below.
+ */
+function escapeLiteralMarkers(json: string): string {
+  return json.replace(MARKER_RE, (_, hex) => `__SURROGATE_ESCAPED_${hex}__`);
+}
+
+/**
+ * Reverse of `escapeLiteralMarkers`: turn the escaped form back into the
+ * plain literal text it stood in for.
+ */
+function unescapeLiteralMarkers(json: string): string {
+  return json.replace(ESCAPED_MARKER_RE, (_, hex) => `__SURROGATE_${hex}__`);
+}
+
+/**
  * Encode lone surrogate escapes so they survive the Rust serde_json round-trip.
  * JS JSON.stringify can produce \uD800-\uDFFF lone surrogates which are invalid
  * in Rust's serde_json (expects valid UTF-8/Unicode). We encode them as recoverable
@@ -91,12 +127,18 @@ function getRustCompile(): (
  * that appear in extra.raw fields (literal source text). Those have a double
  * backslash in the JSON (the first \ escapes the second), so we use a negative
  * lookbehind to skip them.
+ *
+ * Also important: user text can itself contain something that looks like a
+ * marker (e.g. the literal string "__SURROGATE_D83D__"). We escape any such
+ * pre-existing text with `escapeLiteralMarkers` *before* minting real
+ * markers below, so the two can never collide; `restoreJsonSurrogates`
+ * reverses both steps in the opposite order on the way back.
  */
 function sanitizeJsonSurrogates(json: string): string {
   // Encode lone surrogates as recoverable markers instead of replacing with
   // \uFFFD. This preserves the original surrogate values through the Rust
   // round-trip. restoreJsonSurrogates reverses this on the output side.
-  return json
+  return escapeLiteralMarkers(json)
     .replace(
       /(?<!\\)\\u([dD][89aAbB][0-9a-fA-F]{2})(?!\\u[dD][c-fC-F][0-9a-fA-F]{2})/g,
       (_, hex) => `__SURROGATE_${hex.toUpperCase()}__`,
@@ -108,7 +150,11 @@ function sanitizeJsonSurrogates(json: string): string {
 }
 
 function restoreJsonSurrogates(json: string): string {
-  return json.replace(/__SURROGATE_([0-9A-F]{4})__/g, (_, hex) => `\\u${hex}`);
+  const withRealSurrogatesRestored = json.replace(
+    MARKER_RE,
+    (_, hex) => `\\u${hex}`,
+  );
+  return unescapeLiteralMarkers(withRealSurrogatesRestored);
 }
 
 export function compileWithRust(
