@@ -32,6 +32,12 @@ import {ExternalFunction} from '..';
  *   else return Foo_unoptimized();
  * }
  * ```
+ *
+ * If the original declaration is exported, the export stays on the public
+ * name: `export function Foo() {}` becomes `function Foo_unoptimized() {}`
+ * plus `export function Foo() {...}`. TypeScript overload signatures
+ * (`export function Foo(a: string): void;`) are one way to reach this path,
+ * because they reference `Foo` before its implementation.
  */
 function insertAdditionalFunctionDeclaration(
   fnPath: NodePath<t.FunctionDeclaration>,
@@ -90,39 +96,61 @@ function insertAdditionalFunctionDeclaration(
       genNewArgs.push(() => t.identifier(argName));
     }
   }
-  // insertAfter called in reverse order of how nodes should appear in program
-  fnPath.insertAfter(
-    t.functionDeclaration(
-      originalFnName,
-      newParams,
-      t.blockStatement([
-        t.ifStatement(
-          gatingCondition,
-          t.returnStatement(
-            t.callExpression(
-              compiled.id,
-              genNewArgs.map(fn => fn()),
-            ),
-          ),
-          t.returnStatement(
-            t.callExpression(
-              unoptimizedFnName,
-              genNewArgs.map(fn => fn()),
-            ),
+  const gatedFn = t.functionDeclaration(
+    originalFnName,
+    newParams,
+    t.blockStatement([
+      t.ifStatement(
+        gatingCondition,
+        t.returnStatement(
+          t.callExpression(
+            compiled.id,
+            genNewArgs.map(fn => fn()),
           ),
         ),
-      ]),
-    ),
-  );
-  fnPath.insertBefore(
-    t.variableDeclaration('const', [
-      t.variableDeclarator(
-        gatingCondition,
-        t.callExpression(t.identifier(gatingFunctionIdentifierName), []),
+        t.returnStatement(
+          t.callExpression(
+            unoptimizedFnName,
+            genNewArgs.map(fn => fn()),
+          ),
+        ),
       ),
     ]),
   );
-  fnPath.insertBefore(compiled);
+
+  /**
+   * Step 3: keep the public binding on the gated function. When the original
+   * declaration is exported (`export function Foo` / `export default function
+   * Foo`), the export must move to the inserted `Foo`. Otherwise the module
+   * would export `Foo_unoptimized` and no longer export `Foo` at all, and
+   * importers of `Foo` would receive `undefined`.
+   */
+  const exportPath = fnPath.parentPath;
+  if (exportPath.isExportNamedDeclaration()) {
+    exportPath.insertAfter(t.exportNamedDeclaration(gatedFn, []));
+    insertGatingResultAndCompiled(exportPath);
+    exportPath.replaceWith(fnPath.node);
+  } else if (exportPath.isExportDefaultDeclaration()) {
+    exportPath.insertAfter(t.exportDefaultDeclaration(gatedFn));
+    insertGatingResultAndCompiled(exportPath);
+    exportPath.replaceWith(fnPath.node);
+  } else {
+    // insertAfter called in reverse order of how nodes should appear in program
+    fnPath.insertAfter(gatedFn);
+    insertGatingResultAndCompiled(fnPath);
+  }
+
+  function insertGatingResultAndCompiled(statementPath: NodePath): void {
+    statementPath.insertBefore(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          gatingCondition,
+          t.callExpression(t.identifier(gatingFunctionIdentifierName), []),
+        ),
+      ]),
+    );
+    statementPath.insertBefore(compiled);
+  }
 }
 export function insertGatedFunctionDeclaration(
   fnPath: NodePath<
