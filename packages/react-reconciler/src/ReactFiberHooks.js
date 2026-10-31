@@ -2521,12 +2521,24 @@ function updateActionStateImpl<S, P>(
   const actionQueue = actionQueueHook.queue;
   const dispatch = actionQueue.dispatch;
 
-  // Check if a new action was passed. If so, update it in an effect.
-  const prevAction = actionQueueHook.memoizedState;
+  // Check if a new action was passed. If so, update it in an effect. Compare
+  // against the committed hook, since the work-in-progress hook is reused
+  // across re-render passes.
+  const prevAction = (currentHook as any as Hook).memoizedState;
+  actionQueueHook.memoizedState = action;
   if (action !== prevAction) {
     currentlyRenderingFiber.flags |= PassiveEffect;
     pushSimpleEffect(
       HookHasEffect | HookPassive,
+      createEffectInstance(),
+      actionStateActionEffect.bind(null, actionQueue, action),
+      null,
+    );
+  } else {
+    // Still push the effect so that it runs again if passive effects are
+    // reconnected, e.g. when a hidden Activity becomes visible.
+    pushSimpleEffect(
+      HookPassive,
       createEffectInstance(),
       actionStateActionEffect.bind(null, actionQueue, action),
       null,
