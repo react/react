@@ -15,7 +15,7 @@ import type {ReactComponentInfo} from 'shared/ReactTypes';
 export * from 'react-server-dom-unbundled/src/server/ReactFlightServerConfigUnbundledBundler';
 export * from 'react-dom-bindings/src/server/ReactFlightServerConfigDOM';
 
-export const supportsRequestStorage = true;
+export const supportsRequestStorage: boolean = true;
 export const requestStorage: AsyncLocalStorage<Request | void> =
   new AsyncLocalStorage();
 
