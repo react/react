@@ -747,4 +747,68 @@ describe('ReactDOMFizzViewTransition', () => {
     expect(applied.get('fbC')).toBe('skeleton-exit');
     expect(applied.get('fbD')).toBe('skeleton-exit-deep');
   });
+
+  // @gate enableViewTransition
+  it('restores authored view transition styles after a streaming reveal', async () => {
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+    let ready;
+    const readyPromise = new Promise(r => (ready = r));
+
+    document.startViewTransition = function (arg) {
+      const update = typeof arg === 'function' ? arg : arg.update;
+      update();
+      return {
+        ready: readyPromise,
+        finished: Promise.resolve(),
+        skipTransition() {},
+        types: [],
+      };
+    };
+    if (!global.window.CSS) {
+      global.window.CSS = {escape: s => s};
+    }
+    Object.defineProperty(document, 'fonts', {
+      value: {status: 'loaded', ready: Promise.resolve()},
+      configurable: true,
+    });
+    global.window.Element.prototype.getBoundingClientRect = function () {
+      return {left: 0, top: 0, width: 100, height: 20, right: 100, bottom: 20};
+    };
+
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      return (
+        <Suspense fallback={<div>Loading</div>}>
+          <ViewTransition enter="page-enter">
+            <div
+              id="content"
+              style={{
+                viewTransitionName: 'authored-name',
+                viewTransitionClass: 'authored-class',
+              }}>
+              <Suspend />
+            </div>
+          </ViewTransition>
+        </Suspense>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    await serverAct(async () => {
+      await resolve(<div>Content</div>);
+    });
+
+    ready();
+    await Promise.resolve();
+
+    const content = container.querySelector('#content');
+    expect(content.style.viewTransitionName).toBe('authored-name');
+    expect(content.style.viewTransitionClass).toBe('authored-class');
+  });
 });
