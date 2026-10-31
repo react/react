@@ -351,11 +351,17 @@ function startServer(
     }
     connected = socket;
     socket.onerror = error => {
+      if (connected !== socket) {
+        return;
+      }
       connected = null;
       onDisconnected();
       log.error('Error with websocket connection', error);
     };
     socket.onclose = () => {
+      if (connected !== socket) {
+        return;
+      }
       connected = null;
       onDisconnected();
       log('Connection to RN closed');
