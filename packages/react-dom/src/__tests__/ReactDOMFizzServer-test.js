@@ -468,6 +468,7 @@ describe('ReactDOMFizzServer', () => {
         <span>Fallback</span>
       </div>,
     );
+    const serverFallback = container.getElementsByTagName('span')[0];
     const recoverableErrors = [];
     ReactDOMClient.hydrateRoot(container, <App />, {
       onRecoverableError(error) {
@@ -482,6 +483,11 @@ describe('ReactDOMFizzServer', () => {
       </div>,
     );
 
+    // The server already rendered this fallback. Hydration re-suspends on the
+    // client promise, but the fallback is the same one the server sent, so
+    // React must not tear it down and mount an identical copy. Same nodes.
+    expect(container.getElementsByTagName('span')[0]).toBe(serverFallback);
+
     await clientAct(() => {
       resolveBrowserText('Browser');
     });
@@ -489,6 +495,90 @@ describe('ReactDOMFizzServer', () => {
 
     expect(recoverableErrors).toEqual([]);
     expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  // Regression test for https://github.com/react/react/issues/37620
+  //
+  // When the server bails out and leaves a permanent fallback (use(browser())),
+  // and hydration then suspends again on a promise that only exists on the
+  // client, React used to delete the server's fallback and mount an identical
+  // copy. Same pixels, different nodes - so a CSS animation restarts and any
+  // DOM state the fallback built up is lost. The fallback should instead stay
+  // exactly as the server left it.
+  it('keeps the server fallback when a browser-only component suspends on the client', async () => {
+    let resolveClientPromise;
+    const clientPromise = new Promise(resolve => {
+      resolveClientPromise = resolve;
+    });
+
+    function BrowserOnly() {
+      // Passes on the client, but makes the server bail out and leave the
+      // fallback it already sent.
+      use(ReactDOM.browser());
+      // Nothing on the server can resolve this one.
+      const text = use(clientPromise);
+      Scheduler.log(text);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    const serverFallback = container.getElementsByTagName('span')[0];
+    // Give the fallback some DOM state the server could not have set. If React
+    // remounts the fallback during hydration, this goes away with the node.
+    serverFallback.setAttribute('data-kept', 'yes');
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    // Hydration re-suspends here. The fallback is unchanged either way, so the
+    // only way to tell the two behaviours apart is node identity.
+    await waitForAll([]);
+
+    expect(container.getElementsByTagName('span')[0]).toBe(serverFallback);
+    expect(
+      container.getElementsByTagName('span')[0].getAttribute('data-kept'),
+    ).toBe('yes');
+
+    await clientAct(() => {
+      resolveClientPromise('Browser');
+    });
+    assertLog(['Browser']);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(container.getElementsByTagName('span')[0]).not.toBe(serverFallback);
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>Browser</span>
