@@ -237,8 +237,6 @@ export function createContainer(
   tag: RootTag,
   hydrationCallbacks: null | SuspenseHydrationCallbacks,
   isStrictMode: boolean,
-  // TODO: Remove `concurrentUpdatesByDefaultOverride`. It is now ignored.
-  concurrentUpdatesByDefaultOverride: null | boolean,
   identifierPrefix: string,
   onUncaughtError: (
     error: mixed,
@@ -287,8 +285,6 @@ export function createHydrationContainer(
   tag: RootTag,
   hydrationCallbacks: null | SuspenseHydrationCallbacks,
   isStrictMode: boolean,
-  // TODO: Remove `concurrentUpdatesByDefaultOverride`. It is now ignored.
-  concurrentUpdatesByDefaultOverride: null | boolean,
   identifierPrefix: string,
   onUncaughtError: (
     error: mixed,
