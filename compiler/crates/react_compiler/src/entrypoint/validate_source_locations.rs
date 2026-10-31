@@ -67,13 +67,7 @@ pub fn validate_source_locations(
     for entry in &sorted_entries {
         let generated_node_types = generated.get(&entry.key);
 
-        if generated_node_types.is_none() {
-            // Location is completely missing
-            let mut node_types_str: Vec<&str> = entry.node_types.iter().copied().collect();
-            node_types_str.sort();
-            report_missing_location(env, &entry.loc, &node_types_str.join(", "));
-        } else {
-            let generated_node_types = generated_node_types.unwrap();
+        if let Some(generated_node_types) = generated_node_types {
             // Location exists, check each strict node type
             for &node_type in &entry.node_types {
                 if strict_node_types.contains(node_type)
@@ -92,6 +86,11 @@ pub fn validate_source_locations(
                     }
                 }
             }
+        } else {
+            // Location is completely missing
+            let mut node_types_str: Vec<&str> = entry.node_types.iter().copied().collect();
+            node_types_str.sort();
+            report_missing_location(env, &entry.loc, &node_types_str.join(", "));
         }
     }
 }

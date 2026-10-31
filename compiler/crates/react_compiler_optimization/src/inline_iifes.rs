@@ -175,7 +175,7 @@ pub fn inline_immediately_invoked_function_expressions(
                         let inner_blocks: Vec<(BlockId, BasicBlock)> =
                             inner_func.body.blocks.drain(..).collect();
                         let inner_instructions: Vec<Instruction> =
-                            inner_func.instructions.drain(..).collect();
+                            std::mem::take(&mut inner_func.instructions);
 
                         // Append inner instructions first, then remap block instruction IDs
                         let instr_offset = func.instructions.len() as u32;
@@ -248,7 +248,7 @@ pub fn inline_immediately_invoked_function_expressions(
                         let inner_blocks: Vec<(BlockId, BasicBlock)> =
                             inner_func.body.blocks.drain(..).collect();
                         let inner_instructions: Vec<Instruction> =
-                            inner_func.instructions.drain(..).collect();
+                            std::mem::take(&mut inner_func.instructions);
 
                         // Append inner instructions first, then remap block instruction IDs
                         let instr_offset = func.instructions.len() as u32;
