@@ -838,6 +838,68 @@ describe('ReactHooks', () => {
     ]);
   });
 
+  it('warns for bad useMemo first arg', async () => {
+    const {useMemo} = React;
+    function App() {
+      useMemo(5, []);
+      return null;
+    }
+
+    // The throwing semantics are unchanged: it still throws the same error.
+    await expect(async () => {
+      await act(() => {
+        ReactTestRenderer.create(<App />, {unstable_isConcurrent: true});
+      });
+    }).rejects.toThrow('nextCreate is not a function');
+
+    const expectedWarning =
+      'Expected useMemo() first argument to be a function that computes a ' +
+      'value. Instead received: number.\n' +
+      '    in App (at **)';
+    // The render throws, so React retries it, and the DEV warning is emitted
+    // on each attempt. This is pre-existing behavior of hook DEV checks -
+    // the same is true of e.g. the invalid deps array warning - so we assert
+    // it as-is rather than special-casing useMemo.
+    assertConsoleErrorDev([expectedWarning, expectedWarning]);
+  });
+
+  it('does not warn for a valid useMemo call', async () => {
+    const {useMemo} = React;
+    function App() {
+      const value = useMemo(() => 42, []);
+      return <div>{value}</div>;
+    }
+
+    await act(() => {
+      ReactTestRenderer.create(<App />, {unstable_isConcurrent: true});
+    });
+    assertConsoleErrorDev([]);
+  });
+
+  it('does not add a new throwing path when deps are unchanged', async () => {
+    const {useMemo} = React;
+    function App({value}) {
+      useMemo(value, []);
+      return null;
+    }
+
+    const root = ReactTestRenderer.create(null, {unstable_isConcurrent: true});
+    await act(() => {
+      root.update(<App value={() => 1} />);
+    });
+    // Deps are unchanged, so the memoized value is reused and the (now
+    // invalid) first argument is never called. This must warn but must NOT
+    // throw - otherwise we'd have introduced a new throwing path.
+    await act(() => {
+      root.update(<App value={5} />);
+    });
+    assertConsoleErrorDev([
+      'Expected useMemo() first argument to be a function that computes a ' +
+        'value. Instead received: number.\n' +
+        '    in App (at **)',
+    ]);
+  });
+
   it('warns for bad useImperativeHandle second arg', async () => {
     const {useImperativeHandle} = React;
     const App = React.forwardRef((props, ref) => {
