@@ -39,10 +39,15 @@ const unitlessNumbers = new Set([
   'fontWeight',
   'lineClamp',
   'lineHeight',
+  'maskBorderOutset',
+  'maskBorderSlice',
+  'maskBorderWidth',
+  'mathDepth',
   'opacity',
   'order',
   'orphans',
   'scale',
+  'shapeImageThreshold',
   'tabSize',
   'widows',
   'zIndex',
@@ -82,6 +87,9 @@ const unitlessNumbers = new Set([
   'WebkitFlexPositive',
   'WebkitFlexShrink',
   'WebkitLineClamp',
+  'WebkitMaskBoxImageOutset',
+  'WebkitMaskBoxImageSlice',
+  'WebkitMaskBoxImageWidth',
 ]);
 export default function (name: string): boolean {
   return unitlessNumbers.has(name);
