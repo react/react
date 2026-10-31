@@ -1108,6 +1108,7 @@ impl<'a> PrintFormatter<'a> {
             InstructionValue::PropertyLoad {
                 object,
                 property,
+                computed: _,
                 loc,
             } => {
                 self.line("PropertyLoad {");
@@ -1124,6 +1125,7 @@ impl<'a> PrintFormatter<'a> {
             InstructionValue::PropertyStore {
                 object,
                 property,
+                computed: _,
                 value: val,
                 loc,
             } => {
