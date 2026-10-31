@@ -244,6 +244,7 @@ type StorageEventTypes = 'storage';
 type SecurityPolicyViolationEventTypes = 'securitypolicyviolation';
 type USBConnectionEventTypes = 'connect' | 'disconnect';
 type ToggleEventTypes = 'beforetoggle' | 'toggle';
+type CommandEventTypes = 'command';
 type EventListenerOptionsOrUseCapture =
   | boolean
   | {

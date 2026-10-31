@@ -144,6 +144,19 @@ declare class ToggleEvent extends Event {
   +newState: string;
 }
 
+type CommandEvent$Init = {
+  ...Event$Init,
+  command?: string,
+  source?: Element | null,
+  ...
+};
+
+declare class CommandEvent extends Event {
+  constructor(type: CommandEventTypes, eventInit?: CommandEvent$Init): void;
+  +command: string;
+  +source: Element | null;
+}
+
 // TODO: HTMLDocument
 type FocusOptions = {preventScroll?: boolean, ...};
 
@@ -188,6 +201,7 @@ declare class HTMLElement extends Element {
   oncanplaythrough: ?Function;
   onchange: ?Function;
   onclick: ?Function;
+  oncommand: ?Function;
   oncontextmenu: ?Function;
   oncuechange: ?Function;
   ondblclick: ?Function;
@@ -1141,6 +1155,8 @@ declare class HTMLButtonElement extends HTMLElement {
   setCustomValidity(error: string): void;
   popoverTargetElement: Element | null;
   popoverTargetAction: 'toggle' | 'show' | 'hide';
+  command: string;
+  commandForElement: Element | null;
 }
 
 // https://w3c.github.io/html/sec-forms.html#the-textarea-element

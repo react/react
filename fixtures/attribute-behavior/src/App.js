@@ -241,12 +241,15 @@ const UNKNOWN_HTML_TAGS = new Set(['keygen', 'time', 'command']);
 async function getRenderedAttributeValue(
   react,
   renderer,
+  clientRenderer,
   serverRenderer,
   attribute,
   type
 ) {
   const originalConsoleError = console.error;
   console.error = warn;
+  const originalConsoleWarn = console.warn;
+  console.warn = warn;
 
   const containerTagName = attribute.containerTagName || 'div';
   const tagName = attribute.tagName || 'div';
@@ -303,7 +306,7 @@ async function getRenderedAttributeValue(
   try {
     let container = createContainer();
     renderer.flushSync(() => {
-      renderer
+      clientRenderer
         .createRoot(container)
         .render(react.createElement(tagName, baseProps));
     });
@@ -313,7 +316,7 @@ async function getRenderedAttributeValue(
     container = createContainer();
 
     renderer.flushSync(() => {
-      renderer
+      clientRenderer
         .createRoot(container)
         .render(react.createElement(tagName, props));
     });
@@ -386,6 +389,7 @@ async function getRenderedAttributeValue(
   }
 
   console.error = originalConsoleError;
+  console.warn = originalConsoleWarn;
 
   if (hasTagMismatch) {
     throw new Error('Tag mismatch. Expected: ' + tagName);
@@ -433,14 +437,17 @@ async function prepareState(initGlobals) {
     const {
       ReactStable,
       ReactDOMStable,
+      ReactDOMClientStable,
       ReactDOMServerStable,
       ReactNext,
       ReactDOMNext,
+      ReactDOMClientNext,
       ReactDOMServerNext,
-    } = initGlobals(attribute, type);
+    } = await initGlobals(attribute, type);
     const reactStableValue = await getRenderedAttributeValue(
       ReactStable,
       ReactDOMStable,
+      ReactDOMClientStable,
       ReactDOMServerStable,
       attribute,
       type
@@ -448,6 +455,7 @@ async function prepareState(initGlobals) {
     const reactNextValue = await getRenderedAttributeValue(
       ReactNext,
       ReactDOMNext,
+      ReactDOMClientNext,
       ReactDOMServerNext,
       attribute,
       type
@@ -799,23 +807,67 @@ class App extends React.Component {
   };
 
   async componentDidMount() {
-    const sources = {
-      ReactStable: 'https://unpkg.com/react@latest/umd/react.development.js',
-      ReactDOMStable:
-        'https://unpkg.com/react-dom@latest/umd/react-dom.development.js',
-      ReactDOMServerStable:
-        'https://unpkg.com/react-dom@latest/umd/react-dom-server.browser.development.js',
-      ReactNext: '/react.development.js',
-      ReactDOMNext: '/react-dom.development.js',
-      ReactDOMServerNext: '/react-dom-server.browser.development.js',
-    };
-    const codePromises = Object.values(sources).map(src =>
-      fetch(src).then(res => res.text())
+    const sources = [
+      {
+        globalName: 'SchedulerStable',
+        moduleName: 'scheduler',
+        url: 'https://unpkg.com/scheduler@latest/cjs/scheduler.development.js',
+      },
+      {
+        globalName: 'ReactStable',
+        moduleName: 'react',
+        url: 'https://unpkg.com/react@latest/cjs/react.development.js',
+      },
+      {
+        globalName: 'ReactDOMStable',
+        moduleName: 'react-dom',
+        url: 'https://unpkg.com/react-dom@latest/cjs/react-dom.development.js',
+      },
+      {
+        globalName: 'ReactDOMClientStable',
+        moduleName: 'react-dom/client',
+        url: 'https://unpkg.com/react-dom@latest/cjs/react-dom-client.development.js',
+      },
+      {
+        globalName: 'ReactDOMServerStable',
+        moduleName: 'react-dom/server',
+        url: 'https://unpkg.com/react-dom@latest/cjs/react-dom-server.browser.development.js',
+      },
+      {
+        globalName: 'SchedulerNext',
+        moduleName: 'scheduler',
+        url: '/scheduler.development.js',
+      },
+      {
+        globalName: 'ReactNext',
+        moduleName: 'react',
+        url: '/react.development.js',
+      },
+      {
+        globalName: 'ReactDOMNext',
+        moduleName: 'react-dom',
+        url: '/react-dom.development.js',
+      },
+      {
+        globalName: 'ReactDOMClientNext',
+        moduleName: 'react-dom/client',
+        url: '/react-dom-client.development.js',
+      },
+      {
+        globalName: 'ReactDOMServerNext',
+        moduleName: 'react-dom/server',
+        url: '/react-dom-server.browser.development.js',
+      },
+    ];
+    const codePromises = sources.map(({url}) =>
+      fetch(url)
+        .then(res => res.text())
+        .then(code => code.replaceAll('process.env.NODE_ENV', '"development"'))
     );
     const codesByIndex = await Promise.all(codePromises);
 
     const pool = [];
-    function initGlobals(attribute, type) {
+    async function initGlobals(attribute, type) {
       if (useFastMode) {
         // Note: this is not giving correct results for warnings.
         // But it's much faster.
@@ -838,10 +890,19 @@ class App extends React.Component {
       }
 
       let globals = {};
-      Object.keys(sources).forEach((name, i) => {
-        eval.call(window, codesByIndex[i]); // eslint-disable-line
-        globals[name] = window[name.replace(/Stable|Next/g, '')];
-      });
+
+      for (let i = 0; i < sources.length; i++) {
+        const {globalName, moduleName} = sources[i];
+        globals[globalName] = await new Promise(resolve => {
+          window.requirejs.undef(moduleName);
+          // eslint-disable-next-line no-eval
+          eval.call(
+            window,
+            `window.define("${moduleName}", function (require, exports, module) {${codesByIndex[i]}});`
+          );
+          window.require([moduleName], resolve);
+        });
+      }
 
       // Cache for future use (for different attributes).
       pool.push({

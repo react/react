@@ -230,18 +230,24 @@ export const mediaEventTypes: Array<DOMEventName> = [
   'waiting',
 ];
 
+// Some events don't bubble in the browser.
+export const targetOnlyEvents: Array<DOMEventName> = [
+  'beforetoggle',
+  'toggle',
+  'command',
+  'scroll',
+  'scrollend',
+];
+
 // We should not delegate these events to the container, but rather
 // set them on the actual target element itself. This is primarily
 // because these events do not consistently bubble in the DOM.
 export const nonDelegatedEvents: Set<DOMEventName> = new Set([
-  'beforetoggle',
   'cancel',
   'close',
   'invalid',
   'load',
-  'scroll',
-  'scrollend',
-  'toggle',
+  ...targetOnlyEvents,
   // In order to reduce bytes, we insert the above array of media events
   // into this Set. Note: the "error" event isn't an exclusive media event,
   // and can occur on other elements too. Rather than duplicate that event,
