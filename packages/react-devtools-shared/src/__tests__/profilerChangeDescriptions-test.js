@@ -147,4 +147,56 @@ describe('Profiler change descriptions', () => {
       }
     `);
   });
+
+  // @reactVersion >=18.0
+  it('should record a change description for memo(forwardRef(...)) components that use hooks', () => {
+    function RefForwardingComponent(props, ref) {
+      const [count, setCount] = React.useState(0);
+      const doubled = React.useMemo(() => count * 2, [count]);
+      return <input ref={ref} value={count + doubled} onChange={setCount} />;
+    }
+
+    const MemoizedRefForwardingComponent = React.memo(
+      React.forwardRef(RefForwardingComponent),
+    );
+
+    let setProp = null;
+
+    function App() {
+      const [prop, setPropState] = React.useState(0);
+      setProp = setPropState;
+
+      return <MemoizedRefForwardingComponent value={prop} />;
+    }
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => render(<App />));
+    // Change a prop so the memoized forward-ref component re-renders.
+    utils.act(() => setProp(1));
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const rootID = store.roots[0];
+    const commitData = store.profilerStore.getCommitData(rootID, 1);
+
+    const element = store.getElementAtIndex(2);
+    expect(element.displayName).toBe('RefForwardingComponent');
+    expect(element.hocDisplayNames).toEqual(['ForwardRef']);
+
+    // Before the fix, inspecting the hooks of the outer MemoComponent
+    // fiber threw "Unknown Fiber. Needs to be a function component to
+    // inspect hooks.", so no change description was recorded.
+    expect(commitData.changeDescriptions.get(element.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": [],
+        "isFirstMount": false,
+        "props": [
+          "value",
+        ],
+        "state": null,
+      }
+    `);
+  });
 });
