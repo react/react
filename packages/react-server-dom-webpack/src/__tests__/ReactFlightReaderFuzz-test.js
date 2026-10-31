@@ -1658,17 +1658,6 @@ const nodeKinds = [
   'component',
 ];
 
-const leafKinds = [
-  'value',
-  'date',
-  'binary',
-  'text',
-  'blob',
-  'special',
-  'host',
-  'module',
-];
-
 function kindOf(node) {
   const kind = nodeKinds.find(candidate => candidate in node);
   if (kind === undefined) {
@@ -1740,20 +1729,22 @@ const moves = [
   'root promise',
 ];
 
-function generateGraph(seed, {without = []} = {}) {
+function generateGraph(seed, {without = [], streamsHeldOnce = false} = {}) {
   const pick = random(seed + '/graph');
   const pickFrom = list => list[pick(list.length)];
   const allowed = moves.filter(move => !without.includes(move));
   const names = [];
   const nodes = {};
-  // Every node a move may point at. Streams, iterables and iterators are
-  // held once: the writer reads them once and does not record where it
-  // first wrote one. Stream items are left out: an item that reaches itself
-  // overflows the writer, which has no row of its own for an item to refer
-  // back to.
+  // Every node a move may point at. A sync iterator is held once: its items
+  // are written where it is first met and a second reference would drain it
+  // again. The reply encoder reads a stream once without recording where it
+  // first wrote it, so on the reply host streams are held once too. Nothing
+  // held once is placed in a stream item, which may be written more than
+  // once.
   const targets = [];
   const single = [];
   const containers = [];
+  const items = [];
   // Nodes are named by kind: set0, promise1, module2 …
   const counts = {};
   const add = (node, {target = true, kind = kindOf(node)} = {}) => {
@@ -1793,13 +1784,20 @@ function generateGraph(seed, {without = []} = {}) {
       node[kindOf(node)].push(item);
     }
   };
-  // A stream item is written inline, with no reference for a container inside
-  // it to break a cycle with, so items hold leaves and handles.
-  const item = () =>
-    add(
-      {array: [pickFrom(targets.filter(name => !containers.includes(name)))]},
-      {target: false, kind: 'item'},
-    );
+  const item = () => {
+    const name = add({array: [pickFrom(targets)]}, {kind: 'item'});
+    containers.push(name);
+    items.push(name);
+    return name;
+  };
+
+  const addStream = node => {
+    if (streamsHeldOnce) {
+      single.push(add(node, {target: false}));
+    } else {
+      add(node);
+    }
+  };
 
   add({value: 'value'});
   add({value: 'other value'});
@@ -1883,21 +1881,19 @@ function generateGraph(seed, {without = []} = {}) {
         break;
       }
       case 'stream': {
-        single.push(add({stream: [item(), item()]}, {target: false}));
+        addStream({stream: [item(), item()]});
         break;
       }
       case 'canceled stream': {
-        single.push(add({stream: [item()], cancel: true}, {target: false}));
+        addStream({stream: [item()], cancel: true});
         break;
       }
       case 'byte stream': {
-        single.push(add({bytes: 1 + pick(3)}, {target: false}));
+        addStream({bytes: 1 + pick(3)});
         break;
       }
       case 'iterable': {
-        single.push(
-          add({iterable: [item(), item()], returns: item()}, {target: false}),
-        );
+        addStream({iterable: [item(), item()], returns: item()});
         break;
       }
       case 'iterator': {
@@ -1942,12 +1938,7 @@ function generateGraph(seed, {without = []} = {}) {
         break;
       }
       case 'error': {
-        // In DEV the writer outlines a cause every time the Error is written,
-        // so a cause that reaches the Error again recurses; causes are leaves.
-        const leaves = targets.filter(name =>
-          leafKinds.includes(kindOf(nodes[name])),
-        );
-        nodes[addError()].cause = pickFrom(leaves);
+        nodes[addError()].cause = pickFrom(targets);
         break;
       }
       case 'aggregate error': {
@@ -1988,8 +1979,13 @@ function generateGraph(seed, {without = []} = {}) {
     // Each node a move adds is put into a container that already existed,
     // so that the graph stays connected and the node is actually sent.
     for (let i = before; i < names.length; i++) {
-      if (targets.includes(names[i]) || single.includes(names[i])) {
+      if (targets.includes(names[i])) {
         insert(pickFrom(existing), names[i]);
+      } else if (single.includes(names[i])) {
+        insert(
+          pickFrom(existing.filter(name => !items.includes(name))),
+          names[i],
+        );
       }
     }
   }
@@ -2657,6 +2653,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
                 without: unsupportedMoves.concat(
                   host === 'reply' ? replyMoves : [],
                 ),
+                streamsHeldOnce: host === 'reply',
               }),
               family: 'graph',
               seed,
@@ -2791,9 +2788,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
         afterEof: true,
       }));
 
-    // Writer bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('streamed array containing itself', () =>
+    it('streamed array containing itself', () =>
       runGraph({
         nodes: {
           item: {array: ['item']},

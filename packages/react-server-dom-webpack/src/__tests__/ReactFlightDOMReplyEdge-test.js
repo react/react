@@ -243,6 +243,80 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
   });
 
+  it('can pass a stream item that contains itself', async () => {
+    const item = ['first'];
+    item.push(item);
+    item.push({back: item});
+    const map = new Map();
+    map.set('self', map);
+    const inner = {};
+    inner.self = inner;
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.enqueue(map);
+        c.enqueue({inner});
+        c.enqueue({again: item});
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    expect(first[0]).toBe('first');
+    expect(first[1]).toBe(first);
+    expect(first[2].back).toBe(first);
+    const second = (await reader.read()).value;
+    expect(second.get('self')).toBe(second);
+    const third = (await reader.read()).value;
+    expect(third.inner.self).toBe(third.inner);
+    const fourth = (await reader.read()).value;
+    expect(fourth.again).toBe(first);
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it('can refer to a stream inside a stream item from a later Promise', async () => {
+    const inner = new ReadableStream({
+      start(c) {
+        c.enqueue('inner');
+        c.close();
+      },
+    });
+    const holder = {inner};
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue({holder});
+        c.close();
+      },
+    });
+    let resolveLater;
+    const later = new Promise(resolve => (resolveLater = resolve));
+    const bodyPromise = ReactServerDOMClient.encodeReply({s, later});
+    // The item is written before the Promise resolves, so the Promise's
+    // value can only refer to the stream through the item.
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+    resolveLater(holder);
+    const body = await bodyPromise;
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    const item = (await result.s.getReader().read()).value;
+    const laterValue = await result.later;
+    expect(laterValue).toBe(item.holder);
+    const read = await laterValue.inner.getReader().read();
+    expect(read.value).toBe('inner');
+  });
+
   it('ends a BYOB read that is waiting when the byte stream closes', async () => {
     const s = new ReadableStream({
       type: 'bytes',
