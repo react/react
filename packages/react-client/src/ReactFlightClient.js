@@ -5670,6 +5670,15 @@ export function processStringChunk(
 
 function parseModel<T>(response: Response, json: UninitializedModel): T {
   const rawModel = JSON.parse(json);
+  // Without protocol strings or keys that revival deletes, JSON.parse has
+  // already produced the final value. Escapes can hide either spelling.
+  if (
+    json.indexOf('$') === -1 &&
+    json.indexOf('\\') === -1 &&
+    json.indexOf('__proto__') === -1
+  ) {
+    return rawModel;
+  }
   // Pass a wrapper object as parentObject to match the original JSON.parse
   // reviver behavior, where the root value's reviver receives {"": rootValue}
   // as `this`. This ensures parentObject is never null when accessed downstream.
