@@ -64,6 +64,43 @@ describe('FragmentRefs', () => {
     document.body.removeChild(container);
   });
 
+  it.each(['ShadowRoot', 'DocumentFragment', 'Element'])(
+    'compares portaled Fragment children inside a %s',
+    async kind => {
+      const target =
+        kind === 'ShadowRoot'
+          ? container.attachShadow({mode: 'open'})
+          : kind === 'DocumentFragment'
+            ? document.createDocumentFragment()
+            : document.createElement('div');
+      const ref = React.createRef();
+      const root = ReactDOMClient.createRoot(document.createElement('div'));
+      await act(() =>
+        root.render(
+          createPortal(
+            <Fragment ref={ref}>
+              <button>
+                <span />
+              </button>
+              <button />
+            </Fragment>,
+            target,
+          ),
+        ),
+      );
+      expect(ref.current.compareDocumentPosition(target.firstChild)).toBe(
+        Node.DOCUMENT_POSITION_CONTAINED_BY,
+      );
+      expect(ref.current.compareDocumentPosition(target.lastChild)).toBe(
+        Node.DOCUMENT_POSITION_CONTAINED_BY,
+      );
+      expect(
+        ref.current.compareDocumentPosition(target.firstChild.firstChild),
+      ).toBe(Node.DOCUMENT_POSITION_CONTAINED_BY);
+      await act(() => root.unmount());
+    },
+  );
+
   it('attaches a ref to Fragment', async () => {
     const fragmentRef = React.createRef();
     const root = ReactDOMClient.createRoot(container);
