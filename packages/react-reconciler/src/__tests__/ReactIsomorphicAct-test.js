@@ -19,6 +19,7 @@ let startTransition;
 let waitForMicrotasks;
 let Scheduler;
 let assertLog;
+let assertConsoleErrorDev;
 
 describe('isomorphic act()', () => {
   beforeEach(() => {
@@ -35,6 +36,8 @@ describe('isomorphic act()', () => {
 
     waitForMicrotasks = require('internal-test-utils').waitForMicrotasks;
     assertLog = require('internal-test-utils').assertLog;
+    assertConsoleErrorDev =
+      require('internal-test-utils').assertConsoleErrorDev;
   });
 
   beforeEach(() => {
@@ -281,7 +284,6 @@ describe('isomorphic act()', () => {
       return use(promise);
     }
 
-    spyOnDev(console, 'error').mockImplementation(() => {});
     const root = ReactNoop.createRoot();
     act(() => {
       startTransition(() => {
@@ -300,13 +302,12 @@ describe('isomorphic act()', () => {
     // to happen when the microtask queue is flushed.
     await waitForMicrotasks();
 
-    expect(console.error).toHaveBeenCalledTimes(1);
-    expect(console.error.mock.calls[0][0]).toContain(
+    assertConsoleErrorDev([
       'A component suspended inside an `act` scope, but the `act` ' +
         'call was not awaited. When testing React components that ' +
         'depend on asynchronous data, you must await the result:\n\n' +
         'await act(() => ...)',
-    );
+    ]);
   });
 
   // @gate __DEV__
@@ -331,7 +332,6 @@ describe('isomorphic act()', () => {
       return 'Async';
     }
 
-    spyOnDev(console, 'error').mockImplementation(() => {});
     const root = ReactNoop.createRoot();
     act(() => {
       startTransition(() => {
@@ -350,8 +350,6 @@ describe('isomorphic act()', () => {
     // The exact number of microtasks is an implementation detail; just needs
     // to happen when the microtask queue is flushed.
     await waitForMicrotasks();
-
-    expect(console.error).toHaveBeenCalledTimes(0);
 
     // Finish loading the data
     await act(async () => {
