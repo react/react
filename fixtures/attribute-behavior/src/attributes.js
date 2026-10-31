@@ -357,6 +357,21 @@ const attributes = [
   },
   {name: 'cols', tagName: 'textarea'},
   {name: 'colSpan', containerTagName: 'tr', tagName: 'td'},
+  {
+    name: 'commandFor',
+    read: element => {
+      document.body.appendChild(element);
+      try {
+        // trigger and target need to be connected for `commandForElement` to read the actual value.
+        return element.commandForElement;
+      } finally {
+        document.body.removeChild(element);
+      }
+    },
+    overrideStringValue: 'popover-target',
+    tagName: 'button',
+  },
+  {name: 'command', overrideStringValue: 'toggle-popover', tagName: 'button'},
   {name: 'content', containerTagName: 'head', tagName: 'meta'},
   {name: 'contentEditable'},
   {
