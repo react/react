@@ -66,5 +66,15 @@
       ],
       "run_at": "document_start"
     }
-  ]
+  ],
+
+  "commands": {
+    "inspect_node": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+X",
+        "mac": "Command+Shift+X"
+      },
+      "description": "Toggle on element/node inspector on React Devtools Component"
+    }
+  }
 }
