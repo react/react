@@ -23,6 +23,20 @@ const didWarnAboutName: {[string]: boolean} = __DEV__ ? {} : (null as any);
 
 export function trackNamedViewTransition(fiber: Fiber): void {
   if (__DEV__) {
+    const alternate = fiber.alternate;
+    if (alternate !== null) {
+      const prevName = (alternate.memoizedProps as ViewTransitionProps).name;
+      const currentName = (fiber.memoizedProps as ViewTransitionProps).name;
+      if (prevName !== currentName && prevName != null && prevName !== 'auto') {
+        const existing = mountedNamedViewTransitions.get(prevName);
+        if (
+          existing !== undefined &&
+          (existing === fiber || existing === alternate)
+        ) {
+          mountedNamedViewTransitions.delete(prevName);
+        }
+      }
+    }
     const name = (fiber.memoizedProps as ViewTransitionProps).name;
     if (name != null && name !== 'auto') {
       const existing = mountedNamedViewTransitions.get(name);

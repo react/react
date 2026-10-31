@@ -837,7 +837,11 @@ function commitLayoutEffectOnFiber(
     case ViewTransitionComponent: {
       if (enableViewTransition) {
         if (__DEV__) {
-          if (flags & ViewTransitionNamedStatic) {
+          if (
+            flags & ViewTransitionNamedStatic ||
+            (finishedWork.alternate !== null &&
+              finishedWork.alternate.flags & ViewTransitionNamedStatic)
+          ) {
             trackNamedViewTransition(finishedWork);
           }
         }
