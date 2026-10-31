@@ -463,12 +463,15 @@ const debugChannelRegistry =
 function readChunk<T>(chunk: SomeChunk<T>): T {
   // If we have resolved content, we try to initialize it first which
   // might put us back into one of the other states.
+  // A synchronous read can rethrow a stack overflow to the renderer, which
+  // can retry with a fresh stack. Eager initialization in stream callbacks
+  // must instead reject the chunk because there is no render task to retry.
   switch (chunk.status) {
     case RESOLVED_MODEL:
-      initializeModelChunk(chunk);
+      initializeModelChunk(chunk, true);
       break;
     case RESOLVED_MODULE:
-      initializeModuleChunk(chunk);
+      initializeModuleChunk(chunk, true);
       break;
   }
   // The status might have changed after initialization.
@@ -1051,6 +1054,8 @@ type InitializationHandler =
   | ErroredInitializationHandler;
 let initializingHandler: null | InitializationHandler = null;
 let initializingChunk: null | BlockedChunk<any> = null;
+// Outlined models initialized during a synchronous read can also be retried.
+let initializingWithRetry: boolean = false;
 let isInitializingDebugInfo: boolean = false;
 
 function initializeDebugChunk(
@@ -1134,13 +1139,19 @@ function initializeDebugChunk(
   }
 }
 
-function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
+function initializeModelChunk<T>(
+  chunk: ResolvedModelChunk<T>,
+  canRetry: boolean = initializingWithRetry,
+): void {
   const prevHandler = initializingHandler;
   const prevChunk = initializingChunk;
+  const prevRetry = initializingWithRetry;
   initializingHandler = null;
+  initializingWithRetry = canRetry;
 
   const resolvedModel = chunk.value;
-  const response = chunk.reason[RESPONSE_SYMBOL];
+  const resolvedReason = chunk.reason;
+  const response = resolvedReason[RESPONSE_SYMBOL];
 
   // We go to the BLOCKED state until we've fully resolved this.
   // We do this before parsing in case we try to initialize the same chunk
@@ -1162,8 +1173,10 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
     // Should we return early if that happens?
   }
 
+  let parsed = false;
   try {
     const value: T = parseModel(response, resolvedModel);
+    parsed = true;
     const handler = initializingHandler;
     if (handler !== null) {
       if (handler.errored) {
@@ -1263,18 +1276,41 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
     }
     initializeBlockedChunk(response, cyclicChunk, value, null);
   } catch (error) {
+    if (
+      canRetry &&
+      !parsed &&
+      error instanceof RangeError &&
+      error.message === 'Maximum call stack size exceeded' &&
+      (cyclicChunk as any).status === BLOCKED &&
+      cyclicChunk.value === null &&
+      cyclicChunk.reason === null
+    ) {
+      // Fizz can retry this node with a shallower stack. Keep the serialized
+      // model available instead of caching a transient decoding failure.
+      // If another model subscribed to this chunk during a cyclic parse,
+      // resetting it would discard those listeners, so don't retry that case.
+      const resolvedChunk: ResolvedModelChunk<T> = chunk as any;
+      resolvedChunk.status = RESOLVED_MODEL;
+      resolvedChunk.value = resolvedModel;
+      resolvedChunk.reason = resolvedReason;
+      throw error;
+    }
     const erroredChunk: ErroredChunk<T> = chunk as any;
     erroredChunk.status = ERRORED;
     erroredChunk.reason = error;
   } finally {
     initializingHandler = prevHandler;
+    initializingWithRetry = prevRetry;
     if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
       initializingChunk = prevChunk;
     }
   }
 }
 
-function initializeModuleChunk<T>(chunk: ResolvedModuleChunk<T>): void {
+function initializeModuleChunk<T>(
+  chunk: ResolvedModuleChunk<T>,
+  canRetry: boolean = initializingWithRetry,
+): void {
   try {
     const value: T = requireModule(chunk.value);
     const initializedChunk: InitializedChunk<T> = chunk as any;
@@ -1282,6 +1318,15 @@ function initializeModuleChunk<T>(chunk: ResolvedModuleChunk<T>): void {
     initializedChunk.value = value;
     initializedChunk.reason = null;
   } catch (error) {
+    if (
+      canRetry &&
+      error instanceof RangeError &&
+      error.message === 'Maximum call stack size exceeded'
+    ) {
+      // No chunk state has changed yet. Let Fizz retry requiring the module
+      // with a fresh stack rather than permanently rejecting the chunk.
+      throw error;
+    }
     const erroredChunk: ErroredChunk<T> = chunk as any;
     erroredChunk.status = ERRORED;
     erroredChunk.reason = error;

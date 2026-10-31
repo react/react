@@ -3069,4 +3069,310 @@ describe('ReactFlightDOMNode', () => {
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
   });
+
+  it.each([
+    [1, RangeError, false],
+    [Infinity, RangeError, false],
+    [Infinity, SyntaxError, false],
+    [1, RangeError, true],
+    [Infinity, RangeError, true],
+  ])(
+    'can retry a lazy Flight model after a decoding stack overflow during SSR (%s errors, %s, outlined: %s)',
+    async (overflowCount, ErrorType, outlined) => {
+      const model = outlined
+        ? '["$","span",null,{"children":"$2"}]'
+        : '["$","span",null,{"children":"leaf"}]';
+      const overflowModel = outlined ? '"leaf"' : model;
+      const readable = new Stream.PassThrough();
+      let response;
+      await serverAct(() => {
+        response = ReactServerDOMClient.createFromNodeStream(readable, {
+          moduleMap: {},
+          moduleLoading: null,
+        });
+        readable.end(
+          '0:["$","div",null,{"children":"$L1"}]\n' +
+            '1:' +
+            model +
+            '\n' +
+            (outlined ? '2:"leaf"\n' : ''),
+        );
+      });
+
+      function Flight() {
+        return use(response);
+      }
+      function Wrapper({children}) {
+        return children;
+      }
+
+      // In a deep tree, Flight can exhaust the stack while decoding an otherwise
+      // valid model. Simulate one transient overflow at the parsing boundary so
+      // the test does not depend on the engine's stack size or JIT optimization.
+      // Fizz retries with a fresh stack, but Flight must not permanently reject
+      // the lazy chunk with the first overflow.
+      const parse = JSON.parse;
+      let attempts = 0;
+      const parseSpy = jest
+        .spyOn(JSON, 'parse')
+        .mockImplementation((json, ...args) => {
+          if (json === overflowModel && ++attempts <= overflowCount) {
+            throw new ErrorType('Maximum call stack size exceeded');
+          }
+          return parse(json, ...args);
+        });
+
+      const errors = [];
+      let result;
+      try {
+        await serverAct(() => {
+          result = readResult(
+            ReactDOMServer.renderToPipeableStream(
+              <Wrapper>
+                <Flight />
+              </Wrapper>,
+              {
+                onError(error) {
+                  errors.push(error);
+                },
+              },
+            ),
+          ).catch(error => error);
+        });
+        // Drain the complete stream; receiving a shell alone is insufficient.
+        const html = await result;
+        if (overflowCount === 1) {
+          expect(errors).toEqual([]);
+          expect(attempts).toBe(2);
+          expect(html).toBe('<div><span>leaf</span></div>');
+        } else {
+          // The retry starts at the failing lazy node. If it still overflows,
+          // Fizz has made no progress and must terminate instead of looping.
+          expect(attempts).toBe(ErrorType === RangeError ? 2 : 1);
+          expect(errors).toHaveLength(1);
+          expect(errors[0]).toBeInstanceOf(ErrorType);
+          expect(html).toBe(errors[0]);
+        }
+      } finally {
+        parseSpy.mockRestore();
+      }
+    },
+  );
+
+  it.each([1, Infinity])(
+    'handles a lazy Flight module that overflows %s times during SSR',
+    async overflowCount => {
+      const ClientComponent = clientExports(function ClientComponent() {
+        return <span>leaf</span>;
+      });
+      const id = webpackMap[ClientComponent.$$id].id;
+      const readable = new Stream.PassThrough();
+      let response;
+      await serverAct(() => {
+        response = ReactServerDOMClient.createFromNodeStream(readable, {
+          moduleMap: null,
+          moduleLoading: null,
+        });
+        readable.end(
+          '0:["$","div",null,{"children":["$","$L1",null,{}]}]\n' +
+            '1:I' +
+            JSON.stringify([id, [], '*']) +
+            '\n',
+        );
+      });
+
+      function Flight() {
+        return use(response);
+      }
+
+      const requireModule = global.__webpack_require__;
+      let attempts = 0;
+      const requireSpy = jest
+        .spyOn(global, '__webpack_require__')
+        .mockImplementation(moduleId => {
+          if (moduleId === id && ++attempts <= overflowCount) {
+            throw new RangeError('Maximum call stack size exceeded');
+          }
+          return requireModule(moduleId);
+        });
+      const errors = [];
+      let result;
+      try {
+        await serverAct(() => {
+          result = readResult(
+            ReactDOMServer.renderToPipeableStream(<Flight />, {
+              onError(error) {
+                errors.push(error);
+              },
+            }),
+          ).catch(error => error);
+        });
+        const html = await result;
+        if (overflowCount === 1) {
+          expect(errors).toEqual([]);
+          expect(attempts).toBe(2);
+          expect(html).toBe('<div><span>leaf</span></div>');
+        } else {
+          // Component-name lookup can also read the module while reporting
+          // the error, but rendering must stop after the unsuccessful retry.
+          expect(attempts).toBeGreaterThan(1);
+          expect(attempts).toBeLessThanOrEqual(4);
+          expect(errors).toHaveLength(1);
+          expect(errors[0]).toBeInstanceOf(RangeError);
+          expect(html).toBe(errors[0]);
+        }
+      } finally {
+        requireSpy.mockRestore();
+      }
+    },
+  );
+
+  it.each([RangeError, SyntaxError])(
+    'rejects eager decoding errors (%s) without throwing from the stream callback',
+    async ErrorType => {
+      const model = '["$","span",null,{"children":"leaf"}]';
+      const error = new ErrorType('Maximum call stack size exceeded');
+      const readable = new Stream.PassThrough();
+      const response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: null,
+      });
+      // Subscribe before the row arrives, forcing eager initialization in the
+      // stream callback rather than a synchronous lazy read during rendering.
+      const result = new Promise((resolve, reject) => {
+        response.then(resolve, reject);
+      }).catch(reason => reason);
+      const parse = JSON.parse;
+      let attempts = 0;
+      const parseSpy = jest
+        .spyOn(JSON, 'parse')
+        .mockImplementation((json, ...args) => {
+          if (json === model) {
+            attempts++;
+            throw error;
+          }
+          return parse(json, ...args);
+        });
+      try {
+        await serverAct(() => readable.end('0:' + model + '\n'));
+        expect(await result).toBe(error);
+        await expect(response).rejects.toBe(error);
+        expect(attempts).toBe(1);
+      } finally {
+        parseSpy.mockRestore();
+      }
+    },
+  );
+  it('can retry after partially decoding a model with a pending reference', async () => {
+    const model = '["$","span",null,{"unused":"$2","children":"$2"}]';
+    const readable = new Stream.PassThrough();
+    let response;
+    await serverAct(() => {
+      response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: null,
+      });
+      readable.write(
+        '0:["$","div",null,{"children":"$L1"}]\n' + '1:' + model + '\n',
+      );
+    });
+    function Flight() {
+      return use(response);
+    }
+    const parse = JSON.parse;
+    let attempts = 0;
+    const parseSpy = jest
+      .spyOn(JSON, 'parse')
+      .mockImplementation((json, ...args) => {
+        const value = parse(json, ...args);
+        if (json === model && ++attempts === 1) {
+          // Revive the pending "unused" reference before overflowing at the
+          // next property, leaving a listener from the abandoned parse on $2.
+          Object.defineProperty(value[3], 'children', {
+            enumerable: true,
+            get() {
+              throw new RangeError('Maximum call stack size exceeded');
+            },
+          });
+        }
+        return value;
+      });
+    const errors = [];
+    let result;
+    try {
+      await serverAct(() => {
+        result = readResult(
+          ReactDOMServer.renderToPipeableStream(<Flight />, {
+            onError(error) {
+              errors.push(error);
+            },
+          }),
+        ).catch(error => error);
+      });
+      expect(attempts).toBe(2);
+      await serverAct(() => readable.end('2:"leaf"\n'));
+      expect(await result).toBe('<div><span unused="leaf">leaf</span></div>');
+      expect(errors).toEqual([]);
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
+
+  it('does not retry a partial model parse with cyclic listeners', async () => {
+    const model = '["$","span",null,{"unused":"$2","children":"leaf"}]';
+    const readable = new Stream.PassThrough();
+    let response;
+    await serverAct(() => {
+      response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: null,
+      });
+      readable.end(
+        '0:["$","div",null,{"children":"$L1"}]\n' +
+          '1:' +
+          model +
+          '\n' +
+          '2:{"parent":"$1"}\n',
+      );
+    });
+    function Flight() {
+      return use(response);
+    }
+    const error = new RangeError('Maximum call stack size exceeded');
+    const parse = JSON.parse;
+    let attempts = 0;
+    const parseSpy = jest
+      .spyOn(JSON, 'parse')
+      .mockImplementation((json, ...args) => {
+        const value = parse(json, ...args);
+        if (json === model) {
+          attempts++;
+          Object.defineProperty(value[3], 'children', {
+            enumerable: true,
+            get() {
+              throw error;
+            },
+          });
+        }
+        return value;
+      });
+    const errors = [];
+    let result;
+    try {
+      await serverAct(() => {
+        result = readResult(
+          ReactDOMServer.renderToPipeableStream(<Flight />, {
+            onError(reason) {
+              errors.push(reason);
+            },
+          }),
+        ).catch(reason => reason);
+      });
+      expect(await result).toBe(error);
+      expect(errors).toEqual([error]);
+      expect(attempts).toBe(1);
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
 });
