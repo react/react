@@ -273,6 +273,8 @@ type SuspenseBoundary = {
   tracked: null | {
     contentKeyPath: null | KeyNode, // used to track the path for replay nodes
     fallbackNode: null | ReplayNode, // used to track the fallback for replay nodes
+    contentNodes: Array<ReplayNode>, // remaining replay paths in the boundary's content
+    contentSlots: ResumeSlots, // remaining resumable slots in the boundary's content
   },
   errorDigest: ?string, // the error hash if it errors
   // DEV-only fields
@@ -1845,6 +1847,11 @@ function replaySuspenseBoundary(
     resumedBoundary.tracked = {
       contentKeyPath: keyPath,
       fallbackNode: fallbackReplayNode,
+      // These replay structures are mutated as slots complete. If an abort
+      // interrupts replay, the remaining paths and slots are the work that
+      // must be recorded for the next resume.
+      contentNodes: childNodes,
+      contentSlots: childSlots,
     };
   }
 
@@ -1887,27 +1894,51 @@ function replaySuspenseBoundary(
       return;
     }
   } catch (thrownValue: mixed) {
-    resumedBoundary.status = CLIENT_RENDERED;
     const error = request.aborted ? request.fatalError : thrownValue;
     const thrownInfo = getThrownInfo(task.componentStack);
-    const errorDigest = logRecoverableError(
-      request,
-      error,
-      thrownInfo,
-      __DEV__ ? task.debugTask : null,
-    );
-    encodeErrorForBoundary(
-      resumedBoundary,
-      errorDigest,
-      error,
-      thrownInfo,
-      false,
-    );
+    const trackedPostpones = request.trackedPostpones;
+    if (
+      request.aborted &&
+      trackedPostpones !== null &&
+      (childNodes.length > 0 || childSlots !== null)
+    ) {
+      // This boundary was already emitted in the earlier prelude. If replay
+      // aborts above the remaining slots, preserve their existing paths instead
+      // of asking the client to render the boundary from scratch.
+      logRecoverableError(
+        request,
+        error,
+        thrownInfo,
+        __DEV__ ? task.debugTask : null,
+      );
+      const boundaryNode = trackPostponedBoundary(
+        request,
+        trackedPostpones,
+        resumedBoundary,
+      );
+      boundaryNode[2] = childNodes;
+      boundaryNode[3] = childSlots;
+    } else {
+      resumedBoundary.status = CLIENT_RENDERED;
+      const errorDigest = logRecoverableError(
+        request,
+        error,
+        thrownInfo,
+        __DEV__ ? task.debugTask : null,
+      );
+      encodeErrorForBoundary(
+        resumedBoundary,
+        errorDigest,
+        error,
+        thrownInfo,
+        false,
+      );
+
+      // The parent already flushed in the prerender so we need to schedule this to be emitted.
+      request.clientRenderedBoundaries.push(resumedBoundary);
+    }
 
     task.replay.pendingTasks--;
-
-    // The parent already flushed in the prerender so we need to schedule this to be emitted.
-    request.clientRenderedBoundaries.push(resumedBoundary);
 
     // We don't need to decrement any task numbers because we didn't spawn any new task.
     // We don't need to schedule any task because we know the parent has written yet.
@@ -5067,6 +5098,31 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
       if (
         !isRecoverableReason &&
         trackedPostpones !== null &&
+        segment === null &&
+        boundary.tracked !== null &&
+        (boundary.tracked.contentNodes.length > 0 ||
+          boundary.tracked.contentSlots !== null)
+      ) {
+        // This replay task has no Segment for trackPostpone to record. Preserve
+        // the remaining top-level paths instead so a later resume can continue.
+        logRecoverableError(request, error, errorInfo, task.debugTask);
+        const boundaryNode = trackPostponedBoundary(
+          request,
+          trackedPostpones,
+          boundary,
+        );
+        boundaryNode[2] = boundary.tracked.contentNodes;
+        boundaryNode[3] = boundary.tracked.contentSlots;
+        // Match the normal Segment-based postpone path: finish fallback work
+        // and let finishedTask queue the postponed boundary if needed.
+        boundary.fallbackAbortableTasks.forEach(fallbackTask =>
+          finishAbortedTask(fallbackTask, request, error),
+        );
+        boundary.fallbackAbortableTasks.clear();
+        return finishedTask(request, boundary, task.row, null);
+      } else if (
+        !isRecoverableReason &&
+        trackedPostpones !== null &&
         segment !== null
       ) {
         // We are aborting a prerender and must halt this boundary.
@@ -5080,22 +5136,23 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
         );
         boundary.fallbackAbortableTasks.clear();
         return finishedTask(request, boundary, task.row, segment);
-      }
-      boundary.status = CLIENT_RENDERED;
-      // We are aborting a render or resume which should put boundaries
-      // into an explicitly client rendered state
-      const errorDigest = logRecoverableError(
-        request,
-        error,
-        errorInfo,
-        task.debugTask,
-      );
-      encodeErrorForBoundary(boundary, errorDigest, error, errorInfo, true);
+      } else {
+        boundary.status = CLIENT_RENDERED;
+        // We are aborting a render or resume which should put boundaries
+        // into an explicitly client rendered state
+        const errorDigest = logRecoverableError(
+          request,
+          error,
+          errorInfo,
+          task.debugTask,
+        );
+        encodeErrorForBoundary(boundary, errorDigest, error, errorInfo, true);
 
-      untrackBoundary(request, boundary);
+        untrackBoundary(request, boundary);
 
-      if (boundary.parentFlushed) {
-        request.clientRenderedBoundaries.push(boundary);
+        if (boundary.parentFlushed) {
+          request.clientRenderedBoundaries.push(boundary);
+        }
       }
     }
 
