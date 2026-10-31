@@ -42,7 +42,8 @@ The pass uses Sparse Conditional Constant Propagation (SCCP) with fixpoint itera
    - Repeats until no more changes
 
 4. **Instruction Evaluation**: Handles various instruction types:
-   - **Primitives/LoadGlobal**: Directly constant
+   - **Primitives**: Directly constant
+   - **LoadGlobal**: Constant only for bindings that cannot be reassigned (imports). Module-scoped bindings may be `let`/`var` and are never treated as constants
    - **BinaryExpression**: Folds arithmetic (`+`, `-`, `*`, `/`, `%`, `**`), bitwise (`|`, `&`, `^`, `<<`, `>>`, `>>>`), and comparison (`<`, `<=`, `>`, `>=`, `==`, `===`, `!=`, `!==`) operators
    - **UnaryExpression**: Folds `!` (boolean negation) and `-` (numeric negation)
    - **PostfixUpdate/PrefixUpdate**: Folds `++`/`--` on constant numbers

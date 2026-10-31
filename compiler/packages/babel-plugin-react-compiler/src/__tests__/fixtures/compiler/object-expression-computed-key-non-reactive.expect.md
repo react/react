@@ -31,6 +31,7 @@ const SCALE = 2;
 
 function Component(props) {
   const $ = _c(4);
+  const key = SCALE;
   let t0;
   if ($[0] !== props.value) {
     t0 = identity([props.value]);
@@ -41,7 +42,7 @@ function Component(props) {
   }
   let t1;
   if ($[2] !== t0) {
-    t1 = { [SCALE]: t0 };
+    t1 = { [key]: t0 };
     $[2] = t0;
     $[3] = t1;
   } else {
