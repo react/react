@@ -52,6 +52,8 @@ import {
   checkEvalAvailabilityOnceDev,
 } from './ReactFlightClientConfig';
 
+import {evalInDEV} from './ReactFlightClientDebugEval';
+
 type ReactJSONValue =
   | string
   | boolean
@@ -1295,8 +1297,7 @@ function createFakeServerFunction<A: Iterable<any>, T>(
 
   try {
     // Eval a factory and then call it to create a closure over the inner function.
-    // eslint-disable-next-line no-eval
-    return (0, eval)(code)(innerFunction)[name];
+    return evalInDEV(code)(innerFunction)[name];
   } catch (x) {
     // If eval fails, such as if in an environment that doesn't support it,
     // we fallback to just returning the inner function.

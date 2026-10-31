@@ -20,6 +20,7 @@ import type {FindSourceMapURLCallback} from 'react-client/flight';
 import {readModule} from 'react-noop-renderer/flight-modules';
 
 import ReactFlightClient from 'react-client/flight';
+import {evalInDEV} from 'react-client/src/ReactFlightClientDebugEval';
 
 type Source = Array<Uint8Array>;
 
@@ -105,8 +106,7 @@ function checkEvalAvailabilityOnceDev(): void {
     if (!hasConfirmedEval) {
       hasConfirmedEval = true;
       try {
-        // eslint-disable-next-line no-eval
-        (0, eval)('null');
+        evalInDEV('null');
       } catch {
         console.error(
           'eval() is not supported in this environment. ' +

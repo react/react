@@ -7,14 +7,15 @@
  * @flow
  */
 
+import {evalInDEV} from './ReactFlightClientDebugEval';
+
 let hasConfirmedEval = false;
 export function checkEvalAvailabilityOnceDev(): void {
   if (__DEV__) {
     if (!hasConfirmedEval) {
       hasConfirmedEval = true;
       try {
-        // eslint-disable-next-line no-eval
-        (0, eval)('null');
+        evalInDEV('null');
       } catch {
         console.error(
           'eval() is not supported in this environment. ' +
