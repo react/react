@@ -2743,7 +2743,10 @@ describe('FragmentRefs', () => {
       expectPosition(
         fragmentRef.current.compareDocumentPosition(containerRef.current),
         {
-          preceding: false,
+          // The host parent is an ancestor of the fragment, so it contains and
+          // precedes it. This matches compareDocumentPosition on a non-empty
+          // fragment, and the DOM spec.
+          preceding: true,
           following: false,
           contains: true,
           containedBy: false,
@@ -3213,7 +3216,9 @@ describe('FragmentRefs', () => {
         expectPosition(
           fragmentRef.current.compareDocumentPosition(document.body),
           {
-            preceding: false,
+            // document.body is the portal container, so it is the ancestor
+            // the empty fragment is positioned against.
+            preceding: true,
             following: false,
             contains: true,
             containedBy: false,
@@ -3267,7 +3272,8 @@ describe('FragmentRefs', () => {
         expectPosition(
           fragmentRef.current.compareDocumentPosition(portalTarget),
           {
-            preceding: false,
+            // The portal container contains and precedes the fragment.
+            preceding: true,
             following: false,
             contains: true,
             containedBy: false,
