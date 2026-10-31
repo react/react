@@ -1351,6 +1351,7 @@ function recoverFromConcurrentError(
     rootWorkInProgress.flags |= ForceClientRender;
   }
 
+  const shellSuspendCounterBeforeRetry = root.shellSuspendCounter;
   const exitStatus = renderRootSync(root, errorRetryLanes, false);
   if (exitStatus === RootSuspendedAtTheShell) {
     // The retry unwound to the root without completing (e.g. something
@@ -1360,7 +1361,14 @@ function recoverFromConcurrentError(
     //
     // On a dehydrated root, the retry is the client render, not a check for
     // data races, so we leave error recovery enabled.
-    if (!wasRootDehydrated) {
+    //
+    // The retry can also return this status when it was only interrupted to
+    // hydrate a Suspense boundary. Nothing suspended in the shell then, so
+    // the retry hasn't failed and error recovery stays enabled.
+    const wasInterruptedForHydration =
+      workInProgressRootExitStatus !== RootSuspendedAtTheShell &&
+      root.shellSuspendCounter === shellSuspendCounterBeforeRetry;
+    if (!wasRootDehydrated && !wasInterruptedForHydration) {
       // The retry couldn't finish, so it can't tell us whether the error was
       // caused by a data race. Disable error recovery for these lanes so the
       // next attempt commits the error boundary instead of retrying again.
