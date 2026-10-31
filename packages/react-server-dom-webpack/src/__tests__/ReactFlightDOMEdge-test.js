@@ -2747,6 +2747,111 @@ describe('ReactFlightDOMEdge', () => {
     expect(result).toEqual({obj: obj, node: 'hi'});
   });
 
+  // Initializes a lazy so that the server reads its value synchronously.
+  async function resolvedLazy(value) {
+    const lazy = ReactServer.lazy(() => Promise.resolve({default: value}));
+    try {
+      lazy._init(lazy._payload);
+    } catch (thenable) {
+      await thenable;
+    }
+    return lazy;
+  }
+
+  it('should dedupe an object reached through a lazy and then directly', async () => {
+    const shared = {foo: 'hi'};
+    const model = {a: await resolvedLazy(shared), b: shared, c: shared};
+
+    const stream = ReactServerDOMServer.renderToReadableStream(model);
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+
+    const result = await response;
+    expect(result.a).toEqual(shared);
+    expect(result.b).toBe(result.a);
+    expect(result.c).toBe(result.a);
+  });
+
+  it('should dedupe a suspending element reached through a lazy and then directly', async () => {
+    async function Async() {
+      await 0;
+      return 'x';
+    }
+    const element = <Async />;
+    const model = {first: await resolvedLazy(element), second: element};
+
+    const stream = ReactServerDOMServer.renderToReadableStream(model);
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+
+    function ClientRoot() {
+      const result = use(response);
+      return (
+        <>
+          <div>{result.first}</div>
+          <div>{result.second}</div>
+        </>
+      );
+    }
+
+    const ssrStream = await ReactDOMServer.renderToReadableStream(
+      <ClientRoot />,
+    );
+    const result = await readResult(ssrStream);
+    expect(result).toBe('<div>x<!-- --></div><div>x<!-- --></div>');
+  });
+
+  it('should not dedupe through a property name containing a colon', async () => {
+    const shared = {foo: 'hi'};
+    const model = {'a:b': shared, c: shared, d: shared};
+
+    const stream = ReactServerDOMServer.renderToReadableStream(model);
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+
+    const result = await response;
+    expect(result['a:b']).toEqual(shared);
+    expect(result.c).toEqual(shared);
+    // The colon makes the first position unaddressable, so the next one is
+    // what later references point to.
+    expect(result.c).not.toBe(result['a:b']);
+    expect(result.d).toBe(result.c);
+  });
+
+  it('should dedupe a shared object first rendered inside a keyed Server Component', async () => {
+    const shared = {inner: {foo: 'hi'}};
+
+    function Outer() {
+      return <Inner />;
+    }
+    function Inner() {
+      return shared;
+    }
+
+    // An element rendered inside a keyed Server Component isn't deduped, so
+    // neither is what it rendered, nor anything inside that until it is
+    // reached again.
+    const model = {
+      list: [<Outer key="k" />],
+      later: shared,
+      again: shared,
+    };
+
+    const stream = ReactServerDOMServer.renderToReadableStream(model);
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+
+    const result = await response;
+    expect(result.list[0]).toEqual(shared);
+    expect(result.later).toEqual(shared);
+    expect(result.again).toBe(result.later);
+    expect(result.again.inner).toBe(result.later.inner);
+  });
+
   it('does not leak the server reference code', async () => {
     function foo() {
       return 'foo';
