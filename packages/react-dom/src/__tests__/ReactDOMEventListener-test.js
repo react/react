@@ -1301,4 +1301,64 @@ describe('ReactDOMEventListener', () => {
 
     expect(log).toEqual([false]);
   });
+
+  it('should subscribe to selectionchange when the root container is the document', async () => {
+    const onSelect = jest.fn();
+    const ref = React.createRef();
+    const root = ReactDOMClient.createRoot(document);
+    try {
+      await act(() => {
+        root.render(
+          <html>
+            <head />
+            <body>
+              <input ref={ref} type="text" onSelect={onSelect} />
+            </body>
+          </html>,
+        );
+      });
+
+      ref.current.focus();
+      expect(onSelect).toHaveBeenCalledTimes(0);
+
+      document.dispatchEvent(
+        new Event('selectionchange', {bubbles: false, cancelable: false}),
+      );
+      expect(onSelect).toHaveBeenCalledTimes(1);
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it('should listen to events on a document root created after another root', async () => {
+    const onKeyDown = jest.fn();
+    const ref = React.createRef();
+
+    const otherRoot = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      otherRoot.render(<div />);
+    });
+
+    const root = ReactDOMClient.createRoot(document);
+    try {
+      await act(() => {
+        root.render(
+          <html>
+            <head />
+            <body>
+              <input ref={ref} onKeyDown={onKeyDown} />
+            </body>
+          </html>,
+        );
+      });
+
+      ref.current.dispatchEvent(
+        new KeyboardEvent('keydown', {bubbles: true, cancelable: true}),
+      );
+      expect(onKeyDown).toHaveBeenCalledTimes(1);
+    } finally {
+      root.unmount();
+      otherRoot.unmount();
+    }
+  });
 });
