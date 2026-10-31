@@ -40,6 +40,7 @@ const IMPORTANT_INSTRUMENTED_TYPES = new Set([
   'ExpressionStatement',
   'BreakStatement',
   'ContinueStatement',
+  'DebuggerStatement',
   'ReturnStatement',
   'ThrowStatement',
   'TryStatement',
