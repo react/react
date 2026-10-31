@@ -386,8 +386,8 @@ function lowerStatement(
       const hoistableIdentifiers: Set<t.Identifier> = new Set();
 
       for (const [, binding] of Object.entries(stmt.scope.bindings)) {
-        // refs to params are always valid / never need to be hoisted
-        if (binding.kind !== 'param') {
+        // refs to params and catch clause bindings are always valid / never need to be hoisted
+        if (binding.kind !== 'param' && !binding.path.isCatchClause()) {
           hoistableIdentifiers.add(binding.identifier);
         }
       }
@@ -3905,11 +3905,13 @@ function lowerAssignmentAt(
           );
         }
 
+        const storeKind =
+          kind === InstructionKind.Catch ? InstructionKind.Let : kind;
         if (
-          kind !== InstructionKind.Const &&
-          kind !== InstructionKind.Reassign &&
-          kind !== InstructionKind.Let &&
-          kind !== InstructionKind.Function
+          storeKind !== InstructionKind.Const &&
+          storeKind !== InstructionKind.Reassign &&
+          storeKind !== InstructionKind.Let &&
+          storeKind !== InstructionKind.Function
         ) {
           builder.recordError(
             new CompilerErrorDetail({
@@ -3925,14 +3927,10 @@ function lowerAssignmentAt(
             loc: getSourceLocation(lvalueNode),
           });
         } else {
-          temporary = lowerValueToTemporary(
-            builder,
-            {
-              kind: 'StoreContext',
-              lvalue: {place: {...place}, kind},
-              value,
-              loc: source.valueLoc,
-            },
+          temporary = lowerValueToTemporary(builder, {
+            kind: 'StoreContext',
+            lvalue: {place: {...place}, kind: storeKind},
+            value,
             loc,
           );
         }
