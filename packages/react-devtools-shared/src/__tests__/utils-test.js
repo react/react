@@ -22,7 +22,10 @@ import {
   gt,
   gte,
 } from 'react-devtools-shared/src/backend/utils';
-import {extractLocationFromComponentStack} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
+import {
+  extractLocationFromComponentStack,
+  parseStackTrace,
+} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
 import {
   REACT_SUSPENSE_LIST_TYPE as SuspenseList,
   REACT_STRICT_MODE_TYPE as StrictMode,
@@ -440,6 +443,29 @@ describe('utils', () => {
         'https://react.dev/_next/static/chunks/363-3c5f1b553b6be118.js',
         1,
         165558,
+      ]);
+    });
+  });
+
+  describe('parseStackTrace', () => {
+    it('should mark an anonymous async frame as an async resume', () => {
+      const error = new Error();
+      // Assigning the stack means V8 never calls prepareStackTrace, so the
+      // parser has to fall back to reading the formatted string.
+      error.stack =
+        'Error: boom\n' +
+        '    at async https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js:5:9236';
+
+      expect(parseStackTrace(error, 1)).toEqual([
+        [
+          '',
+          'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
+          5,
+          9236,
+          0,
+          0,
+          true,
+        ],
       ]);
     });
   });
