@@ -22,6 +22,7 @@ import {checkConditions} from './Editor/utils';
 const useOpenResource = (
   source: null | ReactFunctionLocation | ReactCallSite,
   symbolicatedSource: null | ReactFunctionLocation | ReactCallSite,
+  elementID: number | null = null,
 ): [
   boolean, // isEnabled
   () => void, // Open Resource
@@ -65,9 +66,15 @@ const useOpenResource = (
       // Otherwise, we fallback to open in the local editor if possible (e.g. non-file urls).
       window.open(openInEditor.url);
     } else if (viewElementSourceFunction != null && source != null) {
-      viewElementSourceFunction(source, symbolicatedSource);
+      viewElementSourceFunction(source, symbolicatedSource, elementID);
     }
-  }, [openInEditor, source, symbolicatedSource]);
+  }, [
+    openInEditor,
+    source,
+    symbolicatedSource,
+    elementID,
+    viewElementSourceFunction,
+  ]);
 
   return [linkIsEnabled, viewSource];
 };
