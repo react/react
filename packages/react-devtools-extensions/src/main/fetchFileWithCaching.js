@@ -11,6 +11,31 @@ const debugLog = (...args) => {
   }
 };
 
+// The page's resources and its Network log (HAR) are as big as the page, and
+// every file lookup needs one of them. Lookups for a stack trace start at the
+// same time, so let them share a pending request instead of each one making
+// the browser serialize the whole list again.
+function sharePendingCall(call) {
+  let pending = null;
+  return () => {
+    if (pending === null) {
+      const request = new Promise(resolve => call(resolve));
+      pending = request;
+      request.then(() => {
+        pending = null;
+      });
+    }
+    return pending;
+  };
+}
+
+const getResources = sharePendingCall(callback =>
+  chrome.devtools.inspectedWindow.getResources(callback),
+);
+const getHAR = sharePendingCall(callback =>
+  chrome.devtools.network.getHAR(callback),
+);
+
 const fetchFromNetworkCache = (url, resolve, reject) => {
   // Debug ID allows us to avoid re-logging (potentially long) URL strings below,
   // while also still associating (potentially) interleaved logs with the original request.
@@ -21,7 +46,7 @@ const fetchFromNetworkCache = (url, resolve, reject) => {
     debugLog(`[main] fetchFromNetworkCache(${debugID})`, url);
   }
 
-  chrome.devtools.network.getHAR(harLog => {
+  getHAR().then(harLog => {
     for (let i = 0; i < harLog.entries.length; i++) {
       const entry = harLog.entries[i];
       if (url !== entry.request.url) {
@@ -131,9 +156,7 @@ const fetchFromPage = async (url, resolve, reject) => {
 // 3. Fallback to fetching directly from the page context (from backend)
 async function fetchFileWithCaching(url: string): Promise<string> {
   if (__IS_CHROME__ || __IS_EDGE__) {
-    const resources = await new Promise(resolve =>
-      chrome.devtools.inspectedWindow.getResources(r => resolve(r)),
-    );
+    const resources = await getResources();
 
     const normalizedReferenceURL = normalizeUrlIfValid(url);
     const resource = resources.find(

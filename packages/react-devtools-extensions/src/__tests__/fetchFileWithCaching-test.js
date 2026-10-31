@@ -117,4 +117,45 @@ describe('fetchFileWithCaching', () => {
       },
     });
   });
+
+  it('should share pending lookups between concurrent fetches', async () => {
+    global.__IS_CHROME__ = true;
+    setUp({
+      resources: [
+        {
+          url: 'http://localhost:3000/a.js',
+          type: 'script',
+          getContent: cb => cb('// a.js'),
+        },
+      ],
+      harEntries: [
+        {
+          request: {url: 'http://localhost:3000/b.js'},
+          getContent: cb => cb('// b.js'),
+        },
+        {
+          request: {url: 'http://localhost:3000/c.js'},
+          getContent: cb => cb('// c.js'),
+        },
+      ],
+    });
+
+    expect(
+      await Promise.all([
+        fetchFileWithCaching('http://localhost:3000/a.js'),
+        fetchFileWithCaching('http://localhost:3000/b.js'),
+        fetchFileWithCaching('http://localhost:3000/c.js'),
+      ]),
+    ).toEqual(['// a.js', '// b.js', '// c.js']);
+    expect(chrome.devtools.inspectedWindow.getResources).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(chrome.devtools.network.getHAR).toHaveBeenCalledTimes(1);
+
+    // Later fetches see an up-to-date list.
+    await fetchFileWithCaching('http://localhost:3000/a.js');
+    expect(chrome.devtools.inspectedWindow.getResources).toHaveBeenCalledTimes(
+      2,
+    );
+  });
 });
