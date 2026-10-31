@@ -555,9 +555,9 @@ export default class Agent extends EventEmitter<{
     const renderer = this._rendererInterfaces[rendererID];
     if (renderer == null) {
       console.warn(`Invalid renderer id "${rendererID}"`);
+    } else {
+      this._bridge.send('profilingData', renderer.getProfilingData());
     }
-
-    this._bridge.send('profilingData', renderer.getProfilingData());
   };
 
   getProfilingStatus: () => void = () => {
