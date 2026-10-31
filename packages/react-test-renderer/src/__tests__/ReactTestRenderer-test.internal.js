@@ -1156,6 +1156,32 @@ describe('ReactTestRenderer', () => {
     );
   });
 
+  it('does not expose a forwardRef props cache as a public instance', async () => {
+    let setCount;
+    const Component = React.forwardRef((props, ref) => {
+      const [count, update] = React.useState(0);
+      setCount = update;
+      return <div>{props.label + ': ' + count}</div>;
+    });
+    let renderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <Component
+          ref={null}
+          label="stable"
+          context={{label: 'ordinary prop'}}
+        />,
+      );
+    });
+    expect(renderer.getInstance()).toBe(null);
+    expect(renderer.root.instance).toBe(null);
+    await act(() => setCount(1));
+    expect(renderer.getInstance()).toBe(null);
+    expect(renderer.root.instance).toBe(null);
+    expect(renderer.root.props.label).toBe('stable');
+    expect(renderer.toJSON().children).toEqual(['stable: 1']);
+  });
+
   it('supports forwardRef', async () => {
     const InnerRefed = React.forwardRef((props, ref) => (
       <div>

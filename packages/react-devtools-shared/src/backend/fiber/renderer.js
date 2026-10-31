@@ -6021,7 +6021,7 @@ export function attach(
     const fiber = devtoolsInstance.data;
     // $FlowFixMe[invalid-compare]
     if (fiber !== null) {
-      instance = fiber.stateNode;
+      instance = fiber.tag === ForwardRef ? null : fiber.stateNode;
 
       if (fiber.memoizedProps !== null) {
         style = fiber.memoizedProps.style;
@@ -6098,7 +6098,7 @@ export function attach(
       tag === SimpleMemoComponent
     ) {
       canViewSource = true;
-      if (stateNode && stateNode.context != null) {
+      if (tag !== ForwardRef && stateNode && stateNode.context != null) {
         // Don't show an empty context object for class components that don't use the context API.
         const shouldHideContext =
           elementType === ElementTypeClass &&

@@ -2457,6 +2457,65 @@ describe('InspectedElement', () => {
       `);
     });
 
+    it('does not treat forwardRef props as a legacy instance context', async () => {
+      const Example = React.forwardRef(function Example(props, ref) {
+        return null;
+      });
+      await utils.actAsync(() =>
+        render(
+          <Example
+            ref={null}
+            context={{label: 'ordinary prop'}}
+            style={{color: 'red'}}
+          />,
+        ),
+      );
+      const inspectedElement = await inspectElementAtIndex(0);
+      expect(inspectedElement.context).toBe(null);
+      expect(inspectedElement.props.context.label).toBe('ordinary prop');
+      const id = store.getElementIDAtIndex(0);
+      const rendererID = store.getRendererIDForElement(id);
+      expect(global.agent.getInstanceAndStyle({id, rendererID})).toEqual({
+        instance: null,
+        style: {color: 'red'},
+      });
+    });
+
+    it('keeps props separate from instance fields read by older backends', async () => {
+      const measure = jest.fn();
+      const setNativeProps = jest.fn();
+      const Example = React.forwardRef(function Example(props, ref) {
+        return null;
+      });
+      await utils.actAsync(() =>
+        render(
+          <Example
+            ref={null}
+            context={{label: 'ordinary prop'}}
+            measure={measure}
+            setNativeProps={setNativeProps}
+            style={{color: 'red'}}
+          />,
+        ),
+      );
+      const inspectedElement = await inspectElementAtIndex(0);
+      expect(inspectedElement.context).toBe(null);
+      const id = store.getElementIDAtIndex(0);
+      const rendererID = store.getRendererIDForElement(id);
+      const {instance, style} = global.agent.getInstanceAndStyle({
+        id,
+        rendererID,
+      });
+      expect(style).toEqual({color: 'red'});
+      if (instance !== null) {
+        expect(instance.context).toBe(undefined);
+        expect(instance.measure).toBe(undefined);
+        expect(instance.setNativeProps).toBe(undefined);
+      }
+      expect(measure).not.toHaveBeenCalled();
+      expect(setNativeProps).not.toHaveBeenCalled();
+    });
+
     it('should support forward refs', async () => {
       const Example = React.forwardRef(function Example(props, ref) {
         const [count] = React.useState(1);

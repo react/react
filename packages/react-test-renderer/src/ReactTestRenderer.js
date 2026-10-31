@@ -332,6 +332,8 @@ class ReactTestInstance {
       tag === HostSingleton
     ) {
       return getPublicInstance(this._fiber.stateNode);
+    } else if (tag === ForwardRef) {
+      return null;
     } else {
       return this._fiber.stateNode;
     }
