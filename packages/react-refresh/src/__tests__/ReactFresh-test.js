@@ -4566,6 +4566,110 @@ describe('ReactFresh', () => {
     };
   }
 
+  it('does not schedule a failed root removed during refresh', () => {
+    if (__DEV__) {
+      initFauxDevToolsHook();
+      jest.resetModules();
+
+      ReactFreshRuntime = require('react-refresh/runtime');
+      ReactFreshRuntime.injectIntoGlobalHook(global);
+
+      const hook = global.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      const rootA = {
+        current: {
+          alternate: {memoizedState: null},
+          memoizedState: null,
+        },
+      };
+      const rootB = {
+        current: {
+          alternate: {memoizedState: null},
+          memoizedState: null,
+        },
+      };
+
+      let rendererID;
+      const renderer = {
+        setRefreshHandler: jest.fn(),
+        scheduleRefresh: jest.fn(),
+        scheduleRoot: jest.fn(root => {
+          if (root === rootA) {
+            rootB.current.memoizedState = {element: 'B'};
+            hook.onCommitFiberRoot(rendererID, rootB, 0, false);
+          }
+        }),
+      };
+
+      rendererID = hook.inject(renderer);
+
+      hook.onScheduleFiberRoot(rendererID, rootA, 'A');
+      hook.onScheduleFiberRoot(rendererID, rootB, 'B');
+      hook.onCommitFiberRoot(rendererID, rootA, 0, true);
+      hook.onCommitFiberRoot(rendererID, rootB, 0, true);
+
+      ReactFreshRuntime.register(() => null, 'Root');
+      ReactFreshRuntime.register(() => null, 'Root');
+
+      ReactFreshRuntime.performReactRefresh();
+
+      expect(renderer.scheduleRoot).toHaveBeenCalledTimes(1);
+      expect(renderer.scheduleRoot.mock.calls[0][0]).toBe(rootA);
+    }
+  });
+
+  it('does not refresh a mounted root removed during refresh', () => {
+    if (__DEV__) {
+      initFauxDevToolsHook();
+      jest.resetModules();
+
+      ReactFreshRuntime = require('react-refresh/runtime');
+      ReactFreshRuntime.injectIntoGlobalHook(global);
+
+      const hook = global.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      const rootA = {
+        current: {
+          alternate: null,
+          memoizedState: {element: 'A'},
+        },
+      };
+      const rootB = {
+        current: {
+          alternate: null,
+          memoizedState: {element: 'B'},
+        },
+      };
+
+      let rendererID;
+      const renderer = {
+        setRefreshHandler: jest.fn(),
+        scheduleRoot: jest.fn(),
+        scheduleRefresh: jest.fn(root => {
+          if (root === rootA) {
+            rootB.current.alternate = {
+              memoizedState: {element: 'B'},
+            };
+            rootB.current.memoizedState = {element: null};
+            hook.onCommitFiberRoot(rendererID, rootB, 0, false);
+          }
+        }),
+      };
+
+      rendererID = hook.inject(renderer);
+
+      hook.onCommitFiberRoot(rendererID, rootA, 0, false);
+      hook.onCommitFiberRoot(rendererID, rootB, 0, false);
+
+      ReactFreshRuntime.register(() => null, 'Root');
+      ReactFreshRuntime.register(() => null, 'Root');
+
+      ReactFreshRuntime.performReactRefresh();
+
+      expect(renderer.scheduleRefresh).toHaveBeenCalledTimes(1);
+      expect(renderer.scheduleRefresh.mock.calls[0][0]).toBe(rootA);
+    }
+  });
+
+
   // This simulates the scenario in https://github.com/react/react/issues/17626
   it('can inject the runtime after the renderer executes', async () => {
     if (__DEV__) {
