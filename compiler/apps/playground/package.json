@@ -36,7 +36,7 @@
     "lru-cache": "^11.2.2",
     "lz-string": "^1.5.0",
     "monaco-editor": "^0.52.0",
-    "next": "15.5.9",
+    "next": "15.5.21",
     "notistack": "^3.0.0-alpha.7",
     "prettier": "^3.3.3",
     "pretty-format": "^29.3.1",
