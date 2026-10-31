@@ -1774,6 +1774,165 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
+  // https://github.com/react/react/issues/37762
+  describe('when a throttled commit flushes passive effects that render the same root', () => {
+    function createLazyText(text) {
+      let resolve;
+      const LazyText = React.lazy(
+        () =>
+          new Promise(r => {
+            resolve = () => r({default: () => <Text text={text} />});
+          }),
+      );
+      return [LazyText, () => resolve()];
+    }
+
+    // Renders `ui` into rootA and leaves it with a finished retry whose commit
+    // is throttled. B stays suspended, so the commit is throttled regardless of
+    // alwaysThrottleRetries. Then rootB commits <Writer />, whose passive effect
+    // is still pending when the throttled commit fires.
+    async function renderThrottledRetry(rootA, rootB, ui, Writer) {
+      const [LazyA, resolveA] = createLazyText('A');
+      const [LazyB] = createLazyText('B');
+      rootA.render(
+        <>
+          {ui}
+          <Suspense fallback={<Text text="Loading..." />}>
+            <LazyA />
+            <Suspense fallback={<Text text="Loading more..." />}>
+              <LazyB />
+            </Suspense>
+          </Suspense>
+        </>,
+      );
+      // B is pre-warmed after the fallback commits.
+      await waitForAll(['Value: 0', 'Loading...', 'Loading more...']);
+      expect(rootA).toMatchRenderedOutput(
+        <>
+          <span prop="Value: 0" />
+          <span prop="Loading..." />
+        </>,
+      );
+
+      // The retry finishes, but because the fallback appeared recently its
+      // commit is throttled.
+      resolveA();
+      await waitForAll(['A', 'Loading more...']);
+      expect(rootA).toMatchRenderedOutput(
+        <>
+          <span prop="Value: 0" />
+          <span prop="Loading..." />
+        </>,
+      );
+
+      rootB.render(<Writer />);
+      await waitForPaint(['Writer']);
+      expect(rootB).toMatchRenderedOutput(<span prop="Writer" />);
+    }
+
+    it('does not commit the same tree twice (external store update)', async () => {
+      let storeValue = 0;
+      const listeners = new Set();
+      function subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }
+      function Value() {
+        const value = React.useSyncExternalStore(subscribe, () => storeValue);
+        return <Text text={'Value: ' + value} />;
+      }
+      function Writer() {
+        React.useEffect(() => {
+          storeValue = 1;
+          listeners.forEach(listener => listener());
+        }, []);
+        return <Text text="Writer" />;
+      }
+
+      const rootA = ReactNoop.createRoot();
+      const rootB = ReactNoop.createRoot();
+      await renderThrottledRetry(rootA, rootB, <Value />, Writer);
+
+      // The throttled commit fires. Before committing, it flushes rootB's
+      // passive effect, which updates rootA synchronously. That render starts
+      // over from rootA's current tree, so the throttled commit is stale.
+      jest.runAllTimers();
+      assertLog(['Value: 1']);
+      expect(rootA).toMatchRenderedOutput(
+        <>
+          <span prop="Value: 1" />
+          <span prop="Loading..." />
+        </>,
+      );
+      // The retry renders again on top of the new tree, and commits once the
+      // throttle period is over.
+      await waitForAll(['A', 'Loading more...']);
+      jest.runAllTimers();
+      expect(rootA).toMatchRenderedOutput(
+        <>
+          <span prop="Value: 1" />
+          <span prop="A" />
+          <span prop="Loading more..." />
+        </>,
+      );
+    });
+
+    it('does not commit the throttled tree if the new render suspends without committing', async () => {
+      let storeValue = 0;
+      const listeners = new Set();
+      function subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }
+      let resolveValue;
+      const valuePromise = new Promise(resolve => {
+        resolveValue = resolve;
+      });
+      function Value() {
+        const value = React.useSyncExternalStore(subscribe, () => storeValue);
+        if (value === 1) {
+          // Suspends outside of any boundary, so the update can't commit yet.
+          React.use(valuePromise);
+        }
+        return <Text text={'Value: ' + value} />;
+      }
+      function Writer() {
+        React.useEffect(() => {
+          storeValue = 1;
+          listeners.forEach(listener => listener());
+        }, []);
+        return <Text text="Writer" />;
+      }
+
+      const rootA = ReactNoop.createRoot();
+      const rootB = ReactNoop.createRoot();
+      await renderThrottledRetry(rootA, rootB, <Value />, Writer);
+
+      // The new render of rootA suspends at the shell and doesn't commit. It
+      // still reused the throttled tree as its work-in-progress, so that tree
+      // must not be committed either.
+      jest.runAllTimers();
+      expect(rootA).toMatchRenderedOutput(
+        <>
+          <span prop="Value: 0" />
+          <span prop="Loading..." />
+        </>,
+      );
+
+      await act(() => resolveValue());
+      assertLog(['A', 'Loading more...', 'Value: 1', 'A', 'Loading more...']);
+      jest.runAllTimers();
+      await waitForAll([]);
+      expect(rootA).toMatchRenderedOutput(
+        <>
+          <span prop="Value: 1" />
+          <span prop="A" />
+          <span prop="Loading more..." />
+        </>,
+      );
+    });
+  });
+
   // @gate enableLegacyCache
   it('throttles content from appearing if a fallback was shown recently', async () => {
     function Foo() {
