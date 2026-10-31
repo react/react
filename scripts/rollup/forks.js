@@ -362,7 +362,7 @@ const forks = Object.freeze({
           return new Error(
             `Expected not to use ReactFlightServerConfig with "${entry}" entry point ` +
               'in ./scripts/shared/inlinedHostConfigs.js. Update the renderer config to ' +
-              'activate flight suppport and add a matching fork implementation for ReactFlightServerConfig.'
+              'activate flight support and add a matching fork implementation for ReactFlightServerConfig.'
           );
         }
         const foundFork = findNearestExistingForkFile(
@@ -406,7 +406,7 @@ const forks = Object.freeze({
           return new Error(
             `Expected not to use ReactFlightClientConfig with "${entry}" entry point ` +
               'in ./scripts/shared/inlinedHostConfigs.js. Update the renderer config to ' +
-              'activate flight suppport and add a matching fork implementation for ReactFlightClientConfig.'
+              'activate flight support and add a matching fork implementation for ReactFlightClientConfig.'
           );
         }
         const foundFork = findNearestExistingForkFile(
