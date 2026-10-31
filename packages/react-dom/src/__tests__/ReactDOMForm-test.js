@@ -2401,4 +2401,44 @@ describe('ReactDOMForm', () => {
 
     assertLog(['[unrelated form] pending: false, state: 1']);
   });
+
+  it('resets the form when a field is named "reset"', async () => {
+    const formRef = React.createRef();
+    const inputRef = React.createRef();
+
+    function App() {
+      return (
+        <form ref={formRef}>
+          <input ref={inputRef} name="reset" defaultValue="Initial" />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    const form = formRef.current;
+
+    // Dirty the uncontrolled input
+    inputRef.current.value = 'Updated';
+
+    // Browsers expose a form's controls as named properties of the form itself.
+    // Since HTMLFormElement is [LegacyOverrideBuiltIns], a control named
+    // "reset" shadows the form's own reset() method, so `form.reset` is a DOM
+    // element rather than a function. JSDOM doesn't implement the named getter,
+    // so we emulate it.
+    // https://html.spec.whatwg.org/multipage/forms.html#the-form-element
+    Object.defineProperty(form, 'reset', {
+      configurable: true,
+      get: () => form.elements.namedItem('reset'),
+    });
+    expect(() => form.reset()).toThrow();
+
+    await act(() => {
+      startTransition(() => requestFormReset(form));
+    });
+
+    // The form was still reset.
+    expect(inputRef.current.value).toBe('Initial');
+  });
 });

@@ -7014,7 +7014,16 @@ export const HostTransitionContext: ReactContext<TransitionStatus> = {
 
 export type FormInstance = HTMLFormElement;
 export function resetFormInstance(form: FormInstance): void {
+  // A form's controls are exposed as named properties on the form element.
+  // Since HTMLFormElement is [LegacyOverrideBuiltIns], a control named "reset"
+  // shadows the form's own reset() method, so `form.reset` is not a function.
+  // Call the prototype method directly to avoid the named property.
   ReactBrowserEventEmitterSetEnabled(true);
-  form.reset();
-  ReactBrowserEventEmitterSetEnabled(false);
+  try {
+    // $FlowFixMe[method-unbinding]
+    HTMLFormElement.prototype.reset.call(form);
+  } finally {
+    // Restore the event system even if resetting the form throws.
+    ReactBrowserEventEmitterSetEnabled(false);
+  }
 }
