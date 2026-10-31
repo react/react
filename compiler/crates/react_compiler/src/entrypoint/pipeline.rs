@@ -161,14 +161,14 @@ pub fn compile_fn(
     if context.debug_enabled {
         context.log_debug(DebugLogEntry::new(
             "AssertConsistentIdentifiers",
-            "ok".to_string(),
+            "unimplemented".to_string(),
         ));
     }
     // TODO: port assertTerminalSuccessorsExist
     if context.debug_enabled {
         context.log_debug(DebugLogEntry::new(
             "AssertTerminalSuccessorsExist",
-            "ok".to_string(),
+            "unimplemented".to_string(),
         ));
     }
 
@@ -212,7 +212,7 @@ pub fn compile_fn(
     if context.debug_enabled {
         context.log_debug(DebugLogEntry::new(
             "AssertConsistentIdentifiers",
-            "ok".to_string(),
+            "unimplemented".to_string(),
         ));
     }
 
@@ -694,7 +694,7 @@ pub fn compile_fn(
     if context.debug_enabled {
         context.log_debug(DebugLogEntry::new(
             "AssertValidBlockNesting",
-            "ok".to_string(),
+            "unimplemented".to_string(),
         ));
     }
 
@@ -718,7 +718,7 @@ pub fn compile_fn(
     if context.debug_enabled {
         context.log_debug(DebugLogEntry::new(
             "AssertValidBlockNesting",
-            "ok".to_string(),
+            "unimplemented".to_string(),
         ));
     }
 
@@ -756,14 +756,14 @@ pub fn compile_fn(
     if context.debug_enabled {
         context.log_debug(DebugLogEntry::new(
             "AssertTerminalSuccessorsExist",
-            "ok".to_string(),
+            "unimplemented".to_string(),
         ));
     }
     // TODO: port assertTerminalPredsExist
     if context.debug_enabled {
         context.log_debug(DebugLogEntry::new(
             "AssertTerminalPredsExist",
-            "ok".to_string(),
+            "unimplemented".to_string(),
         ));
     }
 
