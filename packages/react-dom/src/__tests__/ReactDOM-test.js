@@ -351,6 +351,39 @@ describe('ReactDOM', () => {
     }
   });
 
+  // https://github.com/react/react/issues/6284
+  it('does not crash updating while a form whose nodeName is shadowed is focused', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = ReactDOMClient.createRoot(container);
+    try {
+      await act(() => {
+        root.render(
+          <form tabIndex={-1}>
+            <input name="nodeName" />
+          </form>,
+        );
+      });
+
+      const form = container.firstChild;
+      // Browsers expose named controls as properties of their form, which
+      // shadow built-in properties like nodeName. jsdom doesn't implement this.
+      Object.defineProperty(form, 'nodeName', {value: form.firstChild});
+      form.focus();
+
+      await act(() => {
+        root.render(
+          <form tabIndex={-1} title="updated">
+            <input name="nodeName" />
+          </form>,
+        );
+      });
+      expect(form.title).toBe('updated');
+    } finally {
+      document.body.removeChild(container);
+    }
+  });
+
   it('calls focus() on autoFocus elements after they have been mounted to the DOM', async () => {
     const originalFocus = HTMLElement.prototype.focus;
 

@@ -75,7 +75,10 @@ let activeElementInst = null;
  * SECTION: handle `change` event
  */
 function shouldUseChangeEvent(elem: Instance | TextInstance) {
-  const nodeName = elem.nodeName && elem.nodeName.toLowerCase();
+  // `nodeName` isn't a string on a <form> with a control named "nodeName", or
+  // on `window` when an element has that id.
+  const nodeName =
+    typeof elem.nodeName === 'string' && elem.nodeName.toLowerCase();
   return (
     nodeName === 'select' ||
     (nodeName === 'input' && (elem as any).type === 'file')
@@ -234,7 +237,7 @@ function shouldUseClickEvent(elem: any) {
   // until `blur` in IE8.
   const nodeName = elem.nodeName;
   return (
-    nodeName &&
+    typeof nodeName === 'string' &&
     nodeName.toLowerCase() === 'input' &&
     (elem.type === 'checkbox' || elem.type === 'radio')
   );
