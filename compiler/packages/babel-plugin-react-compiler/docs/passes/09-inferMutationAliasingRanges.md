@@ -104,6 +104,7 @@ enum MutationKind {
 - Functions are tracked specially as `{kind: 'Function'}` nodes
 - When a function is mutated (transitively), errors from the function body are propagated
 - This handles cases where mutating a captured value in a function affects render safety
+- A transitive mutation of a function only propagates errors to the functions it captures if its own effects mutate (i.e. may call) them
 
 ### Render Effect Propagation
 - Render effects traverse backward through alias/capture/createFrom edges
