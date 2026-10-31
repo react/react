@@ -249,6 +249,12 @@ export function lower(
 
   return {
     id: validatedId,
+    selfBinding:
+      func.isFunctionExpression() &&
+      func.node.id != null &&
+      func.scope.getBinding(func.node.id.name)?.referenced === true
+        ? lowerIdentifier(builder, func.get('id') as NodePath<t.Identifier>)
+        : null,
     nameHint: null,
     params,
     fnType: bindings == null ? env.fnType : 'Other',
@@ -387,7 +393,10 @@ function lowerStatement(
 
       for (const [, binding] of Object.entries(stmt.scope.bindings)) {
         // refs to params are always valid / never need to be hoisted
-        if (binding.kind !== 'param') {
+        if (
+          binding.kind !== 'param' &&
+          binding.path.node.type !== 'FunctionExpression'
+        ) {
           hoistableIdentifiers.add(binding.identifier);
         }
       }

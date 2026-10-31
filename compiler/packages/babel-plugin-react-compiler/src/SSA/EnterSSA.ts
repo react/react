@@ -278,6 +278,9 @@ function enterSSAImpl(
         reason: `Expected function context to be empty for outer function declarations`,
         loc: func.loc,
       });
+      if (func.selfBinding !== null) {
+        func.selfBinding = builder.definePlace(func.selfBinding);
+      }
       func.params = func.params.map(param => {
         if (param.kind === 'Identifier') {
           return builder.definePlace(param);

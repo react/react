@@ -63,6 +63,7 @@ export {
 export type ReactiveFunction = {
   loc: SourceLocation;
   id: ValidIdentifierName | null;
+  selfBinding: Place | null;
   nameHint: string | null;
   params: Array<Place | SpreadPattern>;
   generator: boolean;
@@ -286,6 +287,7 @@ export type ReactiveTryTerminal = {
 export type HIRFunction = {
   loc: SourceLocation;
   id: ValidIdentifierName | null;
+  selfBinding: Place | null;
   nameHint: string | null;
   fnType: ReactFunctionType;
   env: Environment;
