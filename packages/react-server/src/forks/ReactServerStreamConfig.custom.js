@@ -35,6 +35,8 @@ export const scheduleMicrotask = $$$config.scheduleMicrotask;
 export const beginWriting = $$$config.beginWriting;
 export const writeChunk = $$$config.writeChunk;
 export const writeChunkAndReturn = $$$config.writeChunkAndReturn;
+export const writeStandaloneChunkAndReturn =
+  $$$config.writeStandaloneChunkAndReturn;
 export const completeWriting = $$$config.completeWriting;
 export const flushBuffered = $$$config.flushBuffered;
 export const close = $$$config.close;

@@ -46,6 +46,13 @@ export function writeChunkAndReturn(
   return destination.push(chunk);
 }
 
+export function writeStandaloneChunkAndReturn(
+  destination: Destination,
+  chunk: PrecomputedChunk | Chunk | BinaryChunk,
+): boolean {
+  return writeChunkAndReturn(destination, chunk);
+}
+
 export function completeWriting(destination: Destination) {}
 
 export function close(destination: Destination) {

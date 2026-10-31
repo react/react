@@ -139,6 +139,13 @@ export function writeChunkAndReturn(
   return true;
 }
 
+export function writeStandaloneChunkAndReturn(
+  destination: Destination,
+  chunk: PrecomputedChunk | Chunk | BinaryChunk,
+): boolean {
+  return writeChunkAndReturn(destination, chunk);
+}
+
 export function completeWriting(destination: Destination) {
   if (currentView && writtenBytes > 0) {
     destination.enqueue(new Uint8Array(currentView.buffer, 0, writtenBytes));

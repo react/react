@@ -26,6 +26,7 @@ import {
   beginWriting,
   writeChunk,
   writeChunkAndReturn,
+  writeStandaloneChunkAndReturn,
   stringToChunk,
   typedArrayToBinaryChunk,
   byteLengthOfChunk,
@@ -6507,7 +6508,7 @@ function flushCompletedChunks(request: Request): void {
             debugDestination,
             debugChunks[i + 1] as any as Chunk | BinaryChunk,
           );
-          writeChunk(
+          writeStandaloneChunkAndReturn(
             debugDestination,
             debugChunks[i + 2] as any as Chunk | BinaryChunk,
           );
@@ -6576,7 +6577,7 @@ function flushCompletedChunks(request: Request): void {
               destination,
               debugChunks[i + 1] as any as Chunk | BinaryChunk,
             );
-            keepWriting = writeChunkAndReturn(
+            keepWriting = writeStandaloneChunkAndReturn(
               destination,
               debugChunks[i + 2] as any as Chunk | BinaryChunk,
             );
@@ -6614,7 +6615,7 @@ function flushCompletedChunks(request: Request): void {
             destination,
             regularChunks[i + 1] as any as Chunk | BinaryChunk,
           );
-          keepWriting = writeChunkAndReturn(
+          keepWriting = writeStandaloneChunkAndReturn(
             destination,
             regularChunks[i + 2] as any as Chunk | BinaryChunk,
           );
