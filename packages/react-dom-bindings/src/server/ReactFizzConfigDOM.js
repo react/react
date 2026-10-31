@@ -35,7 +35,6 @@ import {
   enableFizzExternalRuntime,
   enableSrcObject,
   enableFizzBlockingRender,
-  enableViewTransition,
   enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
 
@@ -928,17 +927,15 @@ export function getChildFormatContext(
   if (parentContext.insertionMode < HTML_MODE) {
     return createFormatContext(HTML_MODE, null, subtreeScope, null);
   }
-  if (enableViewTransition) {
-    if (parentContext.viewTransition !== null) {
-      // If we're inside a view transition, regardless what element we were in, it consumes
-      // the view transition context.
-      return createFormatContext(
-        parentContext.insertionMode,
-        parentContext.selectedValue,
-        subtreeScope,
-        null,
-      );
-    }
+  if (parentContext.viewTransition !== null) {
+    // If we're inside a view transition, regardless what element we were in, it consumes
+    // the view transition context.
+    return createFormatContext(
+      parentContext.insertionMode,
+      parentContext.selectedValue,
+      subtreeScope,
+      null,
+    );
   }
   if (parentContext.tagScope !== subtreeScope) {
     return createFormatContext(
@@ -1213,9 +1210,6 @@ function pushViewTransitionAttributes(
   target: Array<Chunk | PrecomputedChunk>,
   formatContext: FormatContext,
 ): void {
-  if (!enableViewTransition) {
-    return;
-  }
   const viewTransition = formatContext.viewTransition;
   if (viewTransition === null) {
     return;
@@ -5011,9 +5005,8 @@ export function writeCompletedBoundaryInstruction(
 ): boolean {
   const requiresStyleInsertion = renderState.stylesToHoist;
   const requiresViewTransitions =
-    enableViewTransition &&
     (resumableState.instructions & NeedUpgradeToViewTransitions) !==
-      NothingSent;
+    NothingSent;
   // If necessary stylesheets will be flushed with this instruction.
   // Any style tags not yet hoisted in the Document will also be hoisted.
   // We reset this state since after this instruction executes all styles

@@ -26,8 +26,6 @@ import {
   REACT_VIEW_TRANSITION_TYPE,
 } from 'shared/ReactSymbols';
 
-import {enableViewTransition} from 'shared/ReactFeatureFlags';
-
 import {formatOwnerStack} from 'shared/ReactOwnerStackFrames';
 
 export type ComponentStackNode = {
@@ -99,9 +97,7 @@ function describeComponentStackByType(
       return describeBuiltInComponentFrame('Suspense');
     }
     case REACT_VIEW_TRANSITION_TYPE:
-      if (enableViewTransition) {
-        return describeBuiltInComponentFrame('ViewTransition');
-      }
+      return describeBuiltInComponentFrame('ViewTransition');
   }
   return '';
 }
