@@ -147,4 +147,176 @@ describe('Profiler change descriptions', () => {
       }
     `);
   });
+
+  // @reactVersion >=18.0
+  it('should not throw when a memo(forwardRef()) component re-renders', () => {
+    let setCount = null;
+
+    const ControlledMemoInput = React.memo(
+      React.forwardRef(function ControlledMemoInput({onChange, value}, ref) {
+        const [count, _setCount] = React.useState(0);
+        setCount = _setCount;
+        return (
+          <input
+            ref={ref}
+            onChange={onChange}
+            value={value}
+            data-count={count}
+          />
+        );
+      }),
+    );
+
+    let setValue = null;
+
+    function App() {
+      const [value, _setValue] = React.useState('');
+      setValue = _setValue;
+      return (
+        <ControlledMemoInput
+          value={value}
+          onChange={event => _setValue(event.target.value)}
+        />
+      );
+    }
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => render(<App />));
+    // Inspecting hooks re-runs the component with react-debug-tools' dispatcher,
+    // which replaces setters captured during render with no-ops. So trigger
+    // each update before its component has been inspected.
+    utils.act(() => setCount(1));
+    utils.act(() => setValue('a'));
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <ControlledMemoInput> [Memo]
+              <ControlledMemoInput> [ForwardRef]
+    `);
+
+    const rootID = store.roots[0];
+    const memoElement = store.getElementAtIndex(1);
+    expect(memoElement.hocDisplayNames).toEqual(['Memo']);
+    const forwardRefElement = store.getElementAtIndex(2);
+    expect(forwardRefElement.hocDisplayNames).toEqual(['ForwardRef']);
+
+    // An inner state update bails out of the memo wrapper, and the
+    // forwardRef still reports its own hook change.
+    let commitData = store.profilerStore.getCommitData(rootID, 1);
+    expect(commitData.changeDescriptions.get(memoElement.id)).toBeUndefined();
+    expect(commitData.changeDescriptions.get(forwardRefElement.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": true,
+        "hooks": [
+          0,
+        ],
+        "isFirstMount": false,
+        "props": [],
+        "state": null,
+      }
+    `);
+
+    // New props re-render the memo wrapper, which doesn't own any hooks.
+    commitData = store.profilerStore.getCommitData(rootID, 2);
+    expect(commitData.changeDescriptions.get(memoElement.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": null,
+        "isFirstMount": false,
+        "props": [
+          "value",
+          "onChange",
+        ],
+        "state": null,
+      }
+    `);
+    expect(commitData.changeDescriptions.get(forwardRefElement.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": [],
+        "isFirstMount": false,
+        "props": [
+          "value",
+          "onChange",
+        ],
+        "state": null,
+      }
+    `);
+  });
+
+  // @reactVersion >=18.0
+  it('should not throw when a memo() component with a custom compare function re-renders', () => {
+    function Child({value}) {
+      const [state] = React.useState(0);
+      return `${value}:${state}`;
+    }
+
+    const MemoizedChild = React.memo(
+      Child,
+      (prevProps, nextProps) => prevProps.value === nextProps.value,
+    );
+
+    let setValue = null;
+
+    function App() {
+      const [value, _setValue] = React.useState(0);
+      setValue = _setValue;
+      return <MemoizedChild value={value} />;
+    }
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => render(<App />));
+    utils.act(() => setValue(1));
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Child> [Memo]
+              <Child>
+    `);
+
+    const rootID = store.roots[0];
+    const commitData = store.profilerStore.getCommitData(rootID, 1);
+
+    const memoElement = store.getElementAtIndex(1);
+    expect(memoElement.hocDisplayNames).toEqual(['Memo']);
+    expect(commitData.changeDescriptions.get(memoElement.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": null,
+        "isFirstMount": false,
+        "props": [
+          "value",
+        ],
+        "state": null,
+      }
+    `);
+
+    const childElement = store.getElementAtIndex(2);
+    expect(childElement.hocDisplayNames).toBeNull();
+    expect(commitData.changeDescriptions.get(childElement.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": [],
+        "isFirstMount": false,
+        "props": [
+          "value",
+        ],
+        "state": null,
+      }
+    `);
+  });
 });
