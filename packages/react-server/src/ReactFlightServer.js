@@ -4081,73 +4081,89 @@ function renderModelDestructive(
       return renderFragment(request, task, value);
     }
 
-    if (value instanceof Map) {
-      return serializeMap(request, value);
-    }
-    if (value instanceof Set) {
-      return serializeSet(request, value);
-    }
-    // TODO: FormData is not available in old Node. Remove the typeof later.
-    if (typeof FormData === 'function' && value instanceof FormData) {
-      return serializeFormData(request, value);
-    }
-    if (value instanceof Error) {
-      return serializeErrorValue(request, value);
-    }
-    if (value instanceof ArrayBuffer) {
-      return serializeTypedArray(request, 'A', new Uint8Array(value));
-    }
-    if (value instanceof Int8Array) {
-      // char
-      return serializeTypedArray(request, 'O', value);
-    }
-    if (value instanceof Uint8Array) {
-      // unsigned char
-      return serializeTypedArray(request, 'o', value);
-    }
-    if (value instanceof Uint8ClampedArray) {
-      // unsigned clamped char
-      return serializeTypedArray(request, 'U', value);
-    }
-    if (value instanceof Int16Array) {
-      // sort
-      return serializeTypedArray(request, 'S', value);
-    }
-    if (value instanceof Uint16Array) {
-      // unsigned short
-      return serializeTypedArray(request, 's', value);
-    }
-    if (value instanceof Int32Array) {
-      // long
-      return serializeTypedArray(request, 'L', value);
-    }
-    if (value instanceof Uint32Array) {
-      // unsigned long
-      return serializeTypedArray(request, 'l', value);
-    }
-    if (value instanceof Float32Array) {
-      // float
-      return serializeTypedArray(request, 'G', value);
-    }
-    if (value instanceof Float64Array) {
-      // double
-      return serializeTypedArray(request, 'g', value);
-    }
-    if (value instanceof BigInt64Array) {
-      // number
-      return serializeTypedArray(request, 'M', value);
-    }
-    if (value instanceof BigUint64Array) {
-      // unsigned number
-      // We use "m" instead of "n" since JSON can start with "null"
-      return serializeTypedArray(request, 'm', value);
-    }
-    if (value instanceof DataView) {
-      return serializeTypedArray(request, 'V', value);
-    }
-    // TODO: Blob is not available in old Node. Remove the typeof check later.
-    if (typeof Blob === 'function' && value instanceof Blob) {
-      return serializeBlob(request, value);
+    // Nearly every object here is a plain object, and every built-in below
+    // has another prototype, so a plain object skips straight to the
+    // iterable probes and the plain-object checks.
+    const proto = getPrototypeOf(value);
+    if (proto !== ObjectPrototype) {
+      if (value instanceof Map) {
+        return serializeMap(request, value);
+      }
+      if (value instanceof Set) {
+        return serializeSet(request, value);
+      }
+      // TODO: FormData is not available in old Node. Remove the typeof later.
+      if (typeof FormData === 'function' && value instanceof FormData) {
+        return serializeFormData(request, value);
+      }
+      if (value instanceof Error) {
+        return serializeErrorValue(request, value);
+      }
+      if (value instanceof ArrayBuffer) {
+        return serializeTypedArray(request, 'A', new Uint8Array(value));
+      }
+      if (value instanceof Int8Array) {
+        // char
+        return serializeTypedArray(request, 'O', value);
+      }
+      if (value instanceof Uint8Array) {
+        // unsigned char
+        return serializeTypedArray(request, 'o', value);
+      }
+      if (value instanceof Uint8ClampedArray) {
+        // unsigned clamped char
+        return serializeTypedArray(request, 'U', value);
+      }
+      if (value instanceof Int16Array) {
+        // sort
+        return serializeTypedArray(request, 'S', value);
+      }
+      if (value instanceof Uint16Array) {
+        // unsigned short
+        return serializeTypedArray(request, 's', value);
+      }
+      if (value instanceof Int32Array) {
+        // long
+        return serializeTypedArray(request, 'L', value);
+      }
+      if (value instanceof Uint32Array) {
+        // unsigned long
+        return serializeTypedArray(request, 'l', value);
+      }
+      if (value instanceof Float32Array) {
+        // float
+        return serializeTypedArray(request, 'G', value);
+      }
+      if (value instanceof Float64Array) {
+        // double
+        return serializeTypedArray(request, 'g', value);
+      }
+      if (value instanceof BigInt64Array) {
+        // number
+        return serializeTypedArray(request, 'M', value);
+      }
+      if (value instanceof BigUint64Array) {
+        // unsigned number
+        // We use "m" instead of "n" since JSON can start with "null"
+        return serializeTypedArray(request, 'm', value);
+      }
+      if (value instanceof DataView) {
+        return serializeTypedArray(request, 'V', value);
+      }
+      // TODO: Blob is not available in old Node. Remove the typeof check later.
+      if (typeof Blob === 'function' && value instanceof Blob) {
+        return serializeBlob(request, value);
+      }
+      // TODO: Blob is not available in old Node. Remove the typeof check later.
+      if (
+        typeof ReadableStream === 'function' &&
+        value instanceof ReadableStream
+      ) {
+        return serializeReadableStream(request, task, value);
+      }
+      if (value instanceof Date) {
+        return serializeDate(value);
+      }
     }
 
     const iteratorFn = getIteratorFn(value);
@@ -4161,13 +4177,6 @@ function renderModelDestructive(
       return renderFragment(request, task, Array.from(iterator as any));
     }
 
-    // TODO: Blob is not available in old Node. Remove the typeof check later.
-    if (
-      typeof ReadableStream === 'function' &&
-      value instanceof ReadableStream
-    ) {
-      return serializeReadableStream(request, task, value);
-    }
     const getAsyncIterator: void | (() => $AsyncIterator<any, any, any>) = (
       value as any
     )[ASYNC_ITERATOR];
@@ -4176,16 +4185,7 @@ function renderModelDestructive(
       return renderAsyncFragment(request, task, value as any, getAsyncIterator);
     }
 
-    // We put the Date check low b/c most of the time Date's will already have been serialized
-    // before we process it in this function but when rendering a Date() as a top level it can
-    // end up being a Date instance here. This is rare so we deprioritize it by putting it deep
-    // in this function
-    if (value instanceof Date) {
-      return serializeDate(value);
-    }
-
     // Verify that this is a simple plain object.
-    const proto = getPrototypeOf(value);
     if (
       proto !== ObjectPrototype &&
       (proto === null || getPrototypeOf(proto) !== null)
