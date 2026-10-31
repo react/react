@@ -1492,7 +1492,8 @@ fn compiler_error_to_info(err: &CompilerError, filename: Option<&str>) -> Compil
 
 /// Attempt to compile a single function.
 ///
-/// Returns `CodegenFunction` on success or `CompilerError` on failure.
+/// Returns `CodegenFunction` on success (`None` if validated without codegen)
+/// or `CompilerError` on failure.
 /// Debug log entries are accumulated on `context.debug_logs`.
 fn try_compile_function(
     source: &CompileSource<'_>,
@@ -1500,7 +1501,7 @@ fn try_compile_function(
     output_mode: CompilerOutputMode,
     env_config: &EnvironmentConfig,
     context: &mut ProgramContext,
-) -> Result<CodegenFunction, CompilerError> {
+) -> Result<Option<CodegenFunction>, CompilerError> {
     // Check for suppressions that affect this function
     if let (Some(start), Some(end)) = (source.fn_start, source.fn_end) {
         let affecting = filter_suppressions_that_affect_function(&context.suppressions, start, end);
@@ -1603,6 +1604,11 @@ fn process_fn(
                 // only for functions that are actually applied to the output.
                 return Ok(None);
             }
+
+            // Validated without codegen (see `enable_lint_fast_path`), nothing to emit
+            let Some(codegen_fn) = codegen_fn else {
+                return Ok(None);
+            };
 
             // Log success with memo stats from CodegenFunction
             let source_filename = source

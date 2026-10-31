@@ -42,7 +42,7 @@ pub fn compile_fn(
     mode: CompilerOutputMode,
     env_config: &EnvironmentConfig,
     context: &mut ProgramContext,
-) -> Result<CodegenFunction, CompilerError> {
+) -> Result<Option<CodegenFunction>, CompilerError> {
     let mut env = Environment::with_config(env_config.clone());
     env.fn_type = fn_type;
     env.output_mode = match mode {
@@ -545,6 +545,22 @@ pub fn compile_fn(
             ));
         }
         context.timing.stop();
+    }
+
+    // Lint mode discards the compiled output, and the remaining passes can only
+    // report lint errors via ValidatePreservedManualMemoization, which needs
+    // manual memoization to report anything. See `enable_lint_fast_path`.
+    if env.output_mode == OutputMode::Lint
+        && env.config.enable_lint_fast_path
+        && !has_manual_memoization(&hir)
+    {
+        if let Some(uid_names) = env.take_uid_known_names() {
+            context.merge_uid_known_names(&uid_names);
+        }
+        if env.has_errors() {
+            return Err(env.take_errors());
+        }
+        return Ok(None);
     }
 
     if env.enable_memoization() {
@@ -1151,7 +1167,7 @@ pub fn compile_fn(
         context.merge_uid_known_names(&uid_names);
     }
 
-    Ok(CodegenFunction {
+    Ok(Some(CodegenFunction {
         loc: codegen_result.loc,
         id: codegen_result.id,
         name_hint: codegen_result.name_hint,
@@ -1165,7 +1181,24 @@ pub fn compile_fn(
         pruned_memo_blocks: codegen_result.pruned_memo_blocks,
         pruned_memo_values: codegen_result.pruned_memo_values,
         outlined: compiled_outlined,
-    })
+    }))
+}
+
+/// DropManualMemoization only inserts StartMemoize/FinishMemoize markers into the
+/// function's own body, not into nested function expressions.
+fn has_manual_memoization(func: &react_compiler_hir::HirFunction) -> bool {
+    for (_block_id, block) in &func.body.blocks {
+        for &instr_id in &block.instructions {
+            let instr = &func.instructions[instr_id.0 as usize];
+            if matches!(
+                instr.value,
+                react_compiler_hir::InstructionValue::StartMemoize { .. }
+            ) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Compile an outlined function's codegen AST through the full pipeline.

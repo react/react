@@ -141,6 +141,7 @@ const COMPILER_OPTIONS: PluginOptions = {
     validateNoCapitalizedCalls: [],
     validateHooksUsage: true,
     validateNoDerivedComputationsInEffects: true,
+    enableLintFastPath: true,
 
     // Experimental options controlled by ReactFeatureFlags
     enableUseKeyedState: eprh_enableUseKeyedStateCompilerLint,
