@@ -46,6 +46,25 @@ function coerceFormActionProp(
  * This plugin invokes action functions on forms, inputs and buttons if
  * the form doesn't prevent default.
  */
+function getFormMethod(form: HTMLFormElement): string {
+  const rawMethod =
+    // $FlowFixMe[method-unbinding]
+    typeof form.getAttribute === 'function'
+      ? form.getAttribute('method')
+      : null;
+  if (typeof rawMethod === 'string') {
+    const lower = rawMethod.toLowerCase();
+    if (lower === 'post' || lower === 'get' || lower === 'dialog') {
+      return lower;
+    }
+  }
+  return typeof form.method === 'string' &&
+    (form.method.toLowerCase() === 'post' ||
+      form.method.toLowerCase() === 'dialog')
+    ? form.method.toLowerCase()
+    : 'get';
+}
+
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,
@@ -107,7 +126,7 @@ function extractEvents(
         const pendingState: FormStatus = {
           pending: true,
           data: formData,
-          method: form.method,
+          method: getFormMethod(form),
           action: action,
         };
         if (__DEV__) {
@@ -136,7 +155,7 @@ function extractEvents(
       const pendingState: FormStatus = {
         pending: true,
         data: formData,
-        method: form.method,
+        method: getFormMethod(form),
         action: action,
       };
       if (__DEV__) {
@@ -172,7 +191,7 @@ export function dispatchReplayedFormAction(
   const pendingState: FormStatus = {
     pending: true,
     data: formData,
-    method: form.method,
+    method: getFormMethod(form),
     action: action,
   };
   if (__DEV__) {
