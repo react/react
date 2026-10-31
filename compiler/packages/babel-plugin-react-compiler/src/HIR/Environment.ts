@@ -751,6 +751,22 @@ export class Environment {
   }
 
   /**
+   * Whether compilation should keep going after an error is recorded, so that
+   * every error is collected. That only matters when something observes the
+   * errors: lint mode, a logger (which receives a CompileError event per error),
+   * or a `panicThreshold` that can turn errors into exceptions. Otherwise a
+   * function with any recorded error is skipped, and the remaining passes would
+   * be wasted work.
+   */
+  get collectsAllErrors(): boolean {
+    return (
+      this.outputMode === 'lint' ||
+      this.logger != null ||
+      this.programContext.opts.panicThreshold !== 'none'
+    );
+  }
+
+  /**
    * Returns true if any errors have been recorded during compilation.
    */
   hasErrors(): boolean {

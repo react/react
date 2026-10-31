@@ -154,8 +154,19 @@ function runWithEnvironment(
   const log = (value: CompilerPipelineValue): void => {
     env.logger?.debugLogIRs?.(value);
   };
+  /*
+   * Once an error is recorded the function will not be compiled. Unless the
+   * errors are observed (see `Environment.collectsAllErrors`), stop there
+   * instead of running the remaining passes.
+   */
+  const stopAtFirstError = !env.collectsAllErrors;
+  const shouldStop = (): boolean => stopAtFirstError && env.hasErrors();
   const hir = lower(func, env);
   log({kind: 'hir', name: 'HIR', value: hir});
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
+  }
 
   pruneMaybeThrows(hir);
   log({kind: 'hir', name: 'PruneMaybeThrows', value: hir});
@@ -168,6 +179,10 @@ function runWithEnvironment(
   if (env.enableDropManualMemoization) {
     dropManualMemoization(hir);
     log({kind: 'hir', name: 'DropManualMemoization', value: hir});
+  }
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
   }
 
   inlineImmediatelyInvokedFunctionExpressions(hir);
@@ -209,6 +224,10 @@ function runWithEnvironment(
       validateNoCapitalizedCalls(hir);
       log({kind: 'debug', name: 'ValidateNoCapitalizedCalls', value: 'ok'});
     }
+  }
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
   }
 
   optimizePropsMethodCalls(hir);
@@ -295,6 +314,10 @@ function runWithEnvironment(
     });
   }
 
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
+  }
+
   inferReactivePlaces(hir);
   log({kind: 'hir', name: 'InferReactivePlaces', value: hir});
 
@@ -307,6 +330,10 @@ function runWithEnvironment(
       validateExhaustiveDependencies(hir);
       log({kind: 'debug', name: 'ValidateExhaustiveDependencies', value: 'ok'});
     }
+  }
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
   }
 
   rewriteInstructionKindsBasedOnReassignment(hir);
@@ -549,6 +576,10 @@ function runWithEnvironment(
       name: 'ValidatePreservedManualMemoization',
       value: 'ok',
     });
+  }
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
   }
 
   const ast = codegenFunction(reactiveFunction, {
