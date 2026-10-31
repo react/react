@@ -569,4 +569,18 @@ describe('ReactDOMFizzServerBrowser', () => {
       `"<link rel="preload" as="script" fetchPriority="low" nonce="R4nd0m" href="init.js"/><link rel="modulepreload" fetchPriority="low" nonce="R4nd0m" href="init.mjs"/><div>hello world</div><script nonce="${nonce}" id="_R_">INIT();</script><script src="init.js" nonce="${nonce}" async=""></script><script type="module" src="init.mjs" nonce="${nonce}" async=""></script>"`,
     );
   });
+
+  it('should use the script nonce for bootstrap script preloads when script and style nonces differ', async () => {
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(<div>hello world</div>, {
+        nonce: {script: 'R4nd0m', style: 'D1ff3r3nt'},
+        bootstrapScripts: ['init.js'],
+        bootstrapModules: ['init.mjs'],
+      }),
+    );
+    const result = await readResult(stream);
+    expect(result).toMatchInlineSnapshot(
+      `"<link rel="preload" as="script" fetchPriority="low" nonce="R4nd0m" href="init.js"/><link rel="modulepreload" fetchPriority="low" nonce="R4nd0m" href="init.mjs"/><div>hello world</div><script src="init.js" nonce="R4nd0m" id="_R_" async=""></script><script type="module" src="init.mjs" nonce="R4nd0m" async=""></script>"`,
+    );
+  });
 });
