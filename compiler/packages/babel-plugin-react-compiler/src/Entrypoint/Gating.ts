@@ -28,8 +28,8 @@ import {ExternalFunction} from '..';
  * function Foo_optimized() {}      <- inserted
  * function Foo_unoptimized() {}    <- renamed from Foo
  * function Foo() {                 <- inserted function, which can be hoisted by JS engines
- *   if (gating_result) return Foo_optimized();
- *   else return Foo_unoptimized();
+ *   if (gating_result) return Foo_optimized.apply(this, arguments);
+ *   else return Foo_unoptimized.apply(this, arguments);
  * }
  * ```
  */
@@ -79,17 +79,19 @@ function insertAdditionalFunctionDeclaration(
    * Step 2: insert new function declaration
    */
   const newParams: Array<t.Identifier | t.RestElement> = [];
-  const genNewArgs: Array<() => t.Identifier | t.SpreadElement> = [];
   for (let i = 0; i < originalFnParams.length; i++) {
     const argName = `arg${i}`;
     if (originalFnParams[i].type === 'RestElement') {
       newParams.push(t.restElement(t.identifier(argName)));
-      genNewArgs.push(() => t.spreadElement(t.identifier(argName)));
     } else {
       newParams.push(t.identifier(argName));
-      genNewArgs.push(() => t.identifier(argName));
     }
   }
+  const forwardCall = (callee: t.Identifier): t.CallExpression =>
+    t.callExpression(t.memberExpression(callee, t.identifier('apply')), [
+      t.thisExpression(),
+      t.identifier('arguments'),
+    ]);
   // insertAfter called in reverse order of how nodes should appear in program
   fnPath.insertAfter(
     t.functionDeclaration(
@@ -98,18 +100,8 @@ function insertAdditionalFunctionDeclaration(
       t.blockStatement([
         t.ifStatement(
           gatingCondition,
-          t.returnStatement(
-            t.callExpression(
-              compiled.id,
-              genNewArgs.map(fn => fn()),
-            ),
-          ),
-          t.returnStatement(
-            t.callExpression(
-              unoptimizedFnName,
-              genNewArgs.map(fn => fn()),
-            ),
-          ),
+          t.returnStatement(forwardCall(compiled.id)),
+          t.returnStatement(forwardCall(unoptimizedFnName)),
         ),
       ]),
     ),
