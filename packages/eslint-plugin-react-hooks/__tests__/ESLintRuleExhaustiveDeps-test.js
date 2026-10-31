@@ -17,7 +17,7 @@ const ReactHooksESLintRule =
 
 /**
  * A string template tag that removes padding from the left side of multi-line strings
- * @param {Array} strings array of code strings (only one expected)
+ * @param {TemplateStringsArray} strings array of code strings (only one expected)
  */
 function normalizeIndent(strings) {
   const codeLines = strings[0].split('\n');
@@ -7356,6 +7356,70 @@ const tests = {
         {
           message:
             "The 'foo' object makes the dependencies of useMemo Hook (at line 4) change on every render. " +
+            "Move it inside the useMemo callback. Alternatively, wrap the initialization of 'foo' in its own " +
+            'useMemo() Hook.',
+          suggestions: undefined,
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function Component({ foo = [] }) {
+          useMemo(() => foo, [foo]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "The 'foo' array makes the dependencies of useMemo Hook (at line 3) change on every render. " +
+            "Move it inside the useMemo callback. Alternatively, wrap the initialization of 'foo' in its own " +
+            'useMemo() Hook.',
+          suggestions: undefined,
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function useCustomHook(foo = []) {
+          useMemo(() => foo, [foo]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "The 'foo' array makes the dependencies of useMemo Hook (at line 3) change on every render. " +
+            "Move it inside the useMemo callback. Alternatively, wrap the initialization of 'foo' in its own " +
+            'useMemo() Hook.',
+          suggestions: undefined,
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function useCustomHook(bar, foo = {}) {
+          useMemo(() => foo, [foo]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "The 'foo' object makes the dependencies of useMemo Hook (at line 3) change on every render. " +
+            "Move it inside the useMemo callback. Alternatively, wrap the initialization of 'foo' in its own " +
+            'useMemo() Hook.',
+          suggestions: undefined,
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function Component({ foo = {} }) {
+          useMemo(() => foo, [foo]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "The 'foo' object makes the dependencies of useMemo Hook (at line 3) change on every render. " +
             "Move it inside the useMemo callback. Alternatively, wrap the initialization of 'foo' in its own " +
             'useMemo() Hook.',
           suggestions: undefined,
