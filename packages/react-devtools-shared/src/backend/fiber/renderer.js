@@ -1320,9 +1320,15 @@ export function attach(
             state: null,
           };
         } else {
-          const prevHooks = inspectHooks(prevFiber);
-          const nextHooks = inspectHooks(nextFiber);
-          const indices = getChangedHooksIndices(prevHooks, nextHooks);
+          // A MemoComponent fiber has no hooks of its own. They live on the
+          // inner fiber, which gets its own change description.
+          const indices =
+            nextFiber.tag === MemoComponent
+              ? null
+              : getChangedHooksIndices(
+                  inspectHooks(prevFiber),
+                  inspectHooks(nextFiber),
+                );
           const data: ChangeDescription = {
             context: getContextChanged(prevFiber, nextFiber),
             didHooksChange: indices !== null && indices.length > 0,
