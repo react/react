@@ -15,6 +15,7 @@ import {
 } from 'react-devtools-shared/src/utils';
 import {TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE} from 'react-devtools-shared/src/constants';
 import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
+import {checkConditions} from 'react-devtools-shared/src/devtools/views/Editor/utils';
 import {
   formatConsoleArguments,
   formatConsoleArgumentsToSingleString,
@@ -580,6 +581,51 @@ function f() { }
         'Applied activity slice change to 42',
       );
       expect(log.mock.calls[0][0]).toContain('Reset applied activity slice');
+    });
+  });
+
+  describe('checkConditions', () => {
+    const editorURL = 'vscode://file/{path}:{line}:{column}';
+
+    function getEditorHref(sourceURL: string) {
+      const {url, shouldDisableButton} = checkConditions(editorURL, [
+        '',
+        sourceURL,
+        10,
+        5,
+      ]);
+      expect(shouldDisableButton).toBe(false);
+      return url === null ? null : url.href;
+    }
+
+    it('should fill in the path, line and column', () => {
+      expect(getEditorHref('/app/src/App.js')).toBe(
+        'vscode://file//app/src/App.js:10:5',
+      );
+    });
+
+    it('should keep "#" and "?" in a file system path as part of the path', () => {
+      expect(getEditorHref('/app/C#/App.js')).toBe(
+        'vscode://file//app/C%23/App.js:10:5',
+      );
+      expect(getEditorHref('/app/src/a?b.js')).toBe(
+        'vscode://file//app/src/a%3Fb.js:10:5',
+      );
+    });
+
+    it('should not treat "$" in a path as a replacement pattern', () => {
+      expect(getEditorHref('/app/routes/$$.tsx')).toBe(
+        'vscode://file//app/routes/$$.tsx:10:5',
+      );
+      expect(getEditorHref('/app/routes/$&.tsx')).toBe(
+        'vscode://file//app/routes/$&.tsx:10:5',
+      );
+    });
+
+    it('should not encode a file URL path twice', () => {
+      expect(getEditorHref('file:///app/C%23/my%20file.js')).toBe(
+        'vscode://file//app/C%23/my%20file.js:10:5',
+      );
     });
   });
 });
