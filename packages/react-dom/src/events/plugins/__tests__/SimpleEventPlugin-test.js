@@ -659,4 +659,31 @@ describe('SimpleEventPlugin', function () {
     const event = onToggle.mock.calls[0][0];
     expect(event.source).toBe(source);
   });
+
+  it('includes the altitude and azimuth angles in pointer events', async function () {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const onPointerDown = jest.fn();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<div onPointerDown={onPointerDown} />);
+    });
+
+    const target = container.firstChild;
+    const pointerEvent = new Event('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+    });
+    pointerEvent.altitudeAngle = Math.PI / 4;
+    pointerEvent.azimuthAngle = Math.PI / 2;
+    await act(() => {
+      target.dispatchEvent(pointerEvent);
+    });
+
+    expect(onPointerDown).toHaveBeenCalledTimes(1);
+    const event = onPointerDown.mock.calls[0][0];
+    expect(event.altitudeAngle).toBe(Math.PI / 4);
+    expect(event.azimuthAngle).toBe(Math.PI / 2);
+  });
 });
