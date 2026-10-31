@@ -1816,8 +1816,12 @@ function markRootSuspended(
   spawnedLane: Lane,
   didAttemptEntireTree: boolean,
 ) {
-  // When suspending, we should always mark the entangled lanes as suspended.
+  // Include entangled lanes when suspending, but preserve pings outside this
+  // task's lanes. A deferred task may suspend even though its parent task is
+  // now ready to commit the initial value.
+  const pingedLanes = removeLanes(root.pingedLanes, suspendedLanes);
   suspendedLanes = getEntangledLanes(root, suspendedLanes);
+  suspendedLanes = removeLanes(suspendedLanes, pingedLanes);
 
   // When suspending, we should always exclude lanes that were pinged or (more
   // rarely, since we try to avoid it) updated during the render phase.
