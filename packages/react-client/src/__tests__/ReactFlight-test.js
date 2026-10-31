@@ -431,7 +431,6 @@ describe('ReactFlight', () => {
     expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  // @gate FIXME
   it('should transport undefined object values', async () => {
     function ServerComponent(props) {
       return 'prop' in props

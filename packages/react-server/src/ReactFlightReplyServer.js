@@ -45,6 +45,10 @@ import {enableFlightObjectReferences} from 'shared/ReactFeatureFlags';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import getPrototypeOf from 'shared/getPrototypeOf';
 import isArray from 'shared/isArray';
+import {
+  escapePathSegment,
+  unescapePathSegment,
+} from 'shared/ReactFlightReferencePath';
 
 interface FlightStreamController {
   enqueueModel(json: string): void;
@@ -834,18 +838,21 @@ function reviveModel(
             continue;
           }
           const childRef =
-            reference !== undefined && key.indexOf(':') === -1
-              ? reference + ':' + key
+            reference !== undefined
+              ? reference + ':' + escapePathSegment(key)
               : undefined;
+          const raw = value[key];
           const newValue = reviveModel(
             response,
             value,
             key,
-            value[key],
+            raw,
             childRef,
             null, // The array context resets when we're entering a non-array
           );
-          if (newValue !== undefined) {
+          if (newValue !== undefined || raw === '$undefined') {
+            // A key whose value is undefined stays a key, as it was on the
+            // other side.
             // $FlowFixMe[cannot-write]
             value[key] = newValue;
           } else {
@@ -2098,6 +2105,16 @@ function addReferenceListener(
   }
 }
 
+// The property names of a path, with the escaping the encoder applies to a
+// name that contains a colon undone.
+function splitReferencePath(reference: string): Array<string> {
+  const path = reference.split(':');
+  for (let i = 1; i < path.length; i++) {
+    path[i] = unescapePathSegment(path[i]);
+  }
+  return path;
+}
+
 function getOutlinedModel<T>(
   response: Response,
   reference: string,
@@ -2109,7 +2126,9 @@ function getOutlinedModel<T>(
   // parseInt stops at the ':' so we only need to split when there's a path.
   const id = parseInt(reference, 16);
   const path =
-    reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
+    reference.indexOf(':') === -1
+      ? EMPTY_REFERENCE_PATH
+      : splitReferencePath(reference);
   let chunk = getChunk(response, id);
   switch (chunk.status) {
     case RESOLVED_MODEL:

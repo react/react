@@ -2621,11 +2621,6 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
     }
   }
 
-  // These leaves wait for fixes further up the stack: an object key whose value
-  // is undefined is dropped, and a cycle through a property name with a colon
-  // overflows the writer's stack.
-  const unsupportedMoves = ['undefined', 'colon'];
-
   // A reply cannot carry client references, elements, server components,
   // Errors or symbols; its loading leaves are Server Functions.
   const replyMoves = [
@@ -2650,9 +2645,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
           it(caseName('graph', seed, demands[d], variant), () =>
             runGraph({
               ...generateGraph(seed, {
-                without: unsupportedMoves.concat(
-                  host === 'reply' ? replyMoves : [],
-                ),
+                without: host === 'reply' ? replyMoves : [],
                 streamsHeldOnce: host === 'reply',
               }),
               family: 'graph',

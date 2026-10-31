@@ -317,6 +317,38 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(read.value).toBe('inner');
   });
 
+  it('keeps a key whose value is undefined', async () => {
+    const body = await ReactServerDOMClient.encodeReply({
+      present: undefined,
+      list: [undefined, 1],
+    });
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    expect('present' in result).toBe(true);
+    expect(result.present).toBe(undefined);
+    expect(result.list).toEqual([undefined, 1]);
+  });
+
+  it('can pass a cyclic object under a property name with a colon', async () => {
+    const cyclic = {};
+    cyclic.self = cyclic;
+    // Property names join into path references with colons, so these two
+    // have to be escaped on the way.
+    const model = {'https://a/b': cyclic, '%3A': cyclic, again: cyclic};
+
+    const body = await ReactServerDOMClient.encodeReply(model);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(result['https://a/b'].self).toBe(result['https://a/b']);
+    expect(result['%3A']).toBe(result['https://a/b']);
+    expect(result.again).toBe(result['https://a/b']);
+  });
+
   it('ends a BYOB read that is waiting when the byte stream closes', async () => {
     const s = new ReadableStream({
       type: 'bytes',

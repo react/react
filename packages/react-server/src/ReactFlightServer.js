@@ -152,6 +152,7 @@ import {
 
 import ReactSharedInternals from './ReactSharedInternalsServer';
 import isArray from 'shared/isArray';
+import {escapePathSegment} from 'shared/ReactFlightReferencePath';
 import getPrototypeOf from 'shared/getPrototypeOf';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import binaryToComparableString from 'shared/binaryToComparableString';
@@ -3884,13 +3885,13 @@ function renderModelDestructive(
               // We currently don't have a data structure that lets us see that though.
               return referTo(value, existingReference);
             }
-          } else if (parentPropertyName.indexOf(':') === -1) {
-            // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
+          } else {
             const parentReference = writtenObjects.get(parent);
             if (parentReference !== undefined) {
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
-              elementReference = parentReference + ':' + parentPropertyName;
+              elementReference =
+                parentReference + ':' + escapePathSegment(parentPropertyName);
               registerByPath(request, task, value, elementReference);
             }
           }
@@ -4132,13 +4133,12 @@ function renderModelDestructive(
         // just refer to that by its existing ID.
         return referTo(value, existingReference);
       }
-    } else if (parentPropertyName.indexOf(':') === -1) {
-      // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
+    } else {
       const parentReference = writtenObjects.get(parent);
       if (parentReference !== undefined) {
         // If the parent has a reference, we can refer to this object indirectly
         // through the property name inside that parent.
-        let propertyName = parentPropertyName;
+        let propertyName = escapePathSegment(parentPropertyName);
         if (isArray(parent) && parent[0] === REACT_ELEMENT_TYPE) {
           // For elements, we've converted it to an array but we'll have converted
           // it back to an element before we read the references so the property
@@ -5372,8 +5372,7 @@ function renderDebugModel(
         // We've already emitted this as a debug object. We favor that version if available.
         return existingDebugReference;
       }
-    } else if (parentPropertyName.indexOf(':') === -1) {
-      // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
+    } else {
       const parentReference = writtenDebugObjects.get(parent);
       if (parentReference !== undefined) {
         // If the parent has a reference, we can refer to this object indirectly
@@ -5384,7 +5383,7 @@ function renderDebugModel(
           return serializeDeferredObject(request, value);
         }
 
-        let propertyName = parentPropertyName;
+        let propertyName = escapePathSegment(parentPropertyName);
         if (isArray(parent) && parent[0] === REACT_ELEMENT_TYPE) {
           // For elements, we've converted it to an array but we'll have converted
           // it back to an element before we read the references so the property
