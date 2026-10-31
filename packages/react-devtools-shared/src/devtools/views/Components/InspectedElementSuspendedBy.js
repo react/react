@@ -23,7 +23,10 @@ import OwnerView from './OwnerView';
 import {meta} from '../../../hydration';
 import Skeleton from './Skeleton';
 import useInferredName from '../useInferredName';
-import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
+import {
+  preloadSymbolicatedStack,
+  symbolicateSourceWithCache,
+} from 'react-devtools-shared/src/symbolicateSource';
 
 import {getClassNameForEnvironment} from '../SuspenseTab/SuspenseEnvironmentColors.js';
 
@@ -112,6 +115,15 @@ function StackTraceGroup({
 }: StackTraceGroupProps): React.Node {
   const [showIgnoreList, setShowIgnoreList] = useState(false);
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  if (fetchFileWithCaching !== null) {
+    if (ioStack !== null) {
+      preloadSymbolicatedStack(fetchFileWithCaching, ioStack);
+    }
+    if (asyncInfoStack !== null) {
+      preloadSymbolicatedStack(fetchFileWithCaching, asyncInfoStack);
+    }
+  }
 
   const ioStackHasIgnoredFrames =
     ioStack !== null &&
