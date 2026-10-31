@@ -178,6 +178,7 @@ impl<'a> ReactiveFunctionTransform for Transform<'a> {
                             // References to hoisted functions are now "safe" as
                             // variable assignments have finished.
                             state.uninitialized.remove(&lvalue_id);
+                            lvalue.kind = InstructionKind::Reassign;
                         }
                     } else {
                         let mut err = CompilerError::new();
