@@ -19,7 +19,7 @@ import type {
 import {
   emitHint,
   getHints,
-  resolveRequest,
+  resolveContext,
 } from 'react-server/src/ReactFlightServer';
 
 import ReactDOMSharedInternals from 'shared/ReactDOMSharedInternals';
@@ -40,16 +40,16 @@ ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */ = {
 
 function prefetchDNS(href: string) {
   if (typeof href === 'string' && href) {
-    const request = resolveRequest();
-    if (request) {
-      const hints = getHints(request);
+    const context = resolveContext();
+    if (context) {
+      const hints = getHints(context);
       const key = 'D|' + href;
       if (hints.has(key)) {
         // duplicate hint
         return;
       }
       hints.add(key);
-      emitHint(request, 'D', href);
+      emitHint(context, 'D', href);
     } else {
       previousDispatcher.D(/* prefetchDNS */ href);
     }
@@ -58,9 +58,9 @@ function prefetchDNS(href: string) {
 
 function preconnect(href: string, crossOrigin?: ?CrossOriginEnum) {
   if (typeof href === 'string') {
-    const request = resolveRequest();
-    if (request) {
-      const hints = getHints(request);
+    const context = resolveContext();
+    if (context) {
+      const hints = getHints(context);
 
       const key = `C|${crossOrigin == null ? 'null' : crossOrigin}|${href}`;
       if (hints.has(key)) {
@@ -69,9 +69,9 @@ function preconnect(href: string, crossOrigin?: ?CrossOriginEnum) {
       }
       hints.add(key);
       if (typeof crossOrigin === 'string') {
-        emitHint(request, 'C', [href, crossOrigin]);
+        emitHint(context, 'C', [href, crossOrigin]);
       } else {
-        emitHint(request, 'C', href);
+        emitHint(context, 'C', href);
       }
     } else {
       previousDispatcher.C(/* preconnect */ href, crossOrigin);
@@ -85,9 +85,9 @@ export function preload(
   options?: ?PreloadImplOptions,
 ) {
   if (typeof href === 'string') {
-    const request = resolveRequest();
-    if (request) {
-      const hints = getHints(request);
+    const context = resolveContext();
+    if (context) {
+      const hints = getHints(context);
       let key = 'L';
       if (as === 'image' && options) {
         key += getImagePreloadKey(
@@ -106,9 +106,9 @@ export function preload(
 
       const trimmed = trimOptions(options);
       if (trimmed) {
-        emitHint(request, 'L', [href, as, trimmed]);
+        emitHint(context, 'L', [href, as, trimmed]);
       } else {
-        emitHint(request, 'L', [href, as]);
+        emitHint(context, 'L', [href, as]);
       }
     } else {
       previousDispatcher.L(/* preload */ href, as, options);
@@ -121,9 +121,9 @@ export function preloadModule(
   options?: ?PreloadModuleImplOptions,
 ): void {
   if (typeof href === 'string') {
-    const request = resolveRequest();
-    if (request) {
-      const hints = getHints(request);
+    const context = resolveContext();
+    if (context) {
+      const hints = getHints(context);
       const key = 'm|' + href;
       if (hints.has(key)) {
         // duplicate hint
@@ -133,9 +133,9 @@ export function preloadModule(
 
       const trimmed = trimOptions(options);
       if (trimmed) {
-        return emitHint(request, 'm', [href, trimmed]);
+        return emitHint(context, 'm', [href, trimmed]);
       } else {
-        return emitHint(request, 'm', href);
+        return emitHint(context, 'm', href);
       }
     } else {
       previousDispatcher.m(/* preloadModule */ href, options);
@@ -149,9 +149,9 @@ function preinitStyle(
   options?: ?PreinitStyleOptions,
 ) {
   if (typeof href === 'string') {
-    const request = resolveRequest();
-    if (request) {
-      const hints = getHints(request);
+    const context = resolveContext();
+    if (context) {
+      const hints = getHints(context);
       const key = 'S|' + href;
       if (hints.has(key)) {
         // duplicate hint
@@ -161,15 +161,15 @@ function preinitStyle(
 
       const trimmed = trimOptions(options);
       if (trimmed) {
-        return emitHint(request, 'S', [
+        return emitHint(context, 'S', [
           href,
           typeof precedence === 'string' ? precedence : 0,
           trimmed,
         ]);
       } else if (typeof precedence === 'string') {
-        return emitHint(request, 'S', [href, precedence]);
+        return emitHint(context, 'S', [href, precedence]);
       } else {
-        return emitHint(request, 'S', href);
+        return emitHint(context, 'S', href);
       }
     } else {
       previousDispatcher.S(/* preinitStyle */ href, precedence, options);
@@ -179,9 +179,9 @@ function preinitStyle(
 
 function preinitScript(src: string, options?: ?PreinitScriptOptions) {
   if (typeof src === 'string') {
-    const request = resolveRequest();
-    if (request) {
-      const hints = getHints(request);
+    const context = resolveContext();
+    if (context) {
+      const hints = getHints(context);
       const key = 'X|' + src;
       if (hints.has(key)) {
         // duplicate hint
@@ -191,9 +191,9 @@ function preinitScript(src: string, options?: ?PreinitScriptOptions) {
 
       const trimmed = trimOptions(options);
       if (trimmed) {
-        return emitHint(request, 'X', [src, trimmed]);
+        return emitHint(context, 'X', [src, trimmed]);
       } else {
-        return emitHint(request, 'X', src);
+        return emitHint(context, 'X', src);
       }
     } else {
       previousDispatcher.X(/* preinitScript */ src, options);
@@ -206,9 +206,9 @@ function preinitModuleScript(
   options?: ?PreinitModuleScriptOptions,
 ) {
   if (typeof src === 'string') {
-    const request = resolveRequest();
-    if (request) {
-      const hints = getHints(request);
+    const context = resolveContext();
+    if (context) {
+      const hints = getHints(context);
       const key = 'M|' + src;
       if (hints.has(key)) {
         // duplicate hint
@@ -218,9 +218,9 @@ function preinitModuleScript(
 
       const trimmed = trimOptions(options);
       if (trimmed) {
-        return emitHint(request, 'M', [src, trimmed]);
+        return emitHint(context, 'M', [src, trimmed]);
       } else {
-        return emitHint(request, 'M', src);
+        return emitHint(context, 'M', src);
       }
     } else {
       previousDispatcher.M(/* preinitModuleScript */ src, options);

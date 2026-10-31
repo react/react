@@ -8,6 +8,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 exports.renderToPipeableStream = s.renderToPipeableStream;
+exports.renderToResult = s.renderToResult;
 exports.decodeReplyFromBusboy = s.decodeReplyFromBusboy;
 exports.decodeReply = s.decodeReply;
 exports.decodeAction = s.decodeAction;

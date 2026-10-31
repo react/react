@@ -8,6 +8,7 @@
  */
 
 import type {Request} from 'react-server/src/ReactFlightServer';
+import type {RenderContext} from 'shared/ReactFlightRenderContext';
 import type {ReactComponentInfo} from 'shared/ReactTypes';
 
 export * from '../ReactFlightServerConfigBundlerCustom';
@@ -23,6 +24,8 @@ export type HintModel<T: HintCode> = null; // eslint-disable-line no-unused-vars
 
 export const supportsRequestStorage = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
+export const contextStorage: AsyncLocalStorage<RenderContext | void> =
+  null as any;
 
 export const supportsComponentStorage = false;
 export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =

@@ -87,6 +87,7 @@ import {
   isServerReference,
   supportsRequestStorage,
   requestStorage,
+  contextStorage,
   createHints,
   createRootFormatContext,
   getChildFormatContext,
@@ -115,6 +116,29 @@ import {
   resetHooksForRequest,
 } from './ReactFlightHooks';
 import {DefaultAsyncDispatcher} from './flight/ReactFlightAsyncDispatcher';
+
+import type {RenderContext} from 'shared/ReactFlightRenderContext';
+import {
+  createRenderContext,
+  subscribeToHints,
+} from 'shared/ReactFlightRenderContext';
+export {emitHint} from 'shared/ReactFlightRenderContext';
+import type {Result, ResultTask} from 'shared/ReactFlightResult';
+import {
+  PENDING as RESULT_TASK_PENDING,
+  createResultObject,
+  getResultTask,
+  fulfillResultTask,
+  rejectResultTask,
+  retainResult,
+  releaseResult,
+  getIteratorEntries,
+  getStreamReplay,
+  getAsyncIterableReplay,
+  createReplayReadableStream,
+  createReplayAsyncIterable,
+  isSingleShotIterator,
+} from 'shared/ReactFlightResult';
 
 import {resolveOwner, setCurrentOwner} from './flight/ReactFlightCurrentOwner';
 
@@ -595,11 +619,15 @@ export type Request = {
   fatalError: mixed,
   destination: null | Destination,
   bundlerConfig: ClientManifest,
-  cache: Map<Function, mixed>,
-  cacheController: AbortController,
+  context: RenderContext,
+  // The Result this request serializes, if any. Server Components are read
+  // from its tasks instead of rendered, and it owns the render context.
+  result: null | Result<any>,
+  // Detaches this request from the Result's hints and abort once it is
+  // done, so the Result doesn't keep a finished request alive.
+  unsubscribe: null | (() => void),
   nextChunkId: number,
   pendingChunks: number,
-  hints: Hints,
   abortableTasks: Set<Task>,
   pingedTasks: Array<Task>,
   completedImportChunks: Array<Chunk>,
@@ -620,8 +648,6 @@ export type Request = {
   // The combined length of the keys in writtenImportStrings.
   writtenImportStringsSize: number,
   temporaryReferences: void | TemporaryReferenceSet,
-  identifierPrefix: string,
-  identifierCount: number,
   taintCleanupQueue: Array<string | bigint>,
   onError: (error: mixed) => ?string,
   onAllReady: () => void,
@@ -697,6 +723,7 @@ function RequestInstance(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  result: null | Result<any>,
 ) {
   if (
     ReactSharedInternals.A !== null &&
@@ -720,18 +747,24 @@ function RequestInstance(
   if (enableTaint) {
     TaintRegistryPendingRequests.add(cleanupQueue);
   }
-  const hints = createHints();
+  let context;
+  if (result === null) {
+    context = createRenderContext(createHints(), identifierPrefix);
+  } else {
+    context = result.context;
+    retainResult(result);
+  }
   this.type = type;
   this.status = OPENING;
   this.flushScheduled = false;
   this.fatalError = null;
   this.destination = null;
   this.bundlerConfig = bundlerConfig;
-  this.cache = new Map();
-  this.cacheController = new AbortController();
+  this.context = context;
+  this.result = result;
+  this.unsubscribe = null;
   this.nextChunkId = 0;
   this.pendingChunks = 0;
-  this.hints = hints;
   this.abortableTasks = abortSet;
   this.pingedTasks = pingedTasks;
   this.completedImportChunks = [] as Array<Chunk>;
@@ -746,11 +779,17 @@ function RequestInstance(
   this.writtenObjects = new WeakMap();
   this.writtenImportStrings = new Map();
   this.writtenImportStringsSize = 0;
-  this.temporaryReferences = temporaryReferences;
-  this.identifierPrefix = identifierPrefix || '';
-  this.identifierCount = 1;
+  this.temporaryReferences =
+    temporaryReferences === undefined && result !== null
+      ? result.temporaryReferences
+      : temporaryReferences;
   this.taintCleanupQueue = cleanupQueue;
-  this.onError = onError === undefined ? defaultErrorHandler : onError;
+  this.onError =
+    onError === undefined
+      ? result === null
+        ? defaultErrorHandler
+        : result.onError
+      : onError;
   this.onAllReady = onAllReady;
   this.onFatalError = onFatalError;
 
@@ -821,6 +860,25 @@ function RequestInstance(
     null,
   );
   pingedTasks.push(rootTask);
+
+  const request = this;
+  const unsubscribeHints = subscribeToHints(context, hint => {
+    emitHintChunk(request, hint.code, hint.model);
+    enqueueFlush(request);
+  });
+  if (result !== null) {
+    // Aborting the Result aborts every consumer, this request included.
+    const signal = result.abortController.signal;
+    const abortListener = () => abort(request, signal.reason);
+    signal.addEventListener('abort', abortListener);
+    this.unsubscribe = () => {
+      unsubscribeHints();
+      signal.removeEventListener('abort', abortListener);
+    };
+    if (signal.aborted) {
+      abort(request, signal.reason);
+    }
+  }
 }
 
 export function createRequest(
@@ -833,6 +891,7 @@ export function createRequest(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  result: null | Result<any> = null,
 ): Request {
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -852,6 +911,7 @@ export function createRequest(
     environmentName,
     filterStackFrame,
     keepDebugAlive,
+    result,
   );
 }
 
@@ -867,6 +927,7 @@ export function createPrerenderRequest(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  result: null | Result<any> = null,
 ): Request {
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -886,16 +947,28 @@ export function createPrerenderRequest(
     environmentName,
     filterStackFrame,
     keepDebugAlive,
+    result,
   );
 }
 
 let currentRequest: null | Request = null;
+let currentContext: null | RenderContext = null;
 
 export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
   // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     const store = requestStorage.getStore();
+    if (store) return store;
+  }
+  return null;
+}
+
+export function resolveContext(): null | RenderContext {
+  if (currentContext) return currentContext;
+  // $FlowFixMe[constant-condition]
+  if (supportsRequestStorage) {
+    const store = contextStorage.getStore();
     if (store) return store;
   }
   return null;
@@ -1321,7 +1394,10 @@ function serializeReadableStream(
       const endStreamRow = streamTask.id.toString(16) + ':C\n';
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
       request.abortableTasks.delete(streamTask);
-      request.cacheController.signal.removeEventListener('abort', abortStream);
+      request.context.cacheController.signal.removeEventListener(
+        'abort',
+        abortStream,
+      );
       enqueueFlush(request);
       callOnAllReadyIfReady(request);
     } else {
@@ -1346,7 +1422,10 @@ function serializeReadableStream(
     if (streamTask.status !== PENDING) {
       return;
     }
-    request.cacheController.signal.removeEventListener('abort', abortStream);
+    request.context.cacheController.signal.removeEventListener(
+      'abort',
+      abortStream,
+    );
     erroredTask(request, streamTask, reason);
     enqueueFlush(request);
 
@@ -1358,7 +1437,7 @@ function serializeReadableStream(
     if (streamTask.status !== PENDING) {
       return;
     }
-    const signal = request.cacheController.signal;
+    const signal = request.context.cacheController.signal;
     signal.removeEventListener('abort', abortStream);
     const reason = signal.reason;
     if (request.type === PRERENDER) {
@@ -1374,7 +1453,7 @@ function serializeReadableStream(
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortStream);
+  request.context.cacheController.signal.addEventListener('abort', abortStream);
   reader.read().then(progress, error);
   return serializeByValueID(streamTask.id);
 }
@@ -1449,7 +1528,7 @@ function serializeAsyncIterable(
       }
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
       request.abortableTasks.delete(streamTask);
-      request.cacheController.signal.removeEventListener(
+      request.context.cacheController.signal.removeEventListener(
         'abort',
         abortIterable,
       );
@@ -1476,7 +1555,10 @@ function serializeAsyncIterable(
     if (streamTask.status !== PENDING) {
       return;
     }
-    request.cacheController.signal.removeEventListener('abort', abortIterable);
+    request.context.cacheController.signal.removeEventListener(
+      'abort',
+      abortIterable,
+    );
     erroredTask(request, streamTask, reason);
     enqueueFlush(request);
     if (typeof (iterator as any).throw === 'function') {
@@ -1489,7 +1571,7 @@ function serializeAsyncIterable(
     if (streamTask.status !== PENDING) {
       return;
     }
-    const signal = request.cacheController.signal;
+    const signal = request.context.cacheController.signal;
     signal.removeEventListener('abort', abortIterable);
     const reason = signal.reason;
     if (request.type === PRERENDER) {
@@ -1509,7 +1591,10 @@ function serializeAsyncIterable(
       iterator.throw(reason).then(noop, noop);
     }
   }
-  request.cacheController.signal.addEventListener('abort', abortIterable);
+  request.context.cacheController.signal.addEventListener(
+    'abort',
+    abortIterable,
+  );
   if (__DEV__) {
     callIteratorInDEV(iterator, progress, error);
   } else {
@@ -1518,21 +1603,8 @@ function serializeAsyncIterable(
   return serializeByValueID(streamTask.id);
 }
 
-export function emitHint<Code: HintCode>(
-  request: Request,
-  code: Code,
-  model: HintModel<Code>,
-): void {
-  emitHintChunk(request, code, model);
-  enqueueFlush(request);
-}
-
-export function getHints(request: Request): Hints {
-  return request.hints;
-}
-
-export function getCache(request: Request): Map<Function, mixed> {
-  return request.cache;
+export function getHints(context: RenderContext): Hints {
+  return context.hints;
 }
 
 function readThenable<T>(thenable: Thenable<T>): T {
@@ -1845,8 +1917,17 @@ function renderFunctionComponent<Props>(
       }
     }
     prepareToUseHooksForComponent(prevThenableState, componentDebugInfo);
-    // $FlowFixMe[constant-condition]
-    if (supportsComponentStorage) {
+    if (request.result !== null) {
+      // The Result renders this component once for all of its consumers.
+      // task.model is the element being rendered. The task is a thenable so
+      // we suspend on it if the component hasn't finished yet.
+      const resultTask: Thenable<any> = getResultTask(
+        request.result,
+        task.model as any,
+      ) as any;
+      result = readThenable(resultTask);
+      // $FlowFixMe[constant-condition]
+    } else if (supportsComponentStorage) {
       // Run the component in an Async Context that tracks the current owner.
       if (task.debugTask) {
         result = task.debugTask.run(
@@ -1869,21 +1950,27 @@ function renderFunctionComponent<Props>(
           componentDebugInfo,
         );
       }
+    } else if (task.debugTask) {
+      result = task.debugTask.run(
+        callComponentInDEV.bind(null, Component, props, componentDebugInfo),
+      );
     } else {
-      if (task.debugTask) {
-        result = task.debugTask.run(
-          callComponentInDEV.bind(null, Component, props, componentDebugInfo),
-        );
-      } else {
-        result = callComponentInDEV(Component, props, componentDebugInfo);
-      }
+      result = callComponentInDEV(Component, props, componentDebugInfo);
     }
   } else {
     componentDebugInfo = null as any;
     prepareToUseHooksForComponent(prevThenableState, null);
-    // The secondArg is always undefined in Server Components since refs error early.
-    const secondArg = undefined;
-    result = Component(props, secondArg);
+    if (request.result !== null) {
+      const resultTask: Thenable<any> = getResultTask(
+        request.result,
+        task.model as any,
+      ) as any;
+      result = readThenable(resultTask);
+    } else {
+      // The secondArg is always undefined in Server Components since refs error early.
+      const secondArg = undefined;
+      result = Component(props, secondArg);
+    }
   }
 
   if (request.status === ABORTING) {
@@ -1961,6 +2048,232 @@ function renderFunctionComponent<Props>(
   task.keyPath = prevKeyPath;
   task.implicitSlot = prevImplicitSlot;
   return json;
+}
+
+export function createResult<T>(
+  model: T,
+  onError: void | ((error: mixed) => ?string),
+  identifierPrefix: void | string,
+  temporaryReferences: void | TemporaryReferenceSet,
+  environmentName: void | string | (() => string), // DEV-only
+  filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
+): Result<T> {
+  if (
+    ReactSharedInternals.A !== null &&
+    ReactSharedInternals.A !== DefaultAsyncDispatcher
+  ) {
+    throw new Error(
+      'Currently React only supports one RSC renderer at a time.',
+    );
+  }
+  ReactSharedInternals.A = DefaultAsyncDispatcher;
+  const result: Result<T> = createResultObject(
+    model,
+    createRenderContext(createHints(), identifierPrefix),
+    retryResultTask,
+    onError === undefined ? defaultErrorHandler : onError,
+    temporaryReferences,
+  );
+  if (enableTaint) {
+    result.taintRegistries = {
+      objects: TaintRegistryObjects,
+      values: TaintRegistryValues,
+      byteLengths: TaintRegistryByteLengths,
+      pendingRequests: TaintRegistryPendingRequests,
+    };
+  }
+  if (__DEV__) {
+    result.environmentName =
+      environmentName === undefined
+        ? () => 'Server'
+        : typeof environmentName !== 'function'
+          ? () => environmentName
+          : environmentName;
+    result.filterStackFrame =
+      filterStackFrame === undefined
+        ? defaultFilterStackFrame
+        : filterStackFrame;
+  }
+  return result;
+}
+
+// Finds the Server Component an element renders, through memo, forwardRef
+// and lazy wrappers, the same way renderElement does. Returns null if the
+// element isn't a Server Component.
+function resolveServerComponentType(type: any): null | Function {
+  if (
+    typeof type === 'function' &&
+    !isClientReference(type) &&
+    !isOpaqueTemporaryReference(type)
+  ) {
+    return type;
+  } else if (
+    type != null &&
+    typeof type === 'object' &&
+    !isClientReference(type)
+  ) {
+    switch (type.$$typeof) {
+      case REACT_LAZY_TYPE: {
+        let wrappedType;
+        if (__DEV__) {
+          wrappedType = callLazyInitInDEV(type);
+        } else {
+          const payload = type._payload;
+          const init = type._init;
+          wrappedType = init(payload);
+        }
+        return resolveServerComponentType(wrappedType);
+      }
+      case REACT_FORWARD_REF_TYPE:
+        return resolveServerComponentType(type.render);
+      case REACT_MEMO_TYPE:
+        return resolveServerComponentType(type.type);
+    }
+  }
+  return null;
+}
+
+// Runs the Server Component of a Result task. This happens outside any
+// request, under the Result's render context, since the consumer that
+// reached the element first may be anything that reads the Result.
+function retryResultTask(result: Result<any>, task: ResultTask): void {
+  if (task.status !== RESULT_TASK_PENDING) {
+    // We completed this by other means before we had a chance to retry it.
+    return;
+  }
+  const signal = result.context.cacheController.signal;
+  if (signal.aborted) {
+    // Nothing renders after an abort. The task errors with the abort reason
+    // like a request task would.
+    rejectResultTask(task, signal.reason);
+    return;
+  }
+  result.abortableTasks.add(task);
+  // $FlowFixMe[constant-condition]
+  if (supportsRequestStorage) {
+    // The component's continuations after an await find the context here,
+    // the same way a request's tasks do through startWork.
+    contextStorage.run(result.context, performResultTask, result, task);
+  } else {
+    performResultTask(result, task);
+  }
+}
+
+function performResultTask(result: Result<any>, task: ResultTask): void {
+  const signal = result.context.cacheController.signal;
+  const element = task.model;
+  const prevDispatcher = ReactSharedInternals.H;
+  const prevContext = currentContext;
+  ReactSharedInternals.H = HooksDispatcher;
+  currentContext = result.context;
+  prepareToUseHooksForRequest(result.context);
+  // If the component suspended before, the thenable state is restored so
+  // that use() picks up where it left off.
+  prepareToUseHooksForComponent(task.thenableState as any, null);
+  task.thenableState = null;
+  try {
+    const Component = resolveServerComponentType(element.type);
+    if (Component === null) {
+      // eslint-disable-next-line react-internal/prod-error-codes
+      throw new Error(
+        'Expected the element to render a Server Component. This is a bug in React.',
+      );
+    }
+    // The secondArg is always undefined in Server Components since refs error early.
+    const secondArg = undefined;
+    const value = Component(element.props, secondArg);
+    if (signal.aborted) {
+      // The component aborted the Result while rendering. abortResult already
+      // rejected this task, so we just make sure a returned promise doesn't
+      // end up as an unhandled rejection.
+      if (
+        typeof value === 'object' &&
+        value !== null &&
+        typeof value.then === 'function' &&
+        !isClientReference(value)
+      ) {
+        value.then(voidHandler, voidHandler);
+      }
+      return;
+    }
+    result.abortableTasks.delete(task);
+    fulfillResultTask(task, value);
+  } catch (thrownValue) {
+    if (signal.aborted) {
+      return;
+    }
+    const x =
+      thrownValue === SuspenseException
+        ? // This is a special type of exception used for Suspense. For historical
+          // reasons, the rest of the Suspense implementation expects the thrown
+          // value to be a thenable, because before `use` existed that was the
+          // (unstable) API for suspending. This implementation detail can change
+          // later, once we deprecate the old API in favor of `use`.
+          getSuspendedThenable()
+        : thrownValue;
+    // $FlowFixMe[invalid-compare]
+    if (typeof x === 'object' && x !== null) {
+      // $FlowFixMe[method-unbinding]
+      if (typeof x.then === 'function') {
+        // Something suspended, let's pick it back up later.
+        task.thenableState = getThenableStateAfterSuspending();
+        const ping = task.ping;
+        x.then(ping, ping);
+        return;
+      }
+    }
+    result.abortableTasks.delete(task);
+    rejectResultTask(task, x);
+  } finally {
+    ReactSharedInternals.H = prevDispatcher;
+    currentContext = prevContext;
+    if (prevContext === null) {
+      resetHooksForRequest();
+    } else {
+      prepareToUseHooksForRequest(prevContext);
+    }
+  }
+}
+
+// Aborts every consumer of the Result and its cache signal, and errors
+// every task whose component hasn't returned with the reason. Tasks that
+// completed stay readable, so a consumer can finish with what it has. The
+// reason is left for the consumers to report: a request reports it when it
+// aborts, a prerender halts without reporting.
+export function abortResult(result: Result<any>, reason: mixed): void {
+  const controller = result.abortController;
+  if (controller.signal.aborted) {
+    return;
+  }
+  // The consumers are aborted first so that a request is already aborting,
+  // and doesn't report the reason as an error, by the time the rejected
+  // tasks ping it.
+  controller.abort(reason);
+  result.context.cacheController.abort(reason);
+  const abortableTasks = result.abortableTasks;
+  if (abortableTasks.size > 0) {
+    abortableTasks.forEach(task => rejectResultTask(task, reason));
+    abortableTasks.clear();
+  }
+}
+
+// Aborts the Result when the caller's signal aborts, the way
+// attachAbortSignal does for a request.
+export function attachAbortSignalToResult(
+  result: Result<any>,
+  signal: AbortSignal,
+): void {
+  if (signal.aborted) {
+    abortResult(result, signal.reason);
+    return;
+  }
+  signal.addEventListener(
+    'abort',
+    () => {
+      abortResult(result, signal.reason);
+    },
+    {signal: result.abortController.signal},
+  );
 }
 
 function warnForMissingKey(
@@ -2152,6 +2465,22 @@ function renderAsyncFragment(
   // way up. Which is what we want since we've consumed it. If this changes to
   // be recursive serialization, we need to reset the keyPath and implicitSlot,
   // before recursing here.
+  if (request.result !== null) {
+    // Other consumers of the Result need the same values, so the original is
+    // iterated once and replayed to each of them.
+    const replay = getAsyncIterableReplay(
+      request.result,
+      children,
+      getAsyncIterator,
+    );
+    const replayed = createReplayAsyncIterable(replay);
+    return serializeAsyncIterable(
+      request,
+      task,
+      replayed,
+      (replayed as any)[ASYNC_ITERATOR](),
+    );
+  }
   const asyncIterator = getAsyncIterator.call(children);
   return serializeAsyncIterable(request, task, children, asyncIterator);
 }
@@ -3450,7 +3779,12 @@ function serializeIterator(
   request: Request,
   iterator: Iterator<ReactClientValue>,
 ): string {
-  const id = outlineModel(request, Array.from(iterator));
+  const entries =
+    request.result !== null
+      ? // Another consumer of the Result may have drained the iterator already.
+        getIteratorEntries(request.result, iterator)
+      : Array.from(iterator);
+  const id = outlineModel(request, entries as any);
   return '$i' + id.toString(16);
 }
 
@@ -3541,7 +3875,10 @@ function serializeBlob(request: Request, blob: Blob): string {
       return;
     }
     if (entry.done) {
-      request.cacheController.signal.removeEventListener('abort', abortBlob);
+      request.context.cacheController.signal.removeEventListener(
+        'abort',
+        abortBlob,
+      );
       pingTask(request, newTask);
       return;
     }
@@ -3554,7 +3891,10 @@ function serializeBlob(request: Request, blob: Blob): string {
     if (newTask.status !== PENDING) {
       return;
     }
-    request.cacheController.signal.removeEventListener('abort', abortBlob);
+    request.context.cacheController.signal.removeEventListener(
+      'abort',
+      abortBlob,
+    );
     erroredTask(request, newTask, reason);
     enqueueFlush(request);
     // $FlowFixMe[incompatible-type] should be able to pass mixed
@@ -3565,7 +3905,7 @@ function serializeBlob(request: Request, blob: Blob): string {
     if (newTask.status !== PENDING) {
       return;
     }
-    const signal = request.cacheController.signal;
+    const signal = request.context.cacheController.signal;
     signal.removeEventListener('abort', abortBlob);
     const reason = signal.reason;
     if (request.type === PRERENDER) {
@@ -3581,7 +3921,7 @@ function serializeBlob(request: Request, blob: Blob): string {
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortBlob);
+  request.context.cacheController.signal.addEventListener('abort', abortBlob);
 
   // $FlowFixMe[incompatible-type]
   reader.read().then(progress).catch(error);
@@ -4158,6 +4498,17 @@ function renderModelDestructive(
         // Iterator, not Iterable
         return serializeIterator(request, iterator as any);
       }
+      const result = request.result;
+      if (result !== null && isSingleShotIterator(iterator)) {
+        // An iterator returned from a Server Component is wrapped to be
+        // iterated like an iterable, but the iterator it yields is still
+        // single-shot and another consumer of the Result may have drained it.
+        return renderFragment(
+          request,
+          task,
+          getIteratorEntries(result, iterator as any) as any,
+        );
+      }
       return renderFragment(request, task, Array.from(iterator as any));
     }
 
@@ -4166,6 +4517,15 @@ function renderModelDestructive(
       typeof ReadableStream === 'function' &&
       value instanceof ReadableStream
     ) {
+      if (request.result !== null) {
+        // Other consumers of the Result need the same chunks, so the original
+        // is read once and replayed to each of them.
+        return serializeReadableStream(
+          request,
+          task,
+          createReplayReadableStream(getStreamReplay(request.result, value)),
+        );
+      }
       return serializeReadableStream(request, task, value);
     }
     const getAsyncIterator: void | (() => $AsyncIterator<any, any, any>) = (
@@ -4387,23 +4747,35 @@ function logRecoverableError(
   error: mixed,
   task: Task | null, // DEV-only
 ): string {
+  const result = request.result;
+  if (result !== null && typeof error === 'object' && error !== null) {
+    const knownDigest = result.errorDigests.get(error);
+    if (knownDigest !== undefined) {
+      // Another consumer of the Result already reported this error.
+      return knownDigest;
+    }
+  }
   const prevRequest = currentRequest;
   // We clear the request context so that console.logs inside the callback doesn't
   // get forwarded to the client.
   currentRequest = null;
+  const prevContext = currentContext;
+  currentContext = null;
   let errorDigest;
   try {
     const onError = request.onError;
     if (__DEV__ && task !== null) {
       // $FlowFixMe[constant-condition]
       if (supportsRequestStorage) {
-        errorDigest = requestStorage.run(
-          undefined,
-          callWithDebugContextInDEV,
-          request,
-          task,
-          onError,
-          error,
+        errorDigest = contextStorage.run(undefined, () =>
+          requestStorage.run(
+            undefined,
+            callWithDebugContextInDEV,
+            request,
+            task,
+            onError,
+            error,
+          ),
         );
       } else {
         errorDigest = callWithDebugContextInDEV(request, task, onError, error);
@@ -4411,12 +4783,15 @@ function logRecoverableError(
       // $FlowFixMe[constant-condition]
     } else if (supportsRequestStorage) {
       // Exit the request context while running callbacks.
-      errorDigest = requestStorage.run(undefined, onError, error);
+      errorDigest = contextStorage.run(undefined, () =>
+        requestStorage.run(undefined, onError, error),
+      );
     } else {
       errorDigest = onError(error);
     }
   } finally {
     currentRequest = prevRequest;
+    currentContext = prevContext;
   }
   if (errorDigest != null && typeof errorDigest !== 'string') {
     // eslint-disable-next-line react-internal/prod-error-codes
@@ -4424,7 +4799,11 @@ function logRecoverableError(
       `onError returned something with a type other than "string". onError should return a string and may return null or undefined but must not return anything else. It received something of type "${typeof errorDigest}" instead`,
     );
   }
-  return errorDigest || '';
+  const digest = errorDigest || '';
+  if (result !== null && typeof error === 'object' && error !== null) {
+    result.errorDigests.set(error, digest);
+  }
+  return digest;
 }
 
 function fatalError(request: Request, error: mixed): void {
@@ -4447,7 +4826,25 @@ function fatalError(request: Request, error: mixed): void {
       cause: error,
     },
   );
-  request.cacheController.abort(abortReason);
+  abortCacheSignal(request, abortReason);
+}
+
+// A request that serializes a Result shares its cache signal with the other
+// consumers of that Result, so it only releases its hold on it. It also
+// stops listening to the Result, which would otherwise keep this request
+// alive for as long as the Result is read by someone else.
+function abortCacheSignal(request: Request, reason: mixed): void {
+  const result = request.result;
+  if (result === null) {
+    request.context.cacheController.abort(reason);
+  } else {
+    const unsubscribe = request.unsubscribe;
+    if (unsubscribe !== null) {
+      request.unsubscribe = null;
+      unsubscribe();
+    }
+    releaseResult(result, reason);
+  }
 }
 
 function serializeErrorValue(request: Request, error: Error): string {
@@ -6411,7 +6808,9 @@ function performWork(request: Request): void {
   ReactSharedInternals.H = HooksDispatcher;
   const prevRequest = currentRequest;
   currentRequest = request;
-  prepareToUseHooksForRequest(request);
+  const prevContext = currentContext;
+  currentContext = request.context;
+  prepareToUseHooksForRequest(request.context);
 
   try {
     const pingedTasks = request.pingedTasks;
@@ -6428,6 +6827,7 @@ function performWork(request: Request): void {
     ReactSharedInternals.H = prevDispatcher;
     resetHooksForRequest();
     currentRequest = prevRequest;
+    currentContext = prevContext;
   }
 }
 
@@ -6674,7 +7074,7 @@ function flushCompletedChunks(request: Request): void {
       const abortReason = new Error(
         'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
       );
-      request.cacheController.abort(abortReason);
+      abortCacheSignal(request, abortReason);
     }
     if (__DEV__) {
       const debugDestination = request.debugDestination;
@@ -6723,7 +7123,9 @@ export function startWork(request: Request): void {
   // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     scheduleMicrotask(() => {
-      requestStorage.run(request, performWork, request);
+      contextStorage.run(request.context, () =>
+        requestStorage.run(request, performWork, request),
+      );
     });
   } else {
     scheduleMicrotask(() => performWork(request));
@@ -6865,7 +7267,7 @@ export function attachAbortSignal(request: Request, signal: AbortSignal): void {
     () => {
       abort(request, signal.reason);
     },
-    {signal: request.cacheController.signal},
+    {signal: request.context.cacheController.signal},
   );
 }
 
@@ -6879,7 +7281,7 @@ export function abort(request: Request, reason: mixed): void {
     if (enableProfilerTimer) {
       request.abortTime = performance.now();
     }
-    request.cacheController.abort(reason);
+    abortCacheSignal(request, reason);
     const abortableTasks = request.abortableTasks;
     if (abortableTasks.size > 0) {
       if (request.type === PRERENDER) {

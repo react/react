@@ -18,6 +18,8 @@ import type {ServerManifest} from 'react-client/src/ReactFlightClientConfig';
 import noop from 'shared/noop';
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 
+import type {Result} from 'shared/ReactFlightResult';
+
 import {
   createRequest,
   createPrerenderRequest,
@@ -29,7 +31,10 @@ import {
   attachAbortSignal,
   resolveDebugMessage,
   closeDebugChannel,
+  createResult,
+  attachAbortSignalToResult,
 } from 'react-server/src/ReactFlightServer';
+import {isResult} from 'shared/ReactFlightResult';
 
 import {
   createResponse,
@@ -115,11 +120,41 @@ function startReadingFromDebugChannelReadableStream(
   reader.read().then(progress).catch(error);
 }
 
+type ResultOptions = {
+  environmentName?: string | (() => string),
+  filterStackFrame?: (url: string, functionName: string) => boolean,
+  onError?: (error: mixed) => void,
+  identifierPrefix?: string,
+  temporaryReferences?: TemporaryReferenceSet,
+  signal?: AbortSignal,
+};
+
+function renderToResult<T: ReactClientValue>(
+  model: T,
+  options?: ResultOptions,
+): Result<T> {
+  const result = createResult(
+    model,
+    options ? options.onError : undefined,
+    options ? options.identifierPrefix : undefined,
+    options ? options.temporaryReferences : undefined,
+    __DEV__ && options ? options.environmentName : undefined,
+    __DEV__ && options ? options.filterStackFrame : undefined,
+  );
+  if (options && options.signal) {
+    attachAbortSignalToResult(result, options.signal);
+  }
+  return result;
+}
+
 function renderToReadableStream(
-  model: ReactClientValue,
+  model: ReactClientValue | Result<ReactClientValue>,
   webpackMap: ClientManifest,
   options?: Options,
 ): ReadableStream {
+  const result: null | Result<ReactClientValue> = isResult(model)
+    ? (model as any)
+    : null;
   const debugChannelReadable =
     __DEV__ && options && options.debugChannel
       ? options.debugChannel.readable
@@ -129,7 +164,7 @@ function renderToReadableStream(
       ? options.debugChannel.writable
       : undefined;
   const request = createRequest(
-    model,
+    result !== null ? result.model : (model as any),
     webpackMap,
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
@@ -138,6 +173,7 @@ function renderToReadableStream(
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
     debugChannelReadable !== undefined,
+    result,
   );
   if (options && options.signal) {
     attachAbortSignal(request, options.signal);
@@ -185,7 +221,7 @@ type StaticResult = {
 };
 
 function prerender(
-  model: ReactClientValue,
+  model: ReactClientValue | Result<ReactClientValue>,
   webpackMap: ClientManifest,
   options?: Options,
 ): Promise<StaticResult> {
@@ -209,8 +245,11 @@ function prerender(
       );
       resolve({prelude: stream});
     }
+    const result: null | Result<ReactClientValue> = isResult(model)
+      ? (model as any)
+      : null;
     const request = createPrerenderRequest(
-      model,
+      result !== null ? result.model : (model as any),
       webpackMap,
       onAllReady,
       onFatalError,
@@ -221,6 +260,7 @@ function prerender(
       __DEV__ && options ? options.environmentName : undefined,
       __DEV__ && options ? options.filterStackFrame : undefined,
       false,
+      result,
     );
     if (options && options.signal) {
       attachAbortSignal(request, options.signal);
@@ -305,6 +345,7 @@ function decodeReplyFromAsyncIterable<T>(
 }
 
 export {
+  renderToResult,
   renderToReadableStream,
   prerender,
   decodeReply,

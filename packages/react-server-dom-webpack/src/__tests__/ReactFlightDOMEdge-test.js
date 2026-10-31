@@ -315,6 +315,51 @@ describe('ReactFlightDOMEdge', () => {
     expect(result).toEqual('<span>Client Component</span>');
   });
 
+  it('can render a Result in process and stream it from the edge entries', async () => {
+    let renders = 0;
+    function ClientComponent({label}) {
+      return <span>{label}</span>;
+    }
+    const ClientComponentReference = clientExports(ClientComponent);
+    const metadata = webpackMap[ClientComponentReference.$$id];
+    const moduleMap = {[metadata.id]: {'*': metadata}};
+
+    function Server({label}) {
+      renders++;
+      return <ClientComponentReference label={label} />;
+    }
+    const model = {
+      element: <Server label="from a Result" />,
+      data: {items: [1, 2, 3]},
+    };
+
+    const result = ReactServerDOMServer.renderToResult(model);
+    const inProcess = ReactServerDOMClient.createFromResult(result, {
+      clientManifest: webpackMap,
+      serverConsumerManifest: {moduleMap, moduleLoading: webpackModuleLoading},
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(result, webpackMap),
+    );
+    const streamed = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap, moduleLoading: webpackModuleLoading},
+    });
+
+    const root = await inProcess;
+    expect(root.data).toBe(model.data);
+    function ClientRoot() {
+      return use(inProcess).element;
+    }
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    expect(await readResult(ssrStream)).toEqual('<span>from a Result</span>');
+    const fromStream = await streamed;
+    expect(fromStream.data).toEqual(model.data);
+    // The Server Component ran once for both consumers.
+    expect(renders).toBe(1);
+  });
+
   it('should resolve cyclic references in client component props after two rounds of serialization and deserialization', async () => {
     const ClientComponent = clientExports(function ClientComponent({data}) {
       return (
