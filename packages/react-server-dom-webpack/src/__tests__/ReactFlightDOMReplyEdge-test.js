@@ -243,6 +243,112 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
   });
 
+  it('ends a BYOB read that is waiting when the byte stream closes', async () => {
+    const s = new ReadableStream({
+      type: 'bytes',
+      start(c) {
+        c.enqueue(new Uint8Array([1, 2, 3]));
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+
+    let sendClose;
+    const closeSent = new Promise(resolve => (sendClose = resolve));
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+        for (const entry of body) {
+          if (entry[1] === 'C') {
+            await closeSent;
+          }
+          yield entry;
+        }
+      },
+    };
+
+    const result = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader({mode: 'byob'});
+    const first = await reader.read(new Uint8Array(3));
+    expect(Array.from(first.value)).toEqual([1, 2, 3]);
+
+    const waiting = reader.read(new Uint8Array(3));
+    sendClose();
+    expect((await waiting).done).toBe(true);
+  });
+
+  it('waits for a queued stream item to initialize before closing', async () => {
+    let resolveModule;
+    const ServerModule = serverExports(
+      {
+        greet() {
+          return 'hi';
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    ReactServerDOMClient.registerServerReference(
+      ServerModule.greet,
+      ServerModule.greet.$$id,
+    );
+
+    // The first item travels as a Blob, which the decoder reads
+    // asynchronously; the second waits for its module to load.
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue({bytes: new Uint8Array([1])});
+        c.enqueue({greet: ServerModule.greet});
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+
+    // The first item's entry arrives right behind its Blob, so it is still
+    // reading when it is enqueued, and has resolved by the time the second
+    // item's entry arrives. Timers are faked in this suite, so the wait is a
+    // message task.
+    const nextTask = () =>
+      new Promise(resolve => {
+        const {port1, port2} = new MessageChannel();
+        port1.onmessage = () => {
+          port1.close();
+          resolve();
+        };
+        port2.postMessage(undefined);
+      });
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        let items = 0;
+        // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+        for (const entry of body) {
+          yield entry;
+          if (entry[0].startsWith('S') && items++ === 0) {
+            await nextTask();
+          }
+        }
+      },
+    };
+
+    const result = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader();
+    expect(Array.from((await reader.read()).value.bytes)).toEqual([1]);
+    const secondRead = reader.read();
+    await nextTask();
+    resolveModule();
+    expect((await secondRead).value.greet()).toBe('hi');
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('should cancel the transported ReadableStream when we are cancelled', async () => {
     const s = new ReadableStream({
       start(controller) {
@@ -351,6 +457,77 @@ describe('ReactFlightDOMReplyEdge', () => {
 
     expect(await decoded.a).toBe('hello');
     expect(Array.from(await decoded.b)).toEqual(Array.from(buffer));
+  });
+
+  it('drops stream entries that arrive after the consumer canceled the stream', async () => {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue('first');
+        c.enqueue('second');
+        c.close();
+      },
+    });
+    const formData = await ReactServerDOMClient.encodeReply({
+      stream,
+      later: 'later',
+    });
+    // The root entry comes first, then one entry per stream item and the
+    // close marker.
+    const entries = Array.from(formData);
+    expect(entries.length).toBe(4);
+
+    // Hand the decoder entries as the test releases them.
+    const arrived = [];
+    const waiting = [];
+    let ended = false;
+    function deliver() {
+      while (waiting.length > 0 && (arrived.length > 0 || ended)) {
+        const resolve = waiting.shift();
+        resolve(
+          arrived.length > 0
+            ? {done: false, value: arrived.shift()}
+            : {done: true, value: undefined},
+        );
+      }
+    }
+    const iterable = {
+      [Symbol.asyncIterator]() {
+        return {
+          next() {
+            return new Promise(resolve => {
+              waiting.push(resolve);
+              deliver();
+            });
+          },
+        };
+      },
+    };
+    const send = entry => {
+      arrived.push(entry);
+      deliver();
+    };
+
+    const pending = ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+    send(entries[0]);
+    send(entries[1]);
+    const decoded = await pending;
+    const reader = decoded.stream.getReader();
+    expect(await reader.read()).toEqual({value: 'first', done: false});
+    await reader.cancel('not interested');
+
+    // The stream's second item and its close marker still arrive. They must
+    // not throw into the decoder.
+    send(entries[2]);
+    send(entries[3]);
+    ended = true;
+    deliver();
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+    expect(decoded.later).toBe('later');
   });
 
   it('supports streamed values whose entries are not contiguous in the body', async () => {

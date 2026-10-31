@@ -2668,9 +2668,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // Reader bug, DEV only.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('stream item with a failing module', () =>
+    it('stream item with a failing module', () =>
       runGraph({
         nodes: {
           broken: {module: 'export-0', fail: 'load'},
@@ -2680,9 +2678,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('byte stream read with a BYOB reader', () =>
+    it('byte stream read with a BYOB reader', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2692,9 +2688,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'bytes', other: 'data'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('byte stream closed while a read is waiting', () =>
+    it('byte stream closed while a read is waiting', () =>
       runGraph({
         nodes: {array: {array: ['bytes']}, bytes: {bytes: 3}},
         roots: {entry: 'array', other: 'array'},
@@ -2702,9 +2696,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         yieldBetweenPackets: true,
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('stream canceled while the writer is still producing', () =>
+    it('stream canceled while the writer is still producing', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2726,9 +2718,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'first', other: 'second'},
       }));
 
-    // Reader bug.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('two stream items each waiting on a module', () =>
+    it('two stream items each waiting on a module', () =>
       runGraph({
         nodes: {
           first: {module: 'export-0'},
