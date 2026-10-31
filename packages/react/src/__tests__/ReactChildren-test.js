@@ -411,6 +411,53 @@ describe('ReactChildren', () => {
     ]);
   });
 
+  it('closes an iterator when mapping throws', () => {
+    const close = jest.fn();
+    const children = {
+      [Symbol.iterator]() {
+        return {
+          next() {
+            return {value: <div />, done: false};
+          },
+          return: close,
+        };
+      },
+    };
+    const error = new Error('stop mapping');
+
+    expect(() => {
+      React.Children.map(children, () => {
+        throw error;
+      });
+    }).toThrow(error);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves mapping errors when reading the iterator return method throws', () => {
+    const error = new Error('stop mapping');
+    const children = {
+      [Symbol.iterator]() {
+        const iterator = {
+          next() {
+            return {value: <div />, done: false};
+          },
+        };
+        Object.defineProperty(iterator, 'return', {
+          get() {
+            throw new Error('failed to read return');
+          },
+        });
+        return iterator;
+      },
+    };
+
+    expect(() => {
+      React.Children.map(children, () => {
+        throw error;
+      });
+    }).toThrow(error);
+  });
+
   it('should not enumerate enumerable numbers (#4776)', () => {
     /*eslint-disable no-extend-native */
     Number.prototype['@@iterator'] = function () {
