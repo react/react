@@ -77,6 +77,7 @@ import hyphenateStyleName from '../shared/hyphenateStyleName';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import sanitizeURL from '../shared/sanitizeURL';
 import isArray from 'shared/isArray';
+import {REACT_ELEMENT_TYPE} from 'shared/ReactSymbols';
 
 import {
   clientRenderBoundary as clientRenderFunction,
@@ -4129,6 +4130,43 @@ function pushStartCustomElement(
 
 const leadingNewline = stringToPrecomputedChunk('\n');
 
+function startsWithNewline(children: mixed): boolean | null {
+  if (typeof children === 'string') {
+    return children === '' ? null : children[0] === '\n';
+  }
+  if (children == null || typeof children === 'boolean') {
+    return null;
+  }
+  if (typeof children === 'number' || typeof children === 'bigint') {
+    return false;
+  }
+  if (isArray(children)) {
+    for (let i = 0; i < children.length; i++) {
+      const result = startsWithNewline(children[i]);
+      if (result !== null) {
+        return result;
+      }
+    }
+    return null;
+  }
+  if (
+    typeof children === 'object' &&
+    children.$$typeof === REACT_ELEMENT_TYPE &&
+    typeof children.type === 'string'
+  ) {
+    switch (children.type) {
+      case 'title':
+      case 'meta':
+      case 'link':
+      case 'style':
+      case 'script':
+        return true;
+    }
+    return false;
+  }
+  return true;
+}
+
 function pushStartPreformattedElement(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
@@ -4173,8 +4211,6 @@ function pushStartPreformattedElement(
   // See: <http://www.w3.org/TR/html5/syntax.html#newlines>
   // See: Parsing of "textarea" "listing" and "pre" elements
   //  from <http://www.w3.org/TR/html5/syntax.html#parsing-main-inbody>
-  // TODO: This doesn't deal with the case where the child is an array
-  // or component that returns a string.
   if (innerHTML != null) {
     if (children != null) {
       throw new Error(
@@ -4202,7 +4238,7 @@ function pushStartPreformattedElement(
       }
     }
   }
-  if (typeof children === 'string' && children[0] === '\n') {
+  if (startsWithNewline(children) === true) {
     target.push(leadingNewline);
   }
   return children;
