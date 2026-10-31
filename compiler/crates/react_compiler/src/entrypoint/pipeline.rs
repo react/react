@@ -1888,10 +1888,10 @@ fn log_errors_as_events(errors: &CompilerError, context: &mut ProgramContext) {
                     if v.is_empty() { None } else { Some(v) }
                 };
                 CompilerErrorDetailInfo {
-                    category: format!("{:?}", d.category),
+                    category: d.category,
                     reason: d.reason.clone(),
                     description: d.description.clone(),
-                    severity: format!("{:?}", d.logged_severity()),
+                    severity: d.logged_severity(),
                     suggestions: None,
                     details: items,
                     loc: None,
@@ -1899,10 +1899,10 @@ fn log_errors_as_events(errors: &CompilerError, context: &mut ProgramContext) {
             }
             react_compiler_diagnostics::CompilerErrorOrDiagnostic::ErrorDetail(d) => {
                 CompilerErrorDetailInfo {
-                    category: format!("{:?}", d.category),
+                    category: d.category,
                     reason: d.reason.clone(),
                     description: d.description.clone(),
-                    severity: format!("{:?}", d.logged_severity()),
+                    severity: d.logged_severity(),
                     suggestions: None,
                     details: None,
                     loc: None,

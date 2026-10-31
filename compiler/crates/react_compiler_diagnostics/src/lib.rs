@@ -5,43 +5,82 @@ pub use js_string::JsString;
 
 use serde::{Deserialize, Serialize};
 
-/// Error categories matching the TS ErrorCategory enum
+/// Error categories matching the TS `ErrorCategory` enum in `CompilerError.ts`.
+///
+/// Each variant serializes to its name (e.g. `"Hooks"`), which is the string
+/// the TS compiler uses for the same category. See `ErrorCategory::severity`
+/// and `ErrorCategory::logged_severity` for how categories map to severities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCategory {
+    /// Checking for valid hooks usage (non conditional, non-first class, non reactive, etc).
     Hooks,
+    /// Checking for no capitalized calls (not definitively an error, hence separating).
     CapitalizedCalls,
+    /// Checking for static components.
     StaticComponents,
+    /// Checking for valid usage of manual memoization.
     UseMemo,
+    /// Checking that useMemos always return a value.
     VoidUseMemo,
+    /// Checks that manual memoization is preserved.
     PreserveManualMemo,
+    /// Checks for exhaustive useMemo/useCallback dependencies without extraneous values.
     MemoDependencies,
+    /// Checks for known incompatible libraries.
     IncompatibleLibrary,
+    /// Checking for no mutations of props, hook arguments, hook return values.
     Immutability,
+    /// Checking for assignments to globals.
     Globals,
+    /// Checking for valid usage of refs, ie no access during render.
     Refs,
+    /// Checks for memoized effect deps.
     EffectDependencies,
+    /// Checks for exhaustive and extraneous effect dependencies.
     EffectExhaustiveDependencies,
+    /// Checks for no setState in effect bodies.
     EffectSetState,
+    /// Checks for state derived from other values inside effect bodies.
     EffectDerivationsOfState,
+    /// Validates against try/catch in place of error boundaries.
     ErrorBoundaries,
+    /// Checking for pure functions.
     Purity,
+    /// Validates against setState in render.
     RenderSetState,
+    /// Internal invariants.
     Invariant,
+    /// Todos.
     Todo,
+    /// Syntax errors.
     Syntax,
+    /// Checks for use of unsupported syntax.
     UnsupportedSyntax,
+    /// Config errors.
     Config,
+    /// Gating error.
     Gating,
+    /// Suppressions.
     Suppression,
+    /// fbt-specific issues.
     FBT,
 }
 
-/// Error severity levels
+/// Error severity levels matching the TS `ErrorSeverity` enum in `CompilerError.ts`.
+///
+/// Each variant serializes to its name (e.g. `"Error"`), matching the TS compiler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorSeverity {
+    /// An actionable error that the developer can fix. For example, product code errors should be
+    /// reported as such.
     Error,
+    /// An error that the developer may not necessarily be able to fix. For example, syntax not
+    /// supported by the compiler does not indicate any fault in the product code.
     Warning,
+    /// Not an error. These will not be surfaced in ESLint, but may be surfaced in other ways
+    /// (eg Forgive) where informational hints can be shown.
     Hint,
+    /// These errors will not be reported anywhere. Useful for work in progress validations.
     Off,
 }
 
