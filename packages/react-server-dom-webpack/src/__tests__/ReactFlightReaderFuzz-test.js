@@ -11,14 +11,18 @@
 'use strict';
 
 // Renders generated value graphs with the real writer, reads them with the
-// public client on both hosts, and releases the external events the client is
-// waiting on (packets, module loads, Promise resolutions, stream items) one at
-// a time in random orders. After each event it checks that every value whose
-// inputs have all arrived has been delivered, that nothing was delivered before
-// its inputs arrived, that delivered values equal the server's values, and that
-// they still do once everything has settled. The expectations come only from
-// the source graph and the record of released events, never from rows or
-// client chunk state.
+// public reader, and releases the external events the reader is waiting on
+// (packets, module loads, Promise resolutions, stream items) one at a time in
+// random orders. After each event it checks that every value whose inputs have
+// all arrived has been delivered, that nothing was delivered before its inputs
+// arrived, that delivered values equal the source values, and that they still
+// do once everything has settled. The expectations come only from the source
+// graph and the record of released events, never from rows or chunk state.
+//
+// The `node` and `edge` hosts render with the server and read with the client.
+// The `reply` host goes the other way: the client encodes the graph as a reply
+// and the server decodes it, with the entries of the reply arriving in packets
+// and Server Function modules loading one at a time.
 //
 // Cases are seeded from FUZZ_TEST_SEED, which the hourly fuzz workflow sets at
 // random; without it the seed is 'default'. The default run is a small sample,
@@ -89,7 +93,14 @@ function shuffle(array, pick) {
 // a timer or I/O turn, so each turn also yields to a timer.
 const PATIENCE = 30;
 
-function roundTrip({host, model, packetSizes, yieldBetweenPackets, onError}) {
+function roundTrip({
+  host,
+  model,
+  body,
+  packetSizes,
+  yieldBetweenPackets,
+  onError,
+}) {
   const manifest = {
     moduleMap: null,
     serverModuleMap: WebpackMock.webpackServerMap,
@@ -118,7 +129,51 @@ function roundTrip({host, model, packetSizes, yieldBetweenPackets, onError}) {
       }
     },
   };
-  if (host === 'node') {
+  if (host === 'reply') {
+    // The whole reply exists before decoding starts. Its entries are handed
+    // to the decoder a packet at a time, so packet sizes count entries.
+    queued =
+      typeof body === 'string' ? [['0', body]] : Array.from(body.entries());
+    serverDone = true;
+    const waiting = [];
+    const arrived = [];
+    let ended = false;
+    const deliver = () => {
+      while (waiting.length && (arrived.length || ended)) {
+        const resolve = waiting.shift();
+        resolve(
+          arrived.length
+            ? {done: false, value: arrived.shift()}
+            : {done: true, value: undefined},
+        );
+      }
+    };
+    const entries = {
+      [Symbol.asyncIterator]() {
+        return {
+          next() {
+            return new Promise(resolve => {
+              waiting.push(resolve);
+              deliver();
+            });
+          },
+        };
+      },
+    };
+    root = Server.decodeReplyFromAsyncIterable(
+      entries,
+      WebpackMock.webpackServerMap,
+    );
+    send = entry => {
+      arrived.push(entry);
+      deliver();
+    };
+    end = () => {
+      ended = true;
+      deliver();
+    };
+    abort = () => {};
+  } else if (host === 'node') {
     const {PassThrough, Writable} = require('stream');
     const input = new PassThrough();
     root = Client.createFromNodeStream(input, manifest);
@@ -185,14 +240,24 @@ function roundTrip({host, model, packetSizes, yieldBetweenPackets, onError}) {
   // varying sizes so that rows straddle packet boundaries.
   async function flush() {
     await tick();
-    const bytes = Buffer.concat(queued);
-    queued = [];
-    for (let offset = 0; offset < bytes.length; ) {
-      const size = packetSizes[packet++ % packetSizes.length];
-      send(bytes.subarray(offset, offset + size));
-      offset += size;
-      if (yieldBetweenPackets) {
-        await tick();
+    if (host === 'reply') {
+      while (queued.length) {
+        const count = packetSizes[packet++ % packetSizes.length];
+        queued.splice(0, count).forEach(send);
+        if (yieldBetweenPackets) {
+          await tick();
+        }
+      }
+    } else {
+      const bytes = Buffer.concat(queued);
+      queued = [];
+      for (let offset = 0; offset < bytes.length; ) {
+        const size = packetSizes[packet++ % packetSizes.length];
+        send(bytes.subarray(offset, offset + size));
+        offset += size;
+        if (yieldBetweenPackets) {
+          await tick();
+        }
       }
     }
     await tick();
@@ -244,13 +309,14 @@ function roundTrip({host, model, packetSizes, yieldBetweenPackets, onError}) {
   };
 }
 
-// A plan is a server-side value graph together with the external events the
-// client has to wait for. Values that mean more than their own properties are
+// A plan is a source value graph together with the external events the reader
+// has to wait for. Values that mean more than their own properties are
 // recorded in `kinds`; the events are `events`, released by the test in some
 // order. The oracle below reads only `event.released` and `event.error`.
-function createPlan(seed) {
+function createPlan(seed, host) {
   const plan = {
     seed,
+    host,
     pick: random(seed),
     model: null,
     events: [],
@@ -266,11 +332,11 @@ function createPlan(seed) {
     rootModel: null,
     observeProps: () => {},
 
-    // `client` events happen on the client (module loads); the rest are
-    // server-side events the writer waits for. An event with `error` fails
-    // whatever needs it when it is released.
-    event(label, run, {error, client = false} = {}) {
-      const event = {label, run, released: false, error, client};
+    // `reader` events happen on the reading side (module loads); the rest are
+    // events the writer waits for. An event with `error` fails whatever needs
+    // it when it is released.
+    event(label, run, {error, reader = false} = {}) {
+      const event = {label, run, released: false, error, reader};
       plan.events.push(event);
       return event;
     },
@@ -309,11 +375,21 @@ function createPlan(seed) {
       );
       return gate;
     },
+    // A leaf whose module has to load before the value holding it is whole.
+    // In a reply that is a Server Function with no bound arguments, since a
+    // reply cannot carry client references.
     async clientReference(
       value,
       {asynchronous = false, name, evaluationError, loadError} = {},
     ) {
       const id = name || 'module-' + plan.kinds.size;
+      if (host === 'reply') {
+        const {fn, event} = plan.serverFunction(() => value, {
+          label: id,
+          loadError: loadError !== undefined ? loadError : evaluationError,
+        });
+        return {reference: fn, loadEvent: event, evaluateEvent: null};
+      }
       const load = deferred();
       const evaluate = asynchronous ? deferred() : null;
       let exports = WebpackMock.clientExports(
@@ -333,7 +409,7 @@ function createPlan(seed) {
             evaluationError !== undefined
               ? evaluate.reject(evaluationError)
               : evaluate.resolve({value}),
-          {error: evaluationError, client: true},
+          {error: evaluationError, reader: true},
         );
       }
       const reference = exports.value;
@@ -342,7 +418,7 @@ function createPlan(seed) {
         (loadError !== undefined ? 'reject ' : 'load ') + id,
         () =>
           loadError !== undefined ? load.reject(loadError) : load.resolve(),
-        {error: loadError, client: true},
+        {error: loadError, reader: true},
       );
       if (evaluateEvent !== null) {
         evaluateEvent.after = loadEvent;
@@ -350,19 +426,33 @@ function createPlan(seed) {
       plan.need(reference, loadEvent, evaluateEvent);
       return {reference, loadEvent, evaluateEvent};
     },
-    serverFunction(implementation, {bound = [], args = [], label} = {}) {
+    // A Server Function whose module loads when its event is released. The
+    // server holds the implementation; in a reply the client holds a
+    // reference to it, bound through the reference's own `bind`.
+    serverFunction(
+      implementation,
+      {bound = [], args = [], label, loadError} = {},
+    ) {
       const ready = deferred();
       const exported = WebpackMock.serverExports(
         {fn: implementation},
         ready.promise,
       );
-      const fn = bound.length ? exported.fn.bind(null, ...bound) : exported.fn;
+      const source =
+        host === 'reply'
+          ? Client.createServerReference(exported.fn.$$id, () => {
+              throw new Error('The fuzz does not call back into the server.');
+            })
+          : exported.fn;
+      const fn = bound.length ? source.bind(null, ...bound) : source;
       const result = implementation(...bound, ...args);
       plan.kinds.set(fn, {type: 'function', bound, args, result});
       const event = plan.event(
-        'load ' + (label || 'server function'),
-        () => ready.resolve(),
-        {client: true},
+        (loadError !== undefined ? 'reject ' : 'load ') +
+          (label || 'server function'),
+        () =>
+          loadError !== undefined ? ready.reject(loadError) : ready.resolve(),
+        {reader: true, error: loadError},
       );
       plan.need(fn, event);
       return {fn, event};
@@ -390,7 +480,7 @@ function createPlan(seed) {
       });
       plan.need(
         element,
-        plan.event('load ' + id, () => load.resolve(), {client: true}),
+        plan.event('load ' + id, () => load.resolve(), {reader: true}),
       );
       return element;
     },
@@ -2076,6 +2166,9 @@ async function buildGraph(plan, graph) {
         values[name] = plan.serverFunction((...args) => args, {
           bound: node.bound.map(build),
           label: name,
+          loadError: node.reject
+            ? new Error('module ' + name + ' failed to load')
+            : undefined,
         }).fn;
         break;
       case 'element': {
@@ -2249,7 +2342,7 @@ function formatGraphTest(graph, demand) {
   return lines.join('\n');
 }
 
-describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
+describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
   let input;
 
   // Fresh modules for every run: the module mock registers chunks by id, so
@@ -2258,16 +2351,21 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
     jest.resetModules();
     jest.useRealTimers();
     jest.mock('react', () => require('react/react.react-server'));
+    const serverBuild = host === 'reply' ? 'node' : host;
     jest.doMock('react-server-dom-webpack/server', () =>
-      require('react-server-dom-webpack/server.' + host),
+      require('react-server-dom-webpack/server.' + serverBuild),
     );
     WebpackMock = require('./utils/WebpackMock');
-    Server = require('react-server-dom-webpack/server.' + host);
+    Server = require('react-server-dom-webpack/server.' + serverBuild);
     ReactServer = require('react');
     jest.resetModules();
     __unmockReact();
     React = require('react');
-    Client = require('react-server-dom-webpack/client.' + host);
+    // A reply is encoded with the Edge client, whose Server Function
+    // references keep their identity through `bind`.
+    Client = require(
+      'react-server-dom-webpack/client.' + (host === 'reply' ? 'edge' : host),
+    );
     ReactDOMServer = require('react-dom/server.edge');
     ({
       assertConsoleErrorDev,
@@ -2297,9 +2395,24 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
     const watched = observer(plan, {render});
     plan.observeProps = watched.observeProps;
     const reported = [];
+    let events = plan.events.slice();
+    let body;
+    if (host === 'reply') {
+      // The encoder waits for every Promise and stream before it produces
+      // the reply, so the writer-side events have all happened by the time
+      // the decoder sees anything. Only reader-side events remain.
+      for (let i = 0; i < events.length; i++) {
+        if (!events[i].reader) {
+          plan.release(events[i]);
+        }
+      }
+      events = events.filter(event => event.reader);
+      body = await Client.encodeReply(plan.model);
+    }
     input = roundTrip({
       host,
       model: plan.model,
+      body,
       packetSizes: plan.packetSizes,
       yieldBetweenPackets: plan.yieldBetweenPackets,
       onError(error) {
@@ -2354,13 +2467,12 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
       await fromIO(() => plan.release(event));
       await progress('after ' + event.label);
     };
-    let events = plan.events.slice();
     if (plan.afterEof) {
-      // The writer finishes, and the client sees EOF, before any client-side
+      // The writer finishes, and the reader sees EOF, before any reader-side
       // event is released. EOF must not cancel work on values whose rows
       // have all arrived.
       for (let i = 0; i < events.length; i++) {
-        if (!events[i].client) {
+        if (!events[i].reader) {
           await release(events[i]);
         }
       }
@@ -2368,7 +2480,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
       input.close();
       await input.flush();
       await progress('after EOF');
-      events = events.filter(s => s.client);
+      events = events.filter(event => event.reader);
     }
     for (let i = 0; i < events.length; i++) {
       await release(events[i]);
@@ -2414,7 +2526,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
       process.stdout.write(formatGraphTest(graph, demand) + '\n');
     }
     loadModules();
-    const plan = createPlan(seed);
+    const plan = createPlan(seed, host);
     await buildGraph(plan, graph);
     // `events` replays by label, so labels must be unique.
     const labels = new Set();
@@ -2513,12 +2625,32 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
     }
   }
 
+  // The reply decoder still completes values by chunk, so its random graphs,
+  // which all include bound Server Functions, stay skipped.
   // These leaves wait for fixes further up the stack: an object key whose value
   // is undefined is dropped, and a cycle through a property name with a colon
   // overflows the writer's stack.
   const unsupportedMoves = ['undefined', 'colon'];
 
-  describe('generated graphs', () => {
+  // A reply cannot carry client references, elements, server components,
+  // Errors or symbols; its loading leaves are Server Functions.
+  const replyMoves = [
+    'aggregate error',
+    'fragment',
+    'host',
+    'symbol',
+    'element',
+    'props',
+    'component',
+    'failing component',
+    'error',
+    'rejected promise',
+  ];
+
+  // The reply decoder still completes values by chunk, so its random graphs,
+  // which all include bound Server Functions, stay skipped.
+  const generated = host === 'reply' ? describe.skip : describe;
+  generated('generated graphs', () => {
     seeds.forEach(seed => {
       for (let variant = 0; variant < 2; variant++) {
         const demandCount = sweep ? demands.length : 1;
@@ -2526,7 +2658,11 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
           // eslint-disable-next-line jest/valid-title
           it(caseName('graph', seed, demands[d], variant), () =>
             runGraph({
-              ...generateGraph(seed, {without: unsupportedMoves}),
+              ...generateGraph(seed, {
+                without: unsupportedMoves.concat(
+                  host === 'reply' ? replyMoves : [],
+                ),
+              }),
               family: 'graph',
               seed,
               demand: demands[d],
@@ -2544,16 +2680,20 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   // fails today; the comment above it says whether the reader or the writer
   // is at fault.
   describe('known cases', () => {
-    it('Set containing itself', () =>
+    // The reply decoder completes values by chunk, as the client did before
+    // it completed them by their reachable fields, and fails the cases that
+    // run with it.skip on the reply host the same way the client did.
+    (host === 'reply' ? it.skip : it)('Set containing itself', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
           set: {set: ['set', 'ready']},
         },
         roots: {entry: 'set', other: 'set'},
-      }));
+      }),
+    );
 
-    it('Map containing itself', () =>
+    (host === 'reply' ? it.skip : it)('Map containing itself', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2566,20 +2706,24 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
           },
         },
         roots: {entry: 'map', other: 'map'},
-      }));
+      }),
+    );
 
-    it('two collections containing each other', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          key: {value: 'a'},
-          a: {set: ['b', 'ready']},
-          b: {map: [['key', 'a']]},
-        },
-        roots: {entry: 'a', other: 'b'},
-      }));
+    (host === 'reply' ? it.skip : it)(
+      'two collections containing each other',
+      () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            key: {value: 'a'},
+            a: {set: ['b', 'ready']},
+            b: {map: [['key', 'a']]},
+          },
+          roots: {entry: 'a', other: 'b'},
+        }),
+    );
 
-    it('function bound to its array', () =>
+    (host === 'reply' ? it.skip : it)('function bound to its array', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2587,9 +2731,10 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
           container: {array: ['fn', 'container', 'ready']},
         },
         roots: {entry: 'container', other: 'container'},
-      }));
+      }),
+    );
 
-    it('function bound to its Map', () =>
+    (host === 'reply' ? it.skip : it)('function bound to its Map', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2602,40 +2747,50 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
           },
         },
         roots: {entry: 'container', other: 'container'},
-      }));
+      }),
+    );
 
-    it('cycle first exposed through a bound function', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          fn: {bound: ['region']},
-          region: {set: ['fn', 'region', 'ready']},
-        },
-        roots: {entry: 'fn', other: 'fn'},
-      }));
+    (host === 'reply' ? it.skip : it)(
+      'cycle first exposed through a bound function',
+      () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            fn: {bound: ['region']},
+            region: {set: ['fn', 'region', 'ready']},
+          },
+          roots: {entry: 'fn', other: 'fn'},
+        }),
+    );
 
-    it('cycle first exposed through a Promise of a bound function', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          fn: {bound: ['region']},
-          region: {object: ['fn', 'region', 'ready']},
-          exposure: {promise: 'fn'},
-        },
-        roots: {entry: 'exposure', other: 'exposure'},
-      }));
+    (host === 'reply' ? it.skip : it)(
+      'cycle first exposed through a Promise of a bound function',
+      () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            fn: {bound: ['region']},
+            region: {object: ['fn', 'region', 'ready']},
+            exposure: {promise: 'fn'},
+          },
+          roots: {entry: 'exposure', other: 'exposure'},
+        }),
+    );
 
-    it('cycle first exposed through a stream item with a bound function', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          fn: {bound: ['region']},
-          region: {array: ['fn', 'region', 'ready']},
-          item: {array: ['fn']},
-          exposure: {stream: ['item']},
-        },
-        roots: {entry: 'exposure', other: 'exposure'},
-      }));
+    (host === 'reply' ? it.skip : it)(
+      'cycle first exposed through a stream item with a bound function',
+      () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            fn: {bound: ['region']},
+            region: {array: ['fn', 'region', 'ready']},
+            item: {array: ['fn']},
+            exposure: {stream: ['item']},
+          },
+          roots: {entry: 'exposure', other: 'exposure'},
+        }),
+    );
 
     it('async module failing to evaluate after loading', () =>
       runGraph({
@@ -2776,206 +2931,209 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
       }));
   });
 
-  describe('known cases with elements, components or Errors', () => {
-    it('props object referenced again while a prop is loading', () =>
-      runGraph({
-        nodes: {
-          payload: {module: 'export-0'},
-          data: {object: ['props']},
-          value: {array: ['payload', 'data']},
-          element: {element: 'value'},
-          props: {props: 'element'},
-        },
-        roots: {entry: 'element', other: 'props'},
-      }));
-
-    it('props sub-object referenced while a sibling prop is loading', () =>
-      runGraph({
-        nodes: {
-          payload: {module: 'export-0'},
-          sibling: {module: 'export-1'},
-          selected: {object: ['payload']},
-          value: {array: ['selected', 'sibling']},
-          element: {element: 'value'},
-        },
-        roots: {entry: 'element', other: 'selected'},
-      }));
-
-    it('element reaching itself through its props', () =>
-      runGraph({
-        nodes: {
-          payload: {module: 'export-0'},
-          data: {object: ['element']},
-          value: {array: ['payload', 'data']},
-          element: {element: 'value'},
-        },
-        roots: {entry: 'element', other: 'data'},
-      }));
-
-    it('waits that loop before the check that merges them', () =>
-      runGraph({
-        nodes: {
-          value1: {value: 'other value'},
-          value2: {value: ''},
-          value3: {value: 42},
-          text0: {text: 'text-898'},
-          blob0: {blob: 'blob-116'},
-          host0: {host: 'atom'},
-          module1: {module: 'export-1', async: true},
-          array0: {array: ['array0']},
-          set0: {set: ['map1']},
-          map0: {
-            map: [
-              ['blob0', 'bytes0'],
-              ['value3', 'props0'],
-              ['module1', 'iterable0'],
-              ['set0', 'value2'],
-              ['array0', 'value1'],
-            ],
+  // A reply cannot carry any of these.
+  if (host !== 'reply') {
+    describe('known cases with elements, components or Errors', () => {
+      it('props object referenced again while a prop is loading', () =>
+        runGraph({
+          nodes: {
+            payload: {module: 'export-0'},
+            data: {object: ['props']},
+            value: {array: ['payload', 'data']},
+            element: {element: 'value'},
+            props: {props: 'element'},
           },
-          map1: {
-            map: [
-              ['host0', 'host0'],
-              ['element0', 'host0'],
-              ['array0', 'host0'],
-              ['blob0', 'text0'],
-            ],
+          roots: {entry: 'element', other: 'props'},
+        }));
+
+      it('props sub-object referenced while a sibling prop is loading', () =>
+        runGraph({
+          nodes: {
+            payload: {module: 'export-0'},
+            sibling: {module: 'export-1'},
+            selected: {object: ['payload']},
+            value: {array: ['selected', 'sibling']},
+            element: {element: 'value'},
           },
-          bytes0: {bytes: 2},
-          element0: {element: 'host0'},
-          props0: {props: 'element0'},
-          iterable0: {iterable: []},
-        },
-        roots: {entry: 'map0', other: 'array0'},
-        afterEof: true,
-        rootPromise: true,
-        events: [
-          'bytes0 chunk 1',
-          'load module1',
-          'bytes0 chunk 0',
-          'start iterable0',
-          'load element0',
-          'evaluate module1',
-          'resolve the root Promise',
-          'resolve an unrelated Promise',
-        ],
-        packetSizes: [3, 89, 2624],
-        yieldBetweenPackets: false,
-        demand: 'early',
-      }));
+          roots: {entry: 'element', other: 'selected'},
+        }));
 
-    it('all leaf kinds beside a cycle and a loading module', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          nothing: {value: null},
-          flag: {value: true},
-          bigint: {special: 'bigint'},
-          nan: {special: 'nan'},
-          negativeZero: {special: 'negative zero'},
-          infinity: {special: 'infinity'},
-          symbol: {special: 'symbol'},
-          escaped: {special: 'escaped'},
-          text: {text: 'text'},
-          date: {date: 1700000000000},
-          buffer: {special: 'buffer'},
-          binary: {binary: 3},
-          typed: {special: 'typed array'},
-          view: {special: 'data view'},
-          bigints: {special: 'bigint array'},
-          blob: {blob: 'blob'},
-          form: {special: 'form data'},
-          host: {host: 'atom'},
-          atoms: {
-            array: [
-              'nothing',
-              'flag',
-              'bigint',
-              'nan',
-              'negativeZero',
-              'infinity',
-              'symbol',
-              'escaped',
-              'text',
-              'date',
-              'buffer',
-              'binary',
-              'typed',
-              'view',
-              'bigints',
-              'blob',
-              'form',
-              'host',
-              'ready',
-              'cycle',
-            ],
+      it('element reaching itself through its props', () =>
+        runGraph({
+          nodes: {
+            payload: {module: 'export-0'},
+            data: {object: ['element']},
+            value: {array: ['payload', 'data']},
+            element: {element: 'value'},
           },
-          cycle: {object: ['atoms', 'cycle']},
-        },
-        roots: {entry: 'cycle', other: 'cycle'},
-      }));
+          roots: {entry: 'element', other: 'data'},
+        }));
 
-    it('server component rendering after the rest of the response', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          body: {value: 'body'},
-          component: {component: 'body'},
-          data: {object: ['ready']},
-        },
-        roots: {entry: 'component', other: 'data'},
-      }));
+      it('waits that loop before the check that merges them', () =>
+        runGraph({
+          nodes: {
+            value1: {value: 'other value'},
+            value2: {value: ''},
+            value3: {value: 42},
+            text0: {text: 'text-898'},
+            blob0: {blob: 'blob-116'},
+            host0: {host: 'atom'},
+            module1: {module: 'export-1', async: true},
+            array0: {array: ['array0']},
+            set0: {set: ['map1']},
+            map0: {
+              map: [
+                ['blob0', 'bytes0'],
+                ['value3', 'props0'],
+                ['module1', 'iterable0'],
+                ['set0', 'value2'],
+                ['array0', 'value1'],
+              ],
+            },
+            map1: {
+              map: [
+                ['host0', 'host0'],
+                ['element0', 'host0'],
+                ['array0', 'host0'],
+                ['blob0', 'text0'],
+              ],
+            },
+            bytes0: {bytes: 2},
+            element0: {element: 'host0'},
+            props0: {props: 'element0'},
+            iterable0: {iterable: []},
+          },
+          roots: {entry: 'map0', other: 'array0'},
+          afterEof: true,
+          rootPromise: true,
+          events: [
+            'bytes0 chunk 1',
+            'load module1',
+            'bytes0 chunk 0',
+            'start iterable0',
+            'load element0',
+            'evaluate module1',
+            'resolve the root Promise',
+            'resolve an unrelated Promise',
+          ],
+          packetSizes: [3, 89, 2624],
+          yieldBetweenPackets: false,
+          demand: 'early',
+        }));
 
-    it('failing server component', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          error: {error: 'component failed'},
-          component: {component: 'error', throw: true},
-          data: {object: ['ready']},
-        },
-        roots: {entry: 'component', other: 'data'},
-      }));
+      it('all leaf kinds beside a cycle and a loading module', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            nothing: {value: null},
+            flag: {value: true},
+            bigint: {special: 'bigint'},
+            nan: {special: 'nan'},
+            negativeZero: {special: 'negative zero'},
+            infinity: {special: 'infinity'},
+            symbol: {special: 'symbol'},
+            escaped: {special: 'escaped'},
+            text: {text: 'text'},
+            date: {date: 1700000000000},
+            buffer: {special: 'buffer'},
+            binary: {binary: 3},
+            typed: {special: 'typed array'},
+            view: {special: 'data view'},
+            bigints: {special: 'bigint array'},
+            blob: {blob: 'blob'},
+            form: {special: 'form data'},
+            host: {host: 'atom'},
+            atoms: {
+              array: [
+                'nothing',
+                'flag',
+                'bigint',
+                'nan',
+                'negativeZero',
+                'infinity',
+                'symbol',
+                'escaped',
+                'text',
+                'date',
+                'buffer',
+                'binary',
+                'typed',
+                'view',
+                'bigints',
+                'blob',
+                'form',
+                'host',
+                'ready',
+                'cycle',
+              ],
+            },
+            cycle: {object: ['atoms', 'cycle']},
+          },
+          roots: {entry: 'cycle', other: 'cycle'},
+        }));
 
-    it('suspended server component element used twice', () =>
-      runGraph({
-        nodes: {
-          body: {value: 'shared'},
-          component: {component: 'body'},
-          pair: {array: ['component', 'component']},
-        },
-        roots: {entry: 'pair', other: 'pair'},
-      }));
+      it('server component rendering after the rest of the response', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            body: {value: 'body'},
+            component: {component: 'body'},
+            data: {object: ['ready']},
+          },
+          roots: {entry: 'component', other: 'data'},
+        }));
 
-    it('server error through a rejected Promise', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          error: {error: 'expected failure'},
-          failing: {promise: 'error', reject: true},
-          fine: {object: ['ready']},
-        },
-        roots: {entry: 'failing', other: 'fine'},
-      }));
+      it('failing server component', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            error: {error: 'component failed'},
+            component: {component: 'error', throw: true},
+            data: {object: ['ready']},
+          },
+          roots: {entry: 'component', other: 'data'},
+        }));
 
-    it('Error whose cause is still loading', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          error: {error: 'cause loading', cause: 'ready'},
-          holder: {set: ['error']},
-        },
-        roots: {entry: 'holder', other: 'holder'},
-      }));
+      it('suspended server component element used twice', () =>
+        runGraph({
+          nodes: {
+            body: {value: 'shared'},
+            component: {component: 'body'},
+            pair: {array: ['component', 'component']},
+          },
+          roots: {entry: 'pair', other: 'pair'},
+        }));
 
-    it('Error with cyclic cause', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          cell: {object: ['ready', 'error']},
-          error: {error: 'cyclic cause', cause: 'cell'},
-        },
-        roots: {entry: 'error', other: 'cell'},
-      }));
-  });
+      it('server error through a rejected Promise', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            error: {error: 'expected failure'},
+            failing: {promise: 'error', reject: true},
+            fine: {object: ['ready']},
+          },
+          roots: {entry: 'failing', other: 'fine'},
+        }));
+
+      it('Error whose cause is still loading', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            error: {error: 'cause loading', cause: 'ready'},
+            holder: {set: ['error']},
+          },
+          roots: {entry: 'holder', other: 'holder'},
+        }));
+
+      it('Error with cyclic cause', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            cell: {object: ['ready', 'error']},
+            error: {error: 'cyclic cause', cause: 'cell'},
+          },
+          roots: {entry: 'error', other: 'cell'},
+        }));
+    });
+  }
 });
