@@ -1647,6 +1647,59 @@ describe('ReactDOMForm', () => {
     expect(inputRef.current.value).toEqual('0');
   });
 
+  // @gate !disableInputAttributeSyncing
+  it('does not reset controlled checkboxes and radios on automatic form reset', async () => {
+    const formRef = React.createRef();
+    const checkboxRef = React.createRef();
+    const radioRef = React.createRef();
+
+    let setChecked;
+    function App() {
+      const [checked, _setChecked] = useState(false);
+      setChecked = _setChecked;
+
+      return (
+        <form
+          ref={formRef}
+          action={async () => {
+            Scheduler.log('Async action started');
+            await getText('Wait');
+          }}>
+          <input
+            ref={checkboxRef}
+            type="checkbox"
+            name="checkbox"
+            checked={checked}
+            onChange={event => setChecked(event.currentTarget.checked)}
+          />
+          <input
+            ref={radioRef}
+            type="radio"
+            name="radio"
+            checked={checked}
+            onChange={event => setChecked(event.currentTarget.checked)}
+          />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    await act(() => setChecked(true));
+    expect(checkboxRef.current.checked).toBe(true);
+    expect(radioRef.current.checked).toBe(true);
+
+    await submit(formRef.current);
+    assertLog(['Async action started']);
+
+    // The form is reset when the action completes, but controlled inputs keep
+    // the checkedness React rendered.
+    await act(() => resolveText('Wait'));
+    expect(checkboxRef.current.checked).toBe(true);
+    expect(radioRef.current.checked).toBe(true);
+  });
+
   it('requestFormReset schedules a form reset after transition completes', async () => {
     // This is the same as the previous test, except the form is updated with
     // a userspace action instead of a built-in form action.
