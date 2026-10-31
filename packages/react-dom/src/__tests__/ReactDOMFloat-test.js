@@ -6524,6 +6524,71 @@ body {
       );
     });
 
+    it('does not add a duplicate link when the module is already preloaded in the Document', async () => {
+      // A bundler or an authored shell may have already emitted the hint. We
+      // omit the `as` attribute for the default module type so we have to
+      // recognize both spellings of the same resource.
+      const plain = document.createElement('link');
+      plain.setAttribute('rel', 'modulepreload');
+      plain.setAttribute('href', 'plain');
+      document.head.appendChild(plain);
+
+      const explicit = document.createElement('link');
+      explicit.setAttribute('rel', 'modulepreload');
+      explicit.setAttribute('as', 'script');
+      explicit.setAttribute('href', 'explicit');
+      document.head.appendChild(explicit);
+
+      const worker = document.createElement('link');
+      worker.setAttribute('rel', 'modulepreload');
+      worker.setAttribute('as', 'worker');
+      worker.setAttribute('href', 'worker');
+      document.head.appendChild(worker);
+
+      function App() {
+        ReactDOM.preloadModule('plain');
+        ReactDOM.preloadModule('explicit');
+        ReactDOM.preloadModule('worker', {as: 'worker'});
+        return <div>hello</div>;
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      root.render(<App />);
+      await waitForAll([]);
+
+      expect(
+        Array.from(
+          document.querySelectorAll('link[rel="modulepreload"]'),
+          link => link.getAttribute('href'),
+        ),
+      ).toEqual(['plain', 'explicit', 'worker']);
+    });
+
+    it('does not add a duplicate link for a module preloaded by the server', async () => {
+      function ServerApp() {
+        ReactDOM.preloadModule('server');
+        return <div>hello</div>;
+      }
+
+      await act(() => {
+        renderToPipeableStream(<ServerApp />).pipe(writable);
+      });
+      expect(
+        document.querySelectorAll('link[rel="modulepreload"]').length,
+      ).toBe(1);
+
+      function ClientApp() {
+        ReactDOM.preloadModule('server');
+        return <div>hello</div>;
+      }
+
+      ReactDOMClient.hydrateRoot(container, <ClientApp />);
+      await waitForAll([]);
+      expect(
+        document.querySelectorAll('link[rel="modulepreload"]').length,
+      ).toBe(1);
+    });
+
     it('supports fetchPriority', async () => {
       function Component({isServer}) {
         const suffix = isServer ? 'server' : 'client';
