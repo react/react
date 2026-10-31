@@ -67,6 +67,10 @@ const fetchFromNetworkCache = (url, resolve, reject) => {
           fetchFromPage(url, resolve, reject);
         }
       }
+
+      // Only the first matching entry is used. Continuing here would also
+      // fall through to fetchFromPage() below and fetch the file a second time.
+      return;
     }
 
     debugLog(
@@ -127,7 +131,31 @@ const fetchFromPage = async (url, resolve, reject) => {
 // 1. Check if resource is available via chrome.devtools.inspectedWindow.getResources
 // 2. Check if resource was loaded previously and available in network cache via chrome.devtools.network.getHAR
 // 3. Fallback to fetching directly from the page context (from backend)
-async function fetchFileWithCaching(url: string): Promise<string> {
+//
+// Symbolicating an owner stack asks for the same file (and its source map) once
+// per frame, often concurrently. Requests for a URL that is already being
+// fetched share the in-flight promise instead of walking getResources() and
+// getHAR() again. Settled requests are not retained.
+const inFlightRequests: Map<string, Promise<string>> = new Map();
+
+function fetchFileWithCaching(url: string): Promise<string> {
+  const inFlightRequest = inFlightRequests.get(url);
+  if (inFlightRequest !== undefined) {
+    return inFlightRequest;
+  }
+
+  const request = fetchFileWithCachingImpl(url);
+  inFlightRequests.set(url, request);
+  const cleanup = () => {
+    if (inFlightRequests.get(url) === request) {
+      inFlightRequests.delete(url);
+    }
+  };
+  request.then(cleanup, cleanup);
+  return request;
+}
+
+async function fetchFileWithCachingImpl(url: string): Promise<string> {
   if (__IS_CHROME__ || __IS_EDGE__) {
     const resources = await new Promise(resolve =>
       chrome.devtools.inspectedWindow.getResources(r => resolve(r)),
