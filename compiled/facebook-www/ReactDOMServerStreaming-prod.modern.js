@@ -7231,6 +7231,7 @@ exports.renderToStream = function (children, options) {
         pushScriptImpl(externalRuntimeScript.chunks, {
           src: externalRuntimeConfig$jscomp$0,
           async: !0,
+          crossOrigin: void 0,
           integrity: void 0,
           nonce: void 0
         }))
@@ -7241,6 +7242,7 @@ exports.renderToStream = function (children, options) {
         pushScriptImpl(externalRuntimeScript.chunks, {
           src: externalRuntimeConfig$jscomp$0.src,
           async: !0,
+          crossOrigin: externalRuntimeConfig$jscomp$0.crossOrigin,
           integrity: externalRuntimeConfig$jscomp$0.integrity,
           nonce: void 0
         })));

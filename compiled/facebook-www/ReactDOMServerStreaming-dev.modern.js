@@ -10634,6 +10634,7 @@ __DEV__ &&
             pushScriptImpl(externalRuntimeScript.chunks, {
               src: externalRuntimeConfig,
               async: !0,
+              crossOrigin: void 0,
               integrity: void 0,
               nonce: void 0
             }))
@@ -10644,6 +10645,7 @@ __DEV__ &&
             pushScriptImpl(externalRuntimeScript.chunks, {
               src: externalRuntimeConfig.src,
               async: !0,
+              crossOrigin: externalRuntimeConfig.crossOrigin,
               integrity: externalRuntimeConfig.integrity,
               nonce: void 0
             })));
