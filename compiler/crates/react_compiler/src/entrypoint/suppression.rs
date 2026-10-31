@@ -35,53 +35,36 @@ fn comment_data(comment: &Comment) -> &CommentData {
     }
 }
 
+/// Check if a comment value matches `<prefix><directive> <rule>` for any rule in `rule_names`,
+/// where `<prefix>` is `eslint-` or `oxlint-` (oxlint reads the same directives).
+fn matches_lint_directive(value: &str, directive: &str, rule_names: &[String]) -> bool {
+    let trimmed = value.trim_start();
+    ["eslint-", "oxlint-"].iter().any(|prefix| {
+        trimmed
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.strip_prefix(directive))
+            .and_then(|rest| rest.strip_prefix(' '))
+            .is_some_and(|rest| {
+                rule_names
+                    .iter()
+                    .any(|name| rest.starts_with(name.as_str()))
+            })
+    })
+}
+
 /// Check if a comment value matches `eslint-disable-next-line <rule>` for any rule in `rule_names`.
 fn matches_eslint_disable_next_line(value: &str, rule_names: &[String]) -> bool {
-    if let Some(rest) = value.strip_prefix("eslint-disable-next-line ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    // Also check with leading space (comment values often have leading whitespace)
-    let trimmed = value.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("eslint-disable-next-line ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    false
+    matches_lint_directive(value, "disable-next-line", rule_names)
 }
 
 /// Check if a comment value matches `eslint-disable <rule>` for any rule in `rule_names`.
 fn matches_eslint_disable(value: &str, rule_names: &[String]) -> bool {
-    if let Some(rest) = value.strip_prefix("eslint-disable ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    let trimmed = value.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("eslint-disable ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    false
+    matches_lint_directive(value, "disable", rule_names)
 }
 
 /// Check if a comment value matches `eslint-enable <rule>` for any rule in `rule_names`.
 fn matches_eslint_enable(value: &str, rule_names: &[String]) -> bool {
-    if let Some(rest) = value.strip_prefix("eslint-enable ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    let trimmed = value.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("eslint-enable ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    false
+    matches_lint_directive(value, "enable", rule_names)
 }
 
 /// Check if a comment value matches a Flow suppression pattern.
