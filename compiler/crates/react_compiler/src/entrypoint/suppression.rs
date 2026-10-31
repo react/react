@@ -35,83 +35,84 @@ fn comment_data(comment: &Comment) -> &CommentData {
     }
 }
 
-/// Check if a comment value matches `eslint-disable-next-line <rule>` for any rule in `rule_names`.
-fn matches_eslint_disable_next_line(value: &str, rule_names: &[String]) -> bool {
-    if let Some(rest) = value.strip_prefix("eslint-disable-next-line ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    // Also check with leading space (comment values often have leading whitespace)
-    let trimmed = value.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("eslint-disable-next-line ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
+/// Check if a comment value contains `<directive> <rule>` for any rule in `rule_names`.
+///
+/// The TypeScript compiler builds unanchored regular expressions such as
+/// `eslint-disable-next-line (rule)` and runs them against the whole comment value, so a
+/// directive counts wherever it appears in the comment and not only at the start (eg
+/// `// prettier-ignore eslint-disable-next-line rule` or a JSDoc block comment).
+fn matches_rule_directive(value: &str, directive: &str, rule_names: &[String]) -> bool {
+    let mut searched = 0;
+    while let Some(offset) = value[searched..].find(directive) {
+        let directive_start = searched + offset;
+        let after_directive = &value[directive_start + directive.len()..];
+        // The TypeScript patterns spell out a single space between the directive and the rule.
+        let matched = after_directive.strip_prefix(' ').is_some_and(|rest| {
+            rule_names
+                .iter()
+                .any(|name| rest.starts_with(name.as_str()))
+        });
+        if matched {
+            return true;
+        }
+        // Resume right after the directive's first byte so that overlapping occurrences
+        // are still considered. Every directive starts with an ASCII character, so this is
+        // always a char boundary.
+        searched = directive_start + 1;
     }
     false
+}
+
+/// Check if a comment value matches `eslint-disable-next-line <rule>` for any rule in `rule_names`.
+fn matches_eslint_disable_next_line(value: &str, rule_names: &[String]) -> bool {
+    matches_rule_directive(value, "eslint-disable-next-line", rule_names)
 }
 
 /// Check if a comment value matches `eslint-disable <rule>` for any rule in `rule_names`.
 fn matches_eslint_disable(value: &str, rule_names: &[String]) -> bool {
-    if let Some(rest) = value.strip_prefix("eslint-disable ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    let trimmed = value.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("eslint-disable ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    false
+    matches_rule_directive(value, "eslint-disable", rule_names)
 }
 
 /// Check if a comment value matches `eslint-enable <rule>` for any rule in `rule_names`.
 fn matches_eslint_enable(value: &str, rule_names: &[String]) -> bool {
-    if let Some(rest) = value.strip_prefix("eslint-enable ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    let trimmed = value.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("eslint-enable ") {
-        return rule_names
-            .iter()
-            .any(|name| rest.starts_with(name.as_str()));
-    }
-    false
+    matches_rule_directive(value, "eslint-enable", rule_names)
 }
 
 /// Check if a comment value matches a Flow suppression pattern.
 /// Matches: $FlowFixMe[react-rule, $FlowFixMe_xxx[react-rule,
 ///          $FlowExpectedError[react-rule, $FlowIssue[react-rule
 fn matches_flow_suppression(value: &str) -> bool {
-    // Find "$Flow" anywhere in the value
-    let Some(idx) = value.find("$Flow") else {
-        return false;
-    };
-    let after_dollar_flow = &value[idx + "$Flow".len()..];
+    let mut searched = 0;
+    // The TypeScript counterpart is the unanchored regex
+    // `\$(FlowFixMe\w*|FlowExpectedError|FlowIssue)\[react-rule`, so every `$Flow`
+    // occurrence can start a match, not just the first one.
+    while let Some(offset) = value[searched..].find("$Flow") {
+        let dollar_flow_start = searched + offset;
+        let after_dollar_flow = &value[dollar_flow_start + "$Flow".len()..];
+        searched = dollar_flow_start + 1;
 
-    // Match FlowFixMe (with optional word chars), FlowExpectedError, or FlowIssue
-    let after_kind = if after_dollar_flow.starts_with("FixMe") {
-        // Skip "FixMe" + any word characters
-        let rest = &after_dollar_flow["FixMe".len()..];
-        let word_end = rest
-            .find(|c: char| !c.is_alphanumeric() && c != '_')
-            .unwrap_or(rest.len());
-        &rest[word_end..]
-    } else if after_dollar_flow.starts_with("ExpectedError") {
-        &after_dollar_flow["ExpectedError".len()..]
-    } else if after_dollar_flow.starts_with("Issue") {
-        &after_dollar_flow["Issue".len()..]
-    } else {
-        return false;
-    };
+        // Match FlowFixMe (with optional word chars), FlowExpectedError, or FlowIssue
+        let after_kind = if let Some(rest) = after_dollar_flow.strip_prefix("FixMe") {
+            // Skip "FixMe" plus any `\w` characters. JavaScript's `\w` is ASCII-only, so a
+            // non-ASCII character ends the run instead of being consumed.
+            let word_end = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(rest.len());
+            &rest[word_end..]
+        } else if let Some(rest) = after_dollar_flow.strip_prefix("ExpectedError") {
+            rest
+        } else if let Some(rest) = after_dollar_flow.strip_prefix("Issue") {
+            rest
+        } else {
+            continue;
+        };
 
-    // Must be followed by "[react-rule"
-    after_kind.starts_with("[react-rule")
+        // Must be followed by "[react-rule"
+        if after_kind.starts_with("[react-rule") {
+            return true;
+        }
+    }
+    false
 }
 
 /// Parse eslint-disable/enable and Flow suppression comments from program comments.
