@@ -1469,6 +1469,29 @@ describe('react-devtools-facade', () => {
       expect(info.props.undef).toBe(null);
     });
 
+    it('normalizes BigInt props and hook values to serializable strings', () => {
+      // Beyond Number.MAX_SAFE_INTEGER, so a Number conversion would lose
+      // precision.
+      const big = BigInt('9007199254740993');
+      function Counter({data}) {
+        React.useState(data);
+        return <div>c</div>;
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(
+          <Counter data={{id: big, list: [BigInt(-1)]}} />,
+        );
+      });
+
+      const counter = getComponentTree().find(n => n.name === 'Counter');
+      const info = getComponentByUid(counter.uid, true);
+      const expected = {id: '9007199254740993n', list: ['-1n']};
+      expect(info.props.data).toEqual(expected);
+      expect(info.hooks[0].value).toEqual(expected);
+      expect(() => JSON.stringify(info)).not.toThrow();
+    });
+
     it('returns info for Memo component with correct type', () => {
       function Inner() {
         return <span>inner</span>;
