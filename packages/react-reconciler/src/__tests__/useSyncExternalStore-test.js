@@ -23,6 +23,8 @@ let use;
 let startTransition;
 let waitFor;
 let waitForAll;
+let waitForPaint;
+let waitForMicrotasks;
 let assertLog;
 let Suspense;
 let useMemo;
@@ -54,6 +56,8 @@ describe('useSyncExternalStore', () => {
     const InternalTestUtils = require('internal-test-utils');
     waitFor = InternalTestUtils.waitFor;
     waitForAll = InternalTestUtils.waitForAll;
+    waitForPaint = InternalTestUtils.waitForPaint;
+    waitForMicrotasks = InternalTestUtils.waitForMicrotasks;
     assertLog = InternalTestUtils.assertLog;
 
     act = require('internal-test-utils').act;
@@ -566,5 +570,70 @@ describe('useSyncExternalStore', () => {
     ]);
 
     expect(root).toMatchRenderedOutput('AB');
+  });
+
+  // https://github.com/facebook/react/issues/37762
+  // @gate alwaysThrottleRetries
+  it('a throttled Suspense reveal commit that flushes a passive effect which sync-updates the same root should not throw', async () => {
+    const store = createExternalStore(0);
+
+    function StoreText() {
+      const value = useSyncExternalStore(store.subscribe, store.getState);
+      return <Text text={'value=' + value} />;
+    }
+
+    // Root B writes to a store read by root A from a passive effect.
+    function Writer() {
+      React.useEffect(() => {
+        store.set(1);
+      }, []);
+      return <Text text="B" />;
+    }
+
+    const rootA = ReactNoop.createRoot();
+    const rootB = ReactNoop.createRoot();
+
+    // Mount root A. The Suspense boundary suspends and the fallback commits.
+    rootA.render(
+      <>
+        <StoreText />
+        <Suspense fallback={<Text text="Loading" />}>
+          <AsyncText text="A" />
+        </Suspense>
+      </>,
+    );
+    await waitForAll(['value=0', 'Loading']);
+    expect(rootA).toMatchRenderedOutput('value=0Loading');
+
+    // Resolve the text. The retry render finishes, but because the fallback
+    // was shown less than FALLBACK_THROTTLE_MS ago, its commit is deferred to
+    // a timer.
+    resolveText('A');
+    await waitForAll(['A']);
+    expect(rootA).toMatchRenderedOutput('value=0Loading');
+
+    // Commit root B, leaving its passive effects pending.
+    rootB.render(<Writer />);
+    await waitForPaint(['B']);
+    expect(rootB).toMatchRenderedOutput('B');
+
+    // Fire the deferred commit's timer. Before committing, it flushes the
+    // pending passive effects — including root B's — and the store write
+    // schedules a synchronous render that commits root A. The deferred commit
+    // must bail out instead of committing the same tree twice.
+    jest.advanceTimersByTime(300);
+
+    // Let the remaining work settle, advancing past the throttle window.
+    for (let i = 0; i < 5; i++) {
+      await waitForMicrotasks();
+      Scheduler.unstable_advanceTime(400);
+      Scheduler.unstable_flushAllWithoutAsserting();
+      jest.advanceTimersByTime(400);
+    }
+    Scheduler.unstable_flushAllWithoutAsserting();
+    assertLog(['value=1', 'A']);
+
+    expect(rootA).toMatchRenderedOutput('value=1A');
+    expect(rootB).toMatchRenderedOutput('B');
   });
 });
