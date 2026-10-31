@@ -2402,22 +2402,11 @@ describe('ReactFlightDOMNode', () => {
     expect(result.payload).toEqual(binaryData);
   });
 
-  // A Node.js Buffer carries a `toJSON` method, so Flight serializes it through
-  // that method instead of as binary, and warns. It is therefore deserialized
-  // as a plain `{type: 'Buffer', data: [...]}` object rather than a
-  // Buffer/Uint8Array.
-  it('serializes a Node Buffer through its toJSON and warns', async () => {
+  it('serializes a nested Node Buffer as binary', async () => {
     const buffer = Buffer.from([1, 2, 3, 4]);
     const stream = await serverAct(() =>
       ReactServerDOMServer.renderToPipeableStream({font: buffer}),
     );
-    assertConsoleErrorDev([
-      'Binary data with a toJSON method, such as a Node.js Buffer, is ' +
-        'serialized through toJSON instead of as binary. Pass a ' +
-        'Uint8Array or ArrayBuffer to send binary data.\n' +
-        '  {font: Uint8Array}\n' +
-        '         ^^^^^^^^^^',
-    ]);
     const readable = new Stream.PassThrough(streamOptions);
     const promise = ReactServerDOMClient.createFromNodeStream(readable, {
       moduleMap: {},
@@ -2425,8 +2414,8 @@ describe('ReactFlightDOMNode', () => {
     });
     stream.pipe(readable);
     const result = await promise;
-    expect(Buffer.isBuffer(result.font)).toBe(false);
-    expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
+    expect(result.font).toBeInstanceOf(Uint8Array);
+    expect(Array.from(result.font)).toEqual([1, 2, 3, 4]);
   });
 
   it('detaches the abort listener from a composite signal once the prerender completes', async () => {
