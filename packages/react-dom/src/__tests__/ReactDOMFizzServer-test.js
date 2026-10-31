@@ -496,6 +496,205 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('preserves the SSR fallback node when a browser-only boundary suspends again on the client', async () => {
+    let resolveClientText;
+    const clientText = new Promise(resolve => {
+      resolveClientText = resolve;
+    });
+    const browserOnly = ReactDOM.browser(
+      () => 'Only render this content in a browser',
+    );
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const text = use(clientText);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError() {},
+      });
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    // The fallback node rendered by the server. If hydration deletes and
+    // remounts an identical fallback, this node is replaced, which restarts
+    // CSS animations and drops DOM state.
+    const serverFallbackNode = container.querySelector('span');
+    serverFallbackNode.setAttribute('data-server-node', 'true');
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    // Flush the client render. It suspends on the client promise, so the
+    // boundary shows its fallback again.
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span data-server-node="true">Fallback</span>
+      </div>,
+    );
+    // The fallback must be the exact node the server rendered, not a
+    // remounted copy.
+    expect(container.querySelector('span')).toBe(serverFallbackNode);
+    expect(serverFallbackNode.getAttribute('data-server-node')).toBe('true');
+
+    await clientAct(() => {
+      resolveClientText('Browser');
+    });
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  it('preserves the SSR fallback node across sequential client suspensions', async () => {
+    let resolveFirst;
+    const firstText = new Promise(resolve => {
+      resolveFirst = resolve;
+    });
+    let resolveSecond;
+    const secondText = new Promise(resolve => {
+      resolveSecond = resolve;
+    });
+    const browserOnly = ReactDOM.browser(
+      () => 'Only render this content in a browser',
+    );
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const first = use(firstText);
+      const second = use(secondText);
+      return <span>{first + ' ' + second}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError() {},
+      });
+      pipe(writable);
+    });
+
+    const serverFallbackNode = container.querySelector('span');
+
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError() {},
+    });
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+    expect(container.querySelector('span')).toBe(serverFallbackNode);
+
+    // Resolving the first promise suspends on the second one. The fallback
+    // must remain the server-rendered node.
+    await clientAct(() => {
+      resolveFirst('Hello');
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+    expect(container.querySelector('span')).toBe(serverFallbackNode);
+
+    await clientAct(() => {
+      resolveSecond('Browser');
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Hello Browser</span>
+      </div>,
+    );
+  });
+
+  it('replaces the SSR fallback when a browser-only boundary does not suspend on the client', async () => {
+    const browserOnly = ReactDOM.browser(
+      () => 'Only render this content in a browser',
+    );
+
+    function BrowserOnly() {
+      use(browserOnly);
+      return <span>Browser</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError() {},
+      });
+      pipe(writable);
+    });
+
+    const serverFallbackNode = container.querySelector('span');
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+    // Nothing suspended, so the content commits and the server fallback is
+    // removed rather than preserved.
+    expect(container.querySelector('span')).not.toBe(serverFallbackNode);
+  });
+
   it('can opt a component into browser-only rendering after streaming the fallback', async () => {
     let resolveServerReady;
     const serverReady = new Promise(resolve => {
