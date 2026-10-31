@@ -946,15 +946,6 @@ function createRenderTask(
   legacyContext: LegacyContext,
   debugTask: null | ConsoleTask,
 ): RenderTask {
-  request.allPendingTasks++;
-  if (blockedBoundary === null) {
-    request.pendingRootTasks++;
-  } else {
-    blockedBoundary.pendingTasks++;
-  }
-  if (row !== null) {
-    row.pendingTasks++;
-  }
   const task: RenderTask = {
     replay: null,
     node,
@@ -983,6 +974,19 @@ function createRenderTask(
     task.debugTask = debugTask;
   }
   abortSet.add(task);
+  // Only start counting the task once it is fully constructed and tracked. This
+  // can run while we are recovering from a stack overflow, so if constructing
+  // the task overflows again nothing is left behind that would keep the request
+  // waiting for a task that never gets scheduled.
+  request.allPendingTasks++;
+  if (blockedBoundary === null) {
+    request.pendingRootTasks++;
+  } else {
+    blockedBoundary.pendingTasks++;
+  }
+  if (row !== null) {
+    row.pendingTasks++;
+  }
   return task;
 }
 
@@ -1004,16 +1008,6 @@ function createReplayTask(
   legacyContext: LegacyContext,
   debugTask: null | ConsoleTask,
 ): ReplayTask {
-  request.allPendingTasks++;
-  if (blockedBoundary === null) {
-    request.pendingRootTasks++;
-  } else {
-    blockedBoundary.pendingTasks++;
-  }
-  if (row !== null) {
-    row.pendingTasks++;
-  }
-  replay.pendingTasks++;
   const task: ReplayTask = {
     replay,
     node,
@@ -1042,6 +1036,17 @@ function createReplayTask(
     task.debugTask = debugTask;
   }
   abortSet.add(task);
+  // See createRenderTask for why the task is counted only after it is tracked.
+  request.allPendingTasks++;
+  if (blockedBoundary === null) {
+    request.pendingRootTasks++;
+  } else {
+    blockedBoundary.pendingTasks++;
+  }
+  if (row !== null) {
+    row.pendingTasks++;
+  }
+  replay.pendingTasks++;
   return task;
 }
 
@@ -4422,6 +4427,7 @@ function renderNode(
   const previousContext = task.context;
   const previousKeyPath = task.keyPath;
   const previousTreeContext = task.treeContext;
+  const previousRow = task.row;
   const previousComponentStack = task.componentStack;
   const previousDebugTask = __DEV__ ? task.debugTask : null;
   let x;
@@ -4627,6 +4633,35 @@ function renderNode(
           // performance but it can lead to stack overflows in extremely deep trees.
           // We do have the ability to create a trampoile if this happens which makes
           // this kind of zero-cost.
+          //
+          // The overflow may have escaped from a deeper renderNode whose catch block
+          // itself ran out of stack before it could spawn its continuation. In that
+          // case task.node still points at the deepest node that was being rendered,
+          // while we have just reset the write pointers of this frame, which is
+          // further up the tree. Everything that was emitted between the two frames
+          // (host elements, closing tags, useId tree positions) would be dropped if
+          // the continuation picked up from task.node. So we resume from this
+          // frame's node with this frame's snapshot of the context instead.
+          task.node = node;
+          task.childIndex = childIndex;
+          task.formatContext = previousFormatContext;
+          if (!disableLegacyContext) {
+            task.legacyContext = previousLegacyContext;
+          }
+          task.context = previousContext;
+          task.keyPath = previousKeyPath;
+          task.treeContext = previousTreeContext;
+          task.row = previousRow;
+          task.componentStack = previousComponentStack;
+          if (__DEV__) {
+            task.debugTask = previousDebugTask;
+          }
+          // The continuation starts at this node, so it needs the stack frame that
+          // renderNodeDestructive would otherwise have pushed for it. Do this before
+          // spawning: we are still close to the stack limit here, and anything that
+          // overflows after the task has been registered would leave the request
+          // waiting on a task that never gets scheduled.
+          pushComponentStack(task);
           const thenableState =
             thrownValue === SuspenseException
               ? getThenableStateAfterSuspending()
@@ -4641,15 +4676,7 @@ function renderNode(
           // Immediately schedule the task for retrying.
           request.pingedTasks.push(newTask);
 
-          // Restore the context. We assume that this will be restored by the inner
-          // functions in case nothing throws so we don't use "finally" here.
-          task.formatContext = previousFormatContext;
-          if (!disableLegacyContext) {
-            task.legacyContext = previousLegacyContext;
-          }
-          task.context = previousContext;
-          task.keyPath = previousKeyPath;
-          task.treeContext = previousTreeContext;
+          // Restore the component stack of this task to continue with siblings.
           task.componentStack = previousComponentStack;
           if (__DEV__) {
             task.debugTask = previousDebugTask;

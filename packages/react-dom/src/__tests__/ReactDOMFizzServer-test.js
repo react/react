@@ -8568,6 +8568,43 @@ describe('ReactDOMFizzServer', () => {
     expect(caughtError.message).toBe('Maximum call stack size exceeded');
   });
 
+  it('preserves host elements and ids when recovering from stack overflow in very deep trees', async () => {
+    const depth = 1200;
+    function Recursive({n}) {
+      const id = React.useId();
+      if (n > 0) {
+        return (
+          <section id={id} data-n={n}>
+            <Recursive n={n - 1} />
+          </section>
+        );
+      }
+      return <span id={id}>hi</span>;
+    }
+
+    // Deep enough to overflow the stack several times. Each recovery resets
+    // the segment's write pointers to the renderNode frame that caught the
+    // overflow. If the catch block itself runs out of stack, an outer frame
+    // catches instead and must resume from its own node, otherwise the host
+    // elements between the two frames are dropped from the output.
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <div>
+          <Recursive n={depth} />
+        </div>,
+      );
+      pipe(writable);
+    });
+
+    const sections = Array.from(container.querySelectorAll('section'));
+    expect(sections.length).toBe(depth);
+    expect(sections.map(s => +s.getAttribute('data-n'))).toEqual(
+      Array.from({length: depth}, (_, i) => depth - i),
+    );
+    expect(new Set(sections.map(s => s.id)).size).toBe(depth);
+    expect(container.querySelector('span').textContent).toBe('hi');
+  });
+
   it('can recover from very deep trees during resume to avoid stack overflow', async () => {
     const promise = new Promise(() => {});
 
