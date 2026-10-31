@@ -239,6 +239,23 @@ describe('ReactFlightDOMReply', () => {
     expect(formDataB2.get('greeting')).toBe('hi');
   });
 
+  it('can pass FormData after more than nine other outlined values', async () => {
+    const formData = new FormData();
+    formData.set('greeting', 'hello');
+    // Each Set is outlined as its own part, which moves the FormData's part
+    // id past 9 so that its reference is written in hex.
+    const sets = Array.from({length: 12}, (_, i) => new Set([i]));
+
+    const body = await ReactServerDOMClient.encodeReply({sets, formData});
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(Array.from(result.formData).length).toBe(1);
+    expect(result.formData.get('greeting')).toBe('hello');
+  });
+
   it('can pass a Date as a reply', async () => {
     const d = new Date(1234567890123);
     const body = await ReactServerDOMClient.encodeReply(d);
@@ -730,6 +747,26 @@ describe('ReactFlightDOMReply', () => {
     const root = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
     expect(root.prop[1]).toBe(root.prop);
     expect(root.prop[0]).toBe(root.obj);
+  });
+
+  it('can transport a Set containing itself', async () => {
+    const set = new Set();
+    set.add(set);
+
+    const body = await ReactServerDOMClient.encodeReply({set});
+    const root = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    expect(root.set.size).toBe(1);
+    expect(Array.from(root.set)[0]).toBe(root.set);
+  });
+
+  it('can transport a Map containing itself', async () => {
+    const map = new Map();
+    map.set('self', map);
+
+    const body = await ReactServerDOMClient.encodeReply({map});
+    const root = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    expect(root.map.size).toBe(1);
+    expect(root.map.get('self')).toBe(root.map);
   });
 
   it('can abort an unresolved model and get the partial result', async () => {

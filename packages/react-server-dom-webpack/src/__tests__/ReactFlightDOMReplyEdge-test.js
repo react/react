@@ -683,6 +683,40 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(replyResult.boundMethod()).toBe('hi, there');
   });
 
+  it('binds a server reference to its containing array once its module loads', async () => {
+    let resolveModule;
+    function read(array, other) {
+      return [array.length, array[1].length, other];
+    }
+    const ServerModule = serverExports(
+      {read},
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    ReactServerDOMClient.registerServerReference(
+      ServerModule.read,
+      ServerModule.read.$$id,
+    );
+    const array = [];
+    array.push(ServerModule.read.bind(null, array, null), array);
+
+    const body = await ReactServerDOMClient.encodeReply({array});
+    const observed = [];
+    const pending = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    pending.then(
+      value => observed.push(value.array[0]()),
+      error => observed.push(error.message),
+    );
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+    expect(observed).toEqual([]);
+
+    await resolveModule();
+    const decoded = await pending;
+    expect(observed).toEqual([[2, 2, null]]);
+    expect(decoded.array[1]).toBe(decoded.array);
+  });
+
   it('warns with a tailored message if eval is not available in dev', async () => {
     // eslint-disable-next-line no-eval
     const previousEval = globalThis.eval.bind(globalThis);

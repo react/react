@@ -224,6 +224,24 @@ export type Response = {
   _serverObjectReferenceCache: WeakMap<Object, SomeChunk<any>>,
   _rootArrayContexts: WeakMap<$ReadOnlyArray<mixed>, NestedArrayContext>,
   _arraySizeLimit: number,
+  // The handler of each chunk that has parsed but is still waiting for
+  // references, by chunk.
+  _handlers: WeakMap<SomeChunk<any>, InitializationHandler>,
+  // A Set or Map that was referenced before its entries chunk had initialized,
+  // by that chunk. Every reference to the chunk receives the same collection,
+  // including a reference from inside its own entries. The entries are copied
+  // in when the chunk initializes.
+  _reservedCollections: WeakMap<SomeChunk<any>, Set<any> | Map<any, any>>,
+  // The slots of parsed objects that still hold a placeholder, by object and
+  // key, with the reference that fills each.
+  _pendingSlots: WeakMap<Object, Map<string, InitializationReference>>,
+  // The constructors waiting to read an object once its slots are all filled.
+  _pendingConstructors: WeakMap<Object, Array<InitializationReference>>,
+  // Cycle checks queued by the work in progress, run once it is done; how many
+  // references are being released or fulfilled, counting nesting.
+  _queuedCycleChecks: Array<BlockedCycle>,
+  _flushingCycleChecks: boolean,
+  _fulfillingReferences: number,
 };
 
 export function getRoot<T>(response: Response): Thenable<T> {
@@ -247,9 +265,10 @@ function wakeChunk<T>(
     if (typeof listener === 'function') {
       listener(value);
     } else {
-      fulfillReference(response, listener, value, chunk.reason);
+      releaseReference(response, listener, chunk);
     }
   }
+  flushCycleChecks(response);
 }
 
 function rejectChunk(
@@ -295,6 +314,14 @@ function wakeChunkIfInitialized<T>(
         }
       } else {
         chunk.reason = rejectListeners;
+      }
+      if (chunk.status === BLOCKED) {
+        // The model has parsed, so the references can be followed into it.
+        const handler = response._handlers.get(chunk);
+        if (handler !== undefined) {
+          fulfillListenersFromModel(response, resolveListeners, handler);
+          flushCycleChecks(response);
+        }
       }
       break;
     case ERRORED:
@@ -465,62 +492,151 @@ function loadServerReference<A: Iterable<any>, T>(
 
   const serverReference: ServerReference<T> =
     resolveServerReference<$FlowFixMe>(response._bundlerConfig, id);
+  const bound = metaData.bound;
+  // Bound arguments that are one of our own chunks are read when that chunk
+  // has initialized. Anything else could be a foreign thenable whose `then`
+  // we must not call.
+  const boundChunk: null | SomeChunk<any> =
+    bound instanceof ReactPromise ? (bound as any) : null;
+
+  function bindServerReference(args: any): any {
+    let value = requireServerReference(response, serverReference) as any;
+    if (bound) {
+      const boundArgs: Array<any> = isArray(args) ? args.slice(0) : [];
+      if (boundArgs.length > MAX_BOUND_ARGS) {
+        throw new Error(
+          'Server Function has too many bound arguments. Received ' +
+            boundArgs.length +
+            ' but the limit is ' +
+            MAX_BOUND_ARGS +
+            '.',
+        );
+      }
+      boundArgs.unshift(null); // this
+      value = value.bind.apply(value, boundArgs);
+    }
+    return value;
+  }
+
   // We expect most servers to not really need this because you'd just have all
   // the relevant modules already loaded but it allows for lazy loading of code
   // if needed.
-  const bound = metaData.bound;
-  let serverReferencePromise: null | Thenable<any> =
-    preloadModule(serverReference);
-  if (!serverReferencePromise) {
-    if (bound instanceof ReactPromise) {
-      serverReferencePromise = Promise.resolve(bound);
+  const preloading: null | Thenable<any> = preloadModule(serverReference);
+  if (boundChunk === null) {
+    // The function's chunk initializes once the module has loaded, like a
+    // module chunk.
+    if (!preloading) {
+      try {
+        resolveServerReferenceChunk(
+          response,
+          blockedPromise,
+          bindServerReference(null),
+        );
+      } catch (error) {
+        triggerErrorOnChunk(response, blockedPromise, error);
+      }
     } else {
-      // Nothing to preload and no bound arguments to wait for, so we can
-      // resolve the reference synchronously.
-      const value = requireServerReference(response, serverReference) as any;
-      resolveServerReferenceChunk(response, blockedPromise, value);
-      return readServerReference(
-        response,
-        blockedPromise,
-        parentObject,
-        key,
-      ) as any;
+      preloading.then(
+        () => {
+          let value;
+          try {
+            value = bindServerReference(null);
+          } catch (error) {
+            triggerErrorOnChunk(response, blockedPromise, error);
+            return;
+          }
+          resolveServerReferenceChunk(response, blockedPromise, value);
+        },
+        error => {
+          triggerErrorOnChunk(response, blockedPromise, error);
+        },
+      );
     }
-  } else if (bound instanceof ReactPromise) {
-    serverReferencePromise = Promise.all([serverReferencePromise, bound]);
+    return readServerReference(
+      response,
+      blockedPromise,
+      parentObject,
+      key,
+    ) as any;
   }
 
-  function fulfill(): void {
-    let value;
-    try {
-      value = requireServerReference(response, serverReference) as any;
-      if (metaData.bound) {
-        // This promise is coming from us and should have initialized by now.
-        const promiseValue = (metaData.bound as any).value;
-        const boundArgs: Array<any> = isArray(promiseValue)
-          ? promiseValue.slice(0)
-          : [];
-        if (boundArgs.length > MAX_BOUND_ARGS) {
-          throw new Error(
-            'Server Function has too many bound arguments. Received ' +
-              boundArgs.length +
-              ' but the limit is ' +
-              MAX_BOUND_ARGS +
-              '.',
-          );
-        }
-        boundArgs.unshift(null); // this
-        value = value.bind.apply(value, boundArgs);
-      }
-    } catch (error) {
-      triggerErrorOnChunk(response, blockedPromise, error);
-      return;
-    }
-    resolveServerReferenceChunk(response, blockedPromise, value);
+  // The bound arguments are waited for like any reference into their chunk,
+  // so that the arguments chunk and the model holding the function wait for
+  // each other the way two models do, rather than through a Promise that no
+  // model can see. The function's chunk is the model the reference fills.
+  // While the module loads, the handler waits for it too and it is one more
+  // input the function is constructed from.
+  function bindBoundServerReference(_response: Response, args: any): any {
+    return bindServerReference(args);
   }
-  serverReferencePromise.then(fulfill, error => {
-    triggerErrorOnChunk(response, blockedPromise, error);
-  });
+  const chunk: SomeChunk<any> = boundChunk;
+  if (chunk.status === RESOLVED_MODEL) {
+    initializeModelChunk(chunk);
+  }
+  const handler = createInitializationHandler(1);
+  blockedOn(response, handler, blockedPromise);
+  const reference = createInitializationReference(
+    response,
+    handler,
+    chunk,
+    {'': null},
+    '',
+    null,
+    bindBoundServerReference,
+    EMPTY_REFERENCE_PATH,
+  );
+  if (preloading) {
+    const moduleChunk = createModuleChunk(response, preloading);
+    reference.pendingInputs++;
+    // Added directly to the listeners to run synchronously, and before the
+    // handler's own wait on the chunk, so that the function is constructed
+    // before the handler is released.
+    const onModuleLoaded = () => {
+      if (--reference.pendingInputs === 0 && reference.input !== null) {
+        try {
+          installReference(
+            response,
+            reference,
+            mapReference(response, reference),
+          );
+        } catch (error) {
+          rejectReference(response, handler, error);
+        }
+      }
+    };
+    if (moduleChunk.value === null) {
+      moduleChunk.value = [onModuleLoaded];
+    } else {
+      moduleChunk.value.push(onModuleLoaded);
+    }
+    waitForChunk(response, handler, moduleChunk);
+  }
+  switch (chunk.status) {
+    case INITIALIZED:
+      releaseReference(response, reference, chunk);
+      break;
+    case ERRORED:
+      rejectReference(response, handler, chunk.reason);
+      break;
+    case BLOCKED:
+    case PENDING:
+      addReferenceListener(chunk, reference);
+      fulfillReferenceIfParsed(response, reference);
+      break;
+  }
+  if ((blockedPromise as SomeChunk<any>).status === BLOCKED) {
+    // References to the function made while the arguments parsed, from
+    // models nested in that parse, can be followed now. The function's chunk
+    // then waits like a parsed model whose references are outstanding: the
+    // arguments can wait for the model that holds the function.
+    const listeners = blockedPromise.value;
+    if (listeners !== null) {
+      fulfillListenersFromModel(response, listeners, handler);
+    }
+    if (handler.deps > 0) {
+      queueCycleCheck(response, handler);
+    }
+  }
   return readServerReference(
     response,
     blockedPromise,
@@ -555,14 +671,7 @@ function resolveServerReferenceChunk<T>(
   chunk: BlockedChunk<T>,
   value: T,
 ): void {
-  const resolveListeners = chunk.value;
-  const initializedChunk: InitializedChunk<T> = chunk as any;
-  initializedChunk.status = INITIALIZED;
-  initializedChunk.value = value;
-  initializedChunk.reason = null;
-  if (resolveListeners !== null) {
-    wakeChunk(response, resolveListeners, value, initializedChunk);
-  }
+  initializeBlockedChunk(response, chunk, value, null);
 }
 
 function readServerReference<T>(
@@ -582,7 +691,7 @@ function readServerReference<T>(
         key,
         null,
         createModel,
-        [],
+        EMPTY_REFERENCE_PATH,
       );
     default:
       throw chunk.reason;
@@ -773,7 +882,9 @@ function bumpArrayCount(
 
 type InitializationReference = {
   handler: InitializationHandler,
-  parentObject: Object,
+  // The slot the reference fills. Null for a reference that fills nothing and
+  // only makes the handler wait for a chunk.
+  parentObject: null | Object,
   key: string,
   map: (
     response: Response,
@@ -783,6 +894,29 @@ type InitializationReference = {
   ) => any,
   path: Array<string>,
   arrayRoot: null | NestedArrayContext,
+  // The chunk the reference is queued on. The handler waits for it to
+  // initialize, and fails if it fails.
+  chunk: SomeChunk<any>,
+  // The collection reserved for the chunk this reference waits for, when it
+  // constructs a Set or Map. It already sits in the slot; the entries are
+  // copied in once they hold their values.
+  collection: null | Set<any> | Map<any, any>,
+  // Whether the chunk has initialized and the handler no longer counts the
+  // reference as outstanding.
+  released: boolean,
+  // Whether the slot holds its final value. That is known as soon as the
+  // referenced model has parsed and the path can be followed to the end,
+  // usually before the chunk initializes. Until then, `pathIndex` is where
+  // in `path` to continue from, and `listeners` are the references whose own
+  // paths lead through this slot and continue once it is filled.
+  fulfilled: boolean,
+  pathIndex: number,
+  listeners: null | Array<InitializationReference>,
+  // For a constructor, the value the path led to, while the slots of it that
+  // the constructor reads are still being filled, and how many objects it
+  // waits for.
+  input: any,
+  pendingInputs: number,
 };
 type InitializationHandler = {
   chunk: null | BlockedChunk<any>,
@@ -790,9 +924,62 @@ type InitializationHandler = {
   // TODO: Split type to make it impossible to treat a thrown value as NestedArrayContext.
   // thrown value if errored, otherwise array context
   reason: mixed | NestedArrayContext,
+  // Work outstanding before the chunk can initialize: the references that are
+  // not done, and other waits like a module loading.
   deps: number,
+  references: null | Array<InitializationReference>,
+  outstanding: number,
+  // The handlers this one waits on that wait on it in turn, once a check for
+  // them has run. Null until then.
+  cycle: null | BlockedCycle,
   errored: boolean,
 };
+// Handlers whose chunks wait on each other, directly or through other
+// handlers. A check that finds two cycles waiting on each other merges them,
+// and the one merged in points at the other through `merged`.
+type BlockedCycle = {
+  merged: null | BlockedCycle,
+  size: number,
+  handlers: Array<InitializationHandler>,
+  // The references still to be checked, and the one being waited for.
+  unchecked: Array<InitializationReference>,
+  waitingFor: null | InitializationReference,
+  checkQueued: boolean,
+  // The cycle's node in the forest of waits. See checkBlockedCycle.
+  pathParent: null | BlockedCycle,
+  pathLeft: null | BlockedCycle,
+  pathRight: null | BlockedCycle,
+};
+
+const EMPTY_REFERENCE_PATH: Array<string> = [];
+
+function createInitializationHandler(deps: number): InitializationHandler {
+  return {
+    chunk: null,
+    value: null,
+    reason: null,
+    deps,
+    references: null,
+    outstanding: 0,
+    cycle: null,
+    errored: false,
+  };
+}
+
+function createErroredInitializationHandler(
+  reason: mixed,
+): InitializationHandler {
+  return {
+    chunk: null,
+    value: null,
+    reason,
+    deps: 0,
+    references: null,
+    outstanding: 0,
+    cycle: null,
+    errored: true,
+  };
+}
 let initializingHandler: null | InitializationHandler = null;
 
 function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
@@ -801,7 +988,7 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
 
   const {[RESPONSE_SYMBOL]: response, id} = chunk.reason;
 
-  const rootReference = id === -1 ? undefined : id.toString(16);
+  const rootReferenceId = id === -1 ? undefined : id.toString(16);
 
   const resolvedModel = chunk.value;
 
@@ -827,48 +1014,52 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
       {'': rawModel},
       '',
       rawModel,
-      rootReference,
+      rootReferenceId,
       arrayRoot,
     );
 
-    // Invoke any listeners added while resolving this model. I.e. cyclic
-    // references. This may or may not fully resolve the model depending on
-    // if they were blocked.
-    const resolveListeners = cyclicChunk.value;
-    if (resolveListeners !== null) {
-      cyclicChunk.value = null;
-      cyclicChunk.reason = null;
-      for (let i = 0; i < resolveListeners.length; i++) {
-        const listener = resolveListeners[i];
-        if (typeof listener === 'function') {
-          listener(value);
-        } else {
-          fulfillReference(response, listener, value, arrayRoot);
-        }
+    const handler = initializingHandler;
+    if (handler !== null) {
+      if (handler.errored) {
+        // The handler errored during the parse, so `cyclicChunk` errors with
+        // the same reason. `triggerErrorOnChunk` also rejects the references
+        // that nested parses queued on `cyclicChunk` during the parse. No
+        // value will arrive for them.
+        triggerErrorOnChunk(response, cyclicChunk, handler.reason);
+        return;
       }
-    }
-    if (initializingHandler !== null) {
-      if (initializingHandler.errored) {
-        throw initializingHandler.reason;
+      handler.value = value;
+      handler.reason = arrayRoot;
+      blockedOn(response, handler, cyclicChunk);
+      // References into this model made while it parsed, from models parsed
+      // nested inside this parse, can be followed now. They stay queued on
+      // `cyclicChunk` until it initializes.
+      const listeners = cyclicChunk.value;
+      if (listeners !== null) {
+        fulfillListenersFromModel(response, listeners, handler);
       }
-      if (initializingHandler.deps > 0) {
-        // We discovered new dependencies on modules that are not yet resolved.
-        // We have to keep the BLOCKED state until they're resolved.
-        initializingHandler.value = value;
-        initializingHandler.reason = arrayRoot;
-        initializingHandler.chunk = cyclicChunk;
+      if ((cyclicChunk as any).status !== BLOCKED) {
+        // Following one of them failed and errored this chunk.
+        return;
+      }
+      if (handler.deps > 0) {
+        // The model references chunks that have not resolved yet.
+        // `cyclicChunk` stays BLOCKED until the last of them does, or until
+        // the chunks waiting on each other are found to be a closed set.
+        queueCycleCheck(response, handler);
         return;
       }
     }
-    const initializedChunk: InitializedChunk<T> = chunk as any;
-    initializedChunk.status = INITIALIZED;
-    initializedChunk.value = value;
-    initializedChunk.reason = arrayRoot;
+    initializeBlockedChunk(response, cyclicChunk, value, arrayRoot);
   } catch (error) {
     const erroredChunk: ErroredChunk<T> = chunk as any;
     erroredChunk.status = ERRORED;
     erroredChunk.reason = error;
   } finally {
+    if (prevHandler === null) {
+      // The outermost parse has ended.
+      flushCycleChecks(response);
+    }
     initializingHandler = prevHandler;
   }
 }
@@ -922,21 +1113,250 @@ function getChunk(response: Response, id: number): SomeChunk<any> {
   return chunk;
 }
 
+function createBlockedChunk<T>(response: Response): BlockedChunk<T> {
+  // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
+  return new ReactPromise(BLOCKED, null, null);
+}
+
+// A chunk that initializes, with no value, once the module has loaded, or
+// errors if the load fails.
+function createModuleChunk(
+  response: Response,
+  loading: Thenable<any>,
+): BlockedChunk<any> {
+  const chunk: BlockedChunk<any> = createBlockedChunk(response);
+  loading.then(
+    () => initializeBlockedChunk(response, chunk, null, null),
+    error => triggerErrorOnChunk(response, chunk, error),
+  );
+  return chunk;
+}
+
+function initializeBlockedChunk<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: InitializedChunk<T>['reason'],
+): void {
+  const resolveListeners = markChunkInitialized(response, chunk, value, reason);
+  if (resolveListeners !== null) {
+    wakeChunk(response, resolveListeners, value, chunk as any);
+  }
+}
+
+// Moves a blocked chunk to INITIALIZED and returns the listeners that were
+// waiting on it, for the caller to wake. A set of chunks that completes
+// together is marked in full before any of its listeners wakes, so that
+// none of them finds a chunk of the set still blocked.
+function markChunkInitialized<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: InitializedChunk<T>['reason'],
+): null | Array<InitializationReference | (T => mixed)> {
+  const resolveListeners = chunk.value;
+  const initializedChunk: InitializedChunk<T> = chunk as any;
+  initializedChunk.status = INITIALIZED;
+  initializedChunk.value = value;
+  initializedChunk.reason = reason;
+  return resolveListeners;
+}
+
+// Initializes the handler's chunk once the handler has no references left to
+// wait on. `handler.chunk` is null while the handler's model is still parsing.
+// `initializeModelChunk` handles that case when the parse ends.
+function initializeChunkIfUnblocked(
+  response: Response,
+  handler: InitializationHandler,
+): void {
+  if (handler.deps !== 0 || handler.errored) {
+    return;
+  }
+  const chunk = handler.chunk;
+  if (chunk === null) {
+    return;
+  }
+  // `BlockedChunk` is the chunk's type at the time the handler recorded it.
+  // The chunk can have errored since, or a cyclic reference can have completed
+  // it, so its status is read again here.
+  if ((chunk as SomeChunk<any>).status !== BLOCKED) {
+    return;
+  }
+  releaseHandler(response, handler);
+  initializeBlockedChunk(
+    response,
+    chunk,
+    handler.value,
+    // $FlowFixMe[incompatible-type] Assuming handler.errored is false.
+    handler.reason,
+  );
+}
+
+// The chunk a reference waits on has initialized. The reference's handler has
+// one less thing to wait for. The slot usually holds its value already; if
+// not, it is filled from the chunk's value now.
+function releaseReference(
+  response: Response,
+  reference: InitializationReference,
+  chunk: InitializedChunk<any>,
+): void {
+  if (reference.released) {
+    return;
+  }
+  response._fulfillingReferences++;
+  const handler = reference.handler;
+  reference.released = true;
+  handler.outstanding--;
+  if (!reference.fulfilled) {
+    if (reference.parentObject === null) {
+      installReference(response, reference, chunk.value);
+    } else if (reference.pathIndex === 0) {
+      fulfillReference(response, reference, chunk.value, 1, chunk.reason);
+    }
+  }
+  handler.deps--;
+  if (handler.deps === 0) {
+    initializeChunkIfUnblocked(response, handler);
+  } else {
+    const cycle = handler.cycle;
+    if (cycle !== null && getBlockedCycle(handler).waitingFor === reference) {
+      queueCycleCheck(response, handler);
+    }
+  }
+  response._fulfillingReferences--;
+}
+
+// Follows the references queued on a chunk into its model, which has parsed.
+function fulfillListenersFromModel(
+  response: Response,
+  listeners: Array<InitializationReference | (any => mixed)>,
+  handler: InitializationHandler,
+): void {
+  for (let i = 0; i < listeners.length; i++) {
+    const listener = listeners[i];
+    if (typeof listener !== 'function' && !listener.fulfilled) {
+      fulfillReferenceFromModel(response, listener, handler);
+    }
+  }
+}
+
+// Begins following the reference's path, if the referenced model has parsed.
+// Otherwise it is followed when the parse ends, or when the chunk initializes.
+function fulfillReferenceIfParsed(
+  response: Response,
+  reference: InitializationReference,
+): void {
+  const chunk = reference.chunk;
+  switch (chunk.status) {
+    case INITIALIZED:
+      fulfillReference(response, reference, chunk.value, 1, chunk.reason);
+      break;
+    case BLOCKED: {
+      const target = response._handlers.get(chunk);
+      if (target !== undefined) {
+        fulfillReferenceFromModel(response, reference, target);
+      }
+      break;
+    }
+  }
+}
+
+// Follows the reference's path into a model that has parsed, from its root. A
+// reference that fills no slot lets the references waiting on it continue
+// into the value instead.
+function fulfillReferenceFromModel(
+  response: Response,
+  reference: InitializationReference,
+  target: InitializationHandler,
+): void {
+  const value = target.value;
+  if (value === null) {
+    // The model's root is itself a reference that is not filled yet.
+    const root = rootReference(target);
+    if (root === null) {
+      return;
+    }
+    if (reference.parentObject === null) {
+      const waiters = reference.listeners;
+      if (waiters !== null) {
+        reference.listeners = null;
+        for (let i = 0; i < waiters.length; i++) {
+          addSlotListener(root, waiters[i]);
+        }
+      }
+      reference.fulfilled = true;
+    } else {
+      reference.pathIndex = 1;
+      addSlotListener(root, reference);
+    }
+    return;
+  }
+  if (reference.parentObject === null) {
+    installReference(response, reference, value);
+  } else {
+    fulfillReference(
+      response,
+      reference,
+      value,
+      1,
+      // $FlowFixMe[incompatible-type] A handler in `_handlers` has not errored.
+      target.reason,
+    );
+  }
+}
+
+function rootReference(
+  handler: InitializationHandler,
+): null | InitializationReference {
+  const references = handler.references;
+  if (references !== null) {
+    for (let i = 0; i < references.length; i++) {
+      const reference = references[i];
+      if (
+        reference.key === '' &&
+        reference.parentObject !== null &&
+        !reference.fulfilled
+      ) {
+        return reference;
+      }
+    }
+  }
+  return null;
+}
+
+function addSlotListener(
+  slot: InitializationReference,
+  reference: InitializationReference,
+): void {
+  if (slot.listeners === null) {
+    slot.listeners = [reference];
+  } else {
+    slot.listeners.push(reference);
+  }
+}
+
+// Follows the reference's path from `value`, the value at `path[cursor - 1]`,
+// and fills the slot with what it leads to. The objects on the way are
+// parsed, but a slot on the way can be a placeholder for a reference that is
+// not filled yet, and then this one waits for that slot and continues from
+// it. `arrayRoot` is the array context `value` was revived in, for the array
+// size limit; the arrays of the selected value count against the model that
+// referenced it.
 function fulfillReference(
   response: Response,
   reference: InitializationReference,
   value: any,
+  index: number,
   arrayRoot: null | NestedArrayContext,
 ): void {
-  const {handler, parentObject, key, map, path} = reference;
-
-  let resolvedValue;
+  const handler = reference.handler;
+  const path = reference.path;
+  response._fulfillingReferences++;
   try {
     let localLength: number = 0;
     const rootArrayContexts = response._rootArrayContexts;
     const serverReferenceObjects = response._serverReferenceObjects;
-    for (let i = 1; i < path.length; i++) {
-      // The server doesn't have any lazy references so we don't expect to go through a Promise.
+    for (let i = index; i < path.length; i++) {
       const name = path[i];
       if (
         typeof value === 'object' &&
@@ -947,7 +1367,17 @@ function fulfillReference(
           getPrototypeOf(value) === ArrayPrototype) &&
         hasOwnProperty.call(value, name)
       ) {
-        value = value[name];
+        const slot = value[name];
+        if (slot === null) {
+          const slots = response._pendingSlots.get(value);
+          const pending = slots === undefined ? undefined : slots.get(name);
+          if (pending !== undefined) {
+            reference.pathIndex = i + 1;
+            addSlotListener(pending, reference);
+            return;
+          }
+        }
+        value = slot;
         if (isArray(value)) {
           localLength = 0;
           arrayRoot = rootArrayContexts.get(value) || arrayRoot;
@@ -977,8 +1407,6 @@ function fulfillReference(
       }
     }
 
-    resolvedValue = map(response, value, parentObject, key);
-
     // Add any array counts to the reference's array root. The value that we're
     // resolving might have deep nesting that we need to resolve.
     const referenceArrayRoot = reference.arrayRoot;
@@ -992,49 +1420,503 @@ function fulfillReference(
         bumpArrayCount(referenceArrayRoot, localLength, response);
       }
     }
+
+    if (reference.map !== createModel) {
+      // A constructor reads the slots of its input, which must be filled.
+      reference.input = value;
+      if (!waitForInputSlots(response, reference, value)) {
+        return;
+      }
+      value = mapReference(response, reference);
+    }
+    installReference(response, reference, value);
   } catch (error) {
     rejectReference(response, handler, error);
-    return;
+  } finally {
+    response._fulfillingReferences--;
   }
-
-  // There are no Elements or Debug Info to transfer here.
-
-  resolveReference(response, handler, parentObject, key, resolvedValue);
 }
 
-function resolveReference(
+// Makes the handler wait for a chunk, like a reference into that chunk, and
+// fail if it fails.
+function waitForChunk(
   response: Response,
   handler: InitializationHandler,
-  parentObject: Object,
-  key: string,
-  resolvedValue: mixed,
+  chunk: BlockedChunk<any> | PendingChunk<any>,
+): InitializationReference {
+  const wait = createInitializationReference(
+    response,
+    handler,
+    chunk,
+    null,
+    '',
+    null,
+    createModel,
+    EMPTY_REFERENCE_PATH,
+  );
+  handler.deps++;
+  addReferenceListener(chunk, wait);
+  return wait;
+}
+
+// Registers the constructor on each object whose slots it reads that still
+// has a slot to be filled. Returns whether there is none.
+function waitForInputSlots(
+  response: Response,
+  reference: InitializationReference,
+  input: any,
+): boolean {
+  if (typeof input !== 'object' || input === null) {
+    return true;
+  }
+  waitForObjectSlots(response, reference, input);
+  if (reference.map === createMap && isArray(input)) {
+    // Each entry is a pair whose key and value are read too.
+    for (let i = 0; i < input.length; i++) {
+      const entry = input[i];
+      if (typeof entry === 'object' && entry !== null) {
+        waitForObjectSlots(response, reference, entry);
+      }
+    }
+  }
+  return reference.pendingInputs === 0;
+}
+
+function waitForObjectSlots(
+  response: Response,
+  reference: InitializationReference,
+  object: Object,
 ): void {
-  if (key !== __PROTO__) {
-    parentObject[key] = resolvedValue;
+  if (!response._pendingSlots.has(object)) {
+    return;
+  }
+  reference.pendingInputs++;
+  const gates = response._pendingConstructors.get(object);
+  if (gates === undefined) {
+    response._pendingConstructors.set(object, [reference]);
+  } else {
+    gates.push(reference);
+  }
+}
+
+function mapReference(
+  response: Response,
+  reference: InitializationReference,
+): any {
+  const input = reference.input;
+  reference.input = null;
+  const collection = reference.collection;
+  if (collection !== null) {
+    return fillReservedCollection(response, collection, input);
+  }
+  return reference.map(
+    response,
+    input,
+    reference.parentObject as any,
+    reference.key,
+  );
+}
+
+// Writes the value into the slot the reference fills. The slot is final from
+// here on: the references whose paths lead through it continue, and a
+// constructor that reads the object it is in runs once the object has no
+// other slot to be filled.
+function installReference(
+  response: Response,
+  reference: InitializationReference,
+  value: any,
+): void {
+  const {handler, parentObject, key} = reference;
+  reference.fulfilled = true;
+  if (parentObject !== null) {
+    if (key !== __PROTO__) {
+      parentObject[key] = value;
+    }
+
+    // If this is the root object for a model reference, where `handler.value`
+    // is a stale `null`, the resolved value can be used directly.
+    if (key === '' && handler.value === null) {
+      handler.value = value;
+    }
+    markSlotFilled(response, parentObject, key);
   }
 
-  // If this is the root object for a model reference, where `handler.value`
-  // is a stale `null`, the resolved value can be used directly.
-  if (key === '' && handler.value === null) {
-    handler.value = resolvedValue;
+  const waiters = reference.listeners;
+  if (waiters !== null) {
+    reference.listeners = null;
+    for (let i = 0; i < waiters.length; i++) {
+      const waiter = waiters[i];
+      fulfillReference(
+        response,
+        waiter,
+        value,
+        waiter.pathIndex,
+        isArray(value) ? response._rootArrayContexts.get(value) || null : null,
+      );
+    }
   }
 
-  handler.deps--;
+  const cycle = handler.cycle;
+  if (cycle !== null && getBlockedCycle(handler).waitingFor === reference) {
+    queueCycleCheck(response, handler);
+  }
+}
 
-  if (handler.deps === 0) {
-    const chunk = handler.chunk;
-    if (chunk === null || chunk.status !== BLOCKED) {
+// The slot is no longer a placeholder. Once the object has none left, the
+// constructors that read it can run.
+function markSlotFilled(response: Response, object: Object, key: string): void {
+  const slots = response._pendingSlots.get(object);
+  if (slots === undefined || !slots.delete(key) || slots.size > 0) {
+    return;
+  }
+  response._pendingSlots.delete(object);
+  const gates = response._pendingConstructors.get(object);
+  if (gates === undefined) {
+    return;
+  }
+  response._pendingConstructors.delete(object);
+  for (let i = 0; i < gates.length; i++) {
+    const reference = gates[i];
+    if (--reference.pendingInputs === 0) {
+      try {
+        installReference(
+          response,
+          reference,
+          mapReference(response, reference),
+        );
+      } catch (error) {
+        rejectReference(response, reference.handler, error);
+      }
+    }
+  }
+}
+
+// Handlers whose chunks wait on each other can never initialize one by one:
+// each has a reference outstanding into another. They initialize together,
+// once every reference out of the cycle has been released and every slot in
+// it holds its value.
+//
+// A handler whose parse ended with references outstanding is checked: its
+// references are examined one at a time, and the first that leads to a chunk
+// that has not initialized is where it waits. When that chunk is a parsed
+// model with references outstanding of its own, the chunk's handler waits
+// somewhere too, and the references being waited for lead from handler to
+// handler. If they lead back here, these handlers wait on each other and
+// become one cycle, which goes on examining the references left; if not, the
+// handler waits, and is checked again when the reference it waits for is
+// released. A cycle with no reference left to wait for, and so one whose
+// references all lead into itself, has nothing else to wait for and
+// initializes.
+//
+// Each reference is examined once per cycle it is in. A cycle waits on one
+// reference at a time, so the waits form a forest, kept as a link-cut tree.
+// The cycle being checked has no wait while it is checked, so the waits from
+// another cycle lead back to it exactly when it is the root of that cycle's
+// tree. A wait that leads back is not recorded; the cycles merge instead, so
+// the forest has no loops. A recorded wait can be stale until the cycle is
+// checked again; at worst it leads to a cycle that has initialized, which is
+// a root.
+//
+// A check runs once the work that queued it is done: a chunk has woken all
+// its listeners, or a parse has ended. In the middle of that work a handler's
+// counts are in flux.
+function queueCycleCheck(
+  response: Response,
+  handler: InitializationHandler,
+): void {
+  const cycle = getBlockedCycle(handler);
+  if (!cycle.checkQueued) {
+    cycle.checkQueued = true;
+    response._queuedCycleChecks.push(cycle);
+  }
+}
+
+function flushCycleChecks(response: Response): void {
+  if (response._flushingCycleChecks || response._fulfillingReferences > 0) {
+    return;
+  }
+  response._flushingCycleChecks = true;
+  const queued = response._queuedCycleChecks;
+  // A check can queue more.
+  for (let i = 0; i < queued.length; i++) {
+    checkBlockedCycle(response, queued[i]);
+  }
+  queued.length = 0;
+  response._flushingCycleChecks = false;
+}
+
+// The cycle the handler is in, which starts out as the handler alone. A
+// handler is only given one once its parse has ended and its references are
+// all listed.
+function getBlockedCycle(handler: InitializationHandler): BlockedCycle {
+  let cycle: BlockedCycle;
+  if (handler.cycle === null) {
+    cycle = handler.cycle = {
+      merged: null,
+      size: 1,
+      handlers: [handler],
+      unchecked: handler.references === null ? [] : handler.references.slice(),
+      waitingFor: null,
+      checkQueued: false,
+      pathParent: null,
+      pathLeft: null,
+      pathRight: null,
+    };
+    return cycle;
+  }
+  cycle = handler.cycle;
+  while (cycle.merged !== null) {
+    cycle = cycle.merged;
+  }
+  handler.cycle = cycle;
+  return cycle;
+}
+
+function checkBlockedCycle(response: Response, queued: BlockedCycle): void {
+  queued.checkQueued = false;
+  let cycle = queued;
+  while (cycle.merged !== null) {
+    cycle = cycle.merged;
+  }
+  // The wait recorded by the last check is re-examined with the rest.
+  cutWait(cycle);
+  cycle.waitingFor = null;
+  const first = cycle.handlers[0];
+  if (
+    first.errored ||
+    first.chunk === null ||
+    (first.chunk as SomeChunk<any>).status !== BLOCKED
+  ) {
+    return;
+  }
+  let unchecked = cycle.unchecked;
+  while (unchecked.length > 0) {
+    const reference = unchecked[unchecked.length - 1];
+    if (reference.released) {
+      unchecked.pop();
+      continue;
+    }
+    if (!reference.fulfilled) {
+      // The slot is not filled yet. Checked again when it is.
+      cycle.waitingFor = reference;
       return;
     }
-    const resolveListeners = chunk.value;
-    const initializedChunk: InitializedChunk<any> = chunk as any;
-    initializedChunk.status = INITIALIZED;
-    initializedChunk.value = handler.value;
-    initializedChunk.reason =
-      // $FlowFixMe[incompatible-type] Assuming handler.errored is false.
-      handler.reason;
+    const chunk = reference.chunk;
+    if (chunk.status !== BLOCKED) {
+      // An entry still to arrive, or a chunk that has just completed or
+      // failed and is about to release or reject this reference, which
+      // checks again.
+      cycle.waitingFor = reference;
+      return;
+    }
+    const target = response._handlers.get(chunk);
+    if (target === undefined) {
+      // Still parsing, or a module that is loading.
+      cycle.waitingFor = reference;
+      return;
+    }
+    const other = getBlockedCycle(target);
+    if (other === cycle) {
+      unchecked.pop();
+      continue;
+    }
+    if (findWaitRoot(other) !== cycle) {
+      // The waits from `other` do not lead back here.
+      cycle.waitingFor = reference;
+      linkWait(cycle, other);
+      return;
+    }
+    // They do: these handlers all wait on each other, and are one cycle from
+    // here on. Every wait on the way is into a parsed, blocked chunk, since
+    // that is when a wait is recorded.
+    const chain: Array<BlockedCycle> = [];
+    let largest = cycle;
+    for (let current = other; current !== cycle; ) {
+      chain.push(current);
+      if (current.size > largest.size) {
+        largest = current;
+      }
+      const waitingFor: InitializationReference = current.waitingFor as any;
+      const next: InitializationHandler = response._handlers.get(
+        waitingFor.chunk,
+      ) as any;
+      current = getBlockedCycle(next);
+    }
+    // The waits around the loop are cut before any member is linked to the
+    // merged cycle, so that the forest never holds a loop.
+    for (let i = 0; i < chain.length; i++) {
+      cutWait(chain[i]);
+    }
+    if (largest !== cycle) {
+      mergeBlockedCycles(largest, cycle);
+      linkWait(cycle, largest);
+    }
+    for (let i = 0; i < chain.length; i++) {
+      const member = chain[i];
+      if (member !== largest) {
+        mergeBlockedCycles(largest, member);
+        linkWait(member, largest);
+      }
+    }
+    largest.waitingFor = null;
+    cycle = largest;
+    unchecked = cycle.unchecked;
+  }
+  // Nothing left to wait for, unless a handler has work outstanding that is
+  // not a reference, like a module that is loading. That work queues a check
+  // when it ends.
+  const handlers = cycle.handlers;
+  for (let i = 0; i < handlers.length; i++) {
+    const handler = handlers[i];
+    if (handler.deps > handler.outstanding) {
+      return;
+    }
+  }
+  initializeBlockedCycle(response, handlers);
+}
+
+// Link-cut tree over the cycles (Sleator and Tarjan). A cycle's parent is the
+// cycle its wait leads into; a merged cycle's parent is the cycle it merged
+// into. Each preferred path is a splay tree keyed by depth, and the root of a
+// splay tree keeps the path's parent in `pathParent`. No evert and no path
+// aggregates. Link, cut and finding the root are O(log n) amortized.
+function isPathRoot(x: BlockedCycle): boolean {
+  const parent = x.pathParent;
+  return parent === null || (parent.pathLeft !== x && parent.pathRight !== x);
+}
+
+function rotatePath(x: BlockedCycle): void {
+  const parent: BlockedCycle = x.pathParent as any;
+  const grandparent = parent.pathParent;
+  if (!isPathRoot(parent)) {
+    const g: BlockedCycle = grandparent as any;
+    if (g.pathLeft === parent) {
+      g.pathLeft = x;
+    } else {
+      g.pathRight = x;
+    }
+  }
+  x.pathParent = grandparent;
+  if (parent.pathLeft === x) {
+    parent.pathLeft = x.pathRight;
+    if (x.pathRight !== null) {
+      x.pathRight.pathParent = parent;
+    }
+    x.pathRight = parent;
+  } else {
+    parent.pathRight = x.pathLeft;
+    if (x.pathLeft !== null) {
+      x.pathLeft.pathParent = parent;
+    }
+    x.pathLeft = parent;
+  }
+  parent.pathParent = x;
+}
+
+function splayPath(x: BlockedCycle): void {
+  while (!isPathRoot(x)) {
+    const parent: BlockedCycle = x.pathParent as any;
+    if (!isPathRoot(parent)) {
+      const grandparent: BlockedCycle = parent.pathParent as any;
+      if ((grandparent.pathLeft === parent) === (parent.pathLeft === x)) {
+        rotatePath(parent);
+      } else {
+        rotatePath(x);
+      }
+    }
+    rotatePath(x);
+  }
+}
+
+// Makes the path from the root of x's tree to x one splay tree, with x at its
+// top and nothing below x on it.
+function accessPath(x: BlockedCycle): void {
+  let last = null;
+  for (let y: null | BlockedCycle = x; y !== null; y = y.pathParent) {
+    splayPath(y);
+    y.pathRight = last;
+    last = y;
+  }
+  splayPath(x);
+}
+
+function findWaitRoot(x: BlockedCycle): BlockedCycle {
+  accessPath(x);
+  let root = x;
+  while (root.pathLeft !== null) {
+    root = root.pathLeft;
+  }
+  splayPath(root);
+  return root;
+}
+
+// `child` is the root of its tree.
+function linkWait(child: BlockedCycle, parent: BlockedCycle): void {
+  accessPath(child);
+  child.pathParent = parent;
+}
+
+function cutWait(child: BlockedCycle): void {
+  accessPath(child);
+  const above = child.pathLeft;
+  if (above !== null) {
+    above.pathParent = null;
+    child.pathLeft = null;
+  }
+}
+
+function mergeBlockedCycles(into: BlockedCycle, other: BlockedCycle): void {
+  other.merged = into;
+  into.size += other.size;
+  const unchecked = into.unchecked;
+  const otherUnchecked = other.unchecked;
+  for (let i = 0; i < otherUnchecked.length; i++) {
+    unchecked.push(otherUnchecked[i]);
+  }
+  other.unchecked = [];
+  const handlers = into.handlers;
+  const otherHandlers = other.handlers;
+  for (let i = 0; i < otherHandlers.length; i++) {
+    handlers.push(otherHandlers[i]);
+  }
+  other.handlers = [];
+}
+
+// Every chunk of the cycle is marked initialized before any listener wakes:
+// a listener on one of them can read another through it.
+function initializeBlockedCycle(
+  response: Response,
+  handlers: Array<InitializationHandler>,
+): void {
+  const initialized: Array<InitializedChunk<any>> = [];
+  const listeners = [];
+  for (let i = 0; i < handlers.length; i++) {
+    const handler = handlers[i];
+    const chunk = handler.chunk;
+    if (
+      handler.errored ||
+      chunk === null ||
+      (chunk as SomeChunk<any>).status !== BLOCKED
+    ) {
+      continue;
+    }
+    releaseHandler(response, handler);
+    initialized.push(chunk as any);
+    listeners.push(
+      markChunkInitialized(
+        response,
+        chunk,
+        handler.value,
+        // $FlowFixMe[incompatible-type] Assuming handler.errored is false.
+        handler.reason,
+      ),
+    );
+  }
+  for (let i = 0; i < initialized.length; i++) {
+    const resolveListeners = listeners[i];
     if (resolveListeners !== null) {
-      wakeChunk(response, resolveListeners, handler.value, initializedChunk);
+      const chunk = initialized[i];
+      wakeChunk(response, resolveListeners, chunk.value, chunk);
     }
   }
 }
@@ -1057,6 +1939,7 @@ function rejectReference(
   if (chunk === null || chunk.status !== BLOCKED) {
     return;
   }
+  releaseHandler(response, handler);
   // There's no debug info to forward in this direction.
   triggerErrorOnChunk(response, chunk, error);
 }
@@ -1070,20 +1953,94 @@ function waitForReference<T>(
   map: (response: Response, model: any, parentObject: Object, key: string) => T,
   path: Array<string>,
 ): T {
+  const reference = createInitializationReference(
+    response,
+    addDependency(),
+    referencedChunk,
+    parentObject,
+    key,
+    arrayRoot,
+    map,
+    path,
+  );
+  addReferenceListener(referencedChunk, reference);
+
+  if ((map as any) === createSet || (map as any) === createMap) {
+    // The collection exists before its entries do, so that a reference to it
+    // from inside the entries, or from anywhere else before they arrive, is
+    // to the final object.
+    let collection = response._reservedCollections.get(referencedChunk);
+    if (collection === undefined) {
+      collection = (map as any) === createSet ? new Set() : new Map();
+      response._reservedCollections.set(referencedChunk, collection);
+    } else if ((map as any) === createSet && !(collection instanceof Set)) {
+      throw new Error('Invalid Set initializer.');
+    } else if ((map as any) === createMap && !(collection instanceof Map)) {
+      throw new Error('Invalid Map initializer.');
+    }
+    reference.collection = collection;
+    // The slot holds the collection already; only the entries are to come.
+    markSlotFilled(response, parentObject, key);
+    fulfillReferenceIfParsed(response, reference);
+    return collection as any;
+  }
+
+  fulfillReferenceIfParsed(response, reference);
+  if (reference.fulfilled && key !== __PROTO__) {
+    return parentObject[key];
+  }
+  // Return a place holder value for now.
+  return null as any;
+}
+
+// Records which chunk the handler initializes once its work is done, where
+// anything that walks what the chunks wait for can find it.
+function blockedOn(
+  response: Response,
+  handler: InitializationHandler,
+  chunk: BlockedChunk<any>,
+): void {
+  handler.chunk = chunk;
+  response._handlers.set(chunk, handler);
+}
+
+// The chunk no longer waits for references.
+function releaseHandler(
+  response: Response,
+  handler: InitializationHandler,
+): void {
+  const chunk = handler.chunk;
+  if (chunk !== null) {
+    response._handlers.delete(chunk);
+  }
+  handler.references = null;
+}
+
+// Counts one more outstanding dependency against the handler of the model
+// being initialized, creating the handler if the model has none yet.
+function addDependency(): InitializationHandler {
   let handler: InitializationHandler;
   if (initializingHandler) {
     handler = initializingHandler;
     handler.deps++;
   } else {
-    handler = initializingHandler = {
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
+    handler = initializingHandler = createInitializationHandler(1);
   }
+  return handler;
+}
 
+// Creates a reference that fills `parentObject[key]` once it resolves. It is
+// one of the handler's dependencies.
+function createInitializationReference<T>(
+  response: Response,
+  handler: InitializationHandler,
+  chunk: SomeChunk<any>,
+  parentObject: null | Object,
+  key: string,
+  arrayRoot: null | NestedArrayContext,
+  map: (response: Response, model: any, parentObject: Object, key: string) => T,
+  path: Array<string>,
+): InitializationReference {
   const reference: InitializationReference = {
     handler,
     parentObject,
@@ -1091,22 +2048,54 @@ function waitForReference<T>(
     map,
     path,
     arrayRoot,
+    chunk,
+    collection: null,
+    released: false,
+    fulfilled: false,
+    pathIndex: 0,
+    listeners: null,
+    input: null,
+    pendingInputs: 0,
   };
-
-  // Add "listener".
-  if (referencedChunk.value === null) {
-    referencedChunk.value = [reference];
+  if (handler.references === null) {
+    handler.references = [reference];
   } else {
-    referencedChunk.value.push(reference);
+    handler.references.push(reference);
   }
-  if (referencedChunk.reason === null) {
-    referencedChunk.reason = [reference];
-  } else {
-    referencedChunk.reason.push(reference);
+  handler.outstanding++;
+  if (handler.cycle !== null) {
+    // The handler's references are being checked already; this one joins
+    // the ones left to check.
+    getBlockedCycle(handler).unchecked.push(reference);
   }
+  if (parentObject !== null) {
+    let slots = response._pendingSlots.get(parentObject);
+    if (slots === undefined) {
+      slots = new Map();
+      response._pendingSlots.set(parentObject, slots);
+    }
+    slots.set(key, reference);
+  }
+  return reference;
+}
 
-  // Return a place holder value for now.
-  return null as any;
+// Queues the reference on a chunk that has not initialized yet. It is fulfilled
+// or rejected with the chunk.
+function addReferenceListener(
+  chunk: PendingChunk<any> | BlockedChunk<any>,
+  reference: InitializationReference,
+): void {
+  reference.chunk = chunk;
+  if (chunk.value === null) {
+    chunk.value = [reference];
+  } else {
+    chunk.value.push(reference);
+  }
+  if (chunk.reason === null) {
+    chunk.reason = [reference];
+  } else {
+    chunk.reason.push(reference);
+  }
 }
 
 function getOutlinedModel<T>(
@@ -1117,8 +2106,10 @@ function getOutlinedModel<T>(
   referenceArrayRoot: null | NestedArrayContext,
   map: (response: Response, model: any, parentObject: Object, key: string) => T,
 ): T {
-  const path = reference.split(':');
-  const id = parseInt(path[0], 16);
+  // parseInt stops at the ':' so we only need to split when there's a path.
+  const id = parseInt(reference, 16);
+  const path =
+    reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
   let chunk = getChunk(response, id);
   switch (chunk.status) {
     case RESOLVED_MODEL:
@@ -1191,7 +2182,21 @@ function getOutlinedModel<T>(
           throw new Error('Invalid reference.');
         }
       }
-      const chunkValue = map(response, value, parentObject, key);
+      let chunkValue;
+      const reservedCollection =
+        path.length === 0 &&
+        ((map as any) === createSet || (map as any) === createMap)
+          ? response._reservedCollections.get(chunk)
+          : undefined;
+      if (reservedCollection !== undefined) {
+        chunkValue = fillReservedCollection(
+          response,
+          reservedCollection,
+          value as any,
+        ) as any;
+      } else {
+        chunkValue = map(response, value, parentObject, key);
+      }
 
       // Add any array counts to the reference's array root. The value that we're
       // resolving might have deep nesting that we need to resolve.
@@ -1229,13 +2234,7 @@ function getOutlinedModel<T>(
         initializingHandler.value = null;
         initializingHandler.reason = chunk.reason;
       } else {
-        initializingHandler = {
-          chunk: null,
-          value: null,
-          reason: chunk.reason,
-          deps: 0,
-          errored: true,
-        };
+        initializingHandler = createErroredInitializationHandler(chunk.reason);
       }
       // Placeholder
       return null as any;
@@ -1262,36 +2261,56 @@ function createMap(
   response: Response,
   model: Array<[any, any]>,
 ): Map<any, any> {
-  if (!isArray(model) || isServerReferenceObject(response, model)) {
-    throw new Error('Invalid Map initializer.');
-  }
-  if ((model as any).$$consumed === true) {
-    throw new Error('Already initialized Map.');
-  }
-  // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
-  (model as any).$$consumed = true;
-  const map = new Map(model);
-  return map;
+  return fillReservedCollection(response, new Map(), model) as any;
 }
 
 function createSet(response: Response, model: Array<any>): Set<any> {
+  return fillReservedCollection(response, new Set(), model) as any;
+}
+
+// Copies the entries into the collection built from them. An initializer is
+// read by one collection only; every reference to the collection copies the
+// entries in, and after the first the copies find them there already.
+function fillReservedCollection(
+  response: Response,
+  collection: Set<any> | Map<any, any>,
+  model: Array<any>,
+): Set<any> | Map<any, any> {
   if (!isArray(model) || isServerReferenceObject(response, model)) {
-    throw new Error('Invalid Set initializer.');
+    if (collection instanceof Set) {
+      throw new Error('Invalid Set initializer.');
+    }
+    throw new Error('Invalid Map initializer.');
   }
-  if ((model as any).$$consumed === true) {
-    throw new Error('Already initialized Set.');
+  const consumedBy = (model as any).$$consumed;
+  if (consumedBy !== undefined) {
+    if (consumedBy === collection) {
+      return collection;
+    }
+    if (collection instanceof Set) {
+      throw new Error('Already initialized Set.');
+    }
+    throw new Error('Already initialized Map.');
   }
   // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
-  (model as any).$$consumed = true;
-  const set = new Set(model);
-  return set;
+  (model as any).$$consumed = collection;
+  if (collection instanceof Set) {
+    for (let i = 0; i < model.length; i++) {
+      collection.add(model[i]);
+    }
+  } else {
+    for (let i = 0; i < model.length; i++) {
+      collection.set(model[i][0], model[i][1]);
+    }
+  }
+  return collection;
 }
 
 function extractIterator(response: Response, model: Array<any>): Iterator<any> {
   if (!isArray(model) || isServerReferenceObject(response, model)) {
     throw new Error('Invalid Iterator initializer.');
   }
-  if ((model as any).$$consumed === true) {
+  if ((model as any).$$consumed !== undefined) {
     throw new Error('Already initialized Iterator.');
   }
   // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
@@ -1323,7 +2342,7 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
   parentObject: Object,
   parentKey: string,
   referenceArrayRoot: null | NestedArrayContext,
-): null {
+): T {
   const id = parseInt(reference.slice(2), 16);
   const prefix = response._prefix;
   const key = prefix + id;
@@ -1345,87 +2364,37 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
   const promise: Promise<ArrayBuffer> = backingEntry.arrayBuffer();
 
   // Since loading the buffer is an async operation we'll be blocking the parent
-  // chunk.
-
-  let handler: InitializationHandler;
-  if (initializingHandler) {
-    handler = initializingHandler;
-    handler.deps++;
-  } else {
-    handler = initializingHandler = {
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
-  }
-
-  function fulfill(buffer: ArrayBuffer): void {
-    try {
-      if (referenceArrayRoot !== null) {
-        bumpArrayCount(referenceArrayRoot, buffer.byteLength, response);
-      }
-
-      const resolvedValue: T =
-        constructor === ArrayBuffer
-          ? (buffer as any)
-          : (new constructor(buffer) as any);
-
-      if (key !== __PROTO__) {
-        parentObject[parentKey] = resolvedValue;
-      }
-
-      // If this is the root object for a model reference, where `handler.value`
-      // is a stale `null`, the resolved value can be used directly.
-      if (parentKey === '' && handler.value === null) {
-        handler.value = resolvedValue;
-      }
-    } catch (x) {
-      reject(x);
-      return;
-    }
-
-    handler.deps--;
-
-    if (handler.deps === 0) {
-      const chunk = handler.chunk;
-      if (chunk === null || chunk.status !== BLOCKED) {
+  // chunk. The buffer's bytes count against the array context of the model it
+  // is read into.
+  const chunk: BlockedChunk<T> = createBlockedChunk(response);
+  promise.then(
+    (buffer: ArrayBuffer) => {
+      let typedArray: T;
+      try {
+        if (referenceArrayRoot !== null) {
+          bumpArrayCount(referenceArrayRoot, buffer.byteLength, response);
+        }
+        typedArray =
+          constructor === ArrayBuffer
+            ? (buffer as any)
+            : (new constructor(buffer) as any);
+      } catch (error) {
+        triggerErrorOnChunk(response, chunk, error);
         return;
       }
-      const resolveListeners = chunk.value;
-      const initializedChunk: InitializedChunk<T> = chunk as any;
-      initializedChunk.status = INITIALIZED;
-      initializedChunk.value = handler.value;
-      // We don't keep an array count for this since it won't be referenced again.
-      // In fact, we don't really need to store this chunk at all.
-      initializedChunk.reason = null;
-      if (resolveListeners !== null) {
-        wakeChunk(response, resolveListeners, handler.value, initializedChunk);
-      }
-    }
-  }
-
-  function reject(error: mixed): void {
-    if (handler.errored) {
-      // We've already errored. We could instead build up an AggregateError
-      // but if there are multiple errors we just take the first one like
-      // Promise.all.
-      return;
-    }
-    handler.errored = true;
-    handler.value = null;
-    handler.reason = error;
-    const chunk = handler.chunk;
-    if (chunk === null || chunk.status !== BLOCKED) {
-      return;
-    }
-    triggerErrorOnChunk(response, chunk, error);
-  }
-
-  promise.then(fulfill, reject);
-
-  return null;
+      initializeBlockedChunk(response, chunk, typedArray, null);
+    },
+    error => triggerErrorOnChunk(response, chunk, error),
+  );
+  return waitForReference(
+    response,
+    chunk,
+    parentObject,
+    parentKey,
+    null,
+    createModel,
+    EMPTY_REFERENCE_PATH,
+  );
 }
 
 function resolveStream<T: ReadableStream | $AsyncIterable<any, any, void>>(
@@ -1802,7 +2771,8 @@ function parseModelString(
 
         // Use the special marker from the Client to distinguish keys that should
         // be consumed by referenced FormData.
-        const formPrefix = response._prefix + '_' + stringId + '_';
+        const formPrefix =
+          response._prefix + '_' + parseInt(stringId, 16) + '_';
         return consumeBackingEntries(response._formData, formPrefix);
       }
       case 'i': {
@@ -2053,6 +3023,13 @@ export function createResponse(
     _serverObjectReferenceCache: new WeakMap(),
     _rootArrayContexts: new WeakMap(),
     _arraySizeLimit: arraySizeLimit,
+    _handlers: new WeakMap(),
+    _reservedCollections: new WeakMap(),
+    _pendingSlots: new WeakMap(),
+    _pendingConstructors: new WeakMap(),
+    _queuedCycleChecks: [],
+    _flushingCycleChecks: false,
+    _fulfillingReferences: 0,
   };
   return response;
 }
