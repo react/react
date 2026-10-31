@@ -7,10 +7,13 @@
  * @flow
  */
 
+import LRU from 'lru-cache';
 import SourceMapConsumer from 'react-devtools-shared/src/hooks/SourceMapConsumer';
 
 import type {ReactFunctionLocation} from 'shared/ReactTypes';
 import type {FetchFileWithCaching} from 'react-devtools-shared/src/devtools/views/Components/FetchFileWithCachingContext';
+import type {SourceMapConsumerType} from 'react-devtools-shared/src/hooks/SourceMapConsumer';
+import type {LRUCache} from 'react-devtools-shared/src/frontend/types';
 
 const symbolicationCache: Map<
   string,
@@ -77,16 +80,35 @@ function fetchSourceMap(
   return fetchFileWithCaching(sourceMapURL).catch(() => null);
 }
 
-const SOURCE_MAP_ANNOTATION_PREFIX = 'sourceMappingURL=';
-export async function symbolicateSource(
+type ScriptSourceMap = {
+  consumer: SourceMapConsumerType,
+  sourceMapURL: string,
+};
+
+// A stack usually has many frames in the same file (e.g. a bundle of library
+// code), so fetch and parse each file's source map once rather than per frame.
+const scriptSourceMapCache: LRUCache<
+  string,
+  Promise<ScriptSourceMap | null>,
+> = new LRU({max: 50});
+
+function loadScriptSourceMapWithCache(
   fetchFileWithCaching: FetchFileWithCaching,
   sourceURL: string,
-  lineNumber: number, // 1-based
-  columnNumber: number, // 1-based
-): Promise<SourceMappedLocation | null> {
-  if (!sourceURL || sourceURL.startsWith('<anonymous')) {
-    return null;
+): Promise<ScriptSourceMap | null> {
+  let promise = scriptSourceMapCache.get(sourceURL);
+  if (promise === undefined) {
+    promise = loadScriptSourceMap(fetchFileWithCaching, sourceURL);
+    scriptSourceMapCache.set(sourceURL, promise);
   }
+  return promise;
+}
+
+const SOURCE_MAP_ANNOTATION_PREFIX = 'sourceMappingURL=';
+async function loadScriptSourceMap(
+  fetchFileWithCaching: FetchFileWithCaching,
+  sourceURL: string,
+): Promise<ScriptSourceMap | null> {
   const resource = await fetchFileWithCaching(sourceURL).catch(() => null);
   if (resource == null) {
     return null;
@@ -126,71 +148,96 @@ export async function symbolicateSource(
         fetchFileWithCaching,
         sourceMapURL,
       );
-      if (sourceMap != null) {
-        try {
-          const parsedSourceMap = JSON.parse(sourceMap);
-          const consumer = SourceMapConsumer(parsedSourceMap);
-          const functionName = ''; // TODO: Parse function name from sourceContent.
-          const {
-            sourceURL: possiblyURL,
-            line,
-            column: columnZeroBased,
-            ignored,
-          } = consumer.originalPositionFor({
-            lineNumber, // 1-based
-            columnNumber, // 1-based
-          });
-
-          const column = columnZeroBased + 1;
-
-          if (possiblyURL === null) {
-            return null;
-          }
-          try {
-            // sourceMapURL = https://react.dev/script.js.map
-            void new URL(possiblyURL); // test if it is a valid URL
-
-            return {
-              location: [functionName, possiblyURL, line, column],
-              ignored,
-            };
-          } catch (e) {
-            // This is not valid URL
-            if (
-              // sourceMapURL = /file
-              possiblyURL.startsWith('/') ||
-              // sourceMapURL = C:\\...
-              possiblyURL.slice(1).startsWith(':\\\\')
-            ) {
-              // This is an absolute path
-              return {
-                location: [functionName, possiblyURL, line, column],
-                ignored,
-              };
-            }
-
-            // This is a relative path
-            // possiblyURL = x.js.map, sourceMapURL = https://react.dev/script.js.map
-            // An inline (data:) source map has no location of its own, so like
-            // browsers do, resolve its sources against the script's URL.
-            // possiblyURL = App.tsx, sourceURL = https://react.dev/src/App.tsx
-            const absoluteSourcePath = new URL(
-              possiblyURL,
-              sourceMapURL.startsWith('data:') ? sourceURL : sourceMapURL,
-            ).toString();
-            return {
-              location: [functionName, absoluteSourcePath, line, column],
-              ignored,
-            };
-          }
-        } catch (e) {
-          return null;
-        }
+      if (sourceMap == null) {
+        return null;
       }
-
-      return null;
+      try {
+        return {
+          consumer: SourceMapConsumer(JSON.parse(sourceMap)),
+          sourceMapURL,
+        };
+      } catch (e) {
+        return null;
+      }
     }
   }
 
   return null;
+}
+
+export async function symbolicateSource(
+  fetchFileWithCaching: FetchFileWithCaching,
+  sourceURL: string,
+  lineNumber: number, // 1-based
+  columnNumber: number, // 1-based
+): Promise<SourceMappedLocation | null> {
+  if (!sourceURL || sourceURL.startsWith('<anonymous')) {
+    return null;
+  }
+  const scriptSourceMap = await loadScriptSourceMapWithCache(
+    fetchFileWithCaching,
+    sourceURL,
+  );
+  if (scriptSourceMap === null) {
+    return null;
+  }
+  const {consumer, sourceMapURL} = scriptSourceMap;
+
+  try {
+    const functionName = ''; // TODO: Parse function name from sourceContent.
+    const {
+      sourceURL: possiblyURL,
+      line,
+      column: columnZeroBased,
+      ignored,
+    } = consumer.originalPositionFor({
+      lineNumber, // 1-based
+      columnNumber, // 1-based
+    });
+
+    const column = columnZeroBased + 1;
+
+    if (possiblyURL === null) {
+      return null;
+    }
+    try {
+      // sourceMapURL = https://react.dev/script.js.map
+      void new URL(possiblyURL); // test if it is a valid URL
+
+      return {
+        location: [functionName, possiblyURL, line, column],
+        ignored,
+      };
+    } catch (e) {
+      // This is not valid URL
+      if (
+        // sourceMapURL = /file
+        possiblyURL.startsWith('/') ||
+        // sourceMapURL = C:\\...
+        possiblyURL.slice(1).startsWith(':\\\\')
+      ) {
+        // This is an absolute path
+        return {
+          location: [functionName, possiblyURL, line, column],
+          ignored,
+        };
+      }
+
+      // This is a relative path
+      // possiblyURL = x.js.map, sourceMapURL = https://react.dev/script.js.map
+      // An inline (data:) source map has no location of its own, so like
+      // browsers do, resolve its sources against the script's URL.
+      // possiblyURL = App.tsx, sourceURL = https://react.dev/src/App.tsx
+      const absoluteSourcePath = new URL(
+        possiblyURL,
+        sourceMapURL.startsWith('data:') ? sourceURL : sourceMapURL,
+      ).toString();
+      return {
+        location: [functionName, absoluteSourcePath, line, column],
+        ignored,
+      };
+    }
+  } catch (e) {
+    return null;
+  }
 }
