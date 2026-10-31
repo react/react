@@ -880,6 +880,11 @@ export function attach(
   // The unmount operations are already significantly smaller than mount operations though.
   // This is something to keep in mind for later.
   function updateComponentFilters(componentFilters: Array<ComponentFilter>) {
+    if (!isTrackingTree) {
+      applyComponentFilters(componentFilters, null);
+      return;
+    }
+
     if (isProfiling) {
       // Re-mounting a tree while profiling is in progress might break a lot of assumptions.
       // If necessary, we could support this- but it doesn't seem like a necessary use case.
@@ -1353,6 +1358,10 @@ export function attach(
   const pendingRealUnmountedIDs: Array<FiberInstance['id']> = [];
   const pendingRealUnmountedSuspenseIDs: Array<FiberInstance['id']> = [];
   const pendingSuspenderChanges: Set<FiberInstance['id']> = new Set();
+  // Diagnostics are captured as soon as the renderer attaches, but a frontend
+  // only needs the current tree. Start tracking operations when it connects or
+  // profiling starts, rather than retaining every earlier commit.
+  let isTrackingTree = false;
   let pendingOperationsQueue: Array<OperationsArray> | null = [];
   const pendingStringTable: Map<string, StringTableEntry> = new Map();
   let pendingStringTableLength: number = 0;
@@ -4963,6 +4972,8 @@ export function attach(
   }
 
   function flushInitialOperations() {
+    isTrackingTree = true;
+
     const localPendingOperationsQueue = pendingOperationsQueue;
 
     pendingOperationsQueue = null;
@@ -4977,45 +4988,52 @@ export function attach(
         hook.emit('operations', operations);
       });
     } else {
-      // Before the traversals, remember to start tracking
-      // our path in case we have selection to restore.
-      if (trackedPath !== null) {
-        mightBeOnTrackedPath = true;
-      }
-      // If we have not been profiling, then we can just walk the tree and build up its current state as-is.
-      hook.getFiberRoots(rendererID).forEach(root => {
-        const current = root.current;
-        const newRoot = createFiberInstance(current);
-        rootToFiberInstanceMap.set(root, newRoot);
-        idToDevToolsInstanceMap.set(newRoot.id, newRoot);
-        currentRoot = newRoot;
-        setRootPseudoKey(currentRoot.id, root.current);
-
-        // Handle multi-renderer edge-case where only some v16 renderers support profiling.
-        if (isProfiling && rootSupportsProfiling(root)) {
-          // If profiling is active, store commit time and duration.
-          // The frontend may request this information after profiling has stopped.
-          currentCommitProfilingMetadata = {
-            changeDescriptions: recordChangeDescriptions ? new Map() : null,
-            durations: [],
-            commitTime: getCurrentTime() - profilingStartTime,
-            maxActualDuration: 0,
-            priorityLevel: null,
-            updaters: null,
-            effectDuration: null,
-            passiveEffectDuration: null,
-          };
-        }
-
-        mountFiberRecursively(root.current, false);
-
-        flushPendingEvents(currentRoot);
-
-        currentRoot = null as any;
-      });
-
-      needsToFlushComponentLogs = false;
+      mountInitialRoots();
     }
+  }
+
+  function mountInitialRoots() {
+    // Before the traversals, remember to start tracking
+    // our path in case we have selection to restore.
+    if (trackedPath !== null) {
+      mightBeOnTrackedPath = true;
+    }
+    // If we have not been profiling, then we can just walk the tree and build up its current state as-is.
+    hook.getFiberRoots(rendererID).forEach(root => {
+      const current = root.current;
+      if (current.child === null) {
+        return;
+      }
+      const newRoot = createFiberInstance(current);
+      rootToFiberInstanceMap.set(root, newRoot);
+      idToDevToolsInstanceMap.set(newRoot.id, newRoot);
+      currentRoot = newRoot;
+      setRootPseudoKey(currentRoot.id, root.current);
+
+      // Handle multi-renderer edge-case where only some v16 renderers support profiling.
+      if (isProfiling && rootSupportsProfiling(root)) {
+        // If profiling is active, store commit time and duration.
+        // The frontend may request this information after profiling has stopped.
+        currentCommitProfilingMetadata = {
+          changeDescriptions: recordChangeDescriptions ? new Map() : null,
+          durations: [],
+          commitTime: getCurrentTime() - profilingStartTime,
+          maxActualDuration: 0,
+          priorityLevel: null,
+          updaters: null,
+          effectDuration: null,
+          passiveEffectDuration: null,
+        };
+      }
+
+      mountFiberRecursively(root.current, false);
+
+      flushPendingEvents(currentRoot);
+
+      currentRoot = null as any;
+    });
+
+    needsToFlushComponentLogs = false;
   }
 
   function handleCommitFiberUnmount(fiber: any) {
@@ -5024,6 +5042,10 @@ export function attach(
   }
 
   function handlePostCommitFiberRoot(root: FiberRoot) {
+    if (!isTrackingTree) {
+      return;
+    }
+
     if (isProfiling && rootSupportsProfiling(root)) {
       if (currentCommitProfilingMetadata !== null) {
         const {effectDuration, passiveEffectDuration} =
@@ -5056,6 +5078,10 @@ export function attach(
     root: FiberRoot,
     priorityLevel: void | number,
   ) {
+    if (!isTrackingTree) {
+      return;
+    }
+
     const nextFiber = root.current;
 
     let prevFiber: null | Fiber = null;
@@ -7346,6 +7372,12 @@ export function attach(
       return;
     }
 
+    if (!isTrackingTree) {
+      isTrackingTree = true;
+      // Queue a baseline for the frontend before recording profiling commits.
+      mountInitialRoots();
+    }
+
     recordChangeDescriptions = shouldRecordChangeDescriptions;
 
     // Capture initial values as of the time profiling starts.
@@ -7356,6 +7388,9 @@ export function attach(
     initialTreeBaseDurationsMap = new Map();
 
     hook.getFiberRoots(rendererID).forEach(root => {
+      if (root.current.child === null) {
+        return;
+      }
       const rootInstance = rootToFiberInstanceMap.get(root);
       if (rootInstance === undefined) {
         throw new Error(
