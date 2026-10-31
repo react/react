@@ -1417,6 +1417,28 @@ function updateReducerImpl<S, A>(
       }
 
       if (shouldSkipUpdate) {
+        // Preserve the pending priority even if the update is a no-op. The
+        // fiber's lanes also prevent subsequent dispatches from eagerly
+        // computing state from an unfinished render's lastRenderedState.
+        currentlyRenderingFiber.lanes = mergeLanes(
+          currentlyRenderingFiber.lanes,
+          updateLane,
+        );
+        markSkippedUpdateLanes(updateLane);
+
+        if (
+          !isHiddenUpdate &&
+          update.hasEagerState &&
+          newBaseQueueLast === null &&
+          is(update.eagerState, newState)
+        ) {
+          // This update is a no-op at the state we've reached in this render.
+          // With no earlier skipped updates, it won't need to be rebased.
+          // Retaining it would prevent render phase updates from updating the
+          // base state and could restore stale state in a subsequent render.
+          update = update.next;
+          continue;
+        }
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
         // update/state.
@@ -1435,14 +1457,6 @@ function updateReducerImpl<S, A>(
         } else {
           newBaseQueueLast = newBaseQueueLast.next = clone;
         }
-        // Update the remaining priority in the queue.
-        // TODO: Don't need to accumulate this. Instead, we can remove
-        // renderLanes from the original lanes.
-        currentlyRenderingFiber.lanes = mergeLanes(
-          currentlyRenderingFiber.lanes,
-          updateLane,
-        );
-        markSkippedUpdateLanes(updateLane);
       } else {
         // This update does have sufficient priority.
 
