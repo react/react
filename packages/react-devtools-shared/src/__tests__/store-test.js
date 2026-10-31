@@ -4157,4 +4157,158 @@ describe('Store', () => {
     styleID = agent.getIDForHostInstance(style).id;
     expect(store.containsElement(styleID)).toBe(true);
   });
+
+  // A root that renders false, an empty array, or an empty Fragment has no children.
+  // DevTools doesn't mount such roots, but React still reports them as mounted.
+  describe('roots without children', () => {
+    const {render: renderOther} = getVersionedRenderImplementation();
+
+    function Component() {
+      return null;
+    }
+
+    // Like closing and reopening the browser DevTools.
+    function connectNewStore() {
+      bridge.shutdown();
+
+      const Agent = require('react-devtools-shared/src/backend/agent').default;
+      const {initBackend} = require('react-devtools-shared/src/backend');
+      const Bridge = require('react-devtools-shared/src/bridge').default;
+      const Store = require('react-devtools-shared/src/devtools/store').default;
+
+      const listeners = [];
+      const nextBridge = new Bridge({
+        listen(callback) {
+          listeners.push(callback);
+          return () => {
+            const index = listeners.indexOf(callback);
+            if (index >= 0) {
+              listeners.splice(index, 1);
+            }
+          };
+        },
+        send(event, payload) {
+          listeners.forEach(callback => callback({event, payload}));
+        },
+      });
+      const nextStore = new Store(nextBridge);
+      initBackend(
+        global.__REACT_DEVTOOLS_GLOBAL_HOOK__,
+        new Agent(nextBridge),
+        global,
+      );
+      return nextStore;
+    }
+
+    // @reactVersion >= 18.0
+    it('are not mounted for a new Store', async () => {
+      await act(() => render(false));
+      expect(store).toMatchInlineSnapshot(``);
+
+      const nextStore = connectNewStore();
+      await act(() => {});
+      expect(nextStore).toMatchInlineSnapshot(``);
+
+      await act(() => render(<Component />));
+      expect(nextStore).toMatchInlineSnapshot(`
+        [root]
+            <Component>
+      `);
+    });
+
+    // @reactVersion >= 18.0
+    it('do not prevent changing component filters', async () => {
+      await act(() => render([]));
+      await act(() => renderOther(<Component />));
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+            <Component>
+      `);
+
+      await act(
+        () =>
+          (store.componentFilters = [createDisplayNameFilter('^Component$')]),
+      );
+      expect(store).toMatchInlineSnapshot(`[root]`);
+
+      await act(() => render(<Component />));
+      await act(() => (store.componentFilters = []));
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+            <Component>
+        [root]
+            <Component>
+      `);
+    });
+
+    // @reactVersion >= 18.0
+    it('do not prevent profiling', async () => {
+      await act(() => render(<React.Fragment />));
+      await act(() => renderOther(<Component />));
+
+      await act(() => store.profilerStore.startProfiling());
+      expect(store.profilerStore.isProfilingBasedOnUserInput).toBe(true);
+
+      await act(() => render(<Component />));
+      await act(() => store.profilerStore.stopProfiling());
+
+      const rootID = store.roots[1];
+      expect(
+        store.profilerStore.getDataForRoot(rootID).commitData,
+      ).toHaveLength(1);
+    });
+
+    // @reactVersion >= 18.0
+    it('do not prevent inspecting another root', async () => {
+      await act(() => render(<Component />));
+      await act(() => renderOther(false));
+
+      const rendererInterface =
+        global.__REACT_DEVTOOLS_GLOBAL_HOOK__.rendererInterfaces.get(
+          getRendererID(),
+        );
+      const inspectedRoot = rendererInterface.inspectElement(
+        1,
+        store.roots[0],
+        null,
+        true,
+      );
+      expect(inspectedRoot).toEqual(
+        expect.objectContaining({type: 'full-data'}),
+      );
+    });
+
+    function Logger() {
+      React.useEffect(() => () => console.error('test-only: cleanup'), []);
+      return null;
+    }
+
+    // @reactVersion >= 18.0
+    it('accept logs from passive effect cleanups while being unmounted', async () => {
+      await act(() => render(<Logger />));
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+            <Logger>
+      `);
+
+      withErrorsOrWarningsIgnored(['test-only:'], () => {
+        act(() => unmount());
+      });
+      expect(store).toMatchInlineSnapshot(``);
+    });
+
+    // @reactVersion >= 18.0
+    it('accept logs from passive effect cleanups while removing all children', async () => {
+      await act(() => render(<Logger />));
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+            <Logger>
+      `);
+
+      withErrorsOrWarningsIgnored(['test-only:'], () => {
+        act(() => render(false));
+      });
+      expect(store).toMatchInlineSnapshot(``);
+    });
+  });
 });
