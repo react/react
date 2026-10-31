@@ -17,7 +17,7 @@ export default defineConfig({
   bundle: true,
   format: 'cjs',
   platform: 'node',
-  target: 'es2015',
+  target: 'es2022',
   banner: {
     js: `/**
  * Copyright (c) Meta Platforms, Inc. and affiliates.
