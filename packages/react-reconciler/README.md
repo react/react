@@ -119,7 +119,7 @@ This method should mutate the `parentInstance` and add the child to its list of 
 
 This method happens **in the render phase**. It can mutate `parentInstance` and `child`, but it must not modify any other nodes. It's called while the tree is still being built up and not connected to the actual tree on the screen.
 
-#### `finalizeInitialChildren(instance, type, props, rootContainer, hostContext)`
+#### `finalizeInitialChildren(instance, type, props, hostContext)`
 
 In this method, you can perform some final mutations on the `instance`. Unlike with `createInstance`, by the time `finalizeInitialChildren` is called, all the initial children have already been added to the `instance`, but the instance itself has not yet been connected to the tree on the screen.
 
@@ -147,7 +147,7 @@ If you don't intend to use host context, you can return `null`.
 
 This method happens **in the render phase**. Do not mutate the tree from it.
 
-#### `getChildHostContext(parentHostContext, type, rootContainer)`
+#### `getChildHostContext(parentHostContext, type)`
 
 Host context lets you track some information about where you are in the tree so that it's available inside `createInstance` as the `hostContext` parameter. For example, the DOM renderer uses it to track whether it's inside an HTML or an SVG tree, because `createInstance` implementation needs to be different for them.
 
@@ -322,7 +322,7 @@ This method should mutate the `container` root node and remove all children from
 
 This method is called during render to determine if the Host Component type and props require some kind of loading process to complete before committing an update.
 
-#### `preloadInstance(type, props)`
+#### `preloadInstance(instance, type, props)`
 
 This method may be called during render if the Host Component type and props might suspend a commit. It can be used to initiate any work that might shorten the duration of a suspended commit.
 
@@ -330,11 +330,11 @@ This method may be called during render if the Host Component type and props mig
 
 This method is called just before the commit phase. Use it to set up any necessary state while any Host Components that might suspend this commit are evaluated to determine if the commit must be suspended.
 
-#### `suspendInstance(type, props)`
+#### `suspendInstance(suspendedState, instance, type, props)`
 
 This method is called after `startSuspendingCommit` for each Host Component that indicated it might suspend a commit.
 
-#### `waitForCommitToBeReady()`
+#### `waitForCommitToBeReady(suspendedState, timeoutOffset)`
 
 This method is called after all `suspendInstance` calls are complete.
 
