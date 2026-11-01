@@ -62,6 +62,7 @@ jobs:
       # --- Build & test ---
       - run: cargo check
       - run: cargo build
+      - run: cargo test --workspace
       - run: bash scripts/test-babel-ast.sh
       - run: bash scripts/test-rust-port.sh
       - run: yarn workspace snap run build

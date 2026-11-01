@@ -163,6 +163,26 @@ describe('utils', () => {
       );
     });
 
+    it('should keep specifiers literal when no argument is supplied', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%d %d', 1)).toEqual('1 %d');
+      expect(formatConsoleArgumentsToSingleString('%i %i', 1)).toEqual('1 %i');
+      expect(formatConsoleArgumentsToSingleString('%f %f', 1.5)).toEqual(
+        '1.5 %f',
+      );
+    });
+
+    it('should not consume arguments for escaped specifiers', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %%s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%%d %s', 'abc')).toEqual(
+        '%d abc',
+      );
+    });
+
     it('should gracefully handle Symbol types', () => {
       expect(
         formatConsoleArgumentsToSingleString(Symbol('a'), 'b', Symbol('c')),

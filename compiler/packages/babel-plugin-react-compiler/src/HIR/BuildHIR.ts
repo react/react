@@ -26,6 +26,7 @@ import {
   Case,
   Effect,
   GeneratedSource,
+  getSourceLocation,
   GotoVariant,
   HIRFunction,
   IfTerminal,
@@ -103,6 +104,7 @@ export function lower(
   }
   const params: Array<Place | SpreadPattern> = [];
   func.get('params').forEach(param => {
+    const loc = getSourceLocation(param.node);
     if (param.isIdentifier()) {
       const binding = builder.resolveIdentifier(param);
       if (binding.kind !== 'Identifier') {
@@ -124,7 +126,7 @@ export function lower(
         identifier: binding.identifier,
         effect: Effect.Unknown,
         reactive: false,
-        loc: param.node.loc ?? GeneratedSource,
+        loc,
       };
       params.push(place);
     } else if (
@@ -134,16 +136,16 @@ export function lower(
     ) {
       const place: Place = {
         kind: 'Identifier',
-        identifier: builder.makeTemporary(param.node.loc ?? GeneratedSource),
+        identifier: builder.makeTemporary(loc),
         effect: Effect.Unknown,
         reactive: false,
-        loc: param.node.loc ?? GeneratedSource,
+        loc,
       };
       promoteTemporary(place.identifier);
       params.push(place);
       lowerAssignment(
         builder,
-        param.node.loc ?? GeneratedSource,
+        loc,
         InstructionKind.Let,
         param,
         place,
@@ -152,10 +154,10 @@ export function lower(
     } else if (param.isRestElement()) {
       const place: Place = {
         kind: 'Identifier',
-        identifier: builder.makeTemporary(param.node.loc ?? GeneratedSource),
+        identifier: builder.makeTemporary(loc),
         effect: Effect.Unknown,
         reactive: false,
-        loc: param.node.loc ?? GeneratedSource,
+        loc,
       };
       params.push({
         kind: 'Spread',
@@ -163,7 +165,7 @@ export function lower(
       });
       lowerAssignment(
         builder,
-        param.node.loc ?? GeneratedSource,
+        loc,
         InstructionKind.Let,
         param.get('argument'),
         place,
@@ -243,6 +245,7 @@ export function lower(
   );
 
   const hirBody = builder.build();
+  const loc = getSourceLocation(func.node);
 
   return {
     id: validatedId,
@@ -250,12 +253,12 @@ export function lower(
     params,
     fnType: bindings == null ? env.fnType : 'Other',
     returnTypeAnnotation: null, // TODO: extract the actual return type node if present
-    returns: createTemporaryPlace(env, func.node.loc ?? GeneratedSource),
+    returns: createTemporaryPlace(env, loc),
     body: hirBody,
     context,
     generator: func.node.generator === true,
     async: func.node.async === true,
-    loc: func.node.loc ?? GeneratedSource,
+    loc,
     env,
     aliasingEffects: null,
     directives,
@@ -294,7 +297,7 @@ function lowerStatement(
         kind: 'throw',
         value,
         id: makeInstructionId(0),
-        loc: stmt.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmt.node),
       };
       builder.terminate(terminal, 'block');
       return;
@@ -318,7 +321,7 @@ function lowerStatement(
       const terminal: ReturnTerminal = {
         kind: 'return',
         returnVariant: 'Explicit',
-        loc: stmt.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmt.node),
         value,
         id: makeInstructionId(0),
         effects: null,
@@ -339,7 +342,7 @@ function lowerStatement(
           block: continuationBlock.id,
           variant: GotoVariant.Break,
           id: makeInstructionId(0),
-          loc: consequent.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(consequent.node),
         };
       });
       //  Block for the alternate (if the test is not truthy)
@@ -353,7 +356,7 @@ function lowerStatement(
             block: continuationBlock.id,
             variant: GotoVariant.Break,
             id: makeInstructionId(0),
-            loc: alternate.node?.loc ?? GeneratedSource,
+            loc: getSourceLocation(alternate.node),
           };
         });
       } else {
@@ -368,7 +371,7 @@ function lowerStatement(
         alternate: alternateBlock,
         fallthrough: continuationBlock.id,
         id: makeInstructionId(0),
-        loc: stmt.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmt.node),
       };
       builder.terminateWithContinuation(terminal, continuationBlock);
       return;
@@ -504,7 +507,7 @@ function lowerStatement(
             identifier: identifier.identifier,
             kind: 'Identifier',
             reactive: false,
-            loc: id.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(id.node),
           };
           lowerValueToTemporary(builder, {
             kind: 'DeclareContext',
@@ -512,7 +515,7 @@ function lowerStatement(
               kind,
               place,
             },
-            loc: id.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(id.node),
           });
           builder.environment.addHoistedIdentifier(binding.identifier);
         }
@@ -530,7 +533,7 @@ function lowerStatement(
           block,
           variant: GotoVariant.Break,
           id: makeInstructionId(0),
-          loc: stmt.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(stmt.node),
         },
         'block',
       );
@@ -545,7 +548,7 @@ function lowerStatement(
           block,
           variant: GotoVariant.Continue,
           id: makeInstructionId(0),
-          loc: stmt.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(stmt.node),
         },
         'block',
       );
@@ -568,14 +571,14 @@ function lowerStatement(
           lowerValueToTemporary(builder, {
             kind: 'Primitive',
             value: undefined,
-            loc: stmt.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(stmt.node),
           });
           return {
             kind: 'goto',
             block: testBlock.id,
             variant: GotoVariant.Break,
             id: makeInstructionId(0),
-            loc: stmt.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(stmt.node),
           };
         }
         if (!init.isVariableDeclaration()) {
@@ -597,7 +600,7 @@ function lowerStatement(
             block: testBlock.id,
             variant: GotoVariant.Break,
             id: makeInstructionId(0),
-            loc: init.node?.loc ?? GeneratedSource,
+            loc: getSourceLocation(init.node),
           };
         }
         lowerStatement(builder, init);
@@ -606,7 +609,7 @@ function lowerStatement(
           block: testBlock.id,
           variant: GotoVariant.Break,
           id: makeInstructionId(0),
-          loc: init.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(init.node),
         };
       });
 
@@ -620,7 +623,7 @@ function lowerStatement(
             block: testBlock.id,
             variant: GotoVariant.Break,
             id: makeInstructionId(0),
-            loc: update.node?.loc ?? GeneratedSource,
+            loc: getSourceLocation(update.node),
           };
         });
       }
@@ -638,7 +641,7 @@ function lowerStatement(
               block: updateBlock ?? testBlock.id,
               variant: GotoVariant.Continue,
               id: makeInstructionId(0),
-              loc: body.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(body.node),
             };
           },
         );
@@ -647,7 +650,7 @@ function lowerStatement(
       builder.terminateWithContinuation(
         {
           kind: 'for',
-          loc: stmtNode.loc ?? GeneratedSource,
+          loc: getSourceLocation(stmtNode),
           init: initBlock,
           test: testBlock.id,
           update: updateBlock,
@@ -675,13 +678,13 @@ function lowerStatement(
             test: lowerValueToTemporary(builder, {
               kind: 'Primitive',
               value: true,
-              loc: stmt.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(stmt.node),
             }),
             consequent: bodyBlock,
             alternate: continuationBlock.id,
             fallthrough: continuationBlock.id,
             id: makeInstructionId(0),
-            loc: stmt.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(stmt.node),
           },
           continuationBlock,
         );
@@ -697,7 +700,7 @@ function lowerStatement(
             alternate: continuationBlock.id,
             fallthrough: continuationBlock.id,
             id: makeInstructionId(0),
-            loc: stmt.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(stmt.node),
           },
           continuationBlock,
         );
@@ -724,7 +727,7 @@ function lowerStatement(
               block: conditionalBlock.id,
               variant: GotoVariant.Continue,
               id: makeInstructionId(0),
-              loc: body.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(body.node),
             };
           },
         );
@@ -733,7 +736,7 @@ function lowerStatement(
        * The code leading up to the loop must jump to the conditional block,
        * to evaluate whether to enter the loop or bypass to the continuation.
        */
-      const loc = stmt.node.loc ?? GeneratedSource;
+      const loc = getSourceLocation(stmt.node);
       builder.terminateWithContinuation(
         {
           kind: 'while',
@@ -753,7 +756,7 @@ function lowerStatement(
         alternate: continuationBlock.id,
         fallthrough: conditionalBlock.id,
         id: makeInstructionId(0),
-        loc: stmt.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmt.node),
       };
       //  Complete the conditional and continue with code after the loop
       builder.terminateWithContinuation(terminal, continuationBlock);
@@ -792,7 +795,7 @@ function lowerStatement(
               block: continuationBlock.id,
               variant: GotoVariant.Break,
               id: makeInstructionId(0),
-              loc: body.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(body.node),
             };
           });
           builder.terminateWithContinuation(
@@ -801,7 +804,7 @@ function lowerStatement(
               block,
               fallthrough: continuationBlock.id,
               id: makeInstructionId(0),
-              loc: stmt.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(stmt.node),
             },
             continuationBlock,
           );
@@ -856,7 +859,7 @@ function lowerStatement(
               block: fallthrough,
               variant: GotoVariant.Break,
               id: makeInstructionId(0),
-              loc: case_.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(case_.node),
             };
           });
         });
@@ -894,7 +897,7 @@ function lowerStatement(
           cases,
           fallthrough: continuationBlock.id,
           id: makeInstructionId(0),
-          loc: stmt.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(stmt.node),
         },
         continuationBlock,
       );
@@ -930,9 +933,16 @@ function lowerStatement(
         const init = declaration.get('init');
         if (hasNode(init)) {
           const value = lowerExpressionToTemporary(builder, init);
-          lowerAssignment(
+          /*
+           * The instruction emits the declaration statement; its value
+           * represents this declarator, independently of optimized operands.
+           */
+          lowerAssignmentAt(
             builder,
-            stmt.node.loc ?? GeneratedSource,
+            {
+              instructionLoc: getSourceLocation(stmt.node),
+              valueLoc: getSourceLocation(declaration.node),
+            },
             kind,
             id,
             value,
@@ -957,7 +967,7 @@ function lowerStatement(
               identifier: binding.identifier,
               kind: 'Identifier',
               reactive: false,
-              loc: id.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(id.node),
             };
             if (builder.isContextIdentifier(id)) {
               if (kind === InstructionKind.Const) {
@@ -984,7 +994,7 @@ function lowerStatement(
                   kind: InstructionKind.Let,
                   place,
                 },
-                loc: id.node.loc ?? GeneratedSource,
+                loc: getSourceLocation(id.node),
               });
             } else {
               const typeAnnotation = id.get('typeAnnotation');
@@ -1005,7 +1015,7 @@ function lowerStatement(
                   place,
                 },
                 type,
-                loc: id.node.loc ?? GeneratedSource,
+                loc: getSourceLocation(id.node),
               });
             }
           }
@@ -1049,7 +1059,7 @@ function lowerStatement(
               block: conditionalBlock.id,
               variant: GotoVariant.Continue,
               id: makeInstructionId(0),
-              loc: body.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(body.node),
             };
           },
         );
@@ -1058,7 +1068,7 @@ function lowerStatement(
        * Jump to the conditional block to evaluate whether to (re)enter the loop or exit to the
        * continuation block.
        */
-      const loc = stmt.node.loc ?? GeneratedSource;
+      const loc = getSourceLocation(stmt.node);
       builder.terminateWithContinuation(
         {
           kind: 'do-while',
@@ -1103,7 +1113,7 @@ function lowerStatement(
       );
       lowerAssignment(
         builder,
-        stmt.node.loc ?? GeneratedSource,
+        getSourceLocation(stmt.node),
         InstructionKind.Function,
         id,
         fn,
@@ -1139,12 +1149,12 @@ function lowerStatement(
             block: initBlock.id,
             variant: GotoVariant.Continue,
             id: makeInstructionId(0),
-            loc: body.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(body.node),
           };
         });
       });
 
-      const loc = stmt.node.loc ?? GeneratedSource;
+      const loc = getSourceLocation(stmt.node);
       const value = lowerExpressionToTemporary(builder, stmt.get('right'));
       builder.terminateWithContinuation(
         {
@@ -1175,13 +1185,13 @@ function lowerStatement(
           kind: 'goto',
           block: testBlock.id,
           variant: GotoVariant.Break,
-          loc: stmt.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(stmt.node),
         },
         testBlock,
       );
 
       const left = stmt.get('left');
-      const leftLoc = left.node.loc ?? GeneratedSource;
+      const leftLoc = getSourceLocation(left.node);
       let test: Place;
       const advanceIterator = lowerValueToTemporary(builder, {
         kind: 'IteratorNext',
@@ -1227,7 +1237,7 @@ function lowerStatement(
           test,
           consequent: loopBlock,
           alternate: continuationBlock.id,
-          loc: stmt.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(stmt.node),
           fallthrough: continuationBlock.id,
         },
         continuationBlock,
@@ -1248,12 +1258,12 @@ function lowerStatement(
             block: initBlock.id,
             variant: GotoVariant.Continue,
             id: makeInstructionId(0),
-            loc: body.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(body.node),
           };
         });
       });
 
-      const loc = stmt.node.loc ?? GeneratedSource;
+      const loc = getSourceLocation(stmt.node);
       const value = lowerExpressionToTemporary(builder, stmt.get('right'));
       builder.terminateWithContinuation(
         {
@@ -1273,7 +1283,7 @@ function lowerStatement(
        * instructions when we handle other syntax like Patterns)
        */
       const left = stmt.get('left');
-      const leftLoc = left.node.loc ?? GeneratedSource;
+      const leftLoc = getSourceLocation(left.node);
       let test: Place;
       const nextPropertyTemp = lowerValueToTemporary(builder, {
         kind: 'NextPropertyOf',
@@ -1319,7 +1329,7 @@ function lowerStatement(
           consequent: loopBlock,
           alternate: continuationBlock.id,
           fallthrough: continuationBlock.id,
-          loc: stmt.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(stmt.node),
         },
         continuationBlock,
       );
@@ -1327,7 +1337,7 @@ function lowerStatement(
     }
     case 'DebuggerStatement': {
       const stmt = stmtPath as NodePath<t.DebuggerStatement>;
-      const loc = stmt.node.loc ?? GeneratedSource;
+      const loc = getSourceLocation(stmt.node);
       builder.push({
         id: makeInstructionId(0),
         lvalue: buildTemporaryPlace(builder, loc),
@@ -1379,11 +1389,11 @@ function lowerStatement(
         const place: Place = {
           kind: 'Identifier',
           identifier: builder.makeTemporary(
-            handlerBindingPath.node.loc ?? GeneratedSource,
+            getSourceLocation(handlerBindingPath.node),
           ),
           effect: Effect.Unknown,
           reactive: false,
-          loc: handlerBindingPath.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(handlerBindingPath.node),
         };
         promoteTemporary(place.identifier);
         lowerValueToTemporary(builder, {
@@ -1393,7 +1403,7 @@ function lowerStatement(
             place: {...place},
           },
           type: null,
-          loc: handlerBindingPath.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(handlerBindingPath.node),
         });
 
         handlerBinding = {
@@ -1406,7 +1416,7 @@ function lowerStatement(
         if (handlerBinding !== null) {
           lowerAssignment(
             builder,
-            handlerBinding.path.node.loc ?? GeneratedSource,
+            getSourceLocation(handlerBinding.path.node),
             InstructionKind.Catch,
             handlerBinding.path,
             {...handlerBinding.place},
@@ -1419,7 +1429,7 @@ function lowerStatement(
           block: continuationBlock.id,
           variant: GotoVariant.Break,
           id: makeInstructionId(0),
-          loc: handlerPath.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(handlerPath.node),
         };
       });
 
@@ -1433,7 +1443,7 @@ function lowerStatement(
           block: continuationBlock.id,
           variant: GotoVariant.Try,
           id: makeInstructionId(0),
-          loc: block.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(block.node),
         };
       });
 
@@ -1446,7 +1456,7 @@ function lowerStatement(
           handler,
           fallthrough: continuationBlock.id,
           id: makeInstructionId(0),
-          loc: stmt.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(stmt.node),
         },
         continuationBlock,
       );
@@ -1465,7 +1475,7 @@ function lowerStatement(
       );
       lowerValueToTemporary(builder, {
         kind: 'UnsupportedNode',
-        loc: stmtPath.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmtPath.node),
         node: stmtPath.node,
       });
       return;
@@ -1487,7 +1497,7 @@ function lowerStatement(
       );
       lowerValueToTemporary(builder, {
         kind: 'UnsupportedNode',
-        loc: stmtPath.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmtPath.node),
         node: stmtPath.node,
       });
       return;
@@ -1496,7 +1506,7 @@ function lowerStatement(
     case 'TSEnumDeclaration': {
       lowerValueToTemporary(builder, {
         kind: 'UnsupportedNode',
-        loc: stmtPath.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmtPath.node),
         node: stmtPath.node,
       });
       return;
@@ -1518,7 +1528,7 @@ function lowerStatement(
       );
       lowerValueToTemporary(builder, {
         kind: 'UnsupportedNode',
-        loc: stmtPath.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmtPath.node),
         node: stmtPath.node,
       });
       return;
@@ -1535,7 +1545,7 @@ function lowerStatement(
       );
       lowerValueToTemporary(builder, {
         kind: 'UnsupportedNode',
-        loc: stmtPath.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(stmtPath.node),
         node: stmtPath.node,
       });
       return;
@@ -1575,7 +1585,7 @@ function lowerObjectMethod(
   builder: HIRBuilder,
   property: NodePath<t.ObjectMethod>,
 ): InstructionValue {
-  const loc = property.node.loc ?? GeneratedSource;
+  const loc = getSourceLocation(property.node);
   const loweredFunc = lowerFunction(builder, property);
 
   return {
@@ -1629,11 +1639,11 @@ function lowerExpression(
   exprPath: NodePath<t.Expression>,
 ): InstructionValue {
   const exprNode = exprPath.node;
-  const exprLoc = exprNode.loc ?? GeneratedSource;
+  const exprLoc = getSourceLocation(exprNode);
   switch (exprNode.type) {
     case 'Identifier': {
       const expr = exprPath as NodePath<t.Identifier>;
-      const place = lowerIdentifier(builder, expr);
+      const place = lowerIdentifier(builder, expr, exprLoc);
       return {
         kind: getLoadKind(builder, expr),
         place,
@@ -1802,7 +1812,7 @@ function lowerExpression(
     }
     case 'OptionalCallExpression': {
       const expr = exprPath as NodePath<t.OptionalCallExpression>;
-      return lowerOptionalCallExpression(builder, expr, null);
+      return lowerOptionalCallExpression(builder, expr, null, exprLoc);
     }
     case 'CallExpression': {
       const expr = exprPath as NodePath<t.CallExpression>;
@@ -1878,7 +1888,6 @@ function lowerExpression(
     }
     case 'SequenceExpression': {
       const expr = exprPath as NodePath<t.SequenceExpression>;
-      const exprLoc = expr.node.loc ?? GeneratedSource;
 
       const continuationBlock = builder.reserve(builder.currentBlockKind());
       const place = buildTemporaryPlace(builder, exprLoc);
@@ -1929,7 +1938,6 @@ function lowerExpression(
     }
     case 'ConditionalExpression': {
       const expr = exprPath as NodePath<t.ConditionalExpression>;
-      const exprLoc = expr.node.loc ?? GeneratedSource;
 
       //  Block for code following the if
       const continuationBlock = builder.reserve(builder.currentBlockKind());
@@ -1952,7 +1960,7 @@ function lowerExpression(
           block: continuationBlock.id,
           variant: GotoVariant.Break,
           id: makeInstructionId(0),
-          loc: consequentPath.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(consequentPath.node),
         };
       });
       //  Block for the alternate (if the test is not truthy)
@@ -1971,7 +1979,7 @@ function lowerExpression(
           block: continuationBlock.id,
           variant: GotoVariant.Break,
           id: makeInstructionId(0),
-          loc: alternatePath.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(alternatePath.node),
         };
       });
 
@@ -2002,13 +2010,12 @@ function lowerExpression(
     }
     case 'LogicalExpression': {
       const expr = exprPath as NodePath<t.LogicalExpression>;
-      const exprLoc = expr.node.loc ?? GeneratedSource;
       const continuationBlock = builder.reserve(builder.currentBlockKind());
       const testBlock = builder.reserve('value');
       const place = buildTemporaryPlace(builder, exprLoc);
       const leftPlace = buildTemporaryPlace(
         builder,
-        expr.get('left').node.loc ?? GeneratedSource,
+        getSourceLocation(expr.get('left').node),
       );
       const consequent = builder.enter('value', () => {
         lowerValueToTemporary(builder, {
@@ -2089,7 +2096,7 @@ function lowerExpression(
         if (left.isLVal()) {
           return lowerAssignment(
             builder,
-            left.node.loc ?? GeneratedSource,
+            getSourceLocation(left.node),
             InstructionKind.Reassign,
             left,
             lowerExpressionToTemporary(builder, expr.get('right')),
@@ -2211,7 +2218,7 @@ function lowerExpression(
             operator: binaryOperator,
             left: {...previousValuePlace},
             right: lowerExpressionToTemporary(builder, expr.get('right')),
-            loc: leftExpr.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(leftExpr.node),
           });
 
           // Save the result back to the property
@@ -2221,7 +2228,7 @@ function lowerExpression(
               object: {...object},
               property: makePropertyLiteral(property),
               value: {...newValuePlace},
-              loc: leftExpr.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(leftExpr.node),
             };
           } else {
             return {
@@ -2229,7 +2236,7 @@ function lowerExpression(
               object: {...object},
               property: {...property},
               value: {...newValuePlace},
-              loc: leftExpr.node.loc ?? GeneratedSource,
+              loc: getSourceLocation(leftExpr.node),
             };
           }
         }
@@ -2248,21 +2255,26 @@ function lowerExpression(
     }
     case 'OptionalMemberExpression': {
       const expr = exprPath as NodePath<t.OptionalMemberExpression>;
-      const {value} = lowerOptionalMemberExpression(builder, expr, null);
+      const {value} = lowerOptionalMemberExpression(
+        builder,
+        expr,
+        null,
+        exprLoc,
+      );
       return {kind: 'LoadLocal', place: value, loc: value.loc};
     }
     case 'MemberExpression': {
       const expr = exprPath as NodePath<
         t.MemberExpression | t.OptionalMemberExpression
       >;
-      const {value} = lowerMemberExpression(builder, expr);
+      const {value} = lowerMemberExpression(builder, expr, null, exprLoc);
       const place = lowerValueToTemporary(builder, value);
       return {kind: 'LoadLocal', place, loc: place.loc};
     }
     case 'JSXElement': {
       const expr = exprPath as NodePath<t.JSXElement>;
       const opening = expr.get('openingElement');
-      const openingLoc = opening.node.loc ?? GeneratedSource;
+      const openingLoc = getSourceLocation(opening.node);
       const tag = lowerJsxElementName(builder, opening.get('name'));
       const props: Array<JsxAttribute> = [];
       for (const attribute of opening.get('attributes')) {
@@ -2316,7 +2328,7 @@ function lowerExpression(
           value = lowerValueToTemporary(builder, {
             kind: 'Primitive',
             value: true,
-            loc: attribute.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(attribute.node),
           });
         } else {
           if (!valueExpr.isJSXExpressionContainer()) {
@@ -2376,13 +2388,13 @@ function lowerExpression(
             if (path.node.namespace.name === tagName) {
               switch (path.node.name.name) {
                 case 'enum':
-                  fbtLocations.enum.push(path.node.loc ?? GeneratedSource);
+                  fbtLocations.enum.push(getSourceLocation(path.node));
                   break;
                 case 'plural':
-                  fbtLocations.plural.push(path.node.loc ?? GeneratedSource);
+                  fbtLocations.plural.push(getSourceLocation(path.node));
                   break;
                 case 'pronoun':
-                  fbtLocations.pronoun.push(path.node.loc ?? GeneratedSource);
+                  fbtLocations.pronoun.push(getSourceLocation(path.node));
                   break;
               }
             }
@@ -2426,7 +2438,7 @@ function lowerExpression(
         children: children.length === 0 ? null : children,
         loc: exprLoc,
         openingLoc: openingLoc,
-        closingLoc: expr.get('closingElement').node?.loc ?? GeneratedSource,
+        closingLoc: getSourceLocation(expr.get('closingElement').node),
       };
     }
     case 'JSXFragment': {
@@ -2658,7 +2670,7 @@ function lowerExpression(
             value: 1,
             loc: GeneratedSource,
           }),
-          loc: leftExpr.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(leftExpr.node),
         });
 
         // Save the result back to the property
@@ -2669,7 +2681,7 @@ function lowerExpression(
             object: {...object},
             property: makePropertyLiteral(property),
             value: {...updatedValue},
-            loc: leftExpr.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(leftExpr.node),
           });
         } else {
           newValuePlace = lowerValueToTemporary(builder, {
@@ -2677,7 +2689,7 @@ function lowerExpression(
             object: {...object},
             property: {...property},
             value: {...updatedValue},
-            loc: leftExpr.node.loc ?? GeneratedSource,
+            loc: getSourceLocation(leftExpr.node),
           });
         }
 
@@ -2702,7 +2714,7 @@ function lowerExpression(
       }
       const lvalue = lowerIdentifierForAssignment(
         builder,
-        argument.node.loc ?? GeneratedSource,
+        getSourceLocation(argument.node),
         InstructionKind.Reassign,
         argument,
       );
@@ -2759,7 +2771,7 @@ function lowerExpression(
         kind: 'RegExpLiteral',
         pattern: expr.node.pattern,
         flags: expr.node.flags,
-        loc: expr.node.loc ?? GeneratedSource,
+        loc: getSourceLocation(expr.node),
       };
     }
     case 'TSInstantiationExpression':
@@ -2777,7 +2789,7 @@ function lowerExpression(
           kind: 'MetaProperty',
           meta: expr.node.meta.name,
           property: expr.node.property.name,
-          loc: expr.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(expr.node),
         };
       }
 
@@ -2809,9 +2821,9 @@ function lowerOptionalMemberExpression(
   builder: HIRBuilder,
   expr: NodePath<t.OptionalMemberExpression>,
   parentAlternate: BlockId | null,
+  loc: SourceLocation = getSourceLocation(expr.node),
 ): {object: Place; value: Place} {
   const optional = expr.node.optional;
-  const loc = expr.node.loc ?? GeneratedSource;
   const place = buildTemporaryPlace(builder, loc);
   const continuationBlock = builder.reserve(builder.currentBlockKind());
   const consequent = builder.reserve('value');
@@ -2882,7 +2894,7 @@ function lowerOptionalMemberExpression(
    * the semantic of conditional evaluation depending on the callee
    */
   builder.enterReserved(consequent, () => {
-    const {value} = lowerMemberExpression(builder, expr, object);
+    const {value} = lowerMemberExpression(builder, expr, object, loc);
     const temp = lowerValueToTemporary(builder, value);
     lowerValueToTemporary(builder, {
       kind: 'StoreLocal',
@@ -2919,10 +2931,10 @@ function lowerOptionalCallExpression(
   builder: HIRBuilder,
   expr: NodePath<t.OptionalCallExpression>,
   parentAlternate: BlockId | null,
+  loc: SourceLocation = getSourceLocation(expr.node),
 ): InstructionValue {
   const optional = expr.node.optional;
   const calleePath = expr.get('callee');
-  const loc = expr.node.loc ?? GeneratedSource;
   const place = buildTemporaryPlace(builder, loc);
   const continuationBlock = builder.reserve(builder.currentBlockKind());
   const consequent = builder.reserve('value');
@@ -3330,9 +3342,9 @@ function lowerMemberExpression(
   builder: HIRBuilder,
   expr: NodePath<t.MemberExpression | t.OptionalMemberExpression>,
   loweredObject: Place | null = null,
+  exprLoc: SourceLocation = getSourceLocation(expr.node),
 ): LoweredMemberExpression {
   const exprNode = expr.node;
-  const exprLoc = exprNode.loc ?? GeneratedSource;
   const objectNode = expr.get('object');
   const propertyNode = expr.get('property');
   const object =
@@ -3404,7 +3416,7 @@ function lowerJsxElementName(
   >,
 ): Place | BuiltinTag {
   const exprNode = exprPath.node;
-  const exprLoc = exprNode.loc ?? GeneratedSource;
+  const exprLoc = getSourceLocation(exprNode);
   if (exprPath.isJSXIdentifier()) {
     const tag: string = exprPath.node.name;
     if (!tag.match(/^[a-z]/)) {
@@ -3465,7 +3477,7 @@ function lowerJsxMemberExpression(
   builder: HIRBuilder,
   exprPath: NodePath<t.JSXMemberExpression>,
 ): Place {
-  const loc = exprPath.node.loc ?? GeneratedSource;
+  const loc = getSourceLocation(exprPath.node);
   const object = exprPath.get('object');
   let objectPlace: Place;
   if (object.isJSXMemberExpression()) {
@@ -3480,7 +3492,7 @@ function lowerJsxMemberExpression(
     objectPlace = lowerValueToTemporary(builder, {
       kind: kind,
       place: lowerIdentifier(builder, object),
-      loc: exprPath.node.loc ?? GeneratedSource,
+      loc: getSourceLocation(exprPath.node),
     });
   }
   const property = exprPath.get('property').node.name;
@@ -3503,7 +3515,7 @@ function lowerJsxElement(
   >,
 ): Place | null {
   const exprNode = exprPath.node;
-  const exprLoc = exprNode.loc ?? GeneratedSource;
+  const exprLoc = getSourceLocation(exprNode);
   if (exprPath.isJSXElement() || exprPath.isJSXFragment()) {
     return lowerExpressionToTemporary(builder, exprPath);
   } else if (exprPath.isJSXExpressionContainer()) {
@@ -3626,7 +3638,7 @@ function lowerFunctionToValue(
   >,
 ): InstructionValue {
   const exprNode = expr.node;
-  const exprLoc = exprNode.loc ?? GeneratedSource;
+  const exprLoc = getSourceLocation(exprNode);
   const loweredFunc = lowerFunction(builder, expr);
   return {
     kind: 'FunctionExpression',
@@ -3680,17 +3692,18 @@ function lowerExpressionToTemporary(
 export function lowerValueToTemporary(
   builder: HIRBuilder,
   value: InstructionValue,
+  loc: SourceLocation = value.loc,
 ): Place {
   if (value.kind === 'LoadLocal' && value.place.identifier.name === null) {
     return value.place;
   }
-  const place: Place = buildTemporaryPlace(builder, value.loc);
+  const place: Place = buildTemporaryPlace(builder, loc);
   builder.push({
     id: makeInstructionId(0),
     lvalue: {...place},
     value: value,
     effects: null,
-    loc: value.loc,
+    loc,
   });
   return place;
 }
@@ -3698,9 +3711,8 @@ export function lowerValueToTemporary(
 function lowerIdentifier(
   builder: HIRBuilder,
   exprPath: NodePath<t.Identifier | t.JSXIdentifier>,
+  exprLoc: SourceLocation = getSourceLocation(exprPath.node),
 ): Place {
-  const exprNode = exprPath.node;
-  const exprLoc = exprNode.loc ?? GeneratedSource;
   const binding = builder.resolveIdentifier(exprPath);
   switch (binding.kind) {
     case 'Identifier': {
@@ -3824,6 +3836,11 @@ function lowerIdentifierForAssignment(
   return place;
 }
 
+type AssignmentSource = {
+  instructionLoc: SourceLocation;
+  valueLoc: SourceLocation;
+};
+
 function lowerAssignment(
   builder: HIRBuilder,
   loc: SourceLocation,
@@ -3832,6 +3849,25 @@ function lowerAssignment(
   value: Place,
   assignmentKind: 'Destructure' | 'Assignment',
 ): InstructionValue {
+  return lowerAssignmentAt(
+    builder,
+    {instructionLoc: loc, valueLoc: loc},
+    kind,
+    lvaluePath,
+    value,
+    assignmentKind,
+  );
+}
+
+function lowerAssignmentAt(
+  builder: HIRBuilder,
+  source: AssignmentSource,
+  kind: InstructionKind,
+  lvaluePath: NodePath<t.LVal>,
+  value: Place,
+  assignmentKind: 'Destructure' | 'Assignment',
+): InstructionValue {
+  const loc = source.instructionLoc;
   const lvalueNode = lvaluePath.node;
   switch (lvalueNode.type) {
     case 'Identifier': {
@@ -3840,7 +3876,7 @@ function lowerAssignment(
       if (place === null) {
         return {
           kind: 'UnsupportedNode',
-          loc: lvalue.node.loc ?? GeneratedSource,
+          loc: getSourceLocation(lvalue.node),
           node: lvalue.node,
         };
       } else if (place.kind === 'Global') {
@@ -3886,15 +3922,19 @@ function lowerAssignment(
           temporary = lowerValueToTemporary(builder, {
             kind: 'UnsupportedNode',
             node: lvalueNode,
-            loc: lvalueNode.loc ?? GeneratedSource,
+            loc: getSourceLocation(lvalueNode),
           });
         } else {
-          temporary = lowerValueToTemporary(builder, {
-            kind: 'StoreContext',
-            lvalue: {place: {...place}, kind},
-            value,
+          temporary = lowerValueToTemporary(
+            builder,
+            {
+              kind: 'StoreContext',
+              lvalue: {place: {...place}, kind},
+              value,
+              loc: source.valueLoc,
+            },
             loc,
-          });
+          );
         }
       } else {
         const typeAnnotation = lvalue.get('typeAnnotation');
@@ -3908,13 +3948,17 @@ function lowerAssignment(
         } else {
           type = null;
         }
-        temporary = lowerValueToTemporary(builder, {
-          kind: 'StoreLocal',
-          lvalue: {place: {...place}, kind},
-          value,
-          type,
+        temporary = lowerValueToTemporary(
+          builder,
+          {
+            kind: 'StoreLocal',
+            lvalue: {place: {...place}, kind},
+            value,
+            type,
+            loc: source.valueLoc,
+          },
           loc,
-        });
+        );
       }
       return {kind: 'LoadLocal', place: temporary, loc: temporary.loc};
     }
@@ -4021,7 +4065,7 @@ function lowerAssignment(
           ) {
             const identifier = lowerIdentifierForAssignment(
               builder,
-              element.node.loc ?? GeneratedSource,
+              getSourceLocation(element.node),
               kind,
               argument,
             );
@@ -4045,7 +4089,7 @@ function lowerAssignment(
           } else {
             const temp = buildTemporaryPlace(
               builder,
-              element.node.loc ?? GeneratedSource,
+              getSourceLocation(element.node),
             );
             promoteTemporary(temp.identifier);
             items.push({
@@ -4062,7 +4106,7 @@ function lowerAssignment(
         ) {
           const identifier = lowerIdentifierForAssignment(
             builder,
-            element.node.loc ?? GeneratedSource,
+            getSourceLocation(element.node),
             kind,
             element,
           );
@@ -4083,30 +4127,34 @@ function lowerAssignment(
         } else {
           const temp = buildTemporaryPlace(
             builder,
-            element.node.loc ?? GeneratedSource,
+            getSourceLocation(element.node),
           );
           promoteTemporary(temp.identifier);
           items.push({...temp});
           followups.push({place: temp, path: element as NodePath<t.LVal>}); // TODO remove type cast
         }
       }
-      const temporary = lowerValueToTemporary(builder, {
-        kind: 'Destructure',
-        lvalue: {
-          kind,
-          pattern: {
-            kind: 'ArrayPattern',
-            items,
-            loc: lvalue.node.loc ?? GeneratedSource,
+      const temporary = lowerValueToTemporary(
+        builder,
+        {
+          kind: 'Destructure',
+          lvalue: {
+            kind,
+            pattern: {
+              kind: 'ArrayPattern',
+              items,
+              loc: getSourceLocation(lvalue.node),
+            },
           },
+          value,
+          loc: source.valueLoc,
         },
-        value,
         loc,
-      });
+      );
       for (const {place, path} of followups) {
         lowerAssignment(
           builder,
-          path.node.loc ?? loc,
+          getSourceLocation(path.node, loc),
           kind,
           path,
           place,
@@ -4160,7 +4208,7 @@ function lowerAssignment(
           ) {
             const temp = buildTemporaryPlace(
               builder,
-              property.node.loc ?? GeneratedSource,
+              getSourceLocation(property.node),
             );
             promoteTemporary(temp.identifier);
             properties.push({
@@ -4171,7 +4219,7 @@ function lowerAssignment(
           } else {
             const identifier = lowerIdentifierForAssignment(
               builder,
-              property.node.loc ?? GeneratedSource,
+              getSourceLocation(property.node),
               kind,
               argument,
             );
@@ -4241,7 +4289,7 @@ function lowerAssignment(
           ) {
             const identifier = lowerIdentifierForAssignment(
               builder,
-              element.node.loc ?? GeneratedSource,
+              getSourceLocation(element.node),
               kind,
               element,
             );
@@ -4267,7 +4315,7 @@ function lowerAssignment(
           } else {
             const temp = buildTemporaryPlace(
               builder,
-              element.node.loc ?? GeneratedSource,
+              getSourceLocation(element.node),
             );
             promoteTemporary(temp.identifier);
             properties.push({
@@ -4280,23 +4328,27 @@ function lowerAssignment(
           }
         }
       }
-      const temporary = lowerValueToTemporary(builder, {
-        kind: 'Destructure',
-        lvalue: {
-          kind,
-          pattern: {
-            kind: 'ObjectPattern',
-            properties,
-            loc: lvalue.node.loc ?? GeneratedSource,
+      const temporary = lowerValueToTemporary(
+        builder,
+        {
+          kind: 'Destructure',
+          lvalue: {
+            kind,
+            pattern: {
+              kind: 'ObjectPattern',
+              properties,
+              loc: getSourceLocation(lvalue.node),
+            },
           },
+          value,
+          loc: source.valueLoc,
         },
-        value,
         loc,
-      });
+      );
       for (const {place, path} of followups) {
         lowerAssignment(
           builder,
-          path.node.loc ?? loc,
+          getSourceLocation(path.node, loc),
           kind,
           path,
           place,
@@ -4307,7 +4359,7 @@ function lowerAssignment(
     }
     case 'AssignmentPattern': {
       const lvalue = lvaluePath as NodePath<t.AssignmentPattern>;
-      const loc = lvalue.node.loc ?? GeneratedSource;
+      const loc = getSourceLocation(lvalue.node);
       const temp = buildTemporaryPlace(builder, loc);
 
       const testBlock = builder.reserve('value');
@@ -4490,7 +4542,9 @@ function gatherCapturedContext(
     ) {
       capturedIds.set(
         binding.identifier,
-        path.node.loc ?? binding.identifier.loc ?? GeneratedSource,
+        getSourceLocation(
+          path.node.loc != null ? path.node : binding.identifier,
+        ),
       );
     }
   }

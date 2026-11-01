@@ -386,12 +386,12 @@ function validateDependencies(
     if (
       manualMemoLoc != null &&
       typeof manualMemoLoc !== 'symbol' &&
-      manualMemoLoc.start.index != null &&
-      manualMemoLoc.end.index != null
+      manualMemoLoc.loc.start.index != null &&
+      manualMemoLoc.loc.end.index != null
     ) {
       suggestion = {
         description: 'Update dependencies',
-        range: [manualMemoLoc.start.index, manualMemoLoc.end.index],
+        range: [manualMemoLoc.loc.start.index, manualMemoLoc.loc.end.index],
         op: CompilerSuggestionOperation.Replace,
         text: `[${inferred
           .filter(
