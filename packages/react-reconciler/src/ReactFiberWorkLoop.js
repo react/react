@@ -3769,6 +3769,14 @@ function commitRoot(
     remainingLanes &= ~GestureLane;
   }
 
+  if (enableViewTransition) {
+    // Read the types for this commit before markRootFinished clears the lanes
+    // that no longer have pending work, including abandoned transitions.
+    pendingTransitionTypes = includesOnlyViewTransitionEligibleLanes(lanes)
+      ? claimQueuedTransitionTypes(root, getEntangledLanes(root, lanes))
+      : null;
+  }
+
   markRootFinished(
     root,
     lanes,
@@ -3790,11 +3798,8 @@ function commitRoot(
   if (enableViewTransition) {
     pendingViewTransitionEvents = null;
     if (includesOnlyViewTransitionEligibleLanes(lanes)) {
-      // Claim any pending Transition Types for this commit.
-      pendingTransitionTypes = claimQueuedTransitionTypes(root);
       passiveSubtreeMask = PassiveTransitionMask;
     } else {
-      pendingTransitionTypes = null;
       passiveSubtreeMask = PassiveMask;
     }
   } else {
