@@ -75,17 +75,12 @@ export function alignReactiveScopesToBlockScopesHIR(fn: HIRFunction): void {
   const activeScopes = new Set<ReactiveScope>();
   const seen = new Set<ReactiveScope>();
   const valueBlockNodes = new Map<BlockId, ValueBlockNode>();
-  const placeScopes = new Map<Place, ReactiveScope>();
 
   function recordPlace(
     id: InstructionId,
     place: Place,
     node: ValueBlockNode | null,
   ): void {
-    if (place.identifier.scope !== null) {
-      placeScopes.set(place, place.identifier.scope);
-    }
-
     const scope = getPlaceScope(id, place);
     if (scope == null) {
       return;

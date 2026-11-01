@@ -135,9 +135,7 @@ export function dispatchEvent(
     RawEventEmitter.emit('*', event);
 
     if (enableNativeEventTargetEventDispatching()) {
-      if (eventTarget != null) {
-        dispatchNativeEvent(eventTarget, topLevelType, nativeEvent);
-      }
+      dispatchNativeEvent(eventTarget, topLevelType, nativeEvent);
     } else {
       // Heritage plugin event system
       runExtractedPluginEventsInBatch(

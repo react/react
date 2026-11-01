@@ -73,6 +73,7 @@ type DevToolsInstance = {
   store: Store,
   render: (overrideTab?: TabID) => void,
   root: RootType,
+  isBackendInitialized: boolean,
 };
 
 function flushPendingBridgeMessages(): void {
@@ -186,7 +187,14 @@ function createBridge(): FrontendBridge {
   const sourcesPanel = chrome.devtools.panels.sources;
 
   const onBrowserElementSelectionChanged = () =>
-    setReactSelectionFromBrowser(bridge);
+    setReactSelectionFromBrowser(() => {
+      // The selection is checked asynchronously, so this Bridge could have been shut down
+      // in the meantime, for example when the inspected page navigated to another document.
+      if (devToolsInstance?.bridge === bridge) {
+        // Remember to sync the selection next time we show inspected element
+        bridge.send('syncSelectionFromBuiltinElementsPanel');
+      }
+    });
   const onBrowserSourceSelectionChanged = (location: {
     url: string,
     startLine: number,
@@ -330,7 +338,18 @@ function createDevToolsInstance(): DevToolsInstance {
     );
   };
 
-  return {bridge, store, render, root};
+  const instance: DevToolsInstance = {
+    bridge,
+    store,
+    render,
+    root,
+    isBackendInitialized: false,
+  };
+  bridge.addListener('extensionBackendInitialized', () => {
+    instance.isBackendInitialized = true;
+  });
+
+  return instance;
 }
 
 function ensureInitialHTMLIsCleared(
@@ -751,8 +770,33 @@ function onNavigatedToOtherPage() {
   debouncedMountReactDevToolsCallback();
 }
 
-// Cleanup previous page state and remount everything
-chrome.devtools.network.onNavigated.addListener(onNavigatedToOtherPage);
+function onNavigated() {
+  const instance = devToolsInstance;
+  if (instance === null || !instance.isBackendInitialized) {
+    // This DevTools instance is not connected to a backend yet, so there is no state to preserve
+    onNavigatedToOtherPage();
+    return;
+  }
+
+  // Chromium also emits onNavigated for same-document navigations, like the ones
+  // performed by client-side routers via the History API, see https://github.com/react/react/issues/37681
+  // The inspected document is not replaced in this case, so the backend that is connected
+  // to this DevTools instance is still alive and nothing should be remounted.
+  // Only the document with the running backend manager has this flag:
+  // it is removed when the backend manager shuts down, which also happens on pagehide.
+  evalInInspectedWindow(
+    'checkIfBackendManagerIsInjected',
+    [],
+    (isBackendManagerInjected, exceptionInfo) => {
+      if (exceptionInfo || isBackendManagerInjected !== true) {
+        onNavigatedToOtherPage();
+      }
+    },
+  );
+}
+
+// Cleanup previous page state and remount everything, if the inspected document was replaced
+chrome.devtools.network.onNavigated.addListener(onNavigated);
 
 // Should be emitted when browser DevTools are closed
 if (__IS_FIREFOX__) {

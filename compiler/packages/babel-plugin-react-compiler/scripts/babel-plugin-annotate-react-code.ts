@@ -96,7 +96,7 @@ export function isComponentDeclaration(
 
 /*
  * Adapted from the ESLint rule at
- * https://github.com/facebook/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js#L90-L103
+ * https://github.com/react/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js#L90-L103
  */
 function isComponentOrHookLike(
   node: NodePath<

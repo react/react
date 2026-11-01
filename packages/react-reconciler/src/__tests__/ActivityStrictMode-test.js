@@ -128,7 +128,7 @@ describe('Activity StrictMode', () => {
   });
 
   it('should not cause infinite render loop when StrictMode is used with Suspense and synchronous set states', async () => {
-    // This is a regression test, see https://github.com/facebook/react/pull/25179 for more details.
+    // This is a regression test, see https://github.com/react/react/pull/25179 for more details.
     function App() {
       const [state, setState] = React.useState(false);
 

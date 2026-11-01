@@ -111,7 +111,7 @@ function printWarning(level, format, args) {
     }); // Careful: RN currently depends on this prefix
 
     argsWithFormat.unshift('Warning: ' + format); // We intentionally don't use spread (or .apply) directly because it
-    // breaks IE9: https://github.com/facebook/react/issues/13610
+    // breaks IE9: https://github.com/react/react/issues/13610
     // eslint-disable-next-line react-internal/no-production-logging
 
     Function.prototype.apply.call(console[level], console, argsWithFormat);
@@ -253,7 +253,7 @@ function disableLogs() {
       prevError = console.error;
       prevGroup = console.group;
       prevGroupCollapsed = console.groupCollapsed;
-      prevGroupEnd = console.groupEnd; // https://github.com/facebook/react/issues/19099
+      prevGroupEnd = console.groupEnd; // https://github.com/react/react/issues/19099
 
       var props = {
         configurable: true,

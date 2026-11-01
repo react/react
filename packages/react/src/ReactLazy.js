@@ -16,8 +16,6 @@ import type {
   ReactIOInfo,
 } from 'shared/ReactTypes';
 
-import {enableAsyncDebugInfo} from 'shared/ReactFeatureFlags';
-
 import {REACT_LAZY_TYPE} from 'shared/ReactSymbols';
 
 import noop from 'shared/noop';
@@ -71,7 +69,7 @@ function lazyInitializer<T>(payload: Payload<T>): T {
   if (payload._status === Uninitialized) {
     let resolveDebugValue: (void | T) => void = null as any;
     let rejectDebugValue: mixed => void = null as any;
-    if (__DEV__ && enableAsyncDebugInfo) {
+    if (__DEV__) {
       const ioInfo = payload._ioInfo;
       if (ioInfo != null) {
         // Mark when we first kicked off the lazy request.
@@ -102,7 +100,7 @@ function lazyInitializer<T>(payload: Payload<T>): T {
           const resolved: ResolvedPayload<T> = payload as any;
           resolved._status = Resolved;
           resolved._result = moduleObject;
-          if (__DEV__ && enableAsyncDebugInfo) {
+          if (__DEV__) {
             const ioInfo = payload._ioInfo;
             if (ioInfo != null) {
               // Mark the end time of when we resolved.
@@ -140,7 +138,7 @@ function lazyInitializer<T>(payload: Payload<T>): T {
           const rejected: RejectedPayload = payload as any;
           rejected._status = Rejected;
           rejected._result = error;
-          if (__DEV__ && enableAsyncDebugInfo) {
+          if (__DEV__) {
             const ioInfo = payload._ioInfo;
             if (ioInfo != null) {
               // Mark the end time of when we rejected.
@@ -170,7 +168,7 @@ function lazyInitializer<T>(payload: Payload<T>): T {
         }
       },
     );
-    if (__DEV__ && enableAsyncDebugInfo) {
+    if (__DEV__) {
       const ioInfo = payload._ioInfo;
       if (ioInfo != null) {
         const displayName = thenable.displayName;
@@ -238,7 +236,7 @@ export function lazy<T>(
     _init: lazyInitializer,
   };
 
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // TODO: We should really track the owner here but currently ReactIOInfo
     // can only contain ReactComponentInfo and not a Fiber. It's unusual to
     // create a lazy inside an owner though since they should be in module scope.

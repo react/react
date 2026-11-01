@@ -62,7 +62,7 @@ function checkNodeLocation(
     // with the larger 0-based VariableDeclarator (e.g. [foo, setFoo] = useState())
     // so the ranges should always overlap.
     //
-    // For more info see https://github.com/facebook/react/pull/21833#discussion_r666831276
+    // For more info see https://github.com/react/react/pull/21833#discussion_r666831276
     column -= 1;
     if (
       (line === start.line && column < start.column) ||

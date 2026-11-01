@@ -113,7 +113,7 @@ describe('EnterLeaveEventPlugin', () => {
     expect(enterEvents[0].relatedTarget).toBe(iframe.contentWindow);
   });
 
-  // Regression test for https://github.com/facebook/react/issues/10906.
+  // Regression test for https://github.com/react/react/issues/10906.
   it('should find the common parent after updates', async () => {
     let parentEnterCalls = 0;
     let childEnterCalls = 0;
@@ -157,7 +157,7 @@ describe('EnterLeaveEventPlugin', () => {
     expect(parentEnterCalls).toBe(0);
   });
 
-  // Test for https://github.com/facebook/react/issues/16763.
+  // Test for https://github.com/react/react/issues/16763.
   // @gate !disableLegacyMode
   it('should call mouseEnter once from sibling rendered inside a rendered component in legacy roots', async () => {
     const mockFn = jest.fn();

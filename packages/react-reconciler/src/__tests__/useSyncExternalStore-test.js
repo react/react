@@ -352,7 +352,7 @@ describe('useSyncExternalStore', () => {
     },
   );
 
-  // Regression test for https://github.com/facebook/react/issues/27670
+  // Regression test for https://github.com/react/react/issues/27670
   it('detects store mutations from a layout effect while an Activity subtree is being revealed', async () => {
     const store = createExternalStore('revision:1');
 
@@ -413,7 +413,7 @@ describe('useSyncExternalStore', () => {
     expect(root).toMatchRenderedOutput('wrapper:2, revision:2');
   });
 
-  // Regression test for https://github.com/facebook/react/issues/27670
+  // Regression test for https://github.com/react/react/issues/27670
   it(
     'detects store mutations that happened while an Activity subtree was ' +
       'hidden, even if the subtree bails out of rendering when revealed',

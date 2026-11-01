@@ -1,3 +1,5 @@
+mod source_offsets;
+
 pub mod validate_context_variable_lvalues;
 pub mod validate_exhaustive_dependencies;
 pub mod validate_hooks_usage;

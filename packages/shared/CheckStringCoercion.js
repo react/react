@@ -9,7 +9,7 @@
 
 /*
  * The `'' + value` pattern (used in perf-sensitive code) throws for Symbol
- * and Temporal.* types. See https://github.com/facebook/react/pull/22064.
+ * and Temporal.* types. See https://github.com/react/react/pull/22064.
  *
  * The functions in this module will throw an easier-to-understand,
  * easier-to-debug exception with a clear errors message message explaining the

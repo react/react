@@ -43,7 +43,7 @@ describe('ReactError', () => {
   it('should error with minified error code', () => {
     expect(() => {
       ReactDOMClient.createRoot(null);
-    }).toThrowError(
+    }).toThrow(
       'Minified React error #200; visit ' +
         'https://react.dev/errors/200' +
         ' for the full message or use the non-minified dev environment' +

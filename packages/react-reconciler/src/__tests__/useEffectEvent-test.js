@@ -788,16 +788,8 @@ describe('useEffectEvent', () => {
         'Parent Insertion Create: A 2 1',
         'Parent Layout Cleanup: A 2 1',
         'Parent Layout Create: A 2 1',
-        ...(gate('enableViewTransition') &&
-        !gate('enableEffectEventMutationPhase')
-          ? [
-              'Child Insertion Destroy A 2 1 B 1 1 1',
-              'Child Insertion Create A 2 1 B 1 1 1',
-            ]
-          : [
-              'Child Insertion Destroy A 2 1 B 2 1 1',
-              'Child Insertion Create A 2 1 B 2 1 1',
-            ]),
+        'Child Insertion Destroy A 2 1 B 2 1 1',
+        'Child Insertion Create A 2 1 B 2 1 1',
       ]);
     });
 
@@ -811,16 +803,8 @@ describe('useEffectEvent', () => {
         'Parent Insertion Create: A 2 2',
         'Parent Layout Cleanup: A 2 2',
         'Parent Layout Create: A 2 2',
-        ...(gate('enableViewTransition') &&
-        !gate('enableEffectEventMutationPhase')
-          ? [
-              'Child Insertion Destroy A 2 2 B 1 1 1',
-              'Child Insertion Create A 2 2 B 1 1 1',
-            ]
-          : [
-              'Child Insertion Destroy A 2 2 B 2 2 1',
-              'Child Insertion Create A 2 2 B 2 2 1',
-            ]),
+        'Child Insertion Destroy A 2 2 B 2 2 1',
+        'Child Insertion Create A 2 2 B 2 2 1',
       ]);
     });
 
@@ -829,17 +813,10 @@ describe('useEffectEvent', () => {
     await act(async () => {
       setChildState(2);
 
-      await waitFor(
-        gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
-          ? [
-              'Child Insertion Destroy A 2 2 B 1 1 1',
-              'Child Insertion Create A 2 2 B 1 1 1',
-            ]
-          : [
-              'Child Insertion Destroy A 2 2 B 2 2 2',
-              'Child Insertion Create A 2 2 B 2 2 2',
-            ],
-      );
+      await waitFor([
+        'Child Insertion Destroy A 2 2 B 2 2 2',
+        'Child Insertion Create A 2 2 B 2 2 2',
+      ]);
     });
 
     assertLog([]);
@@ -855,80 +832,45 @@ describe('useEffectEvent', () => {
       ]);
     });
 
-    assertLog(
-      gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
-        ? [
-            'Child Insertion Destroy A 3 2 B 1 1 1',
-            'Child Insertion Create A 3 2 B 1 1 1',
-          ]
-        : [
-            'Child Insertion Destroy A 3 2 B 3 2 2',
-            'Child Insertion Create A 3 2 B 3 2 2',
-          ],
-    );
+    assertLog([
+      'Child Insertion Destroy A 3 2 B 3 2 2',
+      'Child Insertion Create A 3 2 B 3 2 2',
+    ]);
 
     await act(async () => {
       ReactNoop.render(<CounterA count={3} hideChild={false} />);
 
       await waitFor([
-        ...(gate('enableViewTransition') &&
-        !gate('enableEffectEventMutationPhase')
-          ? [
-              'Child Insertion Destroy A 3 2 B 1 1 1',
-              'Child Insertion Create A 3 2 B 1 1 1',
-            ]
-          : [
-              'Child Insertion Destroy A 3 2 B 3 2 2',
-              'Child Insertion Create A 3 2 B 3 2 2',
-            ]),
+        'Child Insertion Destroy A 3 2 B 3 2 2',
+        'Child Insertion Create A 3 2 B 3 2 2',
         'Parent Insertion Create: A 3 2',
         'Parent Insertion Create: A 3 2',
         'Parent Layout Cleanup: A 3 2',
-        ...(gate('enableViewTransition') &&
-        !gate('enableEffectEventMutationPhase')
-          ? ['Child Layout Create A 3 2 B 1 1 1']
-          : ['Child Layout Create A 3 2 B 3 2 2']),
+        'Child Layout Create A 3 2 B 3 2 2',
 
         'Parent Layout Create: A 3 2',
       ]);
     });
 
-    assertLog(
-      gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
-        ? ['Child Passive Create A 3 2 B 1 1 1']
-        : ['Child Passive Create A 3 2 B 3 2 2'],
-    );
+    assertLog(['Child Passive Create A 3 2 B 3 2 2']);
 
     await act(async () => {
       ReactNoop.render(<CounterA count={3} hideChild={true} />);
 
       await waitFor([
-        ...(gate('enableViewTransition') &&
-        !gate('enableEffectEventMutationPhase')
-          ? ['Child Layout Destroy A 3 2 B 1 1 1']
-          : ['Child Layout Destroy A 3 2 B 3 2 2']),
+        'Child Layout Destroy A 3 2 B 3 2 2',
         'Parent Insertion Create: A 3 2',
         'Parent Insertion Create: A 3 2',
         'Parent Layout Cleanup: A 3 2',
         'Parent Layout Create: A 3 2',
-        ...(gate('enableViewTransition') &&
-        !gate('enableEffectEventMutationPhase')
-          ? ['Child Passive Destroy A 3 2 B 1 1 1']
-          : ['Child Passive Destroy A 3 2 B 3 2 2']),
+        'Child Passive Destroy A 3 2 B 3 2 2',
       ]);
     });
 
-    assertLog(
-      gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
-        ? [
-            'Child Insertion Destroy A 3 2 B 1 1 1',
-            'Child Insertion Create A 3 2 B 1 1 1',
-          ]
-        : [
-            'Child Insertion Destroy A 3 2 B 3 2 2',
-            'Child Insertion Create A 3 2 B 3 2 2',
-          ],
-    );
+    assertLog([
+      'Child Insertion Destroy A 3 2 B 3 2 2',
+      'Child Insertion Create A 3 2 B 3 2 2',
+    ]);
 
     // Unmount everything
     await act(async () => {
@@ -938,9 +880,7 @@ describe('useEffectEvent', () => {
     assertLog([
       'Parent Insertion Create: A 3 2',
       'Parent Layout Cleanup: A 3 2',
-      gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
-        ? 'Child Insertion Destroy A 3 2 B 1 1 1'
-        : 'Child Insertion Destroy A 3 2 B 3 2 2',
+      'Child Insertion Destroy A 3 2 B 3 2 2',
     ]);
   });
 
@@ -1305,25 +1245,16 @@ describe('useEffectEvent', () => {
     // Update, still hidden
     await act(async () => root.render(<App value={2} mode="hidden" />));
 
-    // Bug in enableViewTransition. Insertion and layout see stale closure.
-    assertLog([
-      'render: 2',
-      ...(gate('enableViewTransition') &&
-      !gate('enableEffectEventMutationPhase')
-        ? ['insertion destroy: 1', 'insertion create: 1']
-        : ['insertion destroy: 2', 'insertion create: 2']),
-    ]);
+    assertLog(['render: 2', 'insertion destroy: 2', 'insertion create: 2']);
 
     // Switch to visible
     await act(async () => root.render(<App value={2} mode="visible" />));
 
-    // Bug in enableViewTransition. Even when switching to visible, sees stale closure.
     assertLog([
       'render: 2',
-      ...(gate('enableViewTransition') &&
-      !gate('enableEffectEventMutationPhase')
-        ? ['insertion destroy: 1', 'insertion create: 1', 'layout create: 1']
-        : ['insertion destroy: 2', 'insertion create: 2', 'layout create: 2']),
+      'insertion destroy: 2',
+      'insertion create: 2',
+      'layout create: 2',
     ]);
   });
 });

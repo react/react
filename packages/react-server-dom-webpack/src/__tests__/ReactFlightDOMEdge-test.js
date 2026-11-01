@@ -45,18 +45,12 @@ function normalizeSerializedContent(str) {
 
 describe('ReactFlightDOMEdge', () => {
   beforeEach(() => {
+    jest.restoreAllMocks();
     // Mock performance.now for timing tests
     let time = 10;
-    const now = jest.fn().mockImplementation(() => {
+    jest.spyOn(performance, 'timeOrigin', 'get').mockReturnValue(time);
+    jest.spyOn(performance, 'now').mockImplementation(() => {
       return time++;
-    });
-    Object.defineProperty(performance, 'timeOrigin', {
-      value: time,
-      configurable: true,
-    });
-    Object.defineProperty(performance, 'now', {
-      value: now,
-      configurable: true,
     });
 
     jest.resetModules();
@@ -540,6 +534,79 @@ describe('ReactFlightDOMEdge', () => {
     // Should still match the result when parsed
     expect(result.text).toBe(testString);
     expect(result.text2).toBe(testString2);
+  });
+
+  it.each([false, true])(
+    'preserves leading U+FEFF in outlined text rows (split chunks: %s)',
+    async splitChunks => {
+      const model = {
+        inline: '\uFEFFshort',
+        outlined: '\uFEFF' + 'x'.repeat(1024),
+        repeated: '\uFEFF\uFEFF' + 'y'.repeat(1024),
+      };
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(model),
+      );
+      const readable = stream.pipeThrough(
+        new TransformStream({
+          transform(chunk, controller) {
+            if (splitChunks) {
+              for (let i = 0; i < chunk.length; i++) {
+                controller.enqueue(chunk.subarray(i, i + 1));
+              }
+            } else {
+              controller.enqueue(chunk);
+            }
+          },
+        }),
+      );
+
+      const result = await ReactServerDOMClient.createFromReadableStream(
+        readable,
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      );
+      expect(result).toEqual(model);
+    },
+  );
+
+  // @gate __DEV__
+  it('consumes a leading byte order mark on the debug channel', async () => {
+    let resolveModel;
+    const model = new Promise(resolve => {
+      resolveModel = resolve;
+    });
+    const onError = jest.fn();
+    const debugChannel = new ReadableStream({
+      start(controller) {
+        const bytes = new TextEncoder().encode('\uFEFFQ:0\n');
+        for (let i = 0; i < bytes.length; i++) {
+          controller.enqueue(bytes.subarray(i, i + 1));
+        }
+        controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap, {
+        debugChannel: {readable: debugChannel},
+        onError,
+      }),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    await serverAct(() => resolveModel('hello'));
+    expect(await response).toBe('hello');
+    expect(onError).not.toHaveBeenCalled();
+    expect(debugChannel.locked).toBe(true);
   });
 
   it('should encode repeated objects in a compact format by deduping', async () => {
@@ -1107,6 +1174,233 @@ describe('ReactFlightDOMEdge', () => {
     expect(items[5]).toEqual(items[10]);
   });
 
+  function clientComponent(name, chunkFilename) {
+    return clientExports(
+      function Client() {
+        return <span>{name}</span>;
+      },
+      'chunk-' + name,
+      chunkFilename,
+      Promise.resolve(),
+    );
+  }
+
+  async function renderClients(chunkFilenames) {
+    const Clients = chunkFilenames.map(chunkFilename =>
+      clientComponent('Client', chunkFilename),
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <div>
+          {Clients.map((Client, i) => (
+            <Client key={i} />
+          ))}
+        </div>,
+        webpackMap,
+      ),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+    const payload = await readResult(stream1);
+    const model = await ReactServerDOMClient.createFromReadableStream(stream2, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(model),
+    );
+    expect(await readResult(ssrStream)).toBe(
+      '<div>' + '<span>Client</span>'.repeat(Clients.length) + '</div>',
+    );
+    return payload;
+  }
+
+  it('should dedupe strings inside client reference metadata', async () => {
+    // Bundlers repeat the same chunk in the metadata of every client reference
+    // that needs it.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const shared = await renderClients(new Array(10).fill(chunk));
+    // The same length, so sharing is the only difference between the two.
+    const distinct = await renderClients(
+      Array.from(
+        {length: 10},
+        (_, i) => 'unique/hashed-chunk-' + ('' + i).padStart(16, '0') + '.js',
+      ),
+    );
+
+    // However many references there are, the chunk goes on the wire once, as a
+    // row that every import row points at.
+    expect(shared.split(chunk).length - 1).toBe(1);
+    expect(distinct.length - shared.length).toBeGreaterThan(8 * chunk.length);
+
+    // The client resolves a client reference while parsing its row, so the
+    // outlined copy has to arrive before every row that points at it. The
+    // chunk id is too short to be outlined, so it counts the rows.
+    const beforeOutlinedCopy = shared.slice(0, shared.indexOf(chunk));
+    expect(beforeOutlinedCopy).not.toContain('chunk-Client');
+  });
+
+  it('should escape strings inside client reference metadata', async () => {
+    // A leading $ has to be escaped whether the string gets outlined or not.
+    const outlinedChunk = '$shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const inlineChunk = '$chunk.js';
+    const outlined = await renderClients(new Array(3).fill(outlinedChunk));
+    const inline = await renderClients(new Array(3).fill(inlineChunk));
+
+    expect(outlined.split('$' + outlinedChunk).length - 1).toBe(1);
+    expect(inline.split('$' + inlineChunk).length - 1).toBe(3);
+  });
+
+  it('should not dedupe import strings below the size limit', async () => {
+    // A short string costs more to reference than to repeat.
+    const shortChunk = 'abc/chunk-15.js';
+    const longChunk = 'abcd/chunk-16.js';
+    const short = await renderClients(new Array(10).fill(shortChunk));
+    const long = await renderClients(new Array(10).fill(longChunk));
+
+    expect(short.split(shortChunk).length - 1).toBe(10);
+    expect(long.split(longChunk).length - 1).toBe(1);
+    // The longer chunk is the one that produces the smaller payload.
+    expect(long.length).toBeLessThan(short.length);
+  });
+
+  it('should stop tracking new import strings once the budget is spent', async () => {
+    // Every chunk is outlined the first time it's seen, so chunks that never
+    // repeat spend budget too. 32 fillers of 1 KiB fill the 32 KiB budget.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const repeats = new Array(10).fill(chunk);
+    const filler = (count, length) =>
+      Array.from({length: count}, (_, i) =>
+        ('filler/chunk-' + i + '-').padEnd(length - 3, 'x').concat('.js'),
+      );
+    const fitsInTheRest = await renderClients(filler(31, 1024).concat(repeats));
+    const findsItSpent = await renderClients(filler(32, 1024).concat(repeats));
+
+    expect(fitsInTheRest.split(chunk).length - 1).toBe(1);
+    expect(findsItSpent.split(chunk).length - 1).toBe(10);
+
+    // A string outlined before the budget is spent keeps deduping after.
+    const lastFiller = filler(1, 32768 - 31 * 1024 - chunk.length);
+    const trackedBefore = await renderClients(
+      [chunk].concat(filler(31, 1024), lastFiller, repeats),
+    );
+
+    expect(trackedBefore.split(chunk).length - 1).toBe(1);
+
+    const bigChunk = 'path/to/' + 'a'.repeat(40000) + '.js';
+    const big = await renderClients(new Array(3).fill(bigChunk));
+
+    expect(big.split(bigChunk).length - 1).toBe(3);
+  });
+
+  it('should dedupe import strings produced by toJSON', async () => {
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const payload = await renderClients(
+      Array.from({length: 3}, () => ({
+        toJSON() {
+          return chunk;
+        },
+      })),
+    );
+
+    expect(payload.split(chunk).length - 1).toBe(1);
+  });
+
+  it('should error on circular client reference metadata', async () => {
+    const circular = [];
+    circular.push(circular);
+    const Client = clientComponent('Client', circular);
+
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<Client />, webpackMap, {
+        onError(error) {
+          errors.push(error.message);
+        },
+      }),
+    );
+    await readResult(stream);
+
+    expect(errors).toEqual([
+      expect.stringContaining('Converting circular structure to JSON'),
+    ]);
+  });
+
+  it('should not dedupe strings in the model', async () => {
+    // Only import metadata is deduped. Keying a map on arbitrary model strings
+    // would hold them in memory for the rest of the request.
+    const text = 'a repeated model string well past the import threshold';
+    const model = new Array(10).fill(text);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const payload = await readResult(stream1);
+    expect(payload.split(text).length - 1).toBe(10);
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result).toEqual(model);
+  });
+
+  // @gate __DEV__
+  it('should not dedupe import metadata on the debug channel', async () => {
+    // The debug channel is a separate transport, so a row it emits can't be
+    // referenced from the main stream and vice versa.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const A = clientComponent('Client', chunk);
+    const B = clientComponent('Client', chunk);
+    const C = clientComponent('Client', chunk);
+
+    function Server({a, b, c}) {
+      return ReactServer.createElement('div', null, a, b, c);
+    }
+
+    let debugContent = '';
+    const debugChannel = {
+      writable: new WritableStream({
+        write(value) {
+          debugContent += Buffer.from(value).toString('utf8');
+        },
+      }),
+    };
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        // We can't use JSX here because it'll use the Client React.
+        ReactServer.createElement(Server, {
+          a: ReactServer.createElement(A),
+          b: ReactServer.createElement(B),
+          c: ReactServer.createElement(C),
+        }),
+        webpackMap,
+        {debugChannel},
+      ),
+    );
+    const payload = await readResult(stream);
+
+    // The main stream dedupes as usual.
+    expect(payload.split(chunk).length - 1).toBe(1);
+
+    // The debug channel can't point at that row, so every import row it writes
+    // spells the chunk out. The chunk id is too short to be outlined, so it
+    // counts those rows.
+    expect(debugContent).toContain('chunk-Client');
+    expect(debugContent.split(chunk).length).toBe(
+      debugContent.split('chunk-Client').length,
+    );
+  });
+
   it('warns if passing a this argument to bind() of a server reference', async () => {
     const ServerModule = serverExports({
       greet: function () {},
@@ -1399,19 +1693,17 @@ describe('ReactFlightDOMEdge', () => {
         name: 'Greeting',
         env: 'Server',
       });
-      if (gate(flags => flags.enableAsyncDebugInfo)) {
-        expect(greeting._debugInfo).toEqual([
-          {time: 12},
-          greetInfo,
-          {time: 13},
-          expect.objectContaining({
-            name: 'Container',
-            env: 'Server',
-            owner: greetInfo,
-          }),
-          {time: 14},
-        ]);
-      }
+      expect(greeting._debugInfo).toEqual([
+        {time: 12},
+        greetInfo,
+        {time: 13},
+        expect.objectContaining({
+          name: 'Container',
+          env: 'Server',
+          owner: greetInfo,
+        }),
+        {time: 14},
+      ]);
       // The owner that created the span was the outer server component.
       // We expect the debug info to be referentially equal to the owner.
       expect(greeting._owner).toBe(greeting._debugInfo[1]);
@@ -2370,6 +2662,66 @@ describe('ReactFlightDOMEdge', () => {
     );
   });
 
+  async function renderThroughDebugChannel(chunkFilename) {
+    const Client = clientComponent('Client', chunkFilename);
+    // The client reference shows up in the owner's props on the debug channel.
+    function Server({component}) {
+      return ReactServer.createElement(component, null);
+    }
+
+    let debugReadableStreamController;
+    const debugReadableStream = new ReadableStream({
+      start(controller) {
+        debugReadableStreamController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        ReactServer.createElement(Server, {component: Client}),
+        webpackMap,
+        {
+          debugChannel: {
+            writable: new WritableStream({
+              write(chunk) {
+                debugReadableStreamController.enqueue(chunk);
+              },
+              close() {
+                debugReadableStreamController.close();
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+      debugChannel: {readable: debugReadableStream},
+    });
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    return readResult(ssrStream);
+  }
+
+  it('can resolve a client reference while debug info is still blocked', async () => {
+    const result = await renderThroughDebugChannel('path/to/chunk.js');
+
+    expect(result).toBe('<span>Client</span>');
+  });
+
+  it('should escape strings in import metadata on the debug channel', async () => {
+    const result = await renderThroughDebugChannel('$path/to/chunk.js');
+
+    expect(result).toBe('<span>Client</span>');
+  });
+
   it('should properly resolve with deduped objects', async () => {
     const obj = {foo: 'hi'};
 
@@ -2773,5 +3125,328 @@ describe('ReactFlightDOMEdge', () => {
       node = entry.next;
     }
     expect(accessed).toEqual(['a', 'c']);
+  });
+
+  it('consumes a typed array that spans its whole buffer', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigEdge, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    const bytes = new Uint8Array(LARGE).fill(7);
+    const expected = bytes.slice();
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream({bytes}, webpackMap),
+      ),
+      {serverConsumerManifest: {moduleMap: null, moduleLoading: null}},
+    );
+
+    expect(result.bytes).toEqual(expected);
+    if (ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      // The render transfers the buffer to the stream, in the same way that it
+      // consumes a one shot iterable, so the caller's view is now detached.
+      expect(bytes.byteLength).toBe(0);
+    } else {
+      // In environments where React can't detect detachment, we defensively copy the buffer.
+      expect(bytes).toEqual(new Uint8Array(LARGE).fill(7));
+      assertConsoleErrorDev([
+        'React copied a partial view into a fresh buffer as a safety precaution because the environment does not implement ArrayBuffer.prototype.detached. ' +
+          'This negatively impacts performance. ' +
+          'Please upgrade to a modern Edge runtime.',
+      ]);
+    }
+  });
+
+  it('does not transport large views on SharedArrayBuffer', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigEdge, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    const shared = new SharedArrayBuffer(LARGE);
+    const bytes = new Uint8Array(shared).fill(3);
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream({bytes}, webpackMap);
+    });
+
+    const result = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    if (ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      await expect(result).rejects.toThrow(
+        "The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+      );
+      assertConsoleErrorDev([
+        "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer." +
+          ' Received Uint8Array(10000) [\n' +
+          '    in <stack>',
+      ]);
+    } else {
+      const {bytes: transportedBytes} = await result;
+      expect(transportedBytes).toEqual(new Uint8Array(LARGE).fill(3));
+
+      assertConsoleErrorDev([
+        'React copied a partial view into a fresh buffer as a safety precaution because the environment does not implement ArrayBuffer.prototype.detached. ' +
+          'This negatively impacts performance. ' +
+          'Please upgrade to a modern Edge runtime.',
+      ]);
+    }
+  });
+
+  it('does not detach a buffer that the rendered view is only a part of', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigEdge, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    const buffer = new ArrayBuffer(LARGE * 2);
+    const renderedView = new Uint8Array(buffer, 0, LARGE).fill(1);
+    const siblingView = new Uint8Array(buffer, LARGE, LARGE).fill(2);
+    const expected = renderedView.slice();
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(
+        {renderedView},
+        webpackMap,
+      );
+    });
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+
+    expect(result.renderedView).toEqual(expected);
+    expect(siblingView.byteLength).toBe(LARGE);
+  });
+
+  it('should transport promised subarrays sharing an ArrayBuffer', async () => {
+    async function getResult() {
+      const backing = new ArrayBuffer(10_000);
+      const bytes = new Uint8Array(backing);
+      const first = bytes.subarray(0, 5_000);
+      const second = bytes.subarray(5_000);
+      first.fill(1);
+      second.fill(2);
+
+      return {
+        first: first,
+        second: second,
+      };
+    }
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(
+        getResult(),
+        webpackMap,
+      );
+    });
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    expect(await result.first).toEqual(new Uint8Array(5_000).fill(1));
+    expect(await result.second).toEqual(new Uint8Array(5_000).fill(2));
+  });
+
+  it('cannot transport multiple buffer-spanning view on the same underlying buffer', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigEdge, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    async function getResult() {
+      const backing = new ArrayBuffer(LARGE);
+      const first = new Uint8Array(backing);
+      const second = new Uint8Array(backing);
+      first.fill(1);
+
+      return {
+        first: first,
+        second: second,
+      };
+    }
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(
+        getResult(),
+        webpackMap,
+      );
+    });
+    const result = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    if (ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      await expect(result).rejects.toThrow(
+        'Cannot transport a detached buffer. ' +
+          'This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. ' +
+          'Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.',
+      );
+      assertConsoleErrorDev([
+        'Error: Cannot transport a detached buffer. ' +
+          'This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. ' +
+          'Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.' +
+          '\n    in <stack>',
+      ]);
+    } else {
+      const {first, second} = await result;
+      expect(first).toEqual(new Uint8Array(LARGE).fill(1));
+      expect(second).toEqual(new Uint8Array(LARGE).fill(1));
+
+      assertConsoleErrorDev([
+        'React copied a partial view into a fresh buffer as a safety precaution because the environment does not implement ArrayBuffer.prototype.detached. ' +
+          'This negatively impacts performance. ' +
+          'Please upgrade to a modern Edge runtime.',
+      ]);
+    }
+  });
+
+  it('transported resizable buffers cannot be resized on the origin', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigEdge, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    const buffer = new ArrayBuffer(LARGE, {maxByteLength: LARGE});
+    const first = new Uint8Array(buffer);
+    first.fill(1);
+
+    let sendSecond;
+    const model = {
+      first: Promise.resolve(first),
+      second: new Promise(resolve => {
+        sendSecond = resolve;
+      }),
+    };
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(model, webpackMap);
+    });
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    expect(await result.first).toEqual(new Uint8Array(LARGE).fill(1));
+
+    await serverAct(async () => {
+      buffer.resize(LARGE - 1);
+      const second = new Uint8Array(buffer);
+      await sendSecond(second);
+    });
+
+    expect(await result.second).toEqual(new Uint8Array(LARGE - 1).fill(1));
+  });
+
+  it('interrupts the stream when a write fails', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigEdge, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    // We're simulating a bug where React attempts to write a detached buffer
+    // or a SharedArrayBuffer. In newer environments we'd just use SharedArrayBuffer.
+    // In older environments React will defensively copy the view which means
+    // the underlying buffer will be a ArrayBuffer that can be safely written.
+    // We just need to smuggle a chunk into the stream that we can identify to
+    // throw at a specific time.
+    const faultyBuffer = new ArrayBuffer(LARGE);
+    const view = new Uint8Array(faultyBuffer);
+    view.set([0xe, 0xa, 0xc, 0x7]);
+
+    const originalEnqueue = ReadableByteStreamController.prototype.enqueue;
+    jest
+      .spyOn(ReadableByteStreamController.prototype, 'enqueue')
+      .mockImplementation(function mockedEnqueue(chunk) {
+        // the original view may have been copied so we need to match the marker
+        if (
+          chunk[0] === 0xe &&
+          chunk[1] === 0xa &&
+          chunk[2] === 0xc &&
+          chunk[3] === 0x7
+        ) {
+          throw new TypeError(
+            "The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+          );
+        }
+        return originalEnqueue.call(this, chunk);
+      });
+
+    let sendMore;
+    const model = {
+      first: Promise.resolve(view),
+      second: new Promise(resolve => {
+        sendMore = resolve;
+      }),
+    };
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(model, webpackMap);
+    });
+
+    const [stream1, stream2] = stream.tee();
+
+    let payload = '';
+    const decoder = new TextDecoder();
+    const reader = stream2.getReader();
+    let readError;
+    reader.read().then(function process({done, value}) {
+      if (done) return;
+      payload += decoder.decode(value, {stream: true});
+      return reader.read().then(process, reason => {
+        readError = reason;
+      });
+    });
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream1,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+
+    // This must fail. Adjust the mock above to be able to throw at a specific
+    // point.
+    await expect(result.first).rejects.toThrow(
+      "The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+    );
+
+    if (ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      assertConsoleErrorDev([
+        // React will not defensively copy when we can determine if the buffer is
+        // detached later.
+        "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer." +
+          '\n    in <stack>',
+      ]);
+    } else {
+      assertConsoleErrorDev([
+        'React copied a partial view into a fresh buffer as a safety precaution because the environment does not implement ArrayBuffer.prototype.detached. ' +
+          'This negatively impacts performance. ' +
+          'Please upgrade to a modern Edge runtime.',
+        "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer." +
+          '\n    in <stack>',
+      ]);
+    }
+
+    const partialPayload = payload;
+
+    await sendMore('foo');
+    await expect(result.second).rejects.toThrow(
+      "The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+    );
+    // an errored stream emitted incomplete data. Continuing to emit more would
+    // produce a corrupted stream
+    expect(payload).toBe(partialPayload);
+    expect(readError.stack).toMatch(
+      "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+    );
   });
 });

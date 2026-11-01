@@ -11,6 +11,7 @@
 
 const assert = require('assert');
 const childProcess = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
@@ -42,6 +43,7 @@ type CommandOptions = {
   timeout?: number,
 };
 type Chrome = {
+  pageId: number,
   run: (args: Array<string>) => Promise<CommandResult>,
   json: (args: Array<string>) => Promise<mixed>,
 };
@@ -164,7 +166,8 @@ const LOG_DIR =
   process.env.E2E_LOG_DIR ||
   path.join(REPO_ROOT, 'tmp', 'react-devtools-cdt-mcp-e2e');
 
-const SESSION_ID = `react-devtools-cdt-mcp-${process.pid}-${Date.now()}`;
+// chrome-devtools-mcp 1.8+ only accepts /[a-fA-F0-9-]+/ session ids.
+const SESSION_ID = crypto.randomUUID();
 
 function log(message: string): void {
   process.stdout.write(`${message}\n`);
@@ -628,8 +631,59 @@ async function evaluatePageReadiness(
   chrome: Chrome,
   fn: string
 ): Promise<PageReadiness> {
-  const output = await chrome.json(['evaluate_script', fn]);
+  const output = await chrome.json([
+    'evaluate_script',
+    fn,
+    '--pageId',
+    String(chrome.pageId),
+  ]);
   return parsePageReadiness(parseJsonFromText(unwrapTextResponse(output)));
+}
+
+function parsePageId(value: mixed): number | null {
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return value;
+  }
+  if (value == null || typeof value !== 'object') {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) {
+      const pageId = parsePageId(value[index]);
+      if (pageId != null) {
+        return pageId;
+      }
+    }
+    return null;
+  }
+  const object = value;
+  if (object.pages != null) {
+    const pageId = parsePageId(object.pages);
+    if (pageId != null) {
+      return pageId;
+    }
+  }
+  if (object.pageId != null) {
+    const pageId = parsePageId(object.pageId);
+    if (pageId != null) {
+      return pageId;
+    }
+  }
+  if (object.id != null) {
+    return parsePageId(object.id);
+  }
+  return null;
+}
+
+async function resolvePageId(chrome: Chrome): Promise<number> {
+  const pages = await chrome.json(['list_pages']);
+  const pageId = parsePageId(pages);
+  if (pageId == null) {
+    throw createError(
+      `Expected list_pages to include a page id. Saw: ${formatValue(pages)}`
+    );
+  }
+  return pageId;
 }
 
 function parseToolResponse(output: mixed): mixed {
@@ -942,12 +996,19 @@ function assertSourceReference(sourceResult: SourceResult): void {
 }
 
 async function runE2E(chrome: Chrome, appUrl: string): Promise<void> {
-  await chrome.json(['navigate_page', '--type', 'url', '--url', appUrl]);
+  await chrome.json([
+    'navigate_page',
+    String(chrome.pageId),
+    '--type',
+    'url',
+    '--url',
+    appUrl,
+  ]);
   await waitForPageReady(chrome, 30000);
 
   log('Checking third-party tool discovery...');
   const discovery = parseToolDiscovery(
-    await chrome.json(['list_3p_developer_tools'])
+    await chrome.json(['list_3p_developer_tools', String(chrome.pageId)])
   );
   const toolGroup = getReactToolGroup(discovery);
   if (toolGroup == null) {
@@ -991,6 +1052,7 @@ async function runE2E(chrome: Chrome, appUrl: string): Promise<void> {
     chrome
       .json([
         'execute_3p_developer_tool',
+        String(chrome.pageId),
         toolName,
         '--params',
         JSON.stringify(params || {}),
@@ -1095,7 +1157,9 @@ async function runE2E(chrome: Chrome, appUrl: string): Promise<void> {
     ['TodoList', 'Todo']
   );
 
-  const snapshot = parseSnapshotResponse(await chrome.json(['take_snapshot']));
+  const snapshot = parseSnapshotResponse(
+    await chrome.json(['take_snapshot', String(chrome.pageId)])
+  );
   const buttonNode = findSnapshotNode(
     snapshot.snapshot,
     node => node.role === 'button' && node.name === '+1',
@@ -1197,7 +1261,7 @@ async function runE2E(chrome: Chrome, appUrl: string): Promise<void> {
       traceName,
     }
   );
-  await chrome.json(['click', buttonUid]);
+  await chrome.json(['click', String(chrome.pageId), buttonUid]);
   const stopResult = parseStopProfilingResult(
     await callTool('react_stop_profiling')
   );
@@ -1264,6 +1328,7 @@ async function main(): Promise<void> {
       }
     );
   const chrome: Chrome = {
+    pageId: 1,
     run: runChrome,
     async json(args: Array<string>): Promise<mixed> {
       const result = await runChrome([...args, '--output-format', 'json']);
@@ -1313,6 +1378,7 @@ async function main(): Promise<void> {
     }
     log('Starting chrome-devtools daemon...');
     await chrome.run(startArgs);
+    chrome.pageId = await resolvePageId(chrome);
 
     await runE2E(chrome, appUrl);
     log('react-devtools-cdt-mcp E2E passed.');

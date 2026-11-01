@@ -2,7 +2,7 @@
 
 This package can be used to embed React DevTools into browser-based tools like [CodeSandbox](https://codesandbox.io/), [StackBlitz](https://stackblitz.com/), and [Replay](https://replay.io).
 
-If you're looking for the standalone React DevTools UI, **we suggest using [`react-devtools`](https://github.com/facebook/react/tree/main/packages/react-devtools) instead of using this package directly**.
+If you're looking for the standalone React DevTools UI, **we suggest using [`react-devtools`](https://github.com/react/react/tree/main/packages/react-devtools) instead of using this package directly**.
 
 ---
 
@@ -360,4 +360,4 @@ Once the above packages have been built or downloaded, you can watch for changes
 yarn start
 ```
 
-To test package changes, refer to the [`react-devtools-shell` README](https://github.com/facebook/react/blob/main/packages/react-devtools-shell/README.md).
+To test package changes, refer to the [`react-devtools-shell` README](https://github.com/react/react/blob/main/packages/react-devtools-shell/README.md).

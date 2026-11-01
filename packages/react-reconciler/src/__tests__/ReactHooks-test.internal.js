@@ -858,7 +858,7 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  // https://github.com/facebook/react/issues/14022
+  // https://github.com/react/react/issues/14022
   it('works with ReactDOMServer calls inside a component', async () => {
     const {useState} = React;
     function App(props) {
@@ -1875,7 +1875,7 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  // Regression test for https://github.com/facebook/react/issues/15057
+  // Regression test for https://github.com/react/react/issues/15057
   it('does not fire a false positive warning when previous effect unmounts the component', async () => {
     const {useState, useEffect} = React;
     let globalListener;
@@ -1926,7 +1926,7 @@ describe('ReactHooks', () => {
     ).resolves.not.toThrow();
   });
 
-  // Regression test for https://github.com/facebook/react/issues/14790
+  // Regression test for https://github.com/react/react/issues/14790
   it('does not fire a false positive warning when suspending memo', async () => {
     const {Suspense, useState} = React;
 
@@ -1964,7 +1964,7 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('hello');
   });
 
-  // Regression test for https://github.com/facebook/react/issues/14790
+  // Regression test for https://github.com/react/react/issues/14790
   it('does not fire a false positive warning when suspending forwardRef', async () => {
     const {Suspense, useState} = React;
 
@@ -2002,7 +2002,7 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('hello');
   });
 
-  // Regression test for https://github.com/facebook/react/issues/14790
+  // Regression test for https://github.com/react/react/issues/14790
   it('does not fire a false positive warning when suspending memo(forwardRef)', async () => {
     const {Suspense, useState} = React;
 
@@ -2040,7 +2040,7 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('hello');
   });
 
-  // Regression test for https://github.com/facebook/react/issues/15732
+  // Regression test for https://github.com/react/react/issues/15732
   it('resets hooks when an error is thrown in the middle of a list of hooks', async () => {
     const {useEffect, useState} = React;
 

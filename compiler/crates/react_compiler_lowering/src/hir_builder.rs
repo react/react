@@ -741,22 +741,26 @@ impl<'a> HirBuilder<'a> {
         self.env.record_diagnostic(diagnostic);
     }
 
-    /// Check if a name has a local binding (non-module-level).
-    /// This is used for checking if fbt/fbs JSX tags are local bindings
-    /// (which is not supported).
-    pub fn has_local_binding(&self, name: &str) -> bool {
-        if let Some(binding) = self
+    /// Resolve a local binding when the AST reference has no scope mapping.
+    pub fn resolve_local_binding_by_name(
+        &mut self,
+        name: &str,
+        loc: Option<SourceLocation>,
+    ) -> Result<Option<IdentifierId>, CompilerError> {
+        if let Some((binding_id, binding)) = self
             .scope_info
-            .find_binding_in_descendants(name, self.component_scope)
+            .find_binding_id_in_descendants(name, self.component_scope)
         {
-            // When component_scope == program_scope (e2e path where scope info
-            // is extracted from the function itself), any binding found is local.
-            if self.component_scope == self.scope_info.program_scope {
-                return true;
+            if self.component_scope != self.scope_info.program_scope
+                && binding.scope == self.scope_info.program_scope
+            {
+                return Ok(None);
             }
-            return binding.scope != self.scope_info.program_scope;
+            return self
+                .resolve_binding_with_loc(name, binding_id, loc)
+                .map(Some);
         }
-        false
+        Ok(None)
     }
 
     /// Return the kind of the current block.
@@ -891,7 +895,7 @@ impl<'a> HirBuilder<'a> {
                     ),
                     loc: error_loc,
                     suggestions: None,
-                })?;
+                    })?;
             }
         }
 

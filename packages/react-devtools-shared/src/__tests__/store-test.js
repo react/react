@@ -255,7 +255,7 @@ describe('Store', () => {
   // but the resulting behavior (owner mounting after descendant) is the same.
   // Thec ase below is admittedly contrived and relies on side effects.
   // I'mnot yet sure of how to reduce the GitHub reported production case to a test though.
-  // See https://github.com/facebook/react/issues/21445
+  // See https://github.com/react/react/issues/21445
   // @reactVersion >= 18.0
   it('should handle when a component mounts before its owner', async () => {
     const promise = new Promise(resolve => {});
@@ -2638,7 +2638,7 @@ describe('Store', () => {
       });
     });
 
-    // In React 19, JSX warnings were moved into the renderer - https://github.com/facebook/react/pull/29088
+    // In React 19, JSX warnings were moved into the renderer - https://github.com/react/react/pull/29088
     // The warning is moved to the Child instead of the Parent.
     // @reactVersion >= 19.0.1
     it('from react get counted [React >= 19.0.1]', async () => {
@@ -2895,7 +2895,7 @@ describe('Store', () => {
       expect(store.componentWithWarningCount).toBe(0);
     });
 
-    // Regression test for https://github.com/facebook/react/issues/23202
+    // Regression test for https://github.com/react/react/issues/23202
     // @reactVersion >= 18.0
     it('suspense boundary children should not double unmount and error', async () => {
       async function fakeImport(result) {

@@ -97,13 +97,8 @@ const build = async (tempPath, manifestPath, envExtension = {}) => {
   );
 
   const commit = getGitCommit();
-  const dateString = new Date().toLocaleDateString();
   const manifest = JSON.parse(readFileSync(copiedManifestPath).toString());
-  const versionDateString = `${manifest.version} (${dateString})`;
-  if (manifest.version_name) {
-    manifest.version_name = versionDateString;
-  }
-  manifest.description += `\n\nCreated from revision ${commit} on ${dateString}.`;
+  manifest.description += `\n\nCreated from revision ${commit}.`;
 
   if (process.env.NODE_ENV === 'development') {
     // When building the local development version of the

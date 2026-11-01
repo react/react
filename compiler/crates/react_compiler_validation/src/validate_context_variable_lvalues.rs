@@ -116,12 +116,22 @@ fn validate_context_variable_lvalues_impl(
                         errors,
                     )?;
                 }
-                InstructionValue::PostfixUpdate { lvalue, .. }
-                | InstructionValue::PrefixUpdate { lvalue, .. } => {
+                InstructionValue::PostfixUpdateLocal { lvalue, .. }
+                | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
                     visit(
                         identifier_kinds,
                         lvalue,
                         VarRefKind::Local,
+                        identifiers,
+                        errors,
+                    )?;
+                }
+                InstructionValue::PostfixUpdateContext { lvalue, .. }
+                | InstructionValue::PrefixUpdateContext { lvalue, .. } => {
+                    visit(
+                        identifier_kinds,
+                        lvalue,
+                        VarRefKind::Context,
                         identifiers,
                         errors,
                     )?;

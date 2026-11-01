@@ -18,7 +18,7 @@ If this is your first time running the release scripts, go to the `scripts/relea
 The release process consists of several phases, each one represented by one of the scripts below.
 
 A typical release cycle goes like this:
-1. When a commit is pushed to the React repo, [GitHub Actions](https://github.com/facebook/react/actions) will build all release bundles and run unit tests against both the source code and the built bundles.
+1. When a commit is pushed to the React repo, [GitHub Actions](https://github.com/react/react/actions) will build all release bundles and run unit tests against both the source code and the built bundles.
 2. Each weekday, an automated CI cron job publishes prereleases to the `canary` and `experimental` channels, from tip of the main branch.
    You can also [trigger an automated prerelease via the GitHub UI](#trigger-an-automated-prerelease), instead of waiting until the next time the cron job runs.
 3. Finally, a "canary" release can be [**promoted to stable**](#publishing-a-stable-release)<sup>1</sup> (This process is always manual.)
@@ -27,9 +27,9 @@ A typical release cycle goes like this:
 
 If your code lands in the main branch, it will be automatically published to the prerelease channels within the next weekday. However, if you want to immediately publish a prerelease, you can trigger the job to run immediately via the GitHub UI:
 
-1. Wait for the commit you want to release to finish its [(Runtime) Build and Test workflow](https://github.com/facebook/react/actions/workflows/runtime_build_and_test.yml), as the prerelease script needs to download the build from that workflow.
+1. Wait for the commit you want to release to finish its [(Runtime) Build and Test workflow](https://github.com/react/react/actions/workflows/runtime_build_and_test.yml), as the prerelease script needs to download the build from that workflow.
 2. Copy the full git sha of whichever commit you are trying to release
-3. Go to https://github.com/facebook/react/actions/workflows/runtime_release_from_ci.yml
+3. Go to https://github.com/react/react/actions/workflows/runtime_release_from_ci.yml
 4. Paste the git sha into the "Run workflow" dropdown
 5. Let the job finish and it will be released on npm
 

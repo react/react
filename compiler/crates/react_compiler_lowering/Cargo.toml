@@ -1,12 +1,16 @@
 [package]
 name = "react_compiler_lowering"
-version = "0.1.0"
-edition = "2024"
+description = "AST to HIR lowering for the React Compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-react_compiler_ast = { path = "../react_compiler_ast" }
-react_compiler_hir = { path = "../react_compiler_hir" }
-react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
+react_compiler_ast.workspace = true
+react_compiler_hir.workspace = true
+react_compiler_diagnostics.workspace = true
 indexmap = "2"
 rustc-hash = "2"
 serde_json = "1"

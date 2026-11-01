@@ -11,8 +11,8 @@ use indexmap::IndexMap;
 
 use crate::Effect;
 use crate::type_config::{
-    BuiltInTypeRef, FunctionTypeConfig, HookTypeConfig, ObjectTypeConfig, TypeConfig,
-    TypeReferenceConfig, ValueKind,
+    AliasingEffectConfig, AliasingSignatureConfig, BuiltInTypeRef, FunctionTypeConfig,
+    HookTypeConfig, ObjectTypeConfig, TypeConfig, TypeReferenceConfig, ValueKind, ValueReason,
 };
 
 /// Returns type configuration for known third-party modules that are
@@ -113,6 +113,58 @@ pub fn default_module_type_provider(module_name: &str) -> Option<TypeConfig> {
                     }),
                 ),
             ])),
+        })),
+
+        // `PanResponder.create()` only stores the handler callbacks in the config to invoke
+        // them later in response to gesture events. It does not call them during render, so
+        // they may safely read or write refs.
+        "react-native" => Some(TypeConfig::Object(ObjectTypeConfig {
+            properties: Some(IndexMap::from_iter([(
+                "PanResponder".to_string(),
+                TypeConfig::Object(ObjectTypeConfig {
+                    properties: Some(IndexMap::from_iter([(
+                        "create".to_string(),
+                        TypeConfig::Function(FunctionTypeConfig {
+                            positional_params: vec![Effect::Freeze],
+                            rest_param: None,
+                            callee_effect: Effect::Read,
+                            return_type: Box::new(TypeConfig::TypeReference(
+                                TypeReferenceConfig {
+                                    name: BuiltInTypeRef::Any,
+                                },
+                            )),
+                            return_value_kind: ValueKind::Frozen,
+                            no_alias: None,
+                            mutable_only_if_operands_are_mutable: None,
+                            impure: None,
+                            canonical_name: None,
+                            aliasing: Some(AliasingSignatureConfig {
+                                receiver: "@receiver".to_string(),
+                                params: vec!["@config".to_string()],
+                                rest: None,
+                                returns: "@returns".to_string(),
+                                temporaries: Vec::new(),
+                                effects: vec![
+                                    AliasingEffectConfig::Freeze {
+                                        value: "@config".to_string(),
+                                        reason: ValueReason::KnownReturnSignature,
+                                    },
+                                    AliasingEffectConfig::Create {
+                                        into: "@returns".to_string(),
+                                        value: ValueKind::Frozen,
+                                        reason: ValueReason::KnownReturnSignature,
+                                    },
+                                    AliasingEffectConfig::ImmutableCapture {
+                                        from: "@config".to_string(),
+                                        into: "@returns".to_string(),
+                                    },
+                                ],
+                            }),
+                            known_incompatible: None,
+                        }),
+                    )])),
+                }),
+            )])),
         })),
 
         _ => None,

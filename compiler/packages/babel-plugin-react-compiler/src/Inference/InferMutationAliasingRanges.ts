@@ -398,7 +398,9 @@ export function inferMutationAliasingRanges(
             break;
           }
           case 'Freeze': {
-            operandEffects.set(effect.value.identifier.id, Effect.Freeze);
+            if (effect.alreadyFrozen !== true) {
+              operandEffects.set(effect.value.identifier.id, Effect.Freeze);
+            }
             break;
           }
           case 'ImmutableCapture': {

@@ -102,7 +102,7 @@ describe('ReactDOMEventListener', () => {
       }
     });
 
-    // Regression test for https://github.com/facebook/react/issues/1105
+    // Regression test for https://github.com/react/react/issues/1105
     it('should not get confused by disappearing elements', async () => {
       const container = document.createElement('div');
       document.body.appendChild(container);
@@ -324,13 +324,13 @@ describe('ReactDOMEventListener', () => {
         innerRef.current.dispatchEvent(nativeEvent);
       });
 
-      expect(mouseOut).toBeCalledWith(innerRef.current);
+      expect(mouseOut).toHaveBeenCalledWith(innerRef.current);
     } finally {
       document.body.removeChild(container);
     }
   });
 
-  // Regression test for https://github.com/facebook/react/pull/12877
+  // Regression test for https://github.com/react/react/pull/12877
   it('should not fire form events twice', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -703,7 +703,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  it('should bubble non-native bubbling toggle events', async () => {
+  it('should not bubble non-native toggle events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
     const onToggle = jest.fn();
@@ -724,7 +724,7 @@ describe('ReactDOMEventListener', () => {
           }),
         );
       });
-      expect(onToggle).toHaveBeenCalledTimes(2);
+      expect(onToggle).toHaveBeenCalledTimes(1);
     } finally {
       document.body.removeChild(container);
     }

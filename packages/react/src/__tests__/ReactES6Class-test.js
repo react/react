@@ -591,7 +591,7 @@ describe('ReactES6Class', () => {
     expect(() => ref.current.replaceState({})).toThrow();
     assertConsoleWarnDev([
       'replaceState(...) is deprecated in plain JavaScript React classes. ' +
-        'Refactor your code to use setState instead (see https://github.com/facebook/react/issues/3236).',
+        'Refactor your code to use setState instead (see https://github.com/react/react/issues/3236).',
     ]);
     expect(() => ref.current.isMounted()).toThrow();
     assertConsoleWarnDev([

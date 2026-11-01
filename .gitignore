@@ -8,6 +8,12 @@ scripts/flow/*/.flowconfig
 _SpecRunner.html
 __benchmarks__
 build/
+base-build/
+sizebot-comment.md
+sizebot-context.json
+sizebot-message.md
+sizebot-problem.txt
+sizebot-results.json
 remote-repo/
 coverage/
 .module-cache

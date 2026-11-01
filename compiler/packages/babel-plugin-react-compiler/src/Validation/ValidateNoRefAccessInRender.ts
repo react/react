@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {areSourceLocationsEqual} from '../HIR/SourceLocation';
 import {
   CompilerDiagnostic,
   CompilerError,
@@ -199,7 +200,9 @@ function tyEqual(a: RefAccessType, b: RefAccessType): boolean {
         reason: 'Expected ref value',
         loc: GeneratedSource,
       });
-      return a.loc == b.loc;
+      return a.loc === undefined || b.loc === undefined
+        ? a.loc === b.loc
+        : areSourceLocationsEqual(a.loc, b.loc);
     case 'Structure': {
       CompilerError.invariant(b.kind === 'Structure', {
         reason: 'Expected structure',
@@ -455,11 +458,12 @@ function validateNoRefAccessInRenderImpl(
             break;
           }
           case 'MethodCall':
+          case 'NewExpression':
           case 'CallExpression': {
             const callee =
-              instr.value.kind === 'CallExpression'
-                ? instr.value.callee
-                : instr.value.property;
+              instr.value.kind === 'MethodCall'
+                ? instr.value.property
+                : instr.value.callee;
             const hookKind = getHookKindForType(fn.env, callee.identifier.type);
             let returnType: RefAccessType = {kind: 'None'};
             const fnType = env.get(callee.identifier.id);
@@ -754,8 +758,18 @@ function validateNoRefAccessInRenderImpl(
             if (refId !== null && nullish) {
               env.set(instr.lvalue.identifier.id, {kind: 'Guard', refId});
             } else {
+              /*
+               * A binary operator such as `===` or `!==` never invokes a
+               * function operand, so a value that merely *reads* a ref when
+               * called (RefAccessType Structure with readRefEffect) is not
+               * itself a ref access here. Only flag a direct ref value, e.g.
+               * `ref.current === other`. Using the broader
+               * validateNoRefValueAccess would flag comparisons like
+               * `someCallback !== previousCallback` even though comparing
+               * function identity never reads `.current`.
+               */
               for (const operand of eachInstructionValueOperand(instr.value)) {
-                validateNoRefValueAccess(errors, env, operand);
+                validateNoDirectRefValueAccess(errors, operand, env);
               }
             }
             break;

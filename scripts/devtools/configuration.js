@@ -22,7 +22,7 @@ const NPM_PACKAGES = [
 
 const CHANGELOG_PATH = 'packages/react-devtools/CHANGELOG.md';
 
-const PULL_REQUEST_BASE_URL = 'https://github.com/facebook/react/pull/';
+const PULL_REQUEST_BASE_URL = 'https://github.com/react/react/pull/';
 
 const RELEASE_SCRIPT_TOKEN = '<!-- RELEASE_SCRIPT_TOKEN -->';
 

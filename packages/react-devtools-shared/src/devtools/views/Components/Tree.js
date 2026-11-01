@@ -458,7 +458,7 @@ export default function Tree(): React.Node {
         If this seems stuck, please follow the{' '}
         <a
           className={styles.Link}
-          href="https://github.com/facebook/react/blob/main/packages/react-devtools/README.md#the-react-tab-shows-no-components"
+          href="https://github.com/react/react/blob/main/packages/react-devtools/README.md#the-react-tab-shows-no-components"
           target="_blank">
           troubleshooting instructions
         </a>

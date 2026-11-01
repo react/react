@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "react_compiler_ast",
@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_ast"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_diagnostics"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "rustc-hash",
  "serde",
@@ -316,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_hir"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_inference"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
@@ -341,7 +341,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_lowering"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "react_compiler_ast",
@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_optimization"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
@@ -378,7 +378,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_reactive_scopes"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "hmac-sha256",
  "indexmap",
@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_ssa"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_typeinference"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "react_compiler_diagnostics",
  "react_compiler_hir",
@@ -411,7 +411,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_utils"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "rustc-hash",
@@ -419,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "react_compiler_validation"
-version = "0.1.0"
+version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
