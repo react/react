@@ -6173,6 +6173,12 @@ fn lower_inner(
                 let rest_loc = convert_base_loc(&rest.base);
                 // Create a temporary place for the spread param
                 let place = build_temporary_place(&mut builder, rest_loc.clone());
+                // Promote it like every other destructuring parameter below
+                // does. Outlined functions are code generated without running
+                // PromoteUsedTemporaries, so an unpromoted parameter there
+                // reaches codegen unnamed and trips the "Expected temporaries
+                // to be promoted to named identifiers" invariant.
+                promote_temporary(&mut builder, place.identifier);
                 hir_params.push(ParamPattern::Spread(SpreadPattern {
                     place: place.clone(),
                 }));
