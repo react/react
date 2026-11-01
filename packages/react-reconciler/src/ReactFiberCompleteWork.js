@@ -175,6 +175,7 @@ import {
 import {
   OffscreenLane,
   SomeRetryLane,
+  NoLane,
   NoLanes,
   includesSomeLane,
   mergeLanes,
@@ -1026,6 +1027,25 @@ function completeDehydratedSuspenseBoundary(
       // We might have reentered this boundary to hydrate it. If so, we need to reset the hydration
       // state since we're now exiting out of it. popHydrationState doesn't do that for us.
       resetHydrationState();
+      const primaryChildFragment = workInProgress.child;
+      if (
+        primaryChildFragment !== null &&
+        primaryChildFragment.tag === OffscreenComponent &&
+        primaryChildFragment.sibling !== null
+      ) {
+        // We reentered this boundary to hydrate its fallback. Both branches are
+        // now present (the hidden primary and the hydrated fallback), so leave
+        // the boundary in an ordinary suspended state rather than dehydrated.
+        workInProgress.memoizedState = {
+          dehydrated: null,
+          treeContext: null,
+          retryLane: NoLane,
+          hydrationErrors: null,
+        };
+        workInProgress.flags |= Update;
+        // Complete normally to attach the primary tree's retry listeners.
+        return true;
+      }
       if ((workInProgress.flags & DidCapture) === NoFlags) {
         // This boundary did not suspend so it's now hydrated and unsuspended.
         nextState = workInProgress.memoizedState = null;
