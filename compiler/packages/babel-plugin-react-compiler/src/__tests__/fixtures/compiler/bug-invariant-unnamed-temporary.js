@@ -1,4 +1,8 @@
-import Bar from './Bar';
+const displayValue = 'text';
+
+function Bar({renderer}) {
+  return renderer();
+}
 
 export function Foo() {
   return (
