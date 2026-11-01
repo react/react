@@ -1403,7 +1403,15 @@ pub enum MutationReason {
 #[derive(Debug, Clone)]
 pub enum AliasingEffect {
     /// Marks the given value and its direct aliases as frozen.
-    Freeze { value: Place, reason: ValueReason },
+    ///
+    /// `already_frozen` is set when the value was already frozen, so the freeze did not
+    /// change the inferred value kinds. The effect is retained so that ref validation can
+    /// see the declared signature, but it must not affect operand effects.
+    Freeze {
+        value: Place,
+        reason: ValueReason,
+        already_frozen: bool,
+    },
     /// Mutate the value and any direct aliases.
     Mutate {
         value: Place,

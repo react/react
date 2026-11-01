@@ -255,6 +255,63 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(errors).toEqual(['This operation was aborted']);
   });
 
+  it('flushes all partial content before closing a prerender under backpressure', async () => {
+    const Stream = require('stream');
+    const Readable = Stream.Readable;
+    const createReadable = jest
+      .spyOn(Stream, 'Readable')
+      .mockImplementation(
+        options => new Readable({...options, highWaterMark: 1}),
+      );
+
+    try {
+      // Each payload exceeds Fizz's 4096-byte write buffer.
+      const firstContent = 'A'.repeat(5000);
+      const secondContent = 'B'.repeat(5000);
+      const controller = new AbortController();
+      const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(
+        <main>
+          <Suspense fallback="Loading A">
+            <section>
+              {firstContent}
+              <InfiniteSuspend />
+            </section>
+          </Suspense>
+          <Suspense fallback="Loading B">
+            <section>
+              {secondContent}
+              <InfiniteSuspend />
+            </section>
+          </Suspense>
+        </main>,
+        {
+          signal: controller.signal,
+          onError() {},
+        },
+      );
+
+      await jest.runAllTimers();
+      controller.abort();
+      await jest.runAllTimers();
+
+      const {prelude, postponed} = await resultPromise;
+      expect(postponed).not.toBe(null);
+      expect(prelude.readableHighWaterMark).toBe(1);
+
+      const push = jest.spyOn(prelude, 'push');
+      prelude.read(0);
+      expect(push).toHaveReturnedWith(false);
+
+      const content = await readContent(prelude);
+      expect(content).toContain('Loading A');
+      expect(content).toContain('Loading B');
+      expect(content.includes(firstContent)).toBe(true);
+      expect(content.includes(secondContent)).toBe(true);
+    } finally {
+      createReadable.mockRestore();
+    }
+  });
+
   it('should resolve an empty shell if aborting before the shell is complete', async () => {
     const errors = [];
     const controller = new AbortController();

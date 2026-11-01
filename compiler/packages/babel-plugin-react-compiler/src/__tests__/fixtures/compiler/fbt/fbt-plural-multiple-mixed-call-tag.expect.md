@@ -8,13 +8,6 @@ import fbt from 'fbt';
  * Similar to error.todo-multiple-fbt-plural, but note that we must
  * count fbt plurals across both <fbt:plural /> namespaced jsx tags
  * and fbt.plural(...) call expressions.
- *
- * Evaluator error:
- *   Found differences in evaluator results
- *   Non-forget (expected):
- *   (kind: ok) <div>1 apple and 2 bananas</div>
- *   Forget:
- *   (kind: ok) <div>1 apples and 2 bananas</div>
  */
 function useFoo({apples, bananas}) {
   return (
@@ -49,13 +42,6 @@ import fbt from "fbt";
  * Similar to error.todo-multiple-fbt-plural, but note that we must
  * count fbt plurals across both <fbt:plural /> namespaced jsx tags
  * and fbt.plural(...) call expressions.
- *
- * Evaluator error:
- *   Found differences in evaluator results
- *   Non-forget (expected):
- *   (kind: ok) <div>1 apple and 2 bananas</div>
- *   Forget:
- *   (kind: ok) <div>1 apples and 2 bananas</div>
  */
 function useFoo(t0) {
   const $ = _c(3);
@@ -68,15 +54,19 @@ function useFoo(t0) {
           {
             "*": {
               "*": "{number of apples} apples and {number of bananas} bananas",
+              _1: "{number of apples} apples and 1 banana",
             },
-            _1: { _1: "{number of apples} apple and 1 banana" },
+            _1: {
+              "*": "{number of apples} apple and {number of bananas} bananas",
+              _1: "{number of apples} apple and 1 banana",
+            },
           },
           [
             fbt._plural(apples),
             fbt._plural(bananas, "number of bananas"),
             fbt._param("number of apples", apples),
           ],
-          { hk: "2xXrUW" },
+          { hk: "1Zg53Z" },
         )}
       </div>
     );
@@ -96,3 +86,5 @@ export const FIXTURE_ENTRYPOINT = {
 
 ```
       
+### Eval output
+(kind: ok) <div>1 apple and 2 bananas</div>

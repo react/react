@@ -328,6 +328,52 @@ describe('useId', () => {
     }
   });
 
+  it('large ids preserve leading zeros in the overflow', async () => {
+    // Each Wrapper level forks because of the null sibling, so the ids grow
+    // past 30 bits and some of the overflowed characters start with 0s.
+    function Child({children}) {
+      const id = useId();
+      return <div id={id}>{children}</div>;
+    }
+
+    function Wrapper({depth, children}) {
+      if (depth === 0) {
+        return children;
+      }
+      return (
+        <div>
+          {null}
+          <Wrapper depth={depth - 1}>{children}</Wrapper>
+        </div>
+      );
+    }
+
+    function App() {
+      const children = [];
+      for (let i = 0; i < 32; i++) {
+        children.push(
+          <Child key={i}>
+            <Child />
+          </Child>,
+        );
+      }
+      return <Wrapper depth={12}>{children}</Wrapper>;
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />);
+    });
+    const ids = Array.from(container.querySelectorAll('div[id]')).map(
+      div => div.id,
+    );
+    expect(ids.length).toBe(64);
+    expect(new Set(ids).size).toBe(64);
+  });
+
   it('multiple ids in a single component', async () => {
     function App() {
       const id1 = useId();

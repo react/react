@@ -100,7 +100,7 @@ async function processArtifact(artifact, opts) {
     console.log(theme`{caution Skipping verification of build artifact.}`);
   } else {
     // Use https://cli.github.com/manual/gh_attestation_verify to verify artifact
-    if (executableIsAvailable('gh')) {
+    if (await executableIsAvailable('gh')) {
       await exec(
         `gh attestation verify artifacts_combined.zip --repo=${REPO}`,
         {

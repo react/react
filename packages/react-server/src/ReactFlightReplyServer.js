@@ -29,13 +29,11 @@ import {
 
 import {
   createBackingFormData,
-  advanceBackingEntryIterator,
   appendBackingEntry,
-  appendBackingFile,
-  consumeBackingEntry,
-  getBackingEntry,
-  getAllBackingEntries,
-  peekBackingEntry,
+  consumeBackingEntries,
+  getBackingBlob,
+  getBackingString,
+  getStreamChunks,
 } from './ReactFlightReplyBackingFormData';
 import {
   createTemporaryReference,
@@ -908,7 +906,7 @@ function getChunk(response: Response, id: number): SomeChunk<any> {
     const prefix = response._prefix;
     const key = prefix + id;
     // Check if we have this field in the backing store already.
-    const backingEntry = getBackingEntry(response._formData, key);
+    const backingEntry = getBackingString(response._formData, key);
     if (typeof backingEntry === 'string') {
       chunk = createResolvedModelChunk(response, backingEntry, id);
     } else if (response._closed) {
@@ -1342,7 +1340,7 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
 
   // We should have this backingEntry in the store already because we emitted
   // it before referencing it. It should be a Blob.
-  const backingEntry: Blob = getBackingEntry(response._formData, key) as any;
+  const backingEntry: Blob = getBackingBlob(response._formData, key) as any;
 
   const promise: Promise<ArrayBuffer> = backingEntry.arrayBuffer();
 
@@ -1441,16 +1439,19 @@ function resolveStream<T: ReadableStream | $AsyncIterable<any, any, void>>(
   chunks.set(id, chunk);
 
   const prefix = response._prefix;
-  const key = prefix + id;
-  const existingEntries = getAllBackingEntries(response._formData, key);
+  // Stream chunks are written under a dedicated namespace so they can be
+  // told apart from one-shot chunks at append time.
+  const key = prefix + 'S' + id;
+  const existingEntries = getStreamChunks(response._formData, key);
+  if (existingEntries === undefined) {
+    return;
+  }
   for (let i = 0; i < existingEntries.length; i++) {
     const value = existingEntries[i];
-    if (typeof value === 'string') {
-      if (value[0] === 'C') {
-        controller.close(value === 'C' ? '"$undefined"' : value.slice(1));
-      } else {
-        controller.enqueueModel(value);
-      }
+    if (value[0] === 'C') {
+      controller.close(value === 'C' ? '"$undefined"' : value.slice(1));
+    } else {
+      controller.enqueueModel(value);
     }
   }
 }
@@ -1765,43 +1766,10 @@ function parseModelString(
         // FormData
         const stringId = value.slice(2);
 
-        const responsePrefix = response._prefix;
         // Use the special marker from the Client to distinguish keys that should
         // be consumed by referenced FormData.
-        const anyFormPrefix = responsePrefix + '_';
-        const formPrefix = anyFormPrefix + stringId + '_';
-
-        const data = new FormData();
-        const backingFormData = response._formData;
-        // We're still transpiling for-of loops, so we have to use the iterator directly instead of a for-of loop.
-        while (true) {
-          const formDataKey = peekBackingEntry(backingFormData);
-          if (formDataKey === undefined) {
-            break;
-          }
-          if (formDataKey.startsWith(formPrefix)) {
-            const referencedFormDataValue = getAllBackingEntries(
-              backingFormData,
-              formDataKey,
-            );
-            const referencedFormDataKey = formDataKey.slice(formPrefix.length);
-            for (let i = 0; i < referencedFormDataValue.length; i++) {
-              // $FlowFixMe[incompatible-type]
-              data.append(referencedFormDataKey, referencedFormDataValue[i]);
-            }
-            consumeBackingEntry(backingFormData, formDataKey);
-          } else if (formDataKey.startsWith(anyFormPrefix)) {
-            // The FormData values are continuous and before the FormData reference.
-            // If we see something that doesn't look like a value for a referenced
-            // FormData, we can assume we're past the values for this FormData
-            // reference and stop iterating.
-            break;
-          } else {
-            // Either an outlined value or something not owned by this Reply.
-            advanceBackingEntryIterator(backingFormData);
-          }
-        }
-        return data;
+        const formPrefix = response._prefix + '_' + stringId + '_';
+        return consumeBackingEntries(response._formData, formPrefix);
       }
       case 'i': {
         // Iterator
@@ -1987,7 +1955,7 @@ function parseModelString(
         const blobKey = prefix + id;
         // We should have this backingEntry in the store already because we emitted
         // it before referencing it. It should be a Blob.
-        const backingEntry: Blob = getBackingEntry(
+        const backingEntry: Blob = getBackingBlob(
           response._formData,
           blobKey,
         ) as any;
@@ -2041,7 +2009,7 @@ export function createResponse(
   const response: Response = {
     _bundlerConfig: bundlerConfig,
     _prefix: formFieldPrefix,
-    _formData: createBackingFormData(backingFormData),
+    _formData: createBackingFormData(backingFormData, formFieldPrefix),
     _chunks: chunks,
     _closed: false,
     _closedReason: null,
@@ -2060,23 +2028,38 @@ export function resolveField(
   key: string,
   value: string,
 ): void {
-  // Add this field to the backing store.
-  appendBackingEntry(response._formData, key, value);
   const prefix = response._prefix;
   if (key.startsWith(prefix)) {
     const chunks = response._chunks;
-    const id = +key.slice(prefix.length);
-    const chunk = chunks.get(id);
-    if (chunk) {
-      // We were waiting on this key so now we can resolve it.
-      resolveModelChunk(response, chunk, value, id);
+    if (key[prefix.length] === 'S') {
+      // Stream chunks live in a dedicated namespace so that they can be told
+      // apart from one-shot chunks.
+      if (key.length > prefix.length + 'S'.length) {
+        const id = +key.slice(prefix.length + 'S'.length);
+        const chunk = chunks.get(id);
+        if (chunk) {
+          // The stream was already referenced so we can enqueue right away.
+          resolveModelChunk(response, chunk, value, id);
+          return;
+        }
+      }
+    } else {
+      const id = +key.slice(prefix.length);
+      const chunk = chunks.get(id);
+      if (chunk) {
+        // We were waiting on this key so now we can resolve it.
+        resolveModelChunk(response, chunk, value, id);
+        return;
+      }
     }
   }
+  // Add this field to the backing store.
+  appendBackingEntry(response._formData, value, key);
 }
 
 export function resolveFile(response: Response, key: string, file: File): void {
   // Add this field to the backing store.
-  appendBackingEntry(response._formData, key, file);
+  appendBackingEntry(response._formData, file, key);
 }
 
 export opaque type FileHandle = {
@@ -2106,17 +2089,28 @@ export function resolveFileChunk(
   handle.chunks.push(chunk);
 }
 
+// Node.js before v20 doesn't expose a global File constructor, so fall back
+// to a scratch single-entry FormData, whose append/get is O(1).
+function createFileFromHandle(handle: FileHandle): File {
+  if (typeof File === 'function') {
+    return new File(handle.chunks, handle.filename, {type: handle.mime});
+  }
+  const scratch = new FormData();
+  scratch.append(
+    'file',
+    new Blob(handle.chunks, {type: handle.mime}),
+    handle.filename,
+  );
+  return scratch.get('file') as any;
+}
+
 export function resolveFileComplete(
   response: Response,
   key: string,
   handle: FileHandle,
 ): void {
   // Add this file to the backing store.
-  // Node.js doesn't expose a global File constructor so we need to use
-  // the append() form that takes the file name as the third argument,
-  // to create a File object.
-  const blob = new Blob(handle.chunks, {type: handle.mime});
-  appendBackingFile(response._formData, key, blob, handle.filename);
+  appendBackingEntry(response._formData, createFileFromHandle(handle), key);
 }
 
 export function close(response: Response): void {

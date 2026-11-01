@@ -729,7 +729,7 @@ export class FlowTypeEnv implements ITypeEnv {
   setType(identifier: Identifier, type: ResolvedType): void {
     if (
       typeof identifier.loc !== 'symbol' &&
-      this.#flowTypes.has(serializeLoc(identifier.loc))
+      this.#flowTypes.has(serializeLoc(identifier.loc.loc))
     ) {
       return;
     }
@@ -740,7 +740,7 @@ export class FlowTypeEnv implements ITypeEnv {
     const result = this.getTypeOrNull(identifier);
     if (result == null) {
       throw new Error(
-        `Type not found for ${identifier.id}, ${typeof identifier.loc === 'symbol' ? 'generated loc' : serializeLoc(identifier.loc)}`,
+        `Type not found for ${identifier.id}, ${typeof identifier.loc === 'symbol' ? 'generated loc' : serializeLoc(identifier.loc.loc)}`,
       );
     }
     return result;
@@ -749,7 +749,7 @@ export class FlowTypeEnv implements ITypeEnv {
   getTypeOrNull(identifier: Identifier): ResolvedType | null {
     const result = this.#types.get(identifier.id) ?? null;
     if (result == null && typeof identifier.loc !== 'symbol') {
-      const flowType = this.#flowTypes.get(serializeLoc(identifier.loc));
+      const flowType = this.#flowTypes.get(serializeLoc(identifier.loc.loc));
       return flowType ?? null;
     }
     return result;
@@ -759,7 +759,7 @@ export class FlowTypeEnv implements ITypeEnv {
     if (typeof loc === 'symbol') {
       return null;
     }
-    const flowType = this.#flowTypes.get(serializeLoc(loc));
+    const flowType = this.#flowTypes.get(serializeLoc(loc.loc));
     return flowType ?? null;
   }
 

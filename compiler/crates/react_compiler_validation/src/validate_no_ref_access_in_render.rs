@@ -810,6 +810,9 @@ fn validate_no_ref_access_in_render_impl(
                         );
                     }
                     InstructionValue::MethodCall { property, .. }
+                    | InstructionValue::NewExpression {
+                        callee: property, ..
+                    }
                     | InstructionValue::CallExpression {
                         callee: property, ..
                     } => {

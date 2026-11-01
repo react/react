@@ -176,8 +176,12 @@ export function pushTreeId(
     // Then create a bitmask that selects only those bits.
     const newOverflowBits = (1 << numberOfOverflowBits) - 1;
 
-    // Select the bits, and convert them to a base 32 string.
-    const newOverflow = (baseId & newOverflowBits).toString(32);
+    // Select the bits, and convert them to a base 32 string. Every 5 bit
+    // group must produce exactly one character, so restore any leading
+    // zero characters that toString drops.
+    const newOverflow = (baseId & newOverflowBits)
+      .toString(32)
+      .padStart(numberOfOverflowBits / 5, '0');
 
     // Now we can remove those bits from the base id.
     const restOfBaseId = baseId >> numberOfOverflowBits;

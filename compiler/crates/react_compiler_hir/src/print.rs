@@ -268,7 +268,7 @@ impl<'a> PrintFormatter<'a> {
 
     pub fn format_effect(&self, effect: &AliasingEffect) -> String {
         match effect {
-            AliasingEffect::Freeze { value, reason } => {
+            AliasingEffect::Freeze { value, reason, .. } => {
                 format!(
                     "Freeze {{ value: {}, reason: {} }}",
                     value.identifier.0,

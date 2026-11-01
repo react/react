@@ -5054,7 +5054,7 @@ function serializeIONode(
       if (name.startsWith('Window.')) {
         name = name.slice(7);
       } else if (name.startsWith('<anonymous>.')) {
-        name = name.slice(7);
+        name = name.slice('<anonymous>.'.length);
       }
     }
   }
