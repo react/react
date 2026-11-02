@@ -250,6 +250,28 @@ var _c;
 $RefreshReg$(_c, "App");
 `;
 
+exports[`ReactFreshBabelPlugin includes custom hooks with a digit after use into the signatures 1`] = `
+var _s = $RefreshSig$(),
+  _s2 = $RefreshSig$();
+function use100vh() {
+  _s();
+  const [height, setHeight] = React.useState(0);
+  return height;
+}
+_s(use100vh, "useState{[height, setHeight](0)}");
+export default function App() {
+  _s2();
+  const height = use100vh();
+  return <h1>{height}</h1>;
+}
+_s2(App, "use100vh{height}", false, function () {
+  return [use100vh];
+});
+_c = App;
+var _c;
+$RefreshReg$(_c, "App");
+`;
+
 exports[`ReactFreshBabelPlugin only registers pascal case functions 1`] = `
 function hello() {
   return 2 * 2;
