@@ -846,8 +846,15 @@ fn hash_effect(effect: &AliasingEffect) -> String {
             value,
             reason,
         } => format!("Create:{}:{:?}:{:?}", into.identifier.0, value, reason),
-        AliasingEffect::Freeze { value, reason } => {
-            format!("Freeze:{}:{:?}", value.identifier.0, reason)
+        AliasingEffect::Freeze {
+            value,
+            reason,
+            already_frozen,
+        } => {
+            format!(
+                "Freeze:{}:{:?}:{}",
+                value.identifier.0, reason, already_frozen
+            )
         }
         AliasingEffect::Impure { place, .. } => format!("Impure:{}", place.identifier.0),
         AliasingEffect::Render { place } => format!("Render:{}", place.identifier.0),
@@ -1272,6 +1279,7 @@ fn infer_block(
                     *term_effects = Some(vec![context.intern_effect(AliasingEffect::Freeze {
                         value: value.clone(),
                         reason: ValueReason::JsxCaptured,
+                        already_frozen: false,
                     })]);
                 }
             }
@@ -1460,9 +1468,18 @@ fn apply_effect(
 ) -> Result<(), CompilerDiagnostic> {
     let effect = context.intern_effect(effect);
     match effect {
-        AliasingEffect::Freeze { ref value, reason } => {
+        AliasingEffect::Freeze {
+            ref value, reason, ..
+        } => {
             let did_freeze = state.freeze(value.identifier, reason);
-            if did_freeze {
+            if !did_freeze {
+                // Ref validation needs the declared effect even if already frozen.
+                effects.push(AliasingEffect::Freeze {
+                    value: value.clone(),
+                    reason,
+                    already_frozen: true,
+                });
+            } else {
                 effects.push(effect.clone());
                 // Transitively freeze FunctionExpression captures if enabled
                 // (matches TS freezeValue which recurses into func.context)
@@ -2434,6 +2451,7 @@ fn compute_signature_for_instruction(
                 effects.push(AliasingEffect::Freeze {
                     value: operand.clone(),
                     reason: ValueReason::JsxCaptured,
+                    already_frozen: false,
                 });
                 effects.push(AliasingEffect::Capture {
                     from: operand.clone(),
@@ -2481,6 +2499,7 @@ fn compute_signature_for_instruction(
                 effects.push(AliasingEffect::Freeze {
                     value: operand.clone(),
                     reason: ValueReason::JsxCaptured,
+                    already_frozen: false,
                 });
                 effects.push(AliasingEffect::Capture {
                     from: operand.clone(),
@@ -2712,6 +2731,7 @@ fn compute_signature_for_instruction(
                     effects.push(AliasingEffect::Freeze {
                         value: operand.clone(),
                         reason: ValueReason::HookCaptured,
+                        already_frozen: false,
                     });
                 }
             }
@@ -2857,6 +2877,7 @@ fn compute_effects_for_legacy_signature(
             effects.push(AliasingEffect::Freeze {
                 value: place.clone(),
                 reason: return_value_reason,
+                already_frozen: false,
             });
         }
         Effect::Mutate => {
@@ -3113,7 +3134,7 @@ fn compute_effects_for_aliasing_signature_config(
                             v.loc,
                         ));
                     }
-                    effects.push(AliasingEffect::Freeze { value: v, reason: *reason });
+                    effects.push(AliasingEffect::Freeze { value: v, reason: *reason, already_frozen: false });
                 }
             }
             react_compiler_hir::type_config::AliasingEffectConfig::Create { into, value, reason } => {
@@ -3470,7 +3491,7 @@ fn compute_effects_for_aliasing_signature(
                     effects.push(AliasingEffect::MutateTransitiveConditionally { value: v });
                 }
             }
-            AliasingEffect::Freeze { value, reason } => {
+            AliasingEffect::Freeze { value, reason, .. } => {
                 let values = substitutions
                     .get(&value.identifier)
                     .cloned()
@@ -3485,6 +3506,7 @@ fn compute_effects_for_aliasing_signature(
                     effects.push(AliasingEffect::Freeze {
                         value: v,
                         reason: *reason,
+                        already_frozen: false,
                     });
                 }
             }

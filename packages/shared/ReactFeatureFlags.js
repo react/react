@@ -22,8 +22,7 @@
 // when it rolls out to prod. We should remove these as soon as possible.
 // -----------------------------------------------------------------------------
 
-// Enables the browser() API exported from react-dom.
-export const enableBrowserAPI: boolean = true;
+// None
 
 // -----------------------------------------------------------------------------
 // Land or remove (moderate effort)
@@ -140,10 +139,6 @@ export const enableFizzExternalRuntime = __EXPERIMENTAL__;
 
 export const alwaysThrottleRetries: boolean = true;
 
-// Gate whether useEffectEvent uses the mutation phase (true) or before-mutation
-// phase (false) for updating event function references.
-export const enableEffectEventMutationPhase: boolean = true;
-
 export const passChildrenWhenCloningPersistedNodes: boolean = false;
 
 /**
@@ -167,9 +162,6 @@ export const enableInfiniteRenderLoopDetection: boolean = false;
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 
 export const enableConditionalUseWarning: boolean = true;
-
-export const enableFragmentRefsInstanceHandles: boolean = true;
-export const enableFragmentRefsTextNodes: boolean = true;
 
 export const enableInternalInstanceMap: boolean = false;
 
@@ -226,17 +218,12 @@ export const disableLegacyMode: boolean = true;
 // in open source, but www codebase still relies on it. Need to remove.
 export const disableCommentsAsDOMContainers: boolean = true;
 
-export const enableTrustedTypesIntegration: boolean = true;
-
 // Prevent the value and checked attributes from syncing with their related
 // DOM properties
 export const disableInputAttributeSyncing: boolean = false;
 
 // Disables children for <textarea> elements
 export const disableTextareaChildren: boolean = false;
-
-// Disables children for <textarea> elements
-export const enableParallelTransitions: boolean = true;
 
 // -----------------------------------------------------------------------------
 // Debugging and DevTools
@@ -266,8 +253,6 @@ export const enableProfilerCommitHooks = __PROFILE__;
 
 // Phase param passed to onRender callback differentiates between an "update" and a "cascading-update".
 export const enableProfilerNestedUpdatePhase = __PROFILE__;
-
-export const enableAsyncDebugInfo: boolean = true;
 
 // Track which Fiber(s) schedule render work.
 export const enableUpdaterTracking = __PROFILE__;

@@ -207,7 +207,6 @@ function markUpdate(workInProgress: Fiber) {
  * it received an update that requires a clone of the tree above.
  */
 function markCloned(workInProgress: Fiber) {
-  // $FlowFixMe[constant-condition]
   if (supportsPersistence) {
     workInProgress.flags |= Cloned;
   }
@@ -248,7 +247,6 @@ function appendAllChildren(
   needsVisibilityToggle: boolean,
   isHidden: boolean,
 ) {
-  // $FlowFixMe[constant-condition]
   if (supportsMutation) {
     // We only have the top Fiber that was created but we need recurse down its
     // children to find all the terminal nodes.
@@ -258,7 +256,6 @@ function appendAllChildren(
         appendInitialChild(parent, node.stateNode);
       } else if (
         node.tag === HostPortal ||
-        // $FlowFixMe[constant-condition]
         (supportsSingletons ? node.tag === HostSingleton : false)
       ) {
         // If we have a portal child, then we don't want to traverse
@@ -285,7 +282,6 @@ function appendAllChildren(
       node.sibling.return = node.return;
       node = node.sibling;
     }
-    // $FlowFixMe[constant-condition]
   } else if (supportsPersistence) {
     // We only have the top Fiber that was created but we need recurse down its
     // children to find all the terminal nodes.
@@ -363,7 +359,6 @@ function appendAllChildrenToContainer(
   // about their presence, we track and return if they were added to the
   // child set.
   let hasOffscreenComponentChild = false;
-  // $FlowFixMe[constant-condition]
   if (supportsPersistence) {
     // We only have the top Fiber that was created but we need recurse down its
     // children to find all the terminal nodes.
@@ -435,7 +430,6 @@ function appendAllChildrenToContainer(
 }
 
 function updateHostContainer(current: null | Fiber, workInProgress: Fiber) {
-  // $FlowFixMe[constant-condition]
   if (supportsPersistence) {
     if (doesRequireClone(current, workInProgress)) {
       const portalOrRoot: {
@@ -467,7 +461,6 @@ function updateHostComponent(
   newProps: Props,
   renderLanes: Lanes,
 ) {
-  // $FlowFixMe[constant-condition]
   if (supportsMutation) {
     // If we have an alternate, that means this is an update and we need to
     // schedule a side-effect to do the updates.
@@ -479,7 +472,6 @@ function updateHostComponent(
     }
 
     markUpdate(workInProgress);
-    // $FlowFixMe[constant-condition]
   } else if (supportsPersistence) {
     const currentInstance = current.stateNode;
     const oldProps = current.memoizedProps;
@@ -677,13 +669,11 @@ function updateHostText(
   oldText: string,
   newText: string,
 ) {
-  // $FlowFixMe[constant-condition]
   if (supportsMutation) {
     // If the text differs, mark it as an update. All the work in done in commitWork.
     if (oldText !== newText) {
       markUpdate(workInProgress);
     }
-    // $FlowFixMe[constant-condition]
   } else if (supportsPersistence) {
     if (oldText !== newText) {
       // If the text content differs, we'll create a new text instance for it.
@@ -1198,7 +1188,6 @@ function completeWork(
       return null;
     }
     case HostHoistable: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // The branching here is more complicated than you might expect because
         // a HostHoistable sometimes corresponds to a Resource and sometimes
@@ -1268,7 +1257,6 @@ function completeWork(
             const oldProps = current.memoizedProps;
             // This is an Instance
             // We may have props to update on the Hoistable instance.
-            // $FlowFixMe[constant-condition]
             if (supportsMutation) {
               if (oldProps !== newProps) {
                 markUpdate(workInProgress);
@@ -1300,13 +1288,11 @@ function completeWork(
       // Fall through
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         popHostContext(workInProgress);
         const rootContainerInstance = getRootHostContainer();
         const type = workInProgress.type;
         if (current !== null && workInProgress.stateNode != null) {
-          // $FlowFixMe[constant-condition]
           if (supportsMutation) {
             const oldProps = current.memoizedProps;
             if (oldProps !== newProps) {

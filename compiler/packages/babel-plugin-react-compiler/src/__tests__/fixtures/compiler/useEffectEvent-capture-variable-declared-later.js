@@ -1,7 +1,7 @@
 // @compilationMode:"infer"
 import {useEffect, useEffectEvent, useState} from 'react';
 
-// Repro from https://github.com/facebook/react/issues/37209
+// Repro from https://github.com/react/react/issues/37209
 // The effect event reads `length`, which is declared after the callback.
 // The callback must not be memoized, so it always sees the latest value.
 export default function App() {

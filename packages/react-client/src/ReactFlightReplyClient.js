@@ -295,16 +295,16 @@ export function processReply(
     const streamId = nextPartId++;
 
     const buffer = [];
+    // Stream chunks use a dedicated namespace so that the server can tell
+    // them apart from one-shot chunks without scanning.
+    const streamPrefix = formFieldPrefix + 'S' + streamId;
 
     function progress(entry: {done: boolean, value: ReactServerValue, ...}) {
       if (entry.done) {
         const blobId = nextPartId++;
         data.append(formFieldPrefix + blobId, new Blob(buffer));
-        data.append(
-          formFieldPrefix + streamId,
-          '"$o' + blobId.toString(16) + '"',
-        );
-        data.append(formFieldPrefix + streamId, 'C'); // Close signal
+        data.append(streamPrefix, '"$o' + blobId.toString(16) + '"');
+        data.append(streamPrefix, 'C'); // Close signal
         pendingParts--;
         if (pendingParts === 0) {
           resolve(data);
@@ -329,9 +329,13 @@ export function processReply(
     pendingParts++;
     const streamId = nextPartId++;
 
+    // Stream chunks use a dedicated namespace so that the server can tell
+    // them apart from one-shot chunks without scanning.
+    const streamPrefix = formFieldPrefix + 'S' + streamId;
+
     function progress(entry: {done: boolean, value: ReactServerValue, ...}) {
       if (entry.done) {
-        data.append(formFieldPrefix + streamId, 'C'); // Close signal
+        data.append(streamPrefix, 'C'); // Close signal
         pendingParts--;
         if (pendingParts === 0) {
           resolve(data);
@@ -340,7 +344,7 @@ export function processReply(
         try {
           // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
           const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-          data.append(formFieldPrefix + streamId, partJSON);
+          data.append(streamPrefix, partJSON);
           reader.read().then(progress, reject);
         } catch (x) {
           reject(x);
@@ -384,6 +388,10 @@ export function processReply(
     // iterated more than once on the receiving server.
     const isIterator = iterable === iterator;
 
+    // Stream chunks use a dedicated namespace so that the server can tell
+    // them apart from one-shot chunks without scanning.
+    const streamPrefix = formFieldPrefix + 'S' + streamId;
+
     // There's a race condition between when the stream is aborted and when the promise
     // resolves so we track whether we already aborted it to avoid writing twice.
     function progress(
@@ -393,14 +401,14 @@ export function processReply(
     ) {
       if (entry.done) {
         if (entry.value === undefined) {
-          data.append(formFieldPrefix + streamId, 'C'); // Close signal
+          data.append(streamPrefix, 'C'); // Close signal
         } else {
           // Unlike streams, the last value may not be undefined. If it's not
           // we outline it and encode a reference to it in the closing instruction.
           try {
             // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
             const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-            data.append(formFieldPrefix + streamId, 'C' + partJSON); // Close signal
+            data.append(streamPrefix, 'C' + partJSON); // Close signal
           } catch (x) {
             reject(x);
             return;
@@ -414,7 +422,7 @@ export function processReply(
         try {
           // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
           const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-          data.append(formFieldPrefix + streamId, partJSON);
+          data.append(streamPrefix, partJSON);
           iterator.next().then(progress, reject);
         } catch (x) {
           reject(x);

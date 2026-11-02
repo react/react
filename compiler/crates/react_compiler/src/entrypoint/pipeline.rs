@@ -1170,12 +1170,12 @@ pub fn compile_fn(
 
 /// Compile an outlined function's codegen AST through the full pipeline.
 ///
-/// Creates a fresh Environment, builds a synthetic ScopeInfo with unique fake
-/// positions for identifier resolution, lowers from AST to HIR, then runs
+/// Creates a fresh Environment, builds a synthetic ScopeInfo with unique node
+/// IDs for identifier resolution, lowers from AST to HIR, then runs
 /// the full compilation pipeline. This mirrors the TS behavior where outlined
 /// functions are inserted into the program AST and re-compiled from scratch.
 pub fn compile_outlined_fn(
-    mut codegen_fn: CodegenFunction,
+    codegen_fn: CodegenFunction,
     fn_name: Option<&str>,
     fn_type: ReactFunctionType,
     mode: CompilerOutputMode,
@@ -1193,16 +1193,9 @@ pub fn compile_outlined_fn(
     // Build a FunctionDeclaration from the codegen output
     let mut outlined_decl = react_compiler_ast::statements::FunctionDeclaration {
         base: react_compiler_ast::common::BaseNode::typed("FunctionDeclaration"),
-        id: codegen_fn.id.take(),
-        params: std::mem::take(&mut codegen_fn.params),
-        body: std::mem::replace(
-            &mut codegen_fn.body,
-            react_compiler_ast::statements::BlockStatement {
-                base: react_compiler_ast::common::BaseNode::typed("BlockStatement"),
-                body: Vec::new(),
-                directives: Vec::new(),
-            },
-        ),
+        id: codegen_fn.id,
+        params: codegen_fn.params,
+        body: codegen_fn.body,
         generator: codegen_fn.generator,
         is_async: codegen_fn.is_async,
         declare: None,
@@ -1213,7 +1206,7 @@ pub fn compile_outlined_fn(
         hook_declaration: false,
     };
 
-    // Build scope info by assigning fake positions to all identifiers
+    // Build scope info without changing the identifiers' source offsets.
     let scope_info = build_outlined_scope_info(&mut outlined_decl);
 
     let func_node = react_compiler_lowering::FunctionNode::FunctionDeclaration(&outlined_decl);
@@ -1227,68 +1220,39 @@ pub fn compile_outlined_fn(
 }
 
 /// Build a ScopeInfo for an outlined function declaration by assigning unique
-/// fake positions to all Identifier nodes and building the binding/reference maps.
+/// node IDs to identifiers and building the binding/reference maps.
 fn build_outlined_scope_info(
     func: &mut react_compiler_ast::statements::FunctionDeclaration,
 ) -> react_compiler_ast::scope::ScopeInfo {
     use react_compiler_ast::scope::*;
 
-    let mut pos: u32 = 1; // reserve 0 for the function itself
-    func.base.start = Some(0);
+    let mut next_node_id: u32 = 1; // reserve 0 for the function itself
+    func.base.node_id = Some(0);
 
     let mut fn_bindings: FxHashMap<String, BindingId> = FxHashMap::default();
     let mut bindings_list: Vec<BindingData> = Vec::new();
-    let mut ref_to_binding: IndexMap<u32, BindingId, FxBuildHasher> = IndexMap::default();
-
-    // Helper to add a binding
-    let _add_binding =
-        |name: &str,
-         kind: BindingKind,
-         p: u32,
-         fn_bindings: &mut FxHashMap<String, BindingId>,
-         bindings_list: &mut Vec<BindingData>,
-         ref_to_binding: &mut IndexMap<u32, BindingId, FxBuildHasher>| {
-            if fn_bindings.contains_key(name) {
-                // Already exists, just add reference
-                let bid = fn_bindings[name];
-                ref_to_binding.insert(p, bid);
-                return;
-            }
-            let binding_id = BindingId(bindings_list.len() as u32);
-            fn_bindings.insert(name.to_string(), binding_id);
-            bindings_list.push(BindingData {
-                id: binding_id,
-                name: name.to_string(),
-                kind,
-                scope: ScopeId(1),
-                declaration_type: "VariableDeclarator".to_string(),
-                declaration_start: Some(p),
-                declaration_node_id: None,
-                import: None,
-            });
-            ref_to_binding.insert(p, binding_id);
-        };
+    let mut ref_node_id_to_binding: IndexMap<u32, BindingId, FxBuildHasher> = IndexMap::default();
 
     // Process params - add as Param bindings
     for param in &mut func.params {
-        outlined_assign_pattern_positions(
+        outlined_assign_pattern_node_ids(
             param,
-            &mut pos,
+            &mut next_node_id,
             BindingKind::Param,
             &mut fn_bindings,
             &mut bindings_list,
-            &mut ref_to_binding,
+            &mut ref_node_id_to_binding,
         );
     }
 
-    // Process body - walk all statements to assign positions and collect variable declarations
+    // Process body - assign node IDs and collect variable declarations.
     for stmt in &mut func.body.body {
-        outlined_assign_stmt_positions(
+        outlined_assign_stmt_node_ids(
             stmt,
-            &mut pos,
+            &mut next_node_id,
             &mut fn_bindings,
             &mut bindings_list,
-            &mut ref_to_binding,
+            &mut ref_node_id_to_binding,
         );
     }
 
@@ -1305,19 +1269,13 @@ fn build_outlined_scope_info(
         bindings: fn_bindings,
     };
 
-    let mut node_to_scope: FxHashMap<u32, ScopeId> = FxHashMap::default();
-    node_to_scope.insert(0, ScopeId(1));
-
-    // Mirror position maps into node-ID maps for outlined functions
     let mut node_id_to_scope: FxHashMap<u32, ScopeId> = FxHashMap::default();
     node_id_to_scope.insert(0, ScopeId(1));
-    let ref_node_id_to_binding: IndexMap<u32, BindingId, FxBuildHasher> =
-        ref_to_binding.iter().map(|(&k, &v)| (k, v)).collect();
 
     ScopeInfo {
         scopes: vec![program_scope, fn_scope],
         bindings: bindings_list,
-        node_to_scope,
+        node_to_scope: FxHashMap::default(),
         node_to_scope_end: FxHashMap::default(),
         reference_to_binding: IndexMap::default(),
         ref_node_id_to_binding,
@@ -1326,24 +1284,23 @@ fn build_outlined_scope_info(
     }
 }
 
-/// Assign positions to identifiers in a pattern and register as bindings.
-fn outlined_assign_pattern_positions(
+/// Assign node IDs to identifiers in a pattern and register as bindings.
+fn outlined_assign_pattern_node_ids(
     pattern: &mut react_compiler_ast::patterns::PatternLike,
-    pos: &mut u32,
+    next_node_id: &mut u32,
     kind: react_compiler_ast::scope::BindingKind,
     fn_bindings: &mut rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
     bindings_list: &mut Vec<react_compiler_ast::scope::BindingData>,
-    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+    ref_node_id_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     use react_compiler_ast::patterns::PatternLike;
     use react_compiler_ast::scope::*;
 
     match pattern {
         PatternLike::Identifier(id) => {
-            let p = *pos;
-            *pos += 1;
-            id.base.start = Some(p);
-            id.base.node_id = Some(p);
+            let node_id = *next_node_id;
+            *next_node_id += 1;
+            id.base.node_id = Some(node_id);
             // Add as a binding
             if !fn_bindings.contains_key(&id.name) {
                 let binding_id = BindingId(bindings_list.len() as u32);
@@ -1354,14 +1311,14 @@ fn outlined_assign_pattern_positions(
                     kind: kind.clone(),
                     scope: ScopeId(1),
                     declaration_type: "VariableDeclarator".to_string(),
-                    declaration_start: Some(p),
-                    declaration_node_id: Some(p),
+                    declaration_start: id.base.start,
+                    declaration_node_id: Some(node_id),
                     import: None,
                 });
-                ref_to_binding.insert(p, binding_id);
+                ref_node_id_to_binding.insert(node_id, binding_id);
             } else {
                 let bid = fn_bindings[&id.name];
-                ref_to_binding.insert(p, bid);
+                ref_node_id_to_binding.insert(node_id, bid);
             }
         }
         PatternLike::ObjectPattern(obj) => {
@@ -1370,23 +1327,23 @@ fn outlined_assign_pattern_positions(
                     react_compiler_ast::patterns::ObjectPatternProperty::ObjectProperty(
                         p_inner,
                     ) => {
-                        outlined_assign_pattern_positions(
+                        outlined_assign_pattern_node_ids(
                             &mut p_inner.value,
-                            pos,
+                            next_node_id,
                             kind.clone(),
                             fn_bindings,
                             bindings_list,
-                            ref_to_binding,
+                            ref_node_id_to_binding,
                         );
                     }
                     react_compiler_ast::patterns::ObjectPatternProperty::RestElement(r) => {
-                        outlined_assign_pattern_positions(
+                        outlined_assign_pattern_node_ids(
                             &mut r.argument,
-                            pos,
+                            next_node_id,
                             kind.clone(),
                             fn_bindings,
                             bindings_list,
-                            ref_to_binding,
+                            ref_node_id_to_binding,
                         );
                     }
                 }
@@ -1394,47 +1351,47 @@ fn outlined_assign_pattern_positions(
         }
         PatternLike::ArrayPattern(arr) => {
             for elem in arr.elements.iter_mut().flatten() {
-                outlined_assign_pattern_positions(
+                outlined_assign_pattern_node_ids(
                     elem,
-                    pos,
+                    next_node_id,
                     kind.clone(),
                     fn_bindings,
                     bindings_list,
-                    ref_to_binding,
+                    ref_node_id_to_binding,
                 );
             }
         }
         PatternLike::AssignmentPattern(assign) => {
-            outlined_assign_pattern_positions(
+            outlined_assign_pattern_node_ids(
                 &mut assign.left,
-                pos,
+                next_node_id,
                 kind.clone(),
                 fn_bindings,
                 bindings_list,
-                ref_to_binding,
+                ref_node_id_to_binding,
             );
         }
         PatternLike::RestElement(rest) => {
-            outlined_assign_pattern_positions(
+            outlined_assign_pattern_node_ids(
                 &mut rest.argument,
-                pos,
+                next_node_id,
                 kind.clone(),
                 fn_bindings,
                 bindings_list,
-                ref_to_binding,
+                ref_node_id_to_binding,
             );
         }
         _ => {}
     }
 }
 
-/// Assign positions to identifiers in a statement body.
-fn outlined_assign_stmt_positions(
+/// Assign node IDs to identifiers in a statement body.
+fn outlined_assign_stmt_node_ids(
     stmt: &mut react_compiler_ast::statements::Statement,
-    pos: &mut u32,
+    next_node_id: &mut u32,
     fn_bindings: &mut rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
     bindings_list: &mut Vec<react_compiler_ast::scope::BindingData>,
-    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+    ref_node_id_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     use react_compiler_ast::statements::Statement;
 
@@ -1443,193 +1400,239 @@ fn outlined_assign_stmt_positions(
             for declarator in &mut decl.declarations {
                 // Process init first (references)
                 if let Some(init) = &mut declarator.init {
-                    outlined_assign_expr_positions(init, pos, fn_bindings, ref_to_binding);
+                    outlined_assign_expr_node_ids(
+                        init,
+                        next_node_id,
+                        fn_bindings,
+                        ref_node_id_to_binding,
+                    );
                 }
                 // Process pattern (declarations)
-                outlined_assign_pattern_positions(
+                outlined_assign_pattern_node_ids(
                     &mut declarator.id,
-                    pos,
+                    next_node_id,
                     react_compiler_ast::scope::BindingKind::Let,
                     fn_bindings,
                     bindings_list,
-                    ref_to_binding,
+                    ref_node_id_to_binding,
                 );
             }
         }
         Statement::ReturnStatement(ret) => {
             if let Some(arg) = &mut ret.argument {
-                outlined_assign_expr_positions(arg, pos, fn_bindings, ref_to_binding);
+                outlined_assign_expr_node_ids(
+                    arg,
+                    next_node_id,
+                    fn_bindings,
+                    ref_node_id_to_binding,
+                );
             }
         }
         Statement::ExpressionStatement(expr_stmt) => {
-            outlined_assign_expr_positions(
+            outlined_assign_expr_node_ids(
                 &mut expr_stmt.expression,
-                pos,
+                next_node_id,
                 fn_bindings,
-                ref_to_binding,
+                ref_node_id_to_binding,
             );
         }
         _ => {}
     }
 }
 
-/// Assign positions to identifiers in an expression.
-fn outlined_assign_expr_positions(
+/// Assign node IDs to identifiers in an expression.
+fn outlined_assign_expr_node_ids(
     expr: &mut react_compiler_ast::expressions::Expression,
-    pos: &mut u32,
+    next_node_id: &mut u32,
     fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+    ref_node_id_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     use react_compiler_ast::expressions::*;
 
     match expr {
         Expression::Identifier(id) => {
-            let p = *pos;
-            *pos += 1;
-            id.base.start = Some(p);
-            id.base.node_id = Some(p);
+            let node_id = *next_node_id;
+            *next_node_id += 1;
+            id.base.node_id = Some(node_id);
             if let Some(&bid) = fn_bindings.get(&id.name) {
-                ref_to_binding.insert(p, bid);
+                ref_node_id_to_binding.insert(node_id, bid);
             }
         }
         Expression::JSXElement(jsx) => {
-            // Opening tag
-            outlined_assign_jsx_name_positions(
-                &mut jsx.opening_element.name,
-                pos,
+            outlined_assign_jsx_element_node_ids(
+                jsx,
+                next_node_id,
                 fn_bindings,
-                ref_to_binding,
+                ref_node_id_to_binding,
             );
-            for attr in &mut jsx.opening_element.attributes {
-                match attr {
-                    react_compiler_ast::jsx::JSXAttributeItem::JSXAttribute(a) => {
-                        if let Some(val) = &mut a.value {
-                            outlined_assign_jsx_val_positions(
-                                val,
-                                pos,
-                                fn_bindings,
-                                ref_to_binding,
-                            );
-                        }
-                    }
-                    react_compiler_ast::jsx::JSXAttributeItem::JSXSpreadAttribute(s) => {
-                        outlined_assign_expr_positions(
-                            &mut s.argument,
-                            pos,
-                            fn_bindings,
-                            ref_to_binding,
-                        );
-                    }
-                }
-            }
-            for child in &mut jsx.children {
-                outlined_assign_jsx_child_positions(child, pos, fn_bindings, ref_to_binding);
-            }
         }
         Expression::JSXFragment(frag) => {
             for child in &mut frag.children {
-                outlined_assign_jsx_child_positions(child, pos, fn_bindings, ref_to_binding);
+                outlined_assign_jsx_child_node_ids(
+                    child,
+                    next_node_id,
+                    fn_bindings,
+                    ref_node_id_to_binding,
+                );
             }
         }
         _ => {}
     }
 }
 
-fn outlined_assign_jsx_name_positions(
-    name: &mut react_compiler_ast::jsx::JSXElementName,
-    pos: &mut u32,
+fn outlined_assign_jsx_element_node_ids(
+    jsx: &mut react_compiler_ast::jsx::JSXElement,
+    next_node_id: &mut u32,
     fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+    ref_node_id_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+) {
+    outlined_assign_jsx_name_node_ids(
+        &mut jsx.opening_element.name,
+        next_node_id,
+        fn_bindings,
+        ref_node_id_to_binding,
+    );
+    for attr in &mut jsx.opening_element.attributes {
+        match attr {
+            react_compiler_ast::jsx::JSXAttributeItem::JSXAttribute(a) => {
+                if let Some(val) = &mut a.value {
+                    outlined_assign_jsx_val_node_ids(
+                        val,
+                        next_node_id,
+                        fn_bindings,
+                        ref_node_id_to_binding,
+                    );
+                }
+            }
+            react_compiler_ast::jsx::JSXAttributeItem::JSXSpreadAttribute(s) => {
+                outlined_assign_expr_node_ids(
+                    &mut s.argument,
+                    next_node_id,
+                    fn_bindings,
+                    ref_node_id_to_binding,
+                );
+            }
+        }
+    }
+    for child in &mut jsx.children {
+        outlined_assign_jsx_child_node_ids(
+            child,
+            next_node_id,
+            fn_bindings,
+            ref_node_id_to_binding,
+        );
+    }
+}
+
+fn outlined_assign_jsx_name_node_ids(
+    name: &mut react_compiler_ast::jsx::JSXElementName,
+    next_node_id: &mut u32,
+    fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
+    ref_node_id_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     match name {
         react_compiler_ast::jsx::JSXElementName::JSXIdentifier(id) => {
-            let p = *pos;
-            *pos += 1;
-            id.base.start = Some(p);
-            id.base.node_id = Some(p);
+            let node_id = *next_node_id;
+            *next_node_id += 1;
+            id.base.node_id = Some(node_id);
             if let Some(&bid) = fn_bindings.get(&id.name) {
-                ref_to_binding.insert(p, bid);
+                ref_node_id_to_binding.insert(node_id, bid);
             }
         }
         react_compiler_ast::jsx::JSXElementName::JSXMemberExpression(m) => {
-            outlined_assign_jsx_member_positions(m, pos, fn_bindings, ref_to_binding);
+            outlined_assign_jsx_member_node_ids(
+                m,
+                next_node_id,
+                fn_bindings,
+                ref_node_id_to_binding,
+            );
         }
         _ => {}
     }
 }
 
-fn outlined_assign_jsx_member_positions(
+fn outlined_assign_jsx_member_node_ids(
     member: &mut react_compiler_ast::jsx::JSXMemberExpression,
-    pos: &mut u32,
+    next_node_id: &mut u32,
     fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+    ref_node_id_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     match &mut *member.object {
         react_compiler_ast::jsx::JSXMemberExprObject::JSXIdentifier(id) => {
-            let p = *pos;
-            *pos += 1;
-            id.base.start = Some(p);
-            id.base.node_id = Some(p);
+            let node_id = *next_node_id;
+            *next_node_id += 1;
+            id.base.node_id = Some(node_id);
             if let Some(&bid) = fn_bindings.get(&id.name) {
-                ref_to_binding.insert(p, bid);
+                ref_node_id_to_binding.insert(node_id, bid);
             }
         }
         react_compiler_ast::jsx::JSXMemberExprObject::JSXMemberExpression(inner) => {
-            outlined_assign_jsx_member_positions(inner, pos, fn_bindings, ref_to_binding);
+            outlined_assign_jsx_member_node_ids(
+                inner,
+                next_node_id,
+                fn_bindings,
+                ref_node_id_to_binding,
+            );
         }
     }
 }
 
-fn outlined_assign_jsx_val_positions(
+fn outlined_assign_jsx_val_node_ids(
     val: &mut react_compiler_ast::jsx::JSXAttributeValue,
-    pos: &mut u32,
+    next_node_id: &mut u32,
     fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+    ref_node_id_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     match val {
         react_compiler_ast::jsx::JSXAttributeValue::JSXExpressionContainer(c) => {
             if let react_compiler_ast::jsx::JSXExpressionContainerExpr::Expression(e) =
                 &mut c.expression
             {
-                outlined_assign_expr_positions(e, pos, fn_bindings, ref_to_binding);
+                outlined_assign_expr_node_ids(e, next_node_id, fn_bindings, ref_node_id_to_binding);
             }
         }
         react_compiler_ast::jsx::JSXAttributeValue::JSXElement(el) => {
-            let mut expr = react_compiler_ast::expressions::Expression::JSXElement(el.clone());
-            outlined_assign_expr_positions(&mut expr, pos, fn_bindings, ref_to_binding);
-            if let react_compiler_ast::expressions::Expression::JSXElement(new_el) = expr {
-                **el = *new_el;
-            }
+            outlined_assign_jsx_element_node_ids(
+                el,
+                next_node_id,
+                fn_bindings,
+                ref_node_id_to_binding,
+            );
         }
         _ => {}
     }
 }
 
-fn outlined_assign_jsx_child_positions(
+fn outlined_assign_jsx_child_node_ids(
     child: &mut react_compiler_ast::jsx::JSXChild,
-    pos: &mut u32,
+    next_node_id: &mut u32,
     fn_bindings: &rustc_hash::FxHashMap<String, react_compiler_ast::scope::BindingId>,
-    ref_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+    ref_node_id_to_binding: &mut IndexMap<u32, react_compiler_ast::scope::BindingId, FxBuildHasher>,
 ) {
     match child {
         react_compiler_ast::jsx::JSXChild::JSXExpressionContainer(c) => {
             if let react_compiler_ast::jsx::JSXExpressionContainerExpr::Expression(e) =
                 &mut c.expression
             {
-                outlined_assign_expr_positions(e, pos, fn_bindings, ref_to_binding);
+                outlined_assign_expr_node_ids(e, next_node_id, fn_bindings, ref_node_id_to_binding);
             }
         }
         react_compiler_ast::jsx::JSXChild::JSXElement(el) => {
-            let mut expr =
-                react_compiler_ast::expressions::Expression::JSXElement(Box::new(*el.clone()));
-            outlined_assign_expr_positions(&mut expr, pos, fn_bindings, ref_to_binding);
-            if let react_compiler_ast::expressions::Expression::JSXElement(new_el) = expr {
-                **el = *new_el;
-            }
+            outlined_assign_jsx_element_node_ids(
+                el,
+                next_node_id,
+                fn_bindings,
+                ref_node_id_to_binding,
+            );
         }
         react_compiler_ast::jsx::JSXChild::JSXFragment(frag) => {
             for inner in &mut frag.children {
-                outlined_assign_jsx_child_positions(inner, pos, fn_bindings, ref_to_binding);
+                outlined_assign_jsx_child_node_ids(
+                    inner,
+                    next_node_id,
+                    fn_bindings,
+                    ref_node_id_to_binding,
+                );
             }
         }
         _ => {}
@@ -1910,5 +1913,363 @@ fn log_errors_as_events(errors: &CompilerError, context: &mut ProgramContext) {
             fn_loc: None,
             detail: detail_info,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use react_compiler_ast::expressions::Expression;
+    use react_compiler_ast::jsx::{
+        JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElementName, JSXExpressionContainerExpr,
+        JSXMemberExprObject,
+    };
+    use react_compiler_ast::patterns::PatternLike;
+    use react_compiler_ast::statements::{FunctionDeclaration, Statement};
+    use react_compiler_hir::ReactFunctionType;
+    use serde_json::{Value, json};
+
+    use super::{CodegenFunction, CompilerOutputMode, EnvironmentConfig, ProgramContext};
+    use super::{build_outlined_scope_info, compile_outlined_fn};
+
+    fn outlined_jsx(start: Option<u32>, end: Option<u32>) -> CodegenFunction {
+        let tag = json!({
+            "type": "JSXIdentifier", "name": "Baz", "start": start, "end": end,
+            "loc": {
+                "start": {"line": 1, "column": 187, "index": 187},
+                "end": {"line": 1, "column": 190, "index": 190}
+            }
+        });
+        let param = json!({
+            "type": "Identifier", "name": "props", "start": 10, "end": 15,
+            "loc": {
+                "start": {"line": 1, "column": 10, "index": 10},
+                "end": {"line": 1, "column": 15, "index": 15}
+            }
+        });
+        let reference = json!({
+            "type": "Identifier", "name": "props", "start": 195, "end": 200,
+            "loc": {
+                "start": {"line": 1, "column": 195, "index": 195},
+                "end": {"line": 1, "column": 200, "index": 200}
+            }
+        });
+        let element = json!({
+            "type": "JSXElement",
+            "openingElement": {
+                "type": "JSXOpeningElement", "name": tag, "selfClosing": true,
+                "attributes": [{"type": "JSXSpreadAttribute", "argument": reference}]
+            },
+            "closingElement": null, "children": []
+        });
+        let function: FunctionDeclaration = serde_json::from_value(json!({
+            "type": "FunctionDeclaration",
+            "id": {"type": "Identifier", "name": "_temp"},
+            "params": [param],
+            "body": {
+                "type": "BlockStatement",
+                "body": [{"type": "ReturnStatement", "argument": element}]
+            }
+        }))
+        .expect("valid outlined JSX function");
+        CodegenFunction {
+            loc: None,
+            id: function.id,
+            name_hint: None,
+            params: function.params,
+            body: function.body,
+            generator: false,
+            is_async: false,
+            memo_slots_used: 0,
+            memo_blocks: 0,
+            memo_values: 0,
+            pruned_memo_blocks: 0,
+            pruned_memo_values: 0,
+            outlined: Vec::new(),
+        }
+    }
+
+    fn outlined_scope_fixture(start: Option<u32>, end: Option<u32>) -> FunctionDeclaration {
+        let identifier = |node_type: &str, name: &str| json!({"type": node_type, "name": name, "start": start, "end": end});
+        let member = json!({
+            "type": "JSXMemberExpression",
+            "object": identifier("JSXIdentifier", "Baz"),
+            "property": identifier("JSXIdentifier", "props")
+        });
+        let attribute_element = json!({
+            "type": "JSXElement",
+            "openingElement": {
+                "type": "JSXOpeningElement", "selfClosing": true,
+                "name": {
+                    "type": "JSXMemberExpression", "object": member,
+                    "property": identifier("JSXIdentifier", "Item")
+                },
+                "attributes": [{
+                    "type": "JSXSpreadAttribute", "argument": identifier("Identifier", "value")
+                }]
+            },
+            "closingElement": null, "children": []
+        });
+        let child_element = json!({
+            "type": "JSXElement",
+            "openingElement": {
+                "type": "JSXOpeningElement", "name": member,
+                "selfClosing": false, "attributes": []
+            },
+            "closingElement": {"type": "JSXClosingElement", "name": member},
+            "children": [{
+                "type": "JSXExpressionContainer", "expression": identifier("Identifier", "props")
+            }]
+        });
+        let element = json!({
+            "type": "JSXElement",
+            "openingElement": {
+                "type": "JSXOpeningElement", "name": identifier("JSXIdentifier", "Baz"),
+                "selfClosing": false,
+                "attributes": [{
+                    "type": "JSXAttribute", "name": identifier("JSXIdentifier", "slot"),
+                    "value": attribute_element
+                }]
+            },
+            "closingElement": {
+                "type": "JSXClosingElement", "name": identifier("JSXIdentifier", "Baz")
+            },
+            "children": [child_element]
+        });
+        serde_json::from_value(json!({
+            "type": "FunctionDeclaration",
+            "id": identifier("Identifier", "_temp"),
+            "params": [identifier("Identifier", "Baz"), identifier("Identifier", "props")],
+            "body": {
+                "type": "BlockStatement",
+                "body": [
+                    {
+                        "type": "VariableDeclaration", "kind": "const",
+                        "declarations": [{
+                            "type": "VariableDeclarator", "id": identifier("Identifier", "value"),
+                            "init": identifier("Identifier", "props")
+                        }]
+                    },
+                    {"type": "ReturnStatement", "argument": element}
+                ]
+            }
+        }))
+        .expect("valid outlined function with nested JSX and a local binding")
+    }
+
+    #[test]
+    fn outlined_scope_resolves_bindings_with_colliding_or_absent_offsets() {
+        for (start, end) in [(Some(0), Some(5)), (None, None)] {
+            let mut function = outlined_scope_fixture(start, end);
+            let scope_info = build_outlined_scope_info(&mut function);
+            let scope = scope_info
+                .resolve_scope_for_node(function.base.node_id)
+                .expect("outlined function has a scope");
+            let [PatternLike::Identifier(baz), PatternLike::Identifier(props)] =
+                function.params.as_slice()
+            else {
+                panic!("expected Baz and props parameters");
+            };
+            let Statement::VariableDeclaration(declaration) = &function.body.body[0] else {
+                panic!("expected a local value declaration");
+            };
+            let [declarator] = declaration.declarations.as_slice() else {
+                panic!("expected a single local value declarator");
+            };
+            let PatternLike::Identifier(value) = &declarator.id else {
+                panic!("expected an identifier for the local value binding");
+            };
+            let Some(Expression::Identifier(reference)) = declarator.init.as_deref() else {
+                panic!("expected the local initializer to reference props");
+            };
+
+            for declaration in [baz, props, value] {
+                let binding = scope_info
+                    .resolve_reference_for_node(declaration.base.node_id)
+                    .expect("declaration resolves to its binding");
+                assert_eq!(binding.name, declaration.name);
+                assert_eq!(binding.declaration_node_id, declaration.base.node_id);
+                assert_eq!(binding.declaration_start, start);
+                assert_eq!(
+                    scope_info.get_binding(scope, &declaration.name),
+                    Some(binding.id)
+                );
+                assert_eq!((declaration.base.start, declaration.base.end), (start, end));
+            }
+            let binding = scope_info
+                .resolve_reference_for_node(reference.base.node_id)
+                .expect("ordinary props reference resolves");
+            assert_eq!(binding.declaration_node_id, props.base.node_id);
+            assert_ne!(reference.base.node_id, props.base.node_id);
+            assert_eq!((reference.base.start, reference.base.end), (start, end));
+        }
+    }
+
+    #[test]
+    fn outlined_scope_resolves_nested_jsx_with_colliding_or_absent_offsets() {
+        for (start, end) in [(Some(0), Some(5)), (None, None)] {
+            let mut function = outlined_scope_fixture(start, end);
+            let scope_info = build_outlined_scope_info(&mut function);
+            let [PatternLike::Identifier(baz), PatternLike::Identifier(props)] =
+                function.params.as_slice()
+            else {
+                panic!("expected Baz and props parameters");
+            };
+            let Statement::VariableDeclaration(declaration) = &function.body.body[0] else {
+                panic!("expected a local value declaration");
+            };
+            let PatternLike::Identifier(value) = &declaration.declarations[0].id else {
+                panic!("expected an identifier for the local value binding");
+            };
+            let Statement::ReturnStatement(ret) = &function.body.body[1] else {
+                panic!("expected a JSX return statement");
+            };
+            let Some(Expression::JSXElement(element)) = ret.argument.as_deref() else {
+                panic!("expected a root JSX element");
+            };
+            let JSXElementName::JSXIdentifier(tag) = &element.opening_element.name else {
+                panic!("expected a Baz opening tag");
+            };
+            let JSXAttributeItem::JSXAttribute(attribute) = &element.opening_element.attributes[0]
+            else {
+                panic!("expected a slot attribute");
+            };
+            let Some(JSXAttributeValue::JSXElement(attribute_element)) = &attribute.value else {
+                panic!("expected a JSX element as the slot attribute value");
+            };
+            let JSXElementName::JSXMemberExpression(attribute_member) =
+                &attribute_element.opening_element.name
+            else {
+                panic!("expected a nested JSX member tag in the slot");
+            };
+            let JSXMemberExprObject::JSXMemberExpression(inner_member) =
+                attribute_member.object.as_ref()
+            else {
+                panic!("expected two levels of JSX member access");
+            };
+            let JSXMemberExprObject::JSXIdentifier(attribute_root) = inner_member.object.as_ref()
+            else {
+                panic!("expected Baz as the nested JSX member root");
+            };
+            let JSXAttributeItem::JSXSpreadAttribute(spread) =
+                &attribute_element.opening_element.attributes[0]
+            else {
+                panic!("expected a local value spread in the slot");
+            };
+            let Expression::Identifier(spread_reference) = spread.argument.as_ref() else {
+                panic!("expected the spread to reference the local value");
+            };
+            let JSXChild::JSXElement(child_element) = &element.children[0] else {
+                panic!("expected a nested JSX child element");
+            };
+            let JSXElementName::JSXMemberExpression(child_member) =
+                &child_element.opening_element.name
+            else {
+                panic!("expected a JSX member tag in the child");
+            };
+            let JSXMemberExprObject::JSXIdentifier(child_root) = child_member.object.as_ref()
+            else {
+                panic!("expected Baz as the child JSX member root");
+            };
+            let JSXChild::JSXExpressionContainer(container) = &child_element.children[0] else {
+                panic!("expected a props expression in the child");
+            };
+            let JSXExpressionContainerExpr::Expression(expression) = &container.expression else {
+                panic!("expected a nonempty child expression");
+            };
+            let Expression::Identifier(child_reference) = expression.as_ref() else {
+                panic!("expected the child expression to reference props");
+            };
+
+            let mut node_ids = rustc_hash::FxHashSet::default();
+            for declaration in [baz, props, value] {
+                let node_id = declaration.base.node_id.expect("declaration has a node ID");
+                assert!(
+                    node_ids.insert(node_id),
+                    "declarations have distinct node IDs"
+                );
+            }
+            for (reference, declaration) in [
+                (&tag.base, baz),
+                (&attribute_root.base, baz),
+                (&child_root.base, baz),
+                (&spread_reference.base, value),
+                (&child_reference.base, props),
+            ] {
+                let binding = scope_info
+                    .resolve_reference_for_node(reference.node_id)
+                    .expect("nested JSX reference resolves");
+                assert_eq!(binding.declaration_node_id, declaration.base.node_id);
+                assert_eq!((reference.start, reference.end), (start, end));
+                let node_id = reference.node_id.expect("JSX reference has a node ID");
+                assert!(
+                    node_ids.insert(node_id),
+                    "references have distinct node IDs"
+                );
+            }
+            for property in [
+                &attribute_member.property,
+                &inner_member.property,
+                &child_member.property,
+            ] {
+                assert_eq!(
+                    scope_info.resolve_reference_id_for_node(property.base.node_id),
+                    None
+                );
+                assert_eq!((property.base.start, property.base.end), (start, end));
+            }
+        }
+    }
+
+    fn find_jsx_identifier<'a>(node: &'a Value, name: &str) -> Option<&'a Value> {
+        match node {
+            Value::Object(fields) => {
+                if node["type"] == "JSXIdentifier" && node["name"] == name {
+                    return Some(node);
+                }
+                fields
+                    .values()
+                    .find_map(|node| find_jsx_identifier(node, name))
+            }
+            Value::Array(nodes) => nodes
+                .iter()
+                .find_map(|node| find_jsx_identifier(node, name)),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn compile_outlined_fn_preserves_original_shifted_and_absent_offsets() {
+        for (start, end) in [(Some(187), Some(190)), (Some(188), Some(191)), (None, None)] {
+            let function = outlined_jsx(start, end);
+            let opts = serde_json::from_value(json!({
+                "shouldCompile": true, "enableReanimated": false, "isDev": false,
+                "filename": null
+            }))
+            .expect("valid compiler options");
+            let mut context = ProgramContext::new(opts, None, None, Vec::new(), false);
+            let compiled = compile_outlined_fn(
+                function,
+                Some("_temp"),
+                ReactFunctionType::Component,
+                CompilerOutputMode::Client,
+                &EnvironmentConfig::default(),
+                &mut context,
+            )
+            .expect("outlined JSX compilation succeeds");
+
+            let body = serde_json::to_value(&compiled.body).expect("serializable outlined body");
+            let tag = find_jsx_identifier(&body, "Baz").expect("outlined Baz tag survives");
+            let expected_start = start.map(Value::from);
+            let expected_end = end.map(Value::from);
+            assert_eq!(tag.get("start"), expected_start.as_ref());
+            assert_eq!(tag.get("end"), expected_end.as_ref());
+            assert_eq!(tag["loc"]["start"]["index"], 187);
+            assert_eq!(tag["loc"]["end"]["index"], 190);
+
+            let [PatternLike::Identifier(param)] = compiled.params.as_slice() else {
+                panic!("expected a single outlined props parameter");
+            };
+            assert_eq!((param.base.start, param.base.end), (Some(10), Some(15)));
+        }
     }
 }

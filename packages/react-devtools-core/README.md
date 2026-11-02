@@ -1,12 +1,12 @@
 # `react-devtools-core`
 
-This package provides low-level APIs to support renderers like [React Native](https://github.com/facebook/react-native). If you're looking for the standalone React DevTools UI, **we suggest using [`react-devtools`](https://github.com/facebook/react/tree/main/packages/react-devtools) instead of using this package directly**.
+This package provides low-level APIs to support renderers like [React Native](https://github.com/react/react-native). If you're looking for the standalone React DevTools UI, **we suggest using [`react-devtools`](https://github.com/react/react/tree/main/packages/react-devtools) instead of using this package directly**.
 
 This package provides two entrypoints: labeled "backend" and "standalone" (frontend). Both APIs are described below.
 
 # Backend API
 
-Backend APIs are embedded in _development_ builds of renderers like [React Native](https://github.com/facebook/react-native) in order to connect to the React DevTools UI.
+Backend APIs are embedded in _development_ builds of renderers like [React Native](https://github.com/react/react-native) in order to connect to the React DevTools UI.
 
 ### Example
 
@@ -75,7 +75,7 @@ Unlike `connectToDevTools`, `connectWithCustomMessagingProtocol` returns a callb
 
 # Frontend API
 
-Frontend APIs can be used to render the DevTools UI into a DOM node. One example of this is [`react-devtools`](https://github.com/facebook/react/tree/main/packages/react-devtools) which wraps DevTools in an Electron app.
+Frontend APIs can be used to render the DevTools UI into a DOM node. One example of this is [`react-devtools`](https://github.com/react/react/tree/main/packages/react-devtools) which wraps DevTools in an Electron app.
 
 ### Example
 ```js
@@ -200,4 +200,4 @@ Watch for changes made to the standalone UI entry point and rebuild:
 yarn start:standalone
 ```
 
-Run the standalone UI using `yarn start` in the [`react-devtools`](https://github.com/facebook/react/tree/main/packages/react-devtools).
+Run the standalone UI using `yarn start` in the [`react-devtools`](https://github.com/react/react/tree/main/packages/react-devtools).
