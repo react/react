@@ -306,8 +306,8 @@ yarn snap -u
 
 The pipeline is fault-tolerant: all passes run to completion, accumulating errors on `Environment` rather than aborting on the first error.
 
-- **Validation passes** are wrapped in `env.tryRecord()` in Pipeline.ts, which catches non-invariant `CompilerError`s and records them. If a validation pass throws, compilation continues.
-- **Infrastructure/transformation passes** (enterSSA, eliminateRedundantPhi, inferMutationAliasingEffects, codegen, etc.) are NOT wrapped in `tryRecord()` because subsequent passes depend on their output being structurally valid. If they fail, compilation aborts.
+- **Validation passes** are called directly in Pipeline.ts and record errors with `env.recordError()`; a few lint-only ones return errors that Pipeline.ts logs via `env.logErrors()`. A pass that throws a non-invariant `CompilerError` instead is caught by the catch-all in `tryCompileFunction` (Program.ts) and logged as `CompileUnexpectedThrow`.
+- **Infrastructure/transformation passes** (enterSSA, eliminateRedundantPhi, inferMutationAliasingEffects, codegen, etc.) must produce structurally valid output, because subsequent passes depend on it. If they fail, compilation aborts.
 - **`lower()` (BuildHIR)** always produces an `HIRFunction`, recording errors on `env` instead of returning `Err`. Unsupported constructs (e.g., `var`) are lowered best-effort.
 - At the end of the pipeline, `env.hasErrors()` determines whether to return `Ok(codegen)` or `Err(aggregatedErrors)`.
 

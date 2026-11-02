@@ -264,13 +264,13 @@ The compiler is fault-tolerant: it runs all passes and accumulates errors on the
 
 **Recording errors** — Passes record errors via `env.recordError(diagnostic)`. Errors are accumulated on `Environment.#errors` and checked at the end of the pipeline via `env.hasErrors()` / `env.aggregateErrors()`.
 
-**`tryRecord()` wrapper** — In Pipeline.ts, validation passes are wrapped in `env.tryRecord(() => pass(hir))` which catches thrown `CompilerError`s (non-invariant) and records them. Infrastructure/transformation passes are NOT wrapped in `tryRecord()` because later passes depend on their output being structurally valid.
+**No wrapper in Pipeline.ts** — Passes record errors themselves, so Pipeline.ts calls them directly. A single catch-all `try`/`catch` in `tryCompileFunction` (Program.ts) is the safety net for a pass that throws instead of recording: a thrown non-invariant `CompilerError` is logged as a `CompileUnexpectedThrow` event and the function bails out. Snap fails a fixture on that event only when the error is not rethrown (snap's default `panicThreshold` is `all_errors`). Some passes still throw `throwTodo()`; new code should record instead.
 
 **Error categories:**
-- `CompilerError.throwTodo()` — Unsupported but known pattern. Graceful bailout. Can be caught by `tryRecord()`.
-- `CompilerError.invariant()` — Truly unexpected/invalid state. Always throws immediately, never caught by `tryRecord()`.
-- Non-`CompilerError` exceptions — Always re-thrown.
+- `CompilerError.throwTodo()` — Unsupported but known pattern. Graceful bailout. Still thrown from a few passes; in new code prefer `env.recordError()`.
+- `CompilerError.invariant()` — Truly unexpected/invalid state. Always throws immediately; `env.recordError()` throws an Invariant-category error too.
+- Non-`CompilerError` exceptions — Caught by the same catch-all and logged; re-thrown only when `panicThreshold` is `critical_errors` or `all_errors` (the default is `none`).
 
-**Key files:** `Environment.ts` (`recordError`, `tryRecord`, `hasErrors`, `aggregateErrors`), `Pipeline.ts` (pass orchestration), `Program.ts` (`tryCompileFunction` handles the `Result`).
+**Key files:** `Environment.ts` (`recordError`, `recordErrors`, `hasErrors`, `aggregateErrors`), `Pipeline.ts` (pass orchestration), `Program.ts` (`tryCompileFunction` handles the `Result` and holds the catch-all).
 
 **Test fixtures:** `__tests__/fixtures/compiler/fault-tolerance/` contains multi-error fixtures verifying all errors are reported.
