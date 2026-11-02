@@ -6,7 +6,8 @@
 //! Prunes `MaybeThrow` terminals for blocks that can provably never throw.
 //!
 //! Currently very conservative: only affects blocks with primitives or
-//! array/object literals. Even a variable reference could throw due to TDZ.
+//! array/object literals. Array spreads may throw while iterating. Even a variable
+//! reference could throw due to TDZ.
 //!
 //! Analogous to TS `Optimization/PruneMaybeThrows.ts`.
 
@@ -15,7 +16,9 @@ use rustc_hash::FxHashMap;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, GENERATED_SOURCE,
 };
-use react_compiler_hir::{BlockId, HirFunction, Instruction, InstructionValue, Terminal};
+use react_compiler_hir::{
+    ArrayElement, BlockId, HirFunction, Instruction, InstructionValue, Terminal,
+};
 use react_compiler_lowering::{
     get_reverse_postordered_blocks, mark_instruction_ids, remove_dead_do_while_statements,
     remove_unnecessary_try_catch, remove_unreachable_for_updates,
@@ -123,9 +126,10 @@ fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<FxHashMap<BlockId, 
 
 fn instruction_may_throw(instr: &Instruction) -> bool {
     match &instr.value {
-        InstructionValue::Primitive { .. }
-        | InstructionValue::ArrayExpression { .. }
-        | InstructionValue::ObjectExpression { .. } => false,
+        InstructionValue::Primitive { .. } | InstructionValue::ObjectExpression { .. } => false,
+        InstructionValue::ArrayExpression { elements, .. } => elements
+            .iter()
+            .any(|element| matches!(element, ArrayElement::Spread(_))),
         _ => true,
     }
 }
