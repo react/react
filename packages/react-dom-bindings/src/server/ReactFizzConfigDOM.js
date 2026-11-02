@@ -437,6 +437,7 @@ export function createRenderState(
         pushScriptImpl(externalRuntimeScript.chunks, {
           src: externalRuntimeConfig,
           async: true,
+          crossOrigin: undefined,
           integrity: undefined,
           nonce: nonceScript,
         });
@@ -448,6 +449,7 @@ export function createRenderState(
         pushScriptImpl(externalRuntimeScript.chunks, {
           src: externalRuntimeConfig.src,
           async: true,
+          crossOrigin: externalRuntimeConfig.crossOrigin,
           integrity: externalRuntimeConfig.integrity,
           nonce: nonceScript,
         });
