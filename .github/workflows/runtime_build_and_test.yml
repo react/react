@@ -773,7 +773,8 @@ jobs:
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Check Playwright version
         id: playwright_version
-        run: echo "playwright_version=$(npm ls @playwright/test | grep @playwright | sed 's/.*@//' | head -1)" >> "$GITHUB_OUTPUT"
+        working-directory: fixtures/flight
+        run: echo "playwright_version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright Browsers for version ${{ steps.playwright_version.outputs.playwright_version }}
         id: cache_playwright_browsers
         uses: actions/cache@v4
