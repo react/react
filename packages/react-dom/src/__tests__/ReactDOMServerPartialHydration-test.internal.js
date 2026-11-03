@@ -2183,6 +2183,111 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(container.textContent).toBe('Hi');
   });
 
+  it('commits a transition that gave up hydrating after a throttled retry is interrupted by a ping', async () => {
+    // This test intentionally flushes work without `act`. Inside an `act`
+    // scope, React commits retries immediately instead of throttling them, so
+    // the throttled retry that this test depends on would never happen.
+    const Context = React.createContext('Hello');
+
+    let resolveChild;
+    const childPromise = new Promise(resolve => (resolveChild = resolve));
+    let resolveSibling;
+    const siblingPromise = new Promise(resolve => (resolveSibling = resolve));
+
+    function Child() {
+      return 'World';
+    }
+    let LazyChild = Child;
+
+    function Sibling() {
+      return <p>Sibling</p>;
+    }
+    const LazySibling = React.lazy(() =>
+      siblingPromise.then(() => ({default: Sibling})),
+    );
+
+    function Text() {
+      return <span>{React.useContext(Context)}</span>;
+    }
+
+    function ChildSlot() {
+      return <LazyChild />;
+    }
+
+    const boundary = (
+      <Suspense fallback="Loading...">
+        <Text />
+        <ChildSlot />
+      </Suspense>
+    );
+
+    let setCount;
+    const Parent = React.memo(function Parent() {
+      const [count, _setCount] = React.useState(0);
+      setCount = _setCount;
+      return (
+        <div>
+          {count}
+          {boundary}
+        </div>
+      );
+    });
+
+    function App({text}) {
+      return (
+        <Context.Provider value={text}>
+          <Parent />
+          {text === 'Hello' ? null : (
+            <Suspense fallback={null}>
+              <LazySibling />
+            </Suspense>
+          )}
+        </Context.Provider>
+      );
+    }
+
+    const container = document.createElement('div');
+    container.innerHTML = ReactDOMServer.renderToString(<App text="Hello" />);
+    const span = container.getElementsByTagName('span')[0];
+
+    LazyChild = React.lazy(() => childPromise.then(() => ({default: Child})));
+    const root = ReactDOMClient.hydrateRoot(container, <App text="Hello" />, {
+      onRecoverableError(error) {
+        Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
+      },
+    });
+    await waitForPaint([]);
+
+    // The context change reaches the dehydrated boundary. Hydrating it at a
+    // higher priority suspends on the lazy child, so the transition gives up
+    // on hydrating the boundary and waits for it.
+    React.startTransition(() => root.render(<App text="Hi" />));
+    await waitForAll([]);
+
+    // An unrelated update re-renders the parent of the dehydrated boundary.
+    setCount(1);
+    await waitForAll([]);
+
+    // The boundary hydrates in a retry, whose commit is throttled.
+    resolveChild();
+    await childPromise;
+    await waitForAll([]);
+
+    // Before the throttled retry commits, the transition is pinged by other
+    // data it was waiting on.
+    resolveSibling();
+    await siblingPromise;
+    await waitForAll([]);
+
+    jest.advanceTimersByTime(5000);
+    await waitForAll([]);
+
+    expect(container.getElementsByTagName('span')[0]).toBe(span);
+    expect(span.textContent).toBe('Hi');
+    expect(container.getElementsByTagName('p')[0].textContent).toBe('Sibling');
+    expect(container.firstChild.firstChild.textContent).toBe('1');
+  });
+
   it('replaces the fallback with client content if it is not rendered by the server', async () => {
     let suspend = false;
     const promise = new Promise(resolvePromise => {});
