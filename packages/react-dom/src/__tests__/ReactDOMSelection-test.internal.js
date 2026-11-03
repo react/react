@@ -15,6 +15,7 @@ let ReactDOMSelection;
 let act;
 
 let getModernOffsetsFromPoints;
+let setOffsets;
 
 describe('ReactDOMSelection', () => {
   beforeEach(() => {
@@ -23,7 +24,7 @@ describe('ReactDOMSelection', () => {
     ReactDOMSelection = require('react-dom-bindings/src/client/ReactDOMSelection');
     act = require('internal-test-utils').act;
 
-    ({getModernOffsetsFromPoints} = ReactDOMSelection);
+    ({getModernOffsetsFromPoints, setOffsets} = ReactDOMSelection);
   });
 
   // Simple implementation to compare correctness. React's old implementation of
@@ -139,6 +140,33 @@ describe('ReactDOMSelection', () => {
       start: 0,
       end: 0,
     });
+  });
+
+  it('setOffsets does not move the selection outside of the root', () => {
+    const parent = document.createElement('div');
+    const root = document.createElement('div');
+    root.setAttribute('contenteditable', 'true');
+    parent.appendChild(root);
+    parent.appendChild(document.createTextNode('outside'));
+    document.body.appendChild(parent);
+
+    try {
+      const range = document.createRange();
+      range.setStart(root, 0);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      setOffsets(root, {start: 0, end: 0});
+
+      expect(selection.anchorNode).toBe(root);
+      expect(selection.anchorOffset).toBe(0);
+      expect(selection.focusNode).toBe(root);
+      expect(selection.focusOffset).toBe(0);
+    } finally {
+      document.body.removeChild(parent);
+    }
   });
 
   it('returns correctly for fuzz test', async () => {

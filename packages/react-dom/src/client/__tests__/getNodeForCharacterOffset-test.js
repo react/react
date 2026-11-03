@@ -80,4 +80,23 @@ describe('getNodeForCharacterOffset', () => {
     expect(getNodeForCharacterOffset(node, -1)).toBeUndefined();
     expect(getNodeForCharacterOffset(node, 4)).toBeUndefined();
   });
+
+  it('should not escape the root', () => {
+    const root = createNode('<i>123</i>');
+    const parent = root.ownerDocument.createElement('div');
+    parent.appendChild(root);
+    parent.appendChild(root.ownerDocument.createTextNode('outside'));
+
+    expectNodeOffset(getNodeForCharacterOffset(root, 1), '123', 1);
+    expect(getNodeForCharacterOffset(root, 4)).toBeUndefined();
+  });
+
+  it('should not escape an empty root', () => {
+    const root = createNode('');
+    const parent = root.ownerDocument.createElement('div');
+    parent.appendChild(root);
+    parent.appendChild(root.ownerDocument.createTextNode('outside'));
+
+    expect(getNodeForCharacterOffset(root, 0)).toBeUndefined();
+  });
 });
