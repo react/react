@@ -29,15 +29,13 @@ export default function useThunkDispatch(state, dispatch, extraArg) {
 ```
 Found 1 error:
 
-Invariant: [InferMutationAliasingEffects] Expected value kind to be initialized
+Todo: References to a named function expression from within its own body are not yet supported
 
-<unknown> thunk$14.
-
-error.bug-infer-mutation-aliasing-effects.ts:10:22
+error.todo-named-function-expression-self-reference-use-callback.ts:10:22
    8 |     function thunk(action) {
    9 |       if (typeof action === 'function') {
 > 10 |         return action(thunk, () => stateRef.current, extraArg);
-     |                       ^^^^^ this is uninitialized
+     |                       ^^^^^ References to a named function expression from within its own body are not yet supported
   11 |       } else {
   12 |         dispatch(action);
   13 |         return undefined;

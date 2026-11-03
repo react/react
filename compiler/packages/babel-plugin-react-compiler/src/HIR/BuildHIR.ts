@@ -100,6 +100,23 @@ export function lower(
     ).get('id');
     if (hasNode(idNode)) {
       id = idNode.node.name;
+      if (func.isFunctionExpression()) {
+        const binding = func.scope.getBinding(id);
+        if (
+          binding?.identifier === idNode.node &&
+          (binding.referenced || binding.constantViolations.length !== 0)
+        ) {
+          /*
+           * The self-reference is local to the function, not a captured
+           * variable, and HIR does not yet model this implicit binding.
+           */
+          CompilerError.throwTodo({
+            reason:
+              'References to a named function expression from within its own body are not yet supported',
+            loc: binding.referencePaths[0]?.node.loc ?? idNode.node.loc ?? null,
+          });
+        }
+      }
     }
   }
   const params: Array<Place | SpreadPattern> = [];
