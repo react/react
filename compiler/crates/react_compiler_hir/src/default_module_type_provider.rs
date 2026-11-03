@@ -56,8 +56,6 @@ pub fn default_module_type_provider(module_name: &str) -> Option<TypeConfig> {
                         known_incompatible: None,
                     }),
                 ),
-                // `useFormContext()` returns the same form methods as `useForm()` through context,
-                // so its `watch()` function is incompatible for the same reason.
                 (
                     "useFormContext".to_string(),
                     TypeConfig::Hook(HookTypeConfig {

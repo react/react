@@ -65,10 +65,6 @@ export function defaultModuleTypeProvider(
               },
             },
           },
-          /*
-           * `useFormContext()` returns the same form methods as `useForm()` through context, so its `watch()` function
-           * is incompatible for the same reason
-           */
           useFormContext: {
             kind: 'hook',
             returnType: {
