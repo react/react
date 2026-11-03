@@ -23,6 +23,8 @@ export interface BindingData {
   declarationType: string;
   declarationStart?: number;
   declarationNodeId?: number;
+  firstReferenceNodeId?: number;
+  hasConstantViolations: boolean;
   import?: ImportBindingData;
 }
 
@@ -197,6 +199,11 @@ export function extractScopeInfo(program: NodePath<t.Program>): ScopeInfo {
         declarationType: babelBinding.path.node.type,
         declarationStart: babelBinding.identifier.start ?? undefined,
         declarationNodeId: getOrAssignNodeId(babelBinding.identifier),
+        firstReferenceNodeId:
+          babelBinding.referencePaths.length !== 0
+            ? getOrAssignNodeId(babelBinding.referencePaths[0].node)
+            : undefined,
+        hasConstantViolations: babelBinding.constantViolations.length !== 0,
       };
 
       // Check for import bindings

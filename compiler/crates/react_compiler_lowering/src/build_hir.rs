@@ -116,6 +116,38 @@ fn expression_loc(expr: &react_compiler_ast::expressions::Expression) -> Option<
     convert_base_loc(base)
 }
 
+fn validate_named_function_expression(
+    func: &react_compiler_ast::expressions::FunctionExpression,
+    scope_info: &ScopeInfo,
+    function_scope: ScopeId,
+    identifier_locs: &IdentifierLocIndex,
+) -> Result<(), CompilerDiagnostic> {
+    let Some(id) = &func.id else {
+        return Ok(());
+    };
+    let Some(binding_id) = scope_info.get_binding(function_scope, &id.name) else {
+        return Ok(());
+    };
+    let binding = &scope_info.bindings[binding_id.0 as usize];
+    if id.base.node_id.is_some()
+        && binding.declaration_node_id == id.base.node_id
+        && (binding.first_reference_node_id.is_some() || binding.has_constant_violations)
+    {
+        // HIR does not yet model the implicit self-binding of a named function
+        // expression. Match TS's bailout, including references in nested functions.
+        let loc = binding
+            .first_reference_node_id
+            .and_then(|node_id| identifier_locs.get(&node_id))
+            .map(|entry| entry.loc)
+            .or_else(|| convert_base_loc(&id.base));
+        return Err(CompilerDiagnostic::todo(
+            "References to a named function expression from within its own body are not yet supported",
+            loc,
+        ));
+    }
+    Ok(())
+}
+
 fn validate_ts_this_parameter(
     scope_info: &ScopeInfo,
     function_scope: ScopeId,
@@ -4335,6 +4367,9 @@ pub fn lower(
 
     // Build identifier location index from the AST (replaces serialized referenceLocs/jsxReferencePositions)
     let identifier_locs = build_identifier_loc_index(func, scope_info);
+    if let FunctionNode::FunctionExpression(expr) = func {
+        validate_named_function_expression(expr, scope_info, scope_id, &identifier_locs)?;
+    }
 
     // Pre-compute context identifiers: variables captured across function boundaries
     let context_identifiers = find_context_identifiers(func, scope_info, env, &identifier_locs)?;
@@ -5696,6 +5731,10 @@ fn lower_function(
     let parent_used_names = builder.used_names().clone();
     let context_ids = builder.context_identifiers().clone();
     let ident_locs = builder.identifier_locs();
+
+    if let Expression::FunctionExpression(func) = expr {
+        validate_named_function_expression(func, scope_info, function_scope, ident_locs)?;
+    }
 
     // For synthetic functions with zero-width position ranges, position-based
     // reference filtering fails. Walk the body AST to collect actual positions.
