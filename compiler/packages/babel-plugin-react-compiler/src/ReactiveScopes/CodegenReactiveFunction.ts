@@ -24,6 +24,7 @@ import {
   BlockId,
   DeclarationId,
   GeneratedSource,
+  getSourceLocation,
   Identifier,
   IdentifierId,
   InstructionKind,
@@ -623,7 +624,9 @@ function codegenReactiveScope(
     const name = convertIdentifier(identifier);
     if (!cx.hasDeclared(identifier)) {
       statements.push(
-        t.variableDeclaration('let', [createVariableDeclarator(name, null)]),
+        t.variableDeclaration('let', [
+          createVariableDeclarator(identifier.loc, name, null),
+        ]),
       );
     }
     cacheLoads.push({name, index, value: name});
@@ -1089,7 +1092,11 @@ function codegenInstructionNullable(
           loc: instr.value.loc,
         });
         return createVariableDeclaration(instr.loc, 'const', [
-          createVariableDeclarator(codegenLValue(cx, lvalue), value),
+          createVariableDeclarator(
+            instr.value.loc,
+            codegenLValue(cx, lvalue),
+            value,
+          ),
         ]);
       }
       case InstructionKind.Function: {
@@ -1123,7 +1130,11 @@ function codegenInstructionNullable(
           loc: instr.value.loc,
         });
         return createVariableDeclaration(instr.loc, 'let', [
-          createVariableDeclarator(codegenLValue(cx, lvalue), value),
+          createVariableDeclarator(
+            instr.value.loc,
+            codegenLValue(cx, lvalue),
+            value,
+          ),
         ]);
       }
       case InstructionKind.Reassign: {
@@ -1271,6 +1282,26 @@ function codegenDependency(
   return object;
 }
 
+function setSourceLocation(
+  node: t.Node,
+  source: SourceLocation | null | undefined,
+): void {
+  if (source == null || source === GeneratedSource) {
+    return;
+  }
+  node.loc = source.loc;
+  if (source.start === undefined) {
+    delete node.start;
+  } else {
+    node.start = source.start;
+  }
+  if (source.end === undefined) {
+    delete node.end;
+  } else {
+    node.end = source.end;
+  }
+}
+
 function withLoc<T extends (...args: Array<any>) => t.Node>(
   fn: T,
 ): (
@@ -1282,9 +1313,7 @@ function withLoc<T extends (...args: Array<any>) => t.Node>(
     ...args: Parameters<T>
   ): ReturnType<T> => {
     const node = fn(...args);
-    if (loc != null && loc != GeneratedSource) {
-      node.loc = loc;
-    }
+    setSourceLocation(node, loc);
     return node as ReturnType<T>;
   };
 }
@@ -1296,6 +1325,7 @@ const createBinaryExpression = withLoc(t.binaryExpression);
 const createExpressionStatement = withLoc(t.expressionStatement);
 const _createLabelledStatement = withLoc(t.labeledStatement);
 const createVariableDeclaration = withLoc(t.variableDeclaration);
+const createVariableDeclarator = withLoc(t.variableDeclarator);
 const createFunctionDeclaration = withLoc(t.functionDeclaration);
 const createWhileStatement = withLoc(t.whileStatement);
 const createDoWhileStatement = withLoc(t.doWhileStatement);
@@ -1323,31 +1353,6 @@ const createTryStatement = withLoc(t.tryStatement);
 const createBreakStatement = withLoc(t.breakStatement);
 const createContinueStatement = withLoc(t.continueStatement);
 const createReturnStatement = withLoc(t.returnStatement);
-
-function createVariableDeclarator(
-  id: t.LVal,
-  init?: t.Expression | null,
-): t.VariableDeclarator {
-  const node = t.variableDeclarator(id, init);
-
-  /*
-   * The variable declarator location is not preserved in HIR, however, we can use the
-   * start location of the id and the end location of the init to recreate the
-   * exact original variable declarator location.
-   *
-   * Or if init is null, we likely have a declaration without an initializer, so we can use the id.loc.end as the end location.
-   */
-  if (id.loc && (init === null || init?.loc)) {
-    node.loc = {
-      start: id.loc.start,
-      end: init?.loc?.end ?? id.loc.end,
-      filename: id.loc.filename,
-      identifierName: undefined,
-    };
-  }
-
-  return node;
-}
 
 function createHookGuard(
   guard: ExternalFunction,
@@ -1397,9 +1402,7 @@ function createCallExpression(
   isHook: boolean,
 ): t.CallExpression {
   const callExpr = t.callExpression(callee, args);
-  if (loc != null && loc != GeneratedSource) {
-    callExpr.loc = loc;
-  }
+  setSourceLocation(callExpr, loc);
 
   const hookGuard = env.config.enableEmitHookGuards;
   if (hookGuard != null && isHook && env.outputMode === 'client') {
@@ -1457,6 +1460,7 @@ function codegenInstruction(
     } else {
       return createVariableDeclaration(instr.loc, 'const', [
         createVariableDeclarator(
+          instr.loc,
           convertIdentifier(instr.lvalue.identifier),
           expressionValue,
         ),
@@ -1469,7 +1473,7 @@ function convertValueToExpression(
   value: t.JSXText | t.Expression,
 ): t.Expression {
   if (value.type === 'JSXText') {
-    return createStringLiteral(value.loc, value.value);
+    return createStringLiteral(getSourceLocation(value), value.value);
   }
   return value;
 }
@@ -2104,9 +2108,7 @@ function codegenInstructionValue(
       );
     }
   }
-  if (instrValue.loc != null && instrValue.loc != GeneratedSource) {
-    value.loc = instrValue.loc;
-  }
+  setSourceLocation(value, instrValue.loc);
   return value;
 }
 
@@ -2152,7 +2154,10 @@ function codegenJsxAttribute(
             STRING_REQUIRES_EXPR_CONTAINER_PATTERN.test(value.value) &&
             !cx.fbtOperands.has(attribute.place.identifier.id)
           ) {
-            value = createJsxExpressionContainer(value.loc, value);
+            value = createJsxExpressionContainer(
+              getSourceLocation(value),
+              value,
+            );
           }
           break;
         }
@@ -2424,12 +2429,13 @@ function codegenPlace(cx: Context, place: Place): t.Expression | t.JSXText {
     )}' was not set in the codegen context`,
     loc: place.loc,
   });
-  const identifier = convertIdentifier(place.identifier);
-  identifier.loc = place.loc as any;
-  return identifier;
+  return convertIdentifier(place.identifier, place.loc);
 }
 
-function convertIdentifier(identifier: Identifier): t.Identifier {
+function convertIdentifier(
+  identifier: Identifier,
+  loc: SourceLocation = identifier.loc,
+): t.Identifier {
   CompilerError.invariant(
     identifier.name !== null && identifier.name.kind === 'named',
     {
@@ -2438,7 +2444,7 @@ function convertIdentifier(identifier: Identifier): t.Identifier {
       loc: GeneratedSource,
     },
   );
-  return createIdentifier(identifier.loc, identifier.name.value);
+  return createIdentifier(loc, identifier.name.value);
 }
 
 function compareScopeDependency(

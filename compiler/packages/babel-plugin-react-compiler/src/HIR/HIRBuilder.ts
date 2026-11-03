@@ -20,6 +20,7 @@ import {
   BlockKind,
   Effect,
   GeneratedSource,
+  getSourceLocation,
   GotoVariant,
   HIR,
   Identifier,
@@ -356,7 +357,7 @@ export default class HIRBuilder {
           },
           scope: null,
           type: makeType(),
-          loc: node.loc ?? GeneratedSource,
+          loc: getSourceLocation(node),
         };
         this.#env.programContext.addNewReference(name);
         this.#bindings.set(name, {node, identifier});
