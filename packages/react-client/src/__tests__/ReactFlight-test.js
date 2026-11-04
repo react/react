@@ -2325,6 +2325,31 @@ describe('ReactFlight', () => {
       );
     });
 
+    // @gate enableAsyncIterableChildren
+    it('should support useId in components yielded from an async iterable', async () => {
+      const items = {
+        async *[Symbol.asyncIterator]() {
+          yield <DivWithId key="a" />;
+          yield <DivWithId key="b" />;
+        },
+      };
+
+      function App() {
+        return <div>{items}</div>;
+      }
+
+      const transport = ReactNoopFlightServer.render(<App />);
+      await act(async () => {
+        ReactNoop.render(await ReactNoopFlightClient.read(transport));
+      });
+      expect(ReactNoop).toMatchRenderedOutput(
+        <div>
+          <div prop="_S_1_" />
+          <div prop="_S_2_" />
+        </div>,
+      );
+    });
+
     it('[TODO] it does not warn if you render a server element passed to a client module reference twice on the client when using useId', async () => {
       // @TODO Today if you render a Server Component with useId and pass it to a Client Component and that Client Component renders the element in two or more
       // places the id used on the server will be duplicated in the client. This is a deviation from the guarantees useId makes for Fizz/Client and is a consequence
