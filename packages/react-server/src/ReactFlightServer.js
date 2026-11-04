@@ -1435,6 +1435,11 @@ function serializeAsyncIterable(
       } else {
         // Unlike streams, the last value may not be undefined. If it's not
         // we outline it and encode a reference to it in the closing instruction.
+        const prevDispatcher = ReactSharedInternals.H;
+        ReactSharedInternals.H = HooksDispatcher;
+        const prevRequest = currentRequest;
+        currentRequest = request;
+        prepareToUseHooksForRequest(request);
         try {
           const chunkId = outlineModel(request, entry.value);
           endStreamRow =
@@ -1445,6 +1450,10 @@ function serializeAsyncIterable(
         } catch (x) {
           error(x);
           return;
+        } finally {
+          ReactSharedInternals.H = prevDispatcher;
+          resetHooksForRequest();
+          currentRequest = prevRequest;
         }
       }
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
