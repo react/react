@@ -6394,9 +6394,17 @@ function tryStreamTask(request: Request, task: Task): void {
     canEmitDebugInfo = false;
   }
   const parentSerializedSize = serializedSize;
+  const prevDispatcher = ReactSharedInternals.H;
+  ReactSharedInternals.H = HooksDispatcher;
+  const prevRequest = currentRequest;
+  currentRequest = request;
+  prepareToUseHooksForRequest(request);
   try {
     emitChunk(request, task, task.model);
   } finally {
+    ReactSharedInternals.H = prevDispatcher;
+    resetHooksForRequest();
+    currentRequest = prevRequest;
     serializedSize = parentSerializedSize;
     if (__DEV__) {
       canEmitDebugInfo = prevCanEmitDebugInfo;
