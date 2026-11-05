@@ -67,7 +67,7 @@
     "webpack-manifest-plugin": "^4.0.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.51.1"
+    "@playwright/test": "^1.53.0"
   },
   "scripts": {
     "predev": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
