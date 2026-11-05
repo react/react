@@ -16,4 +16,9 @@ function Component({shouldThrow}) {
 export const FIXTURE_ENTRYPOINT = {
   fn: Component,
   params: [{shouldThrow: true}],
+  sequentialRenders: [
+    {shouldThrow: true},
+    {shouldThrow: false},
+    {shouldThrow: true},
+  ],
 };

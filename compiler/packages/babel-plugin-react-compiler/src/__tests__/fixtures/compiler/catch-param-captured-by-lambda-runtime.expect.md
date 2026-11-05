@@ -20,6 +20,11 @@ function Component({shouldThrow}) {
 export const FIXTURE_ENTRYPOINT = {
   fn: Component,
   params: [{shouldThrow: true}],
+  sequentialRenders: [
+    {shouldThrow: true},
+    {shouldThrow: false},
+    {shouldThrow: true},
+  ],
 };
 
 ```
@@ -33,7 +38,7 @@ import { throwErrorWithMessageIf } from "shared-runtime";
 // The catch param `e` is captured by a lambda. It is initialized before the
 // catch body runs, so it must not be hoisted as a context variable.
 function Component(t0) {
-  const $ = _c(3);
+  const $ = _c(4);
   const { shouldThrow } = t0;
   let message = "ok";
   if ($[0] !== shouldThrow) {
@@ -50,11 +55,12 @@ function Component(t0) {
     message = $[1];
   }
   let t1;
-  if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[2] !== message) {
     t1 = <div>{message}</div>;
-    $[2] = t1;
+    $[2] = message;
+    $[3] = t1;
   } else {
-    t1 = $[2];
+    t1 = $[3];
   }
   return t1;
 }
@@ -62,9 +68,16 @@ function Component(t0) {
 export const FIXTURE_ENTRYPOINT = {
   fn: Component,
   params: [{ shouldThrow: true }],
+  sequentialRenders: [
+    { shouldThrow: true },
+    { shouldThrow: false },
+    { shouldThrow: true },
+  ],
 };
 
 ```
       
 ### Eval output
 (kind: ok) <div>boom</div>
+<div>ok</div>
+<div>boom</div>
