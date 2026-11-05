@@ -113,7 +113,11 @@ export function lower(
           CompilerError.throwTodo({
             reason:
               'References to a named function expression from within its own body are not yet supported',
-            loc: binding.referencePaths[0]?.node.loc ?? idNode.node.loc ?? null,
+            loc:
+              binding.constantViolations[0]?.node.loc ??
+              binding.referencePaths[0]?.node.loc ??
+              idNode.node.loc ??
+              null,
           });
         }
       }

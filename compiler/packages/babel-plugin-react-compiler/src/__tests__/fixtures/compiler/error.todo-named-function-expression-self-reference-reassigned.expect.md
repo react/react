@@ -18,13 +18,14 @@ Found 1 error:
 
 Todo: References to a named function expression from within its own body are not yet supported
 
-error.todo-named-function-expression-self-reference-reassigned.ts:2:18
+error.todo-named-function-expression-self-reference-reassigned.ts:3:4
   1 | function Component() {
-> 2 |   return function self() {
-    |                   ^^^^ References to a named function expression from within its own body are not yet supported
-  3 |     self = null;
+  2 |   return function self() {
+> 3 |     self = null;
+    |     ^^^^^^^^^^^ References to a named function expression from within its own body are not yet supported
   4 |   };
   5 | }
+  6 |
 ```
           
       

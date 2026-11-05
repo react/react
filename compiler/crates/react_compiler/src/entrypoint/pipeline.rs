@@ -1314,7 +1314,7 @@ fn outlined_assign_pattern_node_ids(
                     declaration_start: id.base.start,
                     declaration_node_id: Some(node_id),
                     first_reference_node_id: None,
-                    has_constant_violations: false,
+                    first_constant_violation_node_id: None,
                     import: None,
                 });
                 ref_node_id_to_binding.insert(node_id, binding_id);

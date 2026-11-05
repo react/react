@@ -116,6 +116,28 @@ fn expression_loc(expr: &react_compiler_ast::expressions::Expression) -> Option<
     convert_base_loc(base)
 }
 
+/// Resolve a non-identifier node's location on a diagnostic bailout path.
+/// Walking the serialized AST also covers nodes in untyped class bodies.
+fn find_node_loc(value: &serde_json::Value, node_id: u32) -> Option<SourceLocation> {
+    match value {
+        serde_json::Value::Object(object) => {
+            if object.get("_nodeId").and_then(|id| id.as_u64()) == Some(u64::from(node_id)) {
+                let base =
+                    serde_json::from_value::<react_compiler_ast::common::BaseNode>(value.clone())
+                        .ok()?;
+                return convert_base_loc(&base);
+            }
+            object
+                .values()
+                .find_map(|value| find_node_loc(value, node_id))
+        }
+        serde_json::Value::Array(array) => {
+            array.iter().find_map(|value| find_node_loc(value, node_id))
+        }
+        _ => None,
+    }
+}
+
 fn validate_named_function_expression(
     func: &react_compiler_ast::expressions::FunctionExpression,
     scope_info: &ScopeInfo,
@@ -131,14 +153,23 @@ fn validate_named_function_expression(
     let binding = &scope_info.bindings[binding_id.0 as usize];
     if id.base.node_id.is_some()
         && binding.declaration_node_id == id.base.node_id
-        && (binding.first_reference_node_id.is_some() || binding.has_constant_violations)
+        && (binding.first_reference_node_id.is_some()
+            || binding.first_constant_violation_node_id.is_some())
     {
         // HIR does not yet model the implicit self-binding of a named function
         // expression. Match TS's bailout, including references in nested functions.
         let loc = binding
-            .first_reference_node_id
-            .and_then(|node_id| identifier_locs.get(&node_id))
-            .map(|entry| entry.loc)
+            .first_constant_violation_node_id
+            .and_then(|node_id| {
+                let node = serde_json::to_value(func).ok()?;
+                find_node_loc(&node, node_id)
+            })
+            .or_else(|| {
+                binding
+                    .first_reference_node_id
+                    .and_then(|node_id| identifier_locs.get(&node_id))
+                    .map(|entry| entry.loc)
+            })
             .or_else(|| convert_base_loc(&id.base));
         return Err(CompilerDiagnostic::todo(
             "References to a named function expression from within its own body are not yet supported",

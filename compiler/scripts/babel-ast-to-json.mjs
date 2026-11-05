@@ -152,7 +152,10 @@ function collectScopeInfo(ast) {
             binding.referencePaths.length !== 0
               ? getOrAssignNodeId(binding.referencePaths[0].node)
               : undefined,
-          hasConstantViolations: binding.constantViolations.length !== 0,
+          firstConstantViolationNodeId:
+            binding.constantViolations.length !== 0
+              ? getOrAssignNodeId(binding.constantViolations[0].node)
+              : undefined,
         };
 
         // Import bindings
