@@ -1568,6 +1568,74 @@ const tests = {
   invalid: [
     {
       code: normalizeIndent`
+        function MyComponent({foo, key}) {
+          useEffect(() => {
+            console.log(foo?.[key]);
+          }, [foo?.[key]]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has missing dependencies: 'foo' and 'key'. " +
+            'Either include them or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [foo, key]',
+              output: normalizeIndent`
+                function MyComponent({foo, key}) {
+                  useEffect(() => {
+                    console.log(foo?.[key]);
+                  }, [foo, key]);
+                }
+              `,
+            },
+          ],
+        },
+        {
+          message:
+            'React Hook useEffect has a complex expression in the dependency array. ' +
+            'Extract it to a separate variable so it can be statically checked.',
+          suggestions: undefined,
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent({foo, key}) {
+          useEffect(() => {
+            console.log(foo?.bar[key]);
+          }, [foo?.bar[key]]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has missing dependencies: 'foo?.bar' and 'key'. " +
+            'Either include them or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [foo?.bar, key]',
+              output: normalizeIndent`
+                function MyComponent({foo, key}) {
+                  useEffect(() => {
+                    console.log(foo?.bar[key]);
+                  }, [foo?.bar, key]);
+                }
+              `,
+            },
+          ],
+        },
+        {
+          message:
+            'React Hook useEffect has a complex expression in the dependency array. ' +
+            'Extract it to a separate variable so it can be statically checked.',
+          suggestions: undefined,
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
         function MyComponent(props) {
           useSpecialEffect(() => {
             console.log(props.foo);
