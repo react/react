@@ -96,10 +96,18 @@ pub struct CompilerSuggestion {
 /// Source location (matches Babel's SourceLocation format)
 /// This is the HIR source location, separate from AST's BaseNode location.
 /// GeneratedSource is represented as None.
+/// Node offsets remain separate from position indices and are not part of the
+/// serialized Babel location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SourceLocation {
     pub start: Position,
     pub end: Position,
+    /// Original AST node `start`, independent of `start.index`.
+    #[serde(skip)]
+    pub start_offset: Option<u32>,
+    /// Original AST node `end`, independent of `end.index`.
+    #[serde(skip)]
+    pub end_offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
