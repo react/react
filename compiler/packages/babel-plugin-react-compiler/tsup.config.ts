@@ -17,7 +17,13 @@ export default defineConfig({
   bundle: true,
   format: 'cjs',
   platform: 'node',
-  target: 'es2022',
+  /*
+   * The compiler runs in Node, and needs Node 16.6+ at runtime (it uses
+   * Array.prototype.at). Targeting Node 16 keeps syntax that every supported
+   * Node version runs natively (generators with yield*, private class members,
+   * object spread) instead of lowering it to slower helpers.
+   */
+  target: 'node16',
   banner: {
     js: `/**
  * Copyright (c) Meta Platforms, Inc. and affiliates.
