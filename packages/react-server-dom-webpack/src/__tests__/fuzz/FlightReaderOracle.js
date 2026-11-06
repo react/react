@@ -271,6 +271,29 @@ function compareValue(
     } else if (metadata.type === 'element') {
       // Flight may deliver a lazy element before its props are ready.
       // Rendering and the component's props callback check its contents.
+    } else if (metadata.type === 'error') {
+      expect(received).toBeInstanceOf(Error);
+      const children = [];
+      if (__DEV__) {
+        expect(received.message).toBe(expectedValue.message);
+        expect('cause' in received).toBe('cause' in expectedValue);
+        if ('cause' in expectedValue) {
+          children.push({
+            expectedValue: expectedValue.cause,
+            received: received.cause,
+            path: path + '.cause',
+          });
+        }
+        if (expectedValue instanceof AggregateError) {
+          expect(received).toBeInstanceOf(AggregateError);
+          children.push({
+            expectedValue: expectedValue.errors,
+            received: received.errors,
+            path: path + '.errors',
+          });
+        }
+      }
+      return children;
     } else if (metadata.type === 'promise') {
       expect(typeof received.then).toBe('function');
     } else {
@@ -847,6 +870,14 @@ function assertExpectedError(error, expected, path) {
 function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
   if (metadata !== undefined) {
+    if (metadata.type === 'error') {
+      return __DEV__
+        ? [
+            value.cause,
+            value instanceof AggregateError ? value.errors : undefined,
+          ]
+        : [];
+    }
     return metadata.type === 'function'
       ? metadata.bound
       : metadata.type === 'iterator'

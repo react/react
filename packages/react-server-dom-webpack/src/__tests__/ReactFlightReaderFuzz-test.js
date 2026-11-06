@@ -1254,4 +1254,176 @@ describe('ReactFlightReaderFuzz (node)', () => {
         roots: {entry: 'pair', other: 'pair'},
       }));
   });
+  describe('Error properties and mixed graph values', () => {
+    it('exposes Error causes and AggregateError members in DEV', async () => {
+      const cause = {detail: 'source'};
+      const received = await roundTrip({
+        error: new Error('single', {cause}),
+        aggregate: new AggregateError([cause], 'several', {cause}),
+      });
+      expect(received.error).toBeInstanceOf(Error);
+      expect(received.aggregate).toBeInstanceOf(Error);
+      if (__DEV__) {
+        expect(received.error.message).toBe('single');
+        expect(received.error.cause).toEqual({detail: 'source'});
+        expect(received.aggregate).toBeInstanceOf(AggregateError);
+        expect(received.aggregate.message).toBe('several');
+        expect(received.aggregate.cause).toEqual({detail: 'source'});
+        expect(received.aggregate.errors).toEqual([{detail: 'source'}]);
+      } else {
+        expect('cause' in received.error).toBe(false);
+        expect('cause' in received.aggregate).toBe(false);
+        expect('errors' in received.aggregate).toBe(false);
+      }
+    });
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('an Error that is its own cause', () =>
+      runGraph({
+        nodes: {error: {error: 'self cause', cause: 'error'}},
+        roots: {entry: 'error', other: 'error'},
+      }));
+
+    it.each(['cause', 'errors'])(
+      'failing stream reachable only through Error.%s',
+      property =>
+        runGraph({
+          nodes: {
+            failure: {error: 'stream failed'},
+            stream: {stream: [], fail: 'failure'},
+            error: {
+              error: 'outer',
+              [property]: property === 'cause' ? 'stream' : ['stream'],
+            },
+          },
+          roots: {entry: 'error', other: 'error'},
+        }),
+    );
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('Error whose cause is still loading', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          error: {error: 'cause loading', cause: 'ready'},
+          set: {set: ['error']},
+        },
+        roots: {entry: 'set', other: 'set'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('Error with cyclic cause', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          cell: {object: {field0: 'ready', field1: 'error'}},
+          error: {error: 'cyclic cause', cause: 'cell'},
+        },
+        roots: {entry: 'error', other: 'cell'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('a cyclic Map with values that load independently', () =>
+      runGraph({
+        nodes: {
+          value1: {value: 'other value'},
+          value2: {value: ''},
+          value3: {value: 42},
+          text0: {text: 'text-898'},
+          blob0: {blob: 'blob-116'},
+          host0: {host: 'atom'},
+          module1: {module: 'export-1', async: true},
+          array0: {array: ['array0']},
+          set0: {set: ['map1']},
+          map0: {
+            map: [
+              ['blob0', 'bytes0'],
+              ['value3', 'props0'],
+              ['module1', 'iterable0'],
+              ['set0', 'value2'],
+              ['array0', 'value1'],
+            ],
+          },
+          map1: {
+            map: [
+              ['host0', 'host0'],
+              ['element0', 'host0'],
+              ['array0', 'host0'],
+              ['blob0', 'text0'],
+            ],
+          },
+          bytes0: {bytes: 2},
+          element0: {element: 'host0'},
+          props0: {props: 'element0'},
+          iterable0: {iterable: []},
+        },
+        roots: {entry: 'map0', other: 'array0'},
+        afterEof: true,
+        rootPromise: true,
+        events: [
+          'bytes0 chunk 1',
+          'load module1',
+          'bytes0 chunk 0',
+          'return iterable0',
+          'load element0',
+          'evaluate module1',
+          'resolve the root Promise',
+          'resolve an unrelated Promise',
+        ],
+        packetSizes: [3, 89, 2624],
+        yieldBetweenPackets: false,
+        readTiming: 'early',
+      }));
+
+    it('built-in values with a cycle and a loading module', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          nothing: {value: null},
+          flag: {value: true},
+          bigint: {special: 'bigint'},
+          nan: {special: 'nan'},
+          negativeZero: {special: 'negative zero'},
+          infinity: {special: 'infinity'},
+          symbol: {special: 'symbol'},
+          escaped: {special: 'escaped'},
+          text: {text: 'text'},
+          date: {date: 1700000000000},
+          buffer: {special: 'buffer'},
+          binary: {binary: 3},
+          typed: {special: 'typed array'},
+          view: {special: 'data view'},
+          bigints: {special: 'bigint array'},
+          blob: {blob: 'blob'},
+          form: {special: 'form data'},
+          host: {host: 'atom'},
+          atoms: {
+            array: [
+              'nothing',
+              'flag',
+              'bigint',
+              'nan',
+              'negativeZero',
+              'infinity',
+              'symbol',
+              'escaped',
+              'text',
+              'date',
+              'buffer',
+              'binary',
+              'typed',
+              'view',
+              'bigints',
+              'blob',
+              'form',
+              'host',
+              'ready',
+              'cycle',
+            ],
+          },
+          cycle: {object: {field0: 'atoms', field1: 'cycle'}},
+        },
+        roots: {entry: 'cycle', other: 'cycle'},
+      }));
+  });
 });
