@@ -202,10 +202,9 @@ async function createFixture(graph, {WebpackMock}) {
           node.fail + ' is used as an Error but is not an error node',
         );
       }
-      values[name] = createStream(node.stream.map(buildValue), {
-        label: name,
-        failure,
-      });
+      values[name] = node.cancel
+        ? createCanceledStream(node.stream.map(buildValue), {label: name})
+        : createStream(node.stream.map(buildValue), {label: name, failure});
     } else if (node.bytes !== undefined) {
       values[name] = createByteStream(
         Array.from({length: node.bytes}, (_, i) => new Uint8Array([i, 7])),
@@ -290,6 +289,25 @@ async function createFixture(graph, {WebpackMock}) {
     }
     events.push(...streamEvents);
     valueMetadata.set(stream, {type: 'bytes', chunks, events: streamEvents});
+    return stream;
+  }
+
+  // Client-side cancellation must not break later server writes.
+  function createCanceledStream(items, {label = 'canceled stream'} = {}) {
+    let controller;
+    const stream = new ReadableStream({
+      start(c) {
+        controller = c;
+        controller.enqueue(items[0]);
+      },
+    });
+    events.push(
+      createEvent('enqueue into ' + label + ' after cancellation', () => {
+        controller.enqueue({discarded: true});
+        controller.close();
+      }),
+    );
+    valueMetadata.set(stream, {type: 'canceled', first: items[0]});
     return stream;
   }
 
