@@ -81,7 +81,6 @@ class Surface extends React.Component {
       disableLegacyMode ? ConcurrentRoot : LegacyRoot,
       null,
       false,
-      false,
       '',
       defaultOnUncaughtError,
       defaultOnCaughtError,

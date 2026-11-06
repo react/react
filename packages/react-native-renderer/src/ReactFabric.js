@@ -156,7 +156,6 @@ function render(
       concurrentRoot ? ConcurrentRoot : LegacyRoot,
       null,
       false,
-      null,
       '',
       onUncaughtError,
       onCaughtError,
