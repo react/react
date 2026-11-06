@@ -2883,7 +2883,8 @@ function parseModelString(
 
         // Use the special marker from the Client to distinguish keys that should
         // be consumed by referenced FormData.
-        const formPrefix = response._prefix + '_' + stringId + '_';
+        const formPrefix =
+          response._prefix + '_' + parseInt(stringId, 16) + '_';
         return consumeBackingEntries(response._formData, formPrefix);
       }
       case 'i': {

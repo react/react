@@ -1510,23 +1510,20 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'exposure', other: 'exposure'},
       }));
 
-    (host === 'reply' ? it.skip : it)(
-      'FormData bound to a function in a larger graph',
-      () =>
-        runGraph({
-          nodes: {
-            form: {special: 'form data'},
-            set: {set: ['bytes', 'map', 'fn']},
-            outerMap: {map: [['set', 'iterable']]},
-            bytes: {bytes: 3},
-            map: {map: []},
-            fn: {bound: ['form']},
-            iterable: {iterable: []},
-          },
-          roots: {entry: 'map', other: 'outerMap'},
-          rootPromise: true,
-        }),
-    );
+    it('FormData bound to a function in a larger graph', () =>
+      runGraph({
+        nodes: {
+          form: {special: 'form data'},
+          set: {set: ['bytes', 'map', 'fn']},
+          outerMap: {map: [['set', 'iterable']]},
+          bytes: {bytes: 3},
+          map: {map: []},
+          fn: {bound: ['form']},
+          iterable: {iterable: []},
+        },
+        roots: {entry: 'map', other: 'outerMap'},
+        rootPromise: true,
+      }));
 
     if (host !== 'reply') {
       it('a repeated Server Function bound to its loading container', () =>
