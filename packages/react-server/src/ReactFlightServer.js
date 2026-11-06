@@ -4602,8 +4602,27 @@ function serializeErrorValue(request: Request, error: Error): string {
     const errorInfo: ReactErrorInfoDev = {name, message, stack, env};
     if ('cause' in error) {
       const cause: ReactClientValue = error.cause as any;
-      const causeId = outlineModel(request, cause);
-      errorInfo.cause = serializeByValueID(causeId);
+      // The cause may be an object that was written already, including this
+      // very Error, so refer to that instead of outlining it again.
+      let causeReference =
+        typeof cause === 'object' && cause !== null
+          ? request.writtenObjects.get(cause)
+          : undefined;
+      if (causeReference === undefined) {
+        const causeId = outlineModel(request, cause);
+        // Outlining registers the cause; an element that suspended is lazy.
+        causeReference =
+          typeof cause === 'object' && cause !== null
+            ? request.writtenObjects.get(cause)
+            : undefined;
+        if (causeReference === undefined) {
+          causeReference = serializeByValueID(causeId);
+        }
+      }
+      errorInfo.cause =
+        typeof cause === 'object' && cause !== null
+          ? referTo(cause, causeReference)
+          : causeReference;
     }
     if (
       typeof AggregateError !== 'undefined' &&
