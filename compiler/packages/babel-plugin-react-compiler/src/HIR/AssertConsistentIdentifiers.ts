@@ -40,13 +40,15 @@ export function assertConsistentIdentifiers(fn: HIRFunction): void {
         description: `Found named lvalue \`${instr.lvalue.identifier.name}\``,
         loc: instr.lvalue.loc,
       });
-      CompilerError.invariant(!assignments.has(instr.lvalue.identifier.id), {
-        reason: `Expected lvalues to be assigned exactly once`,
-        description: `Found duplicate assignment of '${printPlace(
-          instr.lvalue,
-        )}'`,
-        loc: instr.lvalue.loc,
-      });
+      if (assignments.has(instr.lvalue.identifier.id)) {
+        CompilerError.invariant(false, {
+          reason: `Expected lvalues to be assigned exactly once`,
+          description: `Found duplicate assignment of '${printPlace(
+            instr.lvalue,
+          )}'`,
+          loc: instr.lvalue.loc,
+        });
+      }
       assignments.add(instr.lvalue.identifier.id);
       for (const operand of eachInstructionLValue(instr)) {
         validate(identifiers, operand.identifier, operand.loc);

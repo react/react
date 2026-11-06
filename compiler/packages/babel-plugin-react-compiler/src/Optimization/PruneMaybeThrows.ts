@@ -55,13 +55,15 @@ export function pruneMaybeThrows(fn: HIRFunction): void {
         for (const [predecessor, operand] of phi.operands) {
           if (!block.preds.has(predecessor)) {
             const mappedTerminal = terminalMapping.get(predecessor);
-            CompilerError.invariant(mappedTerminal != null, {
-              reason: `Expected non-existing phi operand's predecessor to have been mapped to a new terminal`,
-              description: `Could not find mapping for predecessor bb${predecessor} in block bb${
-                block.id
-              } for phi ${printPlace(phi.place)}`,
-              loc: GeneratedSource,
-            });
+            if (mappedTerminal == null) {
+              CompilerError.invariant(false, {
+                reason: `Expected non-existing phi operand's predecessor to have been mapped to a new terminal`,
+                description: `Could not find mapping for predecessor bb${predecessor} in block bb${
+                  block.id
+                } for phi ${printPlace(phi.place)}`,
+                loc: GeneratedSource,
+              });
+            }
             phi.operands.delete(predecessor);
             phi.operands.set(mappedTerminal, operand);
           }
