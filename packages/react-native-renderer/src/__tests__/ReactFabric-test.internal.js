@@ -937,6 +937,43 @@ describe('ReactFabric', () => {
     expect(touchStart2).toHaveBeenCalled();
   });
 
+  it('dispatches native events with a null target after the target unmounts', async () => {
+    jest
+      .spyOn(
+        ReactNativePrivateInterface.ReactNativeFeatureFlags,
+        'enableNativeEventTargetEventDispatching',
+      )
+      .mockReturnValue(true);
+    jest.spyOn(ReactNativePrivateInterface, 'dispatchNativeEvent');
+
+    const View = createReactNativeComponentClass('RCTView', () => ({
+      validAttributes: {},
+      uiViewClassName: 'RCTView',
+    }));
+
+    await act(() => {
+      ReactFabric.render(<View />, 11, null, true);
+    });
+
+    const [, , , , instanceHandle] = fabricUIManager.createNode.mock.calls[0];
+    const [dispatchEvent] = fabricUIManager.registerEventHandler.mock.calls[0];
+
+    await act(() => {
+      ReactFabric.render(null, 11, null, true);
+    });
+
+    const touchEvent = {
+      touches: [],
+      changedTouches: [],
+    };
+
+    dispatchEvent(instanceHandle, 'topTouchEnd', touchEvent);
+
+    expect(
+      ReactNativePrivateInterface.dispatchNativeEvent,
+    ).toHaveBeenCalledWith(null, 'topTouchEnd', touchEvent);
+  });
+
   describe('skipBubbling', () => {
     it('should skip bubbling to ancestor if specified', async () => {
       const View = createReactNativeComponentClass('RCTView', () => ({
