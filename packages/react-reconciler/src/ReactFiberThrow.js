@@ -19,6 +19,7 @@ import type {
 import type {RetryQueue} from './ReactFiberSuspenseComponent';
 
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
+import isThenable from 'shared/isThenable';
 import {
   ClassComponent,
   HostRoot,
@@ -379,7 +380,7 @@ function throwException(
   }
 
   if (value !== null && typeof value === 'object') {
-    if (typeof value.then === 'function') {
+    if (isThenable(value)) {
       // This is a wakeable. The component suspended.
       const wakeable: Wakeable = value as any;
       resetSuspendedComponent(sourceFiber, rootRenderLanes);
