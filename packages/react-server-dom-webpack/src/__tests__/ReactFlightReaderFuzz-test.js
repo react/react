@@ -10,42 +10,80 @@
 
 'use strict';
 
-const {PassThrough} = require('stream');
-const {finished} = require('stream/promises');
 const {createOracle} = require('./fuzz/FlightReaderOracle');
 const {createFixture} = require('./fuzz/FlightReaderFuzzFixture');
-const {
-  patchSetImmediate,
-} = require('../../../../scripts/jest/patchSetImmediate');
+const NativeAbortController = global.AbortController;
+class FuzzAbortController extends NativeAbortController {
+  constructor() {
+    super();
+    require('node:events').setMaxListeners(Infinity, this.signal);
+  }
+}
 
 describe('ReactFlightReaderFuzz (node)', () => {
+  const host = 'node';
   let React;
   let ReactServer;
   let ReactDOMServer;
   let ReactServerDOMServer;
   let ReactServerDOMClient;
   let WebpackMock;
-  let serverAct;
+  let assertConsoleErrorDev;
+  let assertConsoleLogsCleared;
+  let previousAbortController;
+
+  // Restore console methods between cases to avoid retaining old server modules.
+  const consoleMethods = Object.fromEntries(
+    Object.entries(Object.getOwnPropertyDescriptors(console)).filter(
+      ([, descriptor]) => typeof descriptor.value === 'function',
+    ),
+  );
 
   beforeEach(() => {
+    previousAbortController = global.AbortController;
+    global.AbortController = FuzzAbortController;
+    loadModules();
+  });
+
+  afterEach(() => {
+    try {
+      assertConsoleErrorDev(
+        global.__loggedErrors
+          .map(entry => entry[0])
+          .filter(
+            message =>
+              typeof message === 'string' &&
+              message.includes('ArrayBuffer.prototype.detached'),
+          ),
+        {withoutStack: true},
+      );
+      assertConsoleLogsCleared();
+    } finally {
+      Object.defineProperties(console, consoleMethods);
+      global.AbortController = previousAbortController;
+    }
+  });
+
+  // Reset caches so each case starts with unloaded client modules.
+  function loadModules() {
+    Object.defineProperties(console, consoleMethods);
     jest.resetModules();
-    jest.useFakeTimers();
-    patchSetImmediate();
-    serverAct = require('internal-test-utils').serverAct;
+    jest.useRealTimers();
     jest.mock('react', () => require('react/react.react-server'));
-    jest.mock('react-server-dom-webpack/server', () =>
-      require('react-server-dom-webpack/server.node'),
+    jest.doMock('react-server-dom-webpack/server', () =>
+      require('react-server-dom-webpack/server.' + host),
     );
     WebpackMock = require('./utils/WebpackMock');
-    ReactServerDOMServer = require('react-server-dom-webpack/server.node');
+    ReactServerDOMServer = require('react-server-dom-webpack/server.' + host);
     ReactServer = require('react');
-
     jest.resetModules();
     __unmockReact();
     React = require('react');
-    ReactServerDOMClient = require('react-server-dom-webpack/client.node');
+    ReactServerDOMClient = require('react-server-dom-webpack/client.' + host);
     ReactDOMServer = require('react-dom/server.edge');
-  });
+    ({assertConsoleErrorDev} = require('internal-test-utils'));
+    ({assertConsoleLogsCleared} = require('internal-test-utils/consoleMock'));
+  }
 
   // Ordinary source values establish the contract before references and
   // readiness vary: preserve contents and collection insertion order.
@@ -162,24 +200,32 @@ describe('ReactFlightReaderFuzz (node)', () => {
       independent: new Promise(() => {}),
     };
 
-    await withResponse(source, async ({response, stream}) => {
-      const received = await response;
+    await withResponse(source, async ({response, transport}) => {
+      const received = await readRoot(transport);
       expect(received.label).toBe('containing object');
       expect(Object.keys(received)).toEqual(['label', 'value', 'independent']);
       const results = [];
-      received.value.then(result => results.push(result));
+      received.value.then(
+        result => results.push(result),
+        error => results.push({error}),
+      );
       const independentResults = [];
-      received.independent.then(result => independentResults.push(result));
-      await actOnStream(() => {});
+      received.independent.then(
+        result => independentResults.push(result),
+        error => independentResults.push({error}),
+      );
+      await flushAction(transport, () => {});
       expect(results).toEqual([]);
       expect(independentResults).toEqual([]);
-      expect(stream.readableEnded).toBe(false);
+      expect(transport.isClosed).toBe(false);
+      expect(transport.isServerDone).toBe(false);
 
-      await actOnStream(() => resolveValue({message: 'ready'}));
+      await flushAction(transport, () => resolveValue({message: 'ready'}));
       expect(results).toStrictEqual([{message: 'ready'}]);
       expect(await received.value).toStrictEqual({message: 'ready'});
       expect(independentResults).toEqual([]);
-      expect(stream.readableEnded).toBe(false);
+      expect(transport.isClosed).toBe(false);
+      expect(transport.isServerDone).toBe(false);
     });
   });
 
@@ -197,16 +243,20 @@ describe('ReactFlightReaderFuzz (node)', () => {
 
     await withResponse(
       {label: 'containing object', value},
-      async ({response, completion}) => {
+      async ({response, transport}) => {
         const models = [];
-        response.then(model => models.push(model));
+        response.then(
+          model => models.push(model),
+          error => models.push({error}),
+        );
         // All bytes have arrived, but the containing model still needs its
         // client export. Transport completion must not deliver a placeholder.
-        await completion;
-        await actOnStream(() => {});
+        await transport.finish();
+        transport.close();
+        await flushAction(transport, () => {});
         expect(models).toEqual([]);
 
-        await actOnStream(() => resolveModule());
+        await flushAction(transport, () => resolveModule());
         expect(models).toStrictEqual([
           {label: 'containing object', value: 'ready'},
         ]);
@@ -218,13 +268,26 @@ describe('ReactFlightReaderFuzz (node)', () => {
     );
   });
 
-  // Node streams deliver data through nextTick. Flush those deliveries in
-  // the act scope so pending observations include the work they trigger.
-  function actOnStream(action) {
-    return serverAct(() => {
-      action();
-      jest.runAllTicks();
-    });
+  async function flushAction(transport, action) {
+    await runInIOCallback(action);
+    await transport.flush();
+  }
+
+  async function readRoot(transport) {
+    let result;
+    const settled = Promise.resolve(transport.root).then(
+      value => (result = {value}),
+      error => (result = {error}),
+    );
+    await transport.drain(
+      () => result !== undefined,
+      () => 'literal root delivery',
+    );
+    await settled;
+    if ('error' in result) {
+      throw result.error;
+    }
+    return result.value;
   }
 
   function render(element) {
@@ -234,58 +297,37 @@ describe('ReactFlightReaderFuzz (node)', () => {
   }
 
   async function withResponse(model, read, {onError: handleError} = {}) {
-    const stream = new PassThrough();
-    const response = ReactServerDOMClient.createFromNodeStream(stream, {
-      moduleMap: null,
-      serverModuleMap: WebpackMock.webpackServerMap,
-      moduleLoading: null,
-    });
-    let disposed = false;
-    const errors = [];
-    // Observe rejection immediately, including when read finishes before EOF.
-    const completion = finished(stream, {cleanup: true}).catch(error => {
-      if (!disposed) {
-        errors.push(error);
-      }
-    });
-    const writer = ReactServerDOMServer.renderToPipeableStream(
+    const transport = startFlightResponse({
+      ReactServerDOMServer,
+      ReactServerDOMClient,
+      WebpackMock,
+      host,
       model,
-      WebpackMock.webpackMap,
-      {
-        onError(error) {
-          if (!disposed) {
-            try {
-              if (handleError === undefined) {
-                throw error;
-              }
-              return handleError(error);
-            } catch (unexpected) {
-              errors.push(unexpected);
+      packetSizes: [1, 21, 4096],
+      yieldBetweenPackets: true,
+      onError:
+        handleError === undefined
+          ? error => {
+              throw error;
             }
-          }
-        },
-      },
-    );
+          : handleError,
+    });
     try {
-      await actOnStream(() => writer.pipe(stream));
-      const value = await read({response, stream, completion});
-      if (errors.length > 0) {
-        throw errors[0];
-      }
+      await transport.flush();
+      const value = await read({response: transport.root, transport});
+      await transport.flush();
       return value;
     } finally {
-      disposed = true;
-      await actOnStream(() => {
-        writer.abort();
-        stream.destroy();
-      });
-      await completion;
+      await transport.dispose();
     }
   }
 
   function roundTrip(model) {
-    return withResponse(model, async ({response, completion}) => {
-      const [value] = await Promise.all([response, completion]);
+    return withResponse(model, async ({response, transport}) => {
+      await transport.finish();
+      const value = await response;
+      transport.close();
+      await transport.flush();
       return value;
     });
   }
@@ -302,17 +344,6 @@ describe('ReactFlightReaderFuzz (node)', () => {
       },
     });
     const oracle = createOracle(fixture, {render});
-    const reported = [];
-    const onError = error => {
-      const digest = fixture.expectedErrors.has(error)
-        ? fixture.valueMetadata.get(error).digest
-        : undefined;
-      if (digest === undefined) {
-        throw error;
-      }
-      reported.push(error);
-      return digest;
-    };
     const events = fixture.events.filter(
       event => event !== fixture.unrelatedEvent,
     );
@@ -329,41 +360,150 @@ describe('ReactFlightReaderFuzz (node)', () => {
     }
     events.push(fixture.unrelatedEvent);
 
-    await withResponse(
-      fixture.model,
-      async ({response, stream}) => {
-        const expectedModel =
-          fixture.rootPromise === null ? fixture.model : fixture.resolvedModel;
-        const root =
-          fixture.rootPromise === null ? response : Promise.resolve(response);
-        oracle.subscribeToRoot(root, expectedModel, {subscribeAgain: true});
-        async function checkProgress() {
-          await actOnStream(() => {});
-          oracle.throwIfFailed();
-          expect(oracle.getMissingResults().map(check => check.path)).toEqual(
-            [],
+    await checkResponse(fixture, oracle, {
+      readTiming: 'early',
+      events,
+      packetSizes: graph.packetSizes || [1, 21, 4096],
+      yieldBetweenPackets: graph.yieldBetweenPackets !== false,
+      afterEof: graph.afterEof === true,
+    });
+  }
+
+  // Check progress after each event. Otherwise, a later event could hide
+  // a missing wakeup.
+  async function checkResponse(
+    fixture,
+    oracle,
+    {readTiming, events, packetSizes, yieldBetweenPackets, afterEof = false},
+    model = fixture.model,
+  ) {
+    const reported = [];
+    if (readTiming === 'after-eof') {
+      // Start rendering with all server events already released.
+      for (let i = 0; i < events.length; i++) {
+        if (!events[i].isClient) {
+          releaseEvent(events[i]);
+        }
+      }
+      events = events.filter(event => event.isClient);
+    }
+
+    const transport = startFlightResponse({
+      ReactServerDOMServer,
+      ReactServerDOMClient,
+      WebpackMock,
+      host,
+      model,
+      packetSizes,
+      yieldBetweenPackets,
+      onError(error) {
+        const digest = fixture.expectedErrors.has(error)
+          ? fixture.valueMetadata.get(error).digest
+          : undefined;
+        if (digest === undefined) {
+          throw error;
+        }
+        reported.push(error);
+        return digest;
+      },
+    });
+    try {
+      const expectedModel =
+        fixture.rootPromise === null ? fixture.model : fixture.resolvedModel;
+      const root =
+        fixture.rootPromise === null
+          ? transport.root
+          : Promise.resolve(transport.root);
+      const checkProgress = async stage => {
+        let pendingChecks = [];
+        try {
+          await transport.drain(
+            () => {
+              pendingChecks = oracle.getMissingResults();
+              return pendingChecks.length === 0;
+            },
+            () =>
+              stage +
+              ': still waiting for ' +
+              pendingChecks.map(entry => entry.path).join(', ') +
+              '; not yet released: ' +
+              fixture.events
+                .filter(event => !event.released)
+                .map(event => event.label)
+                .join(', '),
           );
           await oracle.checkForMutations();
-          Array.from(fixture.expectedErrors.keys()).forEach(error => {
-            expect(reported).toContain(error);
-          });
+        } catch (error) {
+          if (!error.message.startsWith('No progress')) {
+            error.message = stage + ': ' + error.message;
+          }
+          throw error;
         }
-        await checkProgress();
+      };
+      if (readTiming === 'early') {
+        oracle.subscribeToRoot(root, expectedModel, {subscribeAgain: true});
+      }
+      await transport.flush();
+      if (readTiming === 'late') {
+        oracle.subscribeToRoot(root, expectedModel, {subscribeAgain: true});
+      }
+      await checkProgress('after the first packets');
+      const release = async event => {
+        await runInIOCallback(() => releaseEvent(event));
+        await checkProgress('after ' + event.label);
+      };
+      if (afterEof) {
+        // Module loading can finish after EOF. Closing the transport must not
+        // cancel those pending results.
         for (let i = 0; i < events.length; i++) {
-          const event = events[i];
-          await actOnStream(() => {
-            event.released = true;
-            event.run();
-          });
-          await checkProgress();
-          if (event !== fixture.unrelatedEvent) {
-            expect(stream.readableEnded).toBe(false);
+          if (!events[i].isClient) {
+            await release(events[i]);
           }
         }
-        expect(oracle.isComplete()).toBe(true);
-      },
-      {onError},
-    );
+        await transport.finish();
+        transport.close();
+        await transport.flush();
+        await checkProgress('after EOF');
+        events = events.filter(event => event.isClient);
+      }
+      for (let i = 0; i < events.length; i++) {
+        await release(events[i]);
+      }
+      await transport.finish();
+      if (readTiming === 'after-eof') {
+        transport.close();
+        await tick();
+      }
+      if (readTiming === 'after-events' || readTiming === 'after-eof') {
+        oracle.subscribeToRoot(root, expectedModel, {subscribeAgain: true});
+      }
+      await checkProgress('after all events');
+      await transport.drain(
+        () => oracle.isComplete(),
+        () => 'every outcome, render and stream item',
+      );
+      fixture.expectedErrors.forEach((thrower, error) => {
+        if (!reported.includes(error)) {
+          throw new Error(
+            'The writer never reported "' +
+              error.message +
+              '", ' +
+              thrower +
+              '. Was it sent?',
+          );
+        }
+      });
+      await oracle.checkForMutations();
+      // Read the completed response again to catch results that changed.
+      oracle.subscribeToRoot(root, expectedModel);
+      await transport.drain(
+        () => oracle.isComplete(),
+        () => 'reading the root again',
+      );
+      await oracle.checkForMutations();
+    } finally {
+      await transport.dispose();
+    }
   }
 
   describe('Promise and client-module graphs', () => {
@@ -641,26 +781,39 @@ describe('ReactFlightReaderFuzz (node)', () => {
       const data = new ReadableStream({start: c => (controller = c)});
       await withResponse(
         {data, independent: new Promise(() => {})},
-        async ({response, stream}) => {
-          const received = await response;
+        async ({response, transport}) => {
+          const received = await readRoot(transport);
           const reader = received.data.getReader();
           const results = [];
-          reader.read().then(result => results.push(result));
-          await actOnStream(() => {});
+          reader.read().then(
+            result => results.push(result),
+            error => results.push({error}),
+          );
+          await flushAction(transport, () => {});
           expect(results).toEqual([]);
-          await actOnStream(() => controller.enqueue('first'));
+          await flushAction(transport, () => controller.enqueue('first'));
           expect(results).toStrictEqual([{done: false, value: 'first'}]);
-          reader.read().then(result => results.push(result));
-          await actOnStream(() => controller.enqueue({value: 'second'}));
+          reader.read().then(
+            result => results.push(result),
+            error => results.push({error}),
+          );
+          await flushAction(transport, () =>
+            controller.enqueue({value: 'second'}),
+          );
           expect(results).toStrictEqual([
             {done: false, value: 'first'},
             {done: false, value: {value: 'second'}},
           ]);
-          expect(stream.readableEnded).toBe(false);
-          reader.read().then(result => results.push(result));
-          await actOnStream(() => controller.close());
+          expect(transport.isClosed).toBe(false);
+          expect(transport.isServerDone).toBe(false);
+          reader.read().then(
+            result => results.push(result),
+            error => results.push({error}),
+          );
+          await flushAction(transport, () => controller.close());
           expect(results[2]).toStrictEqual({done: true, value: undefined});
-          expect(stream.readableEnded).toBe(false);
+          expect(transport.isClosed).toBe(false);
+          expect(transport.isServerDone).toBe(false);
         },
       );
     });
@@ -672,20 +825,21 @@ describe('ReactFlightReaderFuzz (node)', () => {
       const reported = [];
       await withResponse(
         {data: Promise.resolve(data), unrelated: new Promise(() => {})},
-        async ({response, stream}) => {
-          const model = await response;
+        async ({response, transport}) => {
+          const model = await readRoot(transport);
           const received = await model.data;
           const failedRead = received
             .getReader()
             .read()
             .catch(reason => reason);
-          await actOnStream(() => controller.error(error));
+          await flushAction(transport, () => controller.error(error));
           expect(await failedRead).toEqual(
             expect.objectContaining({digest: 'stream failure'}),
           );
           expect(await model.data).toBe(received);
           expect(reported).toEqual([error]);
-          expect(stream.readableEnded).toBe(false);
+          expect(transport.isClosed).toBe(false);
+          expect(transport.isServerDone).toBe(false);
         },
         {
           onError(reason) {
@@ -1114,22 +1268,23 @@ describe('ReactFlightReaderFuzz (node)', () => {
       const element = ReactServer.createElement(Client, {value});
       await withResponse(
         {element, unrelated: new Promise(() => {})},
-        async ({response, stream}) => {
-          let received;
-          response.then(result => (received = result));
-          await actOnStream(() => {});
+        async ({response, transport}) => {
+          const received = await readRoot(transport);
+          await flushAction(transport, () => {});
           expect(received).toBeDefined();
           let html;
           const rendered = render(received.element).then(
             result => (html = result),
           );
-          await actOnStream(() => {});
+          rendered.catch(() => {});
+          await flushAction(transport, () => {});
           expect(seen).toEqual([]);
           expect(html).toBe(undefined);
-          await actOnStream(load);
+          await flushAction(transport, load);
           expect(await rendered).toBe('<span>ready</span>');
           expect(seen).toEqual(['ready']);
-          expect(stream.readableEnded).toBe(false);
+          expect(transport.isClosed).toBe(false);
+          expect(transport.isServerDone).toBe(false);
         },
       );
     });
@@ -1427,3 +1582,182 @@ describe('ReactFlightReaderFuzz (node)', () => {
       }));
   });
 });
+
+const MAX_FLUSH_ATTEMPTS = 30;
+
+function startFlightResponse({
+  ReactServerDOMServer,
+  ReactServerDOMClient,
+  WebpackMock,
+  host,
+  model,
+  packetSizes,
+  yieldBetweenPackets,
+  onError,
+}) {
+  const manifest = {
+    moduleMap: null,
+    serverModuleMap: WebpackMock.webpackServerMap,
+    moduleLoading: null,
+  };
+  const errors = [];
+  let queued = [];
+  let serverDone = false;
+  let closed = false;
+  let disposed = false;
+  let packet = 0;
+  let send;
+  let end;
+  let abort;
+  let root;
+  let serverCompletion;
+  const options = {
+    onError(error) {
+      if (disposed) {
+        return 'cleanup';
+      }
+      try {
+        return onError(error);
+      } catch (unexpected) {
+        errors.push(unexpected);
+        return 'unexpected';
+      }
+    },
+  };
+  if (host === 'node') {
+    const {PassThrough, Writable} = require('stream');
+    const {finished} = require('stream/promises');
+    const input = new PassThrough();
+    root = ReactServerDOMClient.createFromNodeStream(input, manifest);
+    send = bytes => input.write(bytes);
+    end = () => input.end();
+    const output = new Writable({
+      write(bytes, encoding, done) {
+        queued.push(Buffer.from(bytes));
+        done();
+      },
+      final(done) {
+        serverDone = true;
+        done();
+      },
+    });
+    serverCompletion = finished(output, {cleanup: true}).catch(error => {
+      if (!disposed) {
+        errors.push(error);
+      }
+    });
+    const writer = ReactServerDOMServer.renderToPipeableStream(
+      model,
+      WebpackMock.webpackMap,
+      options,
+    );
+    abort = reason => writer.abort(reason);
+    writer.pipe(output);
+  }
+
+  // Split output into uneven packets to exercise partial reads.
+  async function flush() {
+    await tick();
+
+    // A broken byte-stream reader may transfer the packet's buffer. Give
+    // the transport its own buffer so this can fail the case without also
+    // detaching Node's shared Buffer pool and breaking Jest's file reads.
+    const bytes = new Uint8Array(Buffer.concat(queued));
+    queued = [];
+    for (let offset = 0; offset < bytes.length; ) {
+      const size = packetSizes[packet++ % packetSizes.length];
+      send(bytes.subarray(offset, offset + size));
+      offset += size;
+      if (yieldBetweenPackets) {
+        await tick();
+      }
+    }
+
+    await tick();
+    if (errors.length) {
+      throw errors[0];
+    }
+  }
+
+  async function drain(predicate, describe) {
+    for (let turn = 0; turn < MAX_FLUSH_ATTEMPTS; turn++) {
+      await flush();
+      if (predicate()) {
+        return;
+      }
+      // Blob reads and Edge streams may need a timer or I/O callback.
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+    const error = new Error('No progress: ' + describe());
+    error.fuzzFailure = 'liveness';
+    throw error;
+  }
+
+  return {
+    root,
+    get isClosed() {
+      return closed;
+    },
+    get isServerDone() {
+      return serverDone;
+    },
+    flush,
+    drain,
+    // Flush all server output without closing the client stream. Pending
+    // values must complete without relying on EOF.
+    finish: () =>
+      drain(
+        () => serverDone && queued.length === 0,
+        () => 'writer completion',
+      ),
+    close() {
+      if (!closed) {
+        closed = true;
+        end();
+      }
+    },
+    async dispose() {
+      disposed = true;
+      try {
+        if (!serverDone) {
+          abort();
+        }
+        // Aborting can schedule more writer work. Wait for the output and its
+        // read pump to finish before resetting modules for the next case.
+        await serverCompletion;
+      } finally {
+        if (!closed) {
+          closed = true;
+          end();
+        }
+      }
+      queued = [];
+      await tick();
+    },
+  };
+}
+
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+// MessageChannel makes React's async tracing treat this as I/O.
+// Timers and microtasks don't exercise the same debug-info path.
+function runInIOCallback(fn) {
+  return new Promise((resolve, reject) => {
+    const {MessageChannel} = require('node:worker_threads');
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      try {
+        resolve(fn());
+      } catch (error) {
+        reject(error);
+      }
+    };
+    channel.port2.postMessage(undefined);
+  });
+}
+
+function releaseEvent(event) {
+  event.released = true;
+  event.run();
+}
