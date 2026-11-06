@@ -50,6 +50,23 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"flex:0;opacity:0.5"');
   });
 
+  it('should not append `px` to properties whose grammar takes a bare number', () => {
+    const styles = {
+      fontSizeAdjust: 0.5,
+      shapeImageThreshold: 0.3,
+      mathDepth: 2,
+      initialLetter: 3,
+      hyphenateLimitChars: 6,
+      WebkitBoxFlexGroup: 2,
+    };
+    const div = <div style={styles} />;
+    const html = ReactDOMServer.renderToString(div);
+    expect(html).toContain(
+      '"font-size-adjust:0.5;shape-image-threshold:0.3;math-depth:2;' +
+        'initial-letter:3;hyphenate-limit-chars:6;-webkit-box-flex-group:2"'
+    );
+  });
+
   it('should create vendor-prefixed markup correctly', () => {
     const styles = {
       msTransition: 'none',
