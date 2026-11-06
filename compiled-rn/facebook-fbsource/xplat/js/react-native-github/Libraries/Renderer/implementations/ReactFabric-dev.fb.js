@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<9fcfba8050f834bf6f2be4b5ab243727>>
+ * @generated SignedSource<<896ca0268aefc420acf9072c9cf2274c>>
  */
 
 "use strict";
@@ -15258,6 +15258,7 @@ __DEV__ &&
         lanes &= ~lane;
       }
       0 !== spawnedLane &&
+        0 !== (suspendedLanes & 261930) &&
         markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
     }
     function flushSyncWork() {
@@ -21383,10 +21384,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-952f45b7-20261030",
+        version: "19.3.0-native-fb-d71b5372-20261106",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030"
+        reconcilerVersion: "19.3.0-native-fb-d71b5372-20261106"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

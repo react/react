@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<7b86a5a4cc98230eece5b560faab12a3>>
+ * @generated SignedSource<<cccf5db0a68b637b268857b4dc489558>>
  */
 
 "use strict";
@@ -10091,6 +10091,7 @@ function markRootSuspended(
     lanes &= ~lane;
   }
   0 !== spawnedLane &&
+    0 !== (suspendedLanes & 261930) &&
     markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
 }
 function flushSyncFromReconciler(fn) {
@@ -11742,10 +11743,10 @@ function wrapFiber(fiber) {
 }
 var internals$jscomp$inline_1323 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-952f45b7-20261030",
+  version: "19.3.0-native-fb-d71b5372-20261106",
   rendererPackageName: "react-test-renderer",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030",
+  reconcilerVersion: "19.3.0-native-fb-d71b5372-20261106",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$160 = 0;
@@ -11896,4 +11897,4 @@ exports.unstable_batchedUpdates = function (fn, a) {
         flushSyncWorkAcrossRoots_impl(0, !0));
   }
 };
-exports.version = "19.3.0-native-fb-952f45b7-20261030";
+exports.version = "19.3.0-native-fb-d71b5372-20261106";

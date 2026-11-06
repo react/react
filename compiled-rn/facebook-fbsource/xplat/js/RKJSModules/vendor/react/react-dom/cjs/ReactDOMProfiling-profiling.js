@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<e4bf4dc8016c03bcc9ebd8d656459298>>
+ * @generated SignedSource<<aa946428a02cb8cdfd1318cbcc9ee589>>
  */
 
 /*
@@ -14611,6 +14611,7 @@ function markRootSuspended(
     lanes &= ~lane;
   }
   0 !== spawnedLane &&
+    0 !== (suspendedLanes & 261930) &&
     markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
 }
 function flushSyncWork() {
@@ -21665,14 +21666,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2487 = React.version;
 if (
-  "19.3.0-native-fb-952f45b7-20261030" !==
+  "19.3.0-native-fb-d71b5372-20261106" !==
   isomorphicReactPackageVersion$jscomp$inline_2487
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2487,
-      "19.3.0-native-fb-952f45b7-20261030"
+      "19.3.0-native-fb-d71b5372-20261106"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -21694,10 +21695,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2494 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-952f45b7-20261030",
+  version: "19.3.0-native-fb-d71b5372-20261106",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030",
+  reconcilerVersion: "19.3.0-native-fb-d71b5372-20261106",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$351 = 0;
@@ -21985,7 +21986,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-952f45b7-20261030";
+exports.version = "19.3.0-native-fb-d71b5372-20261106";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

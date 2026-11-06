@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<87eafaabb52d9004e3d326125125167a>>
+ * @generated SignedSource<<57234cfc41849ccf8247aab57b55b372>>
  */
 
 /*
@@ -19259,6 +19259,7 @@ __DEV__ &&
         lanes &= ~lane;
       }
       0 !== spawnedLane &&
+        0 !== (suspendedLanes & 261930) &&
         markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
     }
     function flushSyncWork() {
@@ -32450,11 +32451,11 @@ __DEV__ &&
     };
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-native-fb-952f45b7-20261030" !== isomorphicReactPackageVersion)
+      if ("19.3.0-native-fb-d71b5372-20261106" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-native-fb-952f45b7-20261030\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-native-fb-d71b5372-20261106\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -32491,10 +32492,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-native-fb-952f45b7-20261030",
+          version: "19.3.0-native-fb-d71b5372-20261106",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030"
+          reconcilerVersion: "19.3.0-native-fb-d71b5372-20261106"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -32644,5 +32645,5 @@ __DEV__ &&
       listenToAllSupportedEvents(container);
       return new ReactDOMHydrationRoot(initialChildren);
     };
-    exports.version = "19.3.0-native-fb-952f45b7-20261030";
+    exports.version = "19.3.0-native-fb-d71b5372-20261106";
   })();

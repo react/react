@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<094f95097b222f96e04c74fc2e80be2b>>
+ * @generated SignedSource<<3c7b8a92ed02bbfafde475e755574294>>
  */
 
 "use strict";
@@ -10821,6 +10821,7 @@ function markRootSuspended(
     lanes &= ~lane;
   }
   0 !== spawnedLane &&
+    0 !== (suspendedLanes & 261930) &&
     markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
 }
 function resetWorkInProgressStack() {
@@ -12465,10 +12466,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1351 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-952f45b7-20261030",
+    version: "19.3.0-native-fb-d71b5372-20261106",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030"
+    reconcilerVersion: "19.3.0-native-fb-d71b5372-20261106"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1351.rendererConfig = extraDevToolsConfig);

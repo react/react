@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<eab9a366d5653d0eb41ac83e14a4eaa3>>
+ * @generated SignedSource<<1c8785c7d0efa9e495e1495bba563032>>
  */
 
 "use strict";
@@ -12855,6 +12855,7 @@ __DEV__ &&
         lanes &= ~lane;
       }
       0 !== spawnedLane &&
+        0 !== (suspendedLanes & 261930) &&
         markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
     }
     function flushSyncFromReconciler(fn) {
@@ -17153,10 +17154,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-952f45b7-20261030",
+        version: "19.3.0-native-fb-d71b5372-20261106",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-952f45b7-20261030"
+        reconcilerVersion: "19.3.0-native-fb-d71b5372-20261106"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -17302,5 +17303,5 @@ __DEV__ &&
             flushSyncWorkAcrossRoots_impl(0, !0));
       }
     };
-    exports.version = "19.3.0-native-fb-952f45b7-20261030";
+    exports.version = "19.3.0-native-fb-d71b5372-20261106";
   })();
