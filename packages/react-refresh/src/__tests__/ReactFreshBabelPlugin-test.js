@@ -561,4 +561,74 @@ describe('ReactFreshBabelPlugin', () => {
       ),
     ).toMatchSnapshot();
   });
+
+  it('preserves inferred names of hook-using functions in object properties', () => {
+    const {code} = babel.transform(
+      `
+        return {
+          useFoo: () => { useState(); },
+          useBar: function () { useState(); },
+          'useBaz': () => { useState(); },
+          useNamed: function inner() { useState(); },
+        };
+      `,
+      {
+        babelrc: false,
+        configFile: false,
+        parserOpts: {allowReturnOutsideFunction: true},
+        plugins: [[freshPlugin, {skipEnvCheck: true}]],
+      },
+    );
+
+    // Minimal stand-ins for the Fast Refresh runtime: the signature
+    // function just returns the function it was given.
+    const $RefreshSig$ = () => type => type;
+    const $RefreshReg$ = () => {};
+    const useState = () => {};
+
+    // eslint-disable-next-line no-new-func
+    const obj = new Function('$RefreshSig$', '$RefreshReg$', 'useState', code)(
+      $RefreshSig$,
+      $RefreshReg$,
+      useState,
+    );
+
+    expect(obj.useFoo.name).toBe('useFoo');
+    expect(obj.useBar.name).toBe('useBar');
+    expect(obj.useBaz.name).toBe('useBaz');
+    // An explicit function name must not be overwritten.
+    expect(obj.useNamed.name).toBe('inner');
+
+    // Computed keys are left as-is for now (name only known at runtime).
+    const {code: computedCode} = babel.transform(
+      `const k = 'useQux'; return { [k]: () => { useState(); } };`,
+      {
+        babelrc: false,
+        configFile: false,
+        parserOpts: {allowReturnOutsideFunction: true},
+        plugins: [[freshPlugin, {skipEnvCheck: true}]],
+      },
+    );
+    // eslint-disable-next-line no-new-func
+    const computed = new Function(
+      '$RefreshSig$',
+      '$RefreshReg$',
+      'useState',
+      computedCode,
+    )($RefreshSig$, $RefreshReg$, useState);
+    expect(typeof computed.useQux).toBe('function');
+  });
+
+  it('preserves inferred names of hook-using functions in object properties (output)', () => {
+    expect(
+      transform(`
+        const hooks = {
+          useFoo: () => { useState(); },
+          useBar: function () { useState(); },
+          useNamed: function inner() { useState(); },
+          [computed]: () => { useState(); },
+        };
+      `),
+    ).toMatchSnapshot();
+  });
 });

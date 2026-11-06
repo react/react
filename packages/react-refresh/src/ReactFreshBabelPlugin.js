@@ -7,6 +7,38 @@
 
 'use strict';
 
+// When a function is the value of an object property, e.g. `{useFoo: () => {}}`,
+// JavaScript infers its name from the key. Wrapping it in a call like
+// `_s(() => {}, ...)` loses that inferred name, so we compute it here and
+// restore it explicitly. Returns null when there is nothing to preserve.
+function getInferredObjectPropertyName(path) {
+  if (path.node.id != null) {
+    // An explicit function name always wins.
+    return null;
+  }
+  const parent = path.parent;
+  if (
+    parent.type !== 'ObjectProperty' ||
+    path.key !== 'value' ||
+    parent.computed
+  ) {
+    return null;
+  }
+  const key = parent.key;
+  switch (key.type) {
+    case 'Identifier':
+      return key.name;
+    case 'StringLiteral':
+      return key.value;
+    case 'NumericLiteral':
+      // This Babel plugin only runs at build time, not in production runtime code.
+      // eslint-disable-next-line react-internal/safe-string-coercion
+      return String(key.value);
+    default:
+      return null;
+  }
+}
+
 export default function (babel, opts = {}) {
   if (typeof babel.env === 'function') {
     // Only available in Babel 7.
@@ -703,13 +735,41 @@ export default function (babel, opts = {}) {
             );
             // Result: let Foo = () => {}; __signature(Foo, ...);
           } else {
+            // Special case when a function would get an inferred name from an
+            // object key: {useFoo: () => {}}. Wrapping it would lose that name,
+            // so we set it explicitly before wrapping.
+            const inferredName = getInferredObjectPropertyName(path);
             // let Foo = hoc(() => {})
             const paths = [path, ...findHOCCallPathsAbove(path)];
             paths.forEach(p => {
+              let target = p.node;
+              if (p === path && inferredName !== null) {
+                target = t.callExpression(
+                  t.memberExpression(
+                    t.identifier('Object'),
+                    t.identifier('defineProperty'),
+                  ),
+                  [
+                    target,
+                    t.stringLiteral('name'),
+                    t.objectExpression([
+                      t.objectProperty(
+                        t.identifier('value'),
+                        t.stringLiteral(inferredName),
+                      ),
+                      t.objectProperty(
+                        t.identifier('configurable'),
+                        t.booleanLiteral(true),
+                      ),
+                    ]),
+                  ],
+                );
+                // Result: {useFoo: __signature(Object.defineProperty(() => {}, 'name', ...), ...)}
+              }
               p.replaceWith(
                 t.callExpression(
                   sigCallID,
-                  createArgumentsForSignature(p.node, signature, p.scope),
+                  createArgumentsForSignature(target, signature, p.scope),
                 ),
               );
             });
