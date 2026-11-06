@@ -1930,6 +1930,33 @@ describe('ReactFlightDOMEdge', () => {
     ).toEqual(expectedBytes);
   });
 
+  it('can reuse an iterator in later stream items', async () => {
+    const iterator = ['first', 'second'].values();
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue({iterator});
+        controller.enqueue({iterator});
+        controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(source, {}),
+    );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const reader = result.getReader();
+    const first = await reader.read();
+    const second = await reader.read();
+    expect(first.done).toBe(false);
+    expect(second.done).toBe(false);
+    // Either occurrence can be a copy, but each iterator must have all its items.
+    new Set([first.value.iterator, second.value.iterator]).forEach(received => {
+      expect(Array.from(received)).toEqual(['first', 'second']);
+    });
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('preserves a stream item while a nested iterator settles synchronously', async () => {
     const item = {};
     item.nested = {
@@ -2366,6 +2393,52 @@ describe('ReactFlightDOMEdge', () => {
     expect(await iterator.next()).toEqual({value: 'after', done: false});
     expect((await iterator.next()).done).toBe(true);
     expect(errors).toEqual([]);
+  });
+
+  it('rejects references into a stream item that throws after they were written', async () => {
+    const X = {x: 1};
+    const it = [X, 'second'].values();
+    const item = {
+      x: X,
+      it,
+      get boom() {
+        throw new Error('boom');
+      },
+    };
+    let resolveLater;
+    const later = new Promise(r => (resolveLater = r));
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.close();
+      },
+    });
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {stream: source, later},
+        {},
+        {
+          onError(x) {
+            errors.push(x.message);
+          },
+        },
+      ),
+    );
+    // The stream item has failed by now, but the iterator's contents were
+    // written to their own row while the item still had a reserved id, so that
+    // row holds a reference to a path under it. This value settles afterwards
+    // and reuses the iterator's row.
+    await serverAct(() => resolveLater({it}));
+    const [s1, s2] = stream.tee();
+    const result = await ReactServerDOMClient.createFromReadableStream(s1, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    // The value that referenced the failed item rejects instead of hanging.
+    await expect(result.later).rejects.toThrow();
+    // The response finishes rather than waiting on a row that never comes.
+    await readResult(s2);
+    expect(errors).toContain('boom');
   });
 
   it('keeps a typed array intact when its transport also carries a byte stream', async () => {

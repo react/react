@@ -3518,7 +3518,11 @@ function serializeIterator(
   iterator: Iterator<ReactClientValue>,
 ): string {
   const id = outlineModel(request, Array.from(iterator));
-  return '$i' + id.toString(16);
+  const reference = '$i' + id.toString(16);
+  // The source iterator is exhausted. Later occurrences must reuse its
+  // contents even if the stream item that first held it was written inline.
+  request.writtenObjects.set(iterator, reference);
+  return reference;
 }
 
 function serializeTypedArray(
