@@ -232,6 +232,41 @@ function compareValue(state, {expectedValue, received, path}, visited) {
     expect(typeof received.then).toBe('function');
     return [];
   }
+  if (expectedValue instanceof Set) {
+    assertOracle(
+      received instanceof Set,
+      'expected a Set but received ' + describeValue(received),
+    );
+    assertSame(received.size, expectedValue.size);
+    const items = Array.from(received);
+    return Array.from(expectedValue, (item, i) => ({
+      expectedValue: item,
+      received: items[i],
+      path: path + '.item' + i,
+      isCollectionKey: true,
+    }));
+  }
+  if (expectedValue instanceof Map) {
+    assertOracle(
+      received instanceof Map,
+      'expected a Map but received ' + describeValue(received),
+    );
+    assertSame(received.size, expectedValue.size);
+    const entries = Array.from(received);
+    return Array.from(expectedValue).flatMap(([key, value], i) => [
+      {
+        expectedValue: key,
+        received: entries[i][0],
+        path: path + '.key' + i,
+        isCollectionKey: true,
+      },
+      {
+        expectedValue: value,
+        received: entries[i][1],
+        path: path + '.value' + i,
+      },
+    ]);
+  }
   const isArray = Array.isArray(expectedValue);
   if (isArray) {
     assertOracle(
@@ -402,6 +437,19 @@ function assertExpectedError(error, expected, path) {
   }
 }
 
+function getValueDependencies(fixture, value) {
+  if (fixture.valueMetadata.has(value)) {
+    return [];
+  }
+  if (value instanceof Set) {
+    return Array.from(value);
+  }
+  if (value instanceof Map) {
+    return Array.from(value.entries()).flat();
+  }
+  return Object.values(value);
+}
+
 function getRequiredEvents(fixture, value) {
   const todo = [value];
   const seen = new Set();
@@ -424,9 +472,7 @@ function getRequiredEvents(fixture, value) {
     (fixture.requiredEvents.get(current) || []).forEach(event =>
       events.add(event),
     );
-    if (metadata === undefined) {
-      todo.push(...Object.values(current));
-    }
+    todo.push(...getValueDependencies(fixture, current));
   }
   return Array.from(events);
 }
@@ -482,9 +528,7 @@ function collectModels(fixture) {
       (fixture.requiredEvents.get(value) || []).forEach(event =>
         model.events.add(event),
       );
-      if (metadata === undefined) {
-        todo.push(...Object.values(value));
-      }
+      todo.push(...getValueDependencies(fixture, value));
     }
     return model;
   }
