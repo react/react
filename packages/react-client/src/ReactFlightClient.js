@@ -1054,6 +1054,33 @@ type ErroredInitializationHandler = {
 type InitializationHandler =
   | PendingInitializationHandler
   | ErroredInitializationHandler;
+
+function createInitializationHandler(
+  parent: null | InitializationHandler,
+  deps: number,
+): PendingInitializationHandler {
+  return {
+    parent,
+    chunk: null,
+    value: null,
+    reason: null,
+    deps,
+    errored: false,
+  };
+}
+
+function createErroredInitializationHandler(
+  reason: mixed,
+): ErroredInitializationHandler {
+  return {
+    parent: null,
+    chunk: null,
+    value: null,
+    reason,
+    deps: 0,
+    errored: true,
+  };
+}
 let initializingHandler: null | InitializationHandler = null;
 let initializingChunk: null | BlockedChunk<any> = null;
 let isInitializingDebugInfo: boolean = false;
@@ -2032,14 +2059,7 @@ function waitForReference<T>(
     handler = initializingHandler;
     handler.deps++;
   } else {
-    handler = initializingHandler = {
-      parent: null,
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
+    handler = initializingHandler = createInitializationHandler(null, 1);
   }
 
   const reference: InitializationReference = {
@@ -2130,14 +2150,7 @@ function loadServerReference<A: Iterable<any>, T>(
     handler = initializingHandler;
     handler.deps++;
   } else {
-    handler = initializingHandler = {
-      parent: null,
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
+    handler = initializingHandler = createInitializationHandler(null, 1);
   }
 
   function fulfill(): void {
@@ -2400,14 +2413,10 @@ function getOutlinedModel<T>(
                 handler = initializingHandler;
                 handler.deps++;
               } else {
-                handler = initializingHandler = {
-                  parent: null,
-                  chunk: null,
-                  value: null,
-                  reason: null,
-                  deps: 1,
-                  errored: false,
-                };
+                handler = initializingHandler = createInitializationHandler(
+                  null,
+                  1,
+                );
               }
               return null as any;
             }
@@ -2421,14 +2430,9 @@ function getOutlinedModel<T>(
                 erroredHandler.value = null;
                 erroredHandler.reason = referencedChunk.reason;
               } else {
-                initializingHandler = {
-                  parent: null,
-                  chunk: null,
-                  value: null,
-                  reason: referencedChunk.reason,
-                  deps: 0,
-                  errored: true,
-                };
+                initializingHandler = createErroredInitializationHandler(
+                  referencedChunk.reason,
+                );
               }
               return null as any;
             }
@@ -2511,14 +2515,7 @@ function getOutlinedModel<T>(
         handler = initializingHandler;
         handler.deps++;
       } else {
-        handler = initializingHandler = {
-          parent: null,
-          chunk: null,
-          value: null,
-          reason: null,
-          deps: 1,
-          errored: false,
-        };
+        handler = initializingHandler = createInitializationHandler(null, 1);
       }
       return null as any;
     }
@@ -2532,14 +2529,7 @@ function getOutlinedModel<T>(
         erroredHandler.value = null;
         erroredHandler.reason = chunk.reason;
       } else {
-        initializingHandler = {
-          parent: null,
-          chunk: null,
-          value: null,
-          reason: chunk.reason,
-          deps: 0,
-          errored: true,
-        };
+        initializingHandler = createErroredInitializationHandler(chunk.reason);
       }
       // Placeholder
       return null as any;
@@ -2695,14 +2685,10 @@ function parseModelString(
         // a new element, we need to shadow it because we're now in a new scope.
         // This is effectively the "begin" or "push" phase of Element parsing.
         // We'll pop later when we parse the array itself.
-        initializingHandler = {
-          parent: initializingHandler,
-          chunk: null,
-          value: null,
-          reason: null,
-          deps: 0,
-          errored: false,
-        };
+        initializingHandler = createInitializationHandler(
+          initializingHandler,
+          0,
+        );
       }
       return REACT_ELEMENT_TYPE;
     }
