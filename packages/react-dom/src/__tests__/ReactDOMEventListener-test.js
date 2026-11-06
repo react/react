@@ -1301,4 +1301,78 @@ describe('ReactDOMEventListener', () => {
 
     expect(log).toEqual([false]);
   });
+
+  it('should subscribe to selectionchange when the root is the document', async () => {
+    const log = [];
+
+    const originalDocAddEventListener = document.addEventListener;
+    document.addEventListener = function (type, fn, options) {
+      if (type === 'selectionchange') {
+        log.push(options);
+      }
+      return originalDocAddEventListener.call(this, type, fn, options);
+    };
+    try {
+      const root = ReactDOMClient.createRoot(document);
+
+      await act(() => {
+        root.render(
+          <html>
+            <body>
+              <input />
+            </body>
+          </html>,
+        );
+      });
+    } finally {
+      document.addEventListener = originalDocAddEventListener;
+    }
+
+    expect(log).toEqual([false]);
+  });
+
+  it('should not skip listeners on a document root if an element root was created first', async () => {
+    const log = [];
+    const selectionChanges = [];
+
+    const originalDocAddEventListener = document.addEventListener;
+    document.addEventListener = function (type, fn, options) {
+      if (type === 'selectionchange') {
+        selectionChanges.push(options);
+      }
+      return originalDocAddEventListener.call(this, type, fn, options);
+    };
+    try {
+      const elementRoot = ReactDOMClient.createRoot(
+        document.createElement('div'),
+      );
+
+      await act(() => {
+        elementRoot.render(<span />);
+      });
+
+      const documentRoot = ReactDOMClient.createRoot(document);
+
+      await act(() => {
+        documentRoot.render(
+          <html>
+            <body>
+              <button onClick={() => log.push('clicked')}>click me</button>
+              <input />
+            </body>
+          </html>,
+        );
+      });
+
+      const button = document.querySelector('button');
+      await simulateEventDispatch(button, 'click');
+    } finally {
+      document.addEventListener = originalDocAddEventListener;
+    }
+
+    expect(log).toEqual(['clicked']);
+    // Only the element root attaches the listener; the document root
+    // must see that it is already listening.
+    expect(selectionChanges).toEqual([false]);
+  });
 });
