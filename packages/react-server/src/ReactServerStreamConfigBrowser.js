@@ -22,6 +22,7 @@ channel.port1.onmessage = () => {
     task();
   }
 };
+channel.port1.unref?.()
 
 const supportsArrayBufferDetached = hasOwnProperty.call(
   ArrayBuffer.prototype,
