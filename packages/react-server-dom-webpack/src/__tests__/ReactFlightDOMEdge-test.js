@@ -1121,6 +1121,46 @@ describe('ReactFlightDOMEdge', () => {
     expect(await reader.read()).toEqual({value: undefined, done: true});
   });
 
+  it('drops stream items that arrive after the consumer canceled the stream', async () => {
+    let controller;
+    const source = new ReadableStream({
+      start(c) {
+        controller = c;
+        c.enqueue('first');
+      },
+    });
+    let resolveLater;
+    const later = new Promise(resolve => (resolveLater = resolve));
+
+    const result = await serverAct(() =>
+      ReactServerDOMClient.createFromReadableStream(
+        ReactServerDOMServer.renderToReadableStream(
+          {stream: source, later},
+          webpackMap,
+        ),
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      ),
+    );
+    const reader = result.stream.getReader();
+    expect(await reader.read()).toEqual({value: 'first', done: false});
+    await reader.cancel('not interested');
+
+    // The server does not know about the cancellation and keeps producing.
+    await serverAct(() => {
+      controller.enqueue('second');
+      controller.close();
+    });
+
+    // The rest of the response is unaffected.
+    await serverAct(() => resolveLater('later'));
+    expect(await result.later).toBe('later');
+  });
+
   it('can pass an async import a AsyncIterable while allowing peaking at future values', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));

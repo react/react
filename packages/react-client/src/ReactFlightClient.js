@@ -3579,23 +3579,38 @@ function startReadableStream<T>(
 ): void {
   let controller: ReadableStreamController = null as any;
   let closed = false;
+  let canceled = false;
   const stream = new ReadableStream({
     type: type,
     start(c) {
       controller = c;
     },
+    cancel() {
+      // The consumer is done with the stream. Rows that are still arriving
+      // for it are dropped.
+      canceled = true;
+      closed = true;
+    },
   });
   let previousBlockedChunk: SomeChunk<T> | null = null;
   function enqueue(value: T): void {
-    if (type === 'bytes') {
-      // Byte stream controllers transfer the backing buffer. It may still
-      // be shared with another transport chunk, decoded value, or tee reader.
-      const view: $ArrayBufferView = value as any;
-      controller.enqueue(
-        new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice(),
-      );
-    } else {
-      controller.enqueue(value);
+    if (!canceled) {
+      if (type === 'bytes') {
+        // Byte stream controllers transfer the backing buffer. It may still
+        // be shared with another transport chunk, decoded value, or tee reader.
+        const view: $ArrayBufferView = value as any;
+        controller.enqueue(
+          new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice(),
+        );
+      } else {
+        controller.enqueue(value);
+      }
+    }
+  }
+  function fail(error: mixed): void {
+    if (!canceled) {
+      // $FlowFixMe[incompatible-type]
+      controller.error(error);
     }
   }
   const flightController = {
@@ -3610,6 +3625,9 @@ function startReadableStream<T>(
       }
     },
     enqueueModel(json: UninitializedModel): void {
+      if (canceled) {
+        return;
+      }
       if (previousBlockedChunk === null) {
         // If we're not blocked on any other chunks, we can try to eagerly initialize
         // this as a fast-path to avoid awaiting them.
@@ -3622,24 +3640,21 @@ function startReadableStream<T>(
         if (initializedChunk.status === INITIALIZED) {
           enqueue(initializedChunk.value);
         } else {
-          chunk.then(enqueue, e => controller.error(e as any));
+          chunk.then(enqueue, fail);
           previousBlockedChunk = chunk;
         }
       } else {
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         const blockedChunk = previousBlockedChunk;
         const chunk: SomeChunk<T> = createPendingChunk(response);
-        chunk.then(
-          v => {
-            if (previousBlockedChunk === chunk) {
-              // We were still the last chunk so we can now clear the queue and return
-              // to synchronous emitting.
-              previousBlockedChunk = null;
-            }
-            enqueue(v);
-          },
-          e => controller.error(e as any),
-        );
+        chunk.then(v => {
+          if (previousBlockedChunk === chunk) {
+            // We were still the last chunk so we can now clear the queue and return
+            // to synchronous emitting.
+            previousBlockedChunk = null;
+          }
+          enqueue(v);
+        }, fail);
         previousBlockedChunk = chunk;
         blockedChunk.then(function () {
           resolveModelChunk(response, chunk, json);
@@ -3657,7 +3672,11 @@ function startReadableStream<T>(
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.close());
+        blockedChunk.then(() => {
+          if (!canceled) {
+            controller.close();
+          }
+        });
       }
     },
     error(error: mixed): void {
@@ -3672,7 +3691,7 @@ function startReadableStream<T>(
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.error(error as any));
+        blockedChunk.then(() => fail(error));
       }
     },
   };
