@@ -7,10 +7,11 @@
  * @flow
  */
 
-import type {Data} from './index';
-import type {Rect} from '../utils';
-import type {HostInstance} from '../../types';
-import type Agent from '../../agent';
+import type {Data} from './TraceUpdates/index';
+import type {Rect} from './utils';
+import {getElementDimensions, getNestedBoundingClientRect} from './utils';
+import type {HostInstance} from '../types';
+import type Agent from '../agent';
 
 import {isReactNativeEnvironment} from 'react-devtools-shared/src/backend/utils';
 
@@ -28,6 +29,13 @@ const COLORS = [
   '#febc38',
 ];
 
+const highlightColors = {
+  margin: 'rgba(255, 155, 0, 0.3)',
+  border: 'rgba(255, 200, 50, 0.3)',
+  padding: 'rgba(77, 200, 0, 0.2)',
+  content: 'rgba(120, 170, 210, 0.7)',
+};
+
 let canvas: HTMLCanvasElement | null = null;
 
 function drawNative(nodeToData: Map<HostInstance, Data>, agent: Agent) {
@@ -42,20 +50,30 @@ function drawNative(nodeToData: Map<HostInstance, Data>, agent: Agent) {
   agent.emit('drawGroupedTraceUpdatesWithNames', mergedNodes);
 }
 
+function resizeCanvas(
+  canvasFlow: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  dpr: number,
+) {
+  // const dpr = window.devicePixelRatio || 1;
+  canvasFlow.width = window.innerWidth * dpr;
+  canvasFlow.height = window.innerHeight * dpr;
+  canvasFlow.style.width = `${window.innerWidth}px`;
+  canvasFlow.style.height = `${window.innerHeight}px`;
+  context.scale(dpr, dpr);
+}
+
 function drawWeb(nodeToData: Map<HostInstance, Data>) {
   if (canvas === null) {
     initialize();
   }
 
   const dpr = window.devicePixelRatio || 1;
-  const canvasFlow: HTMLCanvasElement = canvas as any as HTMLCanvasElement;
-  canvasFlow.width = window.innerWidth * dpr;
-  canvasFlow.height = window.innerHeight * dpr;
-  canvasFlow.style.width = `${window.innerWidth}px`;
-  canvasFlow.style.height = `${window.innerHeight}px`;
-
+  const canvasFlow: HTMLCanvasElement = canvas as any;
   const context = canvasFlow.getContext('2d');
-  context.scale(dpr, dpr);
+  if (!context) return;
+
+  resizeCanvas(canvasFlow, context, dpr);
 
   context.clearRect(0, 0, canvasFlow.width / dpr, canvasFlow.height / dpr);
 
@@ -226,6 +244,172 @@ function destroyWeb() {
 
 export function destroy(agent: Agent): void {
   return isReactNativeEnvironment() ? destroyNative(agent) : destroyWeb();
+}
+
+export function drawHighlighter(
+  elements: $ReadOnlyArray<HTMLElement>,
+  componentName: string | null,
+) {
+  if (canvas == null) {
+    initialize();
+  }
+
+  const canvasFlow: HTMLCanvasElement = canvas as any;
+  const context = canvasFlow.getContext('2d');
+  if (!context) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  resizeCanvas(canvasFlow, context, dpr);
+
+  context.clearRect(0, 0, canvasFlow.width / dpr, canvasFlow.height / dpr);
+
+  const targetWindow = window.__REACT_DEVTOOLS_TARGET_WINDOW__ || window;
+
+  const outerBox = {
+    top: Number.POSITIVE_INFINITY,
+    right: Number.NEGATIVE_INFINITY,
+    bottom: Number.NEGATIVE_INFINITY,
+    left: Number.POSITIVE_INFINITY,
+  };
+
+  elements.forEach(element => {
+    if (element.nodeType !== Node.ELEMENT_NODE) return;
+
+    const box = getNestedBoundingClientRect(element, targetWindow);
+    const dims = getElementDimensions(element);
+
+    // Compute macro bounding tracking coordinates across all multi-node updates
+    outerBox.top = Math.min(outerBox.top, box.top - dims.marginTop);
+    outerBox.right = Math.max(
+      outerBox.right,
+      box.left + box.width + dims.marginRight,
+    );
+    outerBox.bottom = Math.max(
+      outerBox.bottom,
+      box.top + box.height + dims.marginBottom,
+    );
+    outerBox.left = Math.min(outerBox.left, box.left - dims.marginLeft);
+
+    // 1. Margin (Orange)
+    const marginLeft = box.left - dims.marginLeft;
+    const marginTop = box.top - dims.marginTop;
+    const marginWidth = box.width + dims.marginLeft + dims.marginRight;
+    const marginHeight = box.height + dims.marginTop + dims.marginBottom;
+    context.fillStyle = highlightColors.margin;
+    context.fillRect(marginLeft, marginTop, marginWidth, marginHeight);
+
+    // 2. Border (Yellow)
+    context.fillStyle = highlightColors.border;
+    context.fillRect(box.left, box.top, box.width, box.height);
+
+    // 3. Padding (Green)
+    const paddingLeft = box.left + dims.borderLeft;
+    const paddingTop = box.top + dims.borderTop;
+    const paddingWidth = box.width - dims.borderLeft - dims.borderRight;
+    const paddingHeight = box.height - dims.borderTop - dims.borderBottom;
+    context.fillStyle = highlightColors.padding;
+    context.fillRect(paddingLeft, paddingTop, paddingWidth, paddingHeight);
+
+    // 4. Content (Blue)
+    const contentLeft = paddingLeft + dims.paddingLeft;
+    const contentTop = paddingTop + dims.paddingTop;
+    const contentWidth = paddingWidth - dims.paddingLeft - dims.paddingRight;
+    const contentHeight = paddingHeight - dims.paddingTop - dims.paddingBottom;
+    context.fillStyle = highlightColors.content;
+    context.fillRect(contentLeft, contentTop, contentWidth, contentHeight);
+  });
+
+  // Render the unified tooltip label box frame if valid element selections exist
+  if (elements.length > 0 && outerBox.top !== Number.POSITIVE_INFINITY) {
+    const finalName = componentName || elements[0].nodeName.toLowerCase();
+    const finalWidth = outerBox.right - outerBox.left;
+    const finalHeight = outerBox.bottom - outerBox.top;
+
+    drawOverlayTip(context, finalName, finalWidth, finalHeight, {
+      top: outerBox.top,
+      left: outerBox.left,
+      width: finalWidth,
+      height: finalHeight,
+    });
+  }
+
+  if (!canvasFlow.matches(':popover-open')) {
+    // $FlowFixMe[prop-missing]
+    canvasFlow.showPopover();
+  }
+}
+
+function drawOverlayTip(
+  context: CanvasRenderingContext2D,
+  name: string,
+  width: number,
+  height: number,
+  targetBox: {top: number, left: number, width: number, height: number},
+) {
+  context.font =
+    'bold 12px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace';
+  context.textBaseline = 'top';
+  context.textAlign = 'left';
+
+  const dimText = `${Math.round(width)}px × ${Math.round(height)}px`;
+
+  const nameMetrics = context.measureText(name);
+  const dimMetrics = context.measureText(dimText);
+
+  // Layout spacing metrics
+  const paddingX = 5;
+  const paddingY = 3;
+  const gap = 8;
+  const textHeight = 14;
+
+  const tipWidth = nameMetrics.width + dimMetrics.width + paddingX * 2 + gap;
+  const tipHeight = textHeight + paddingY * 2;
+  const margin = 5;
+
+  // Determine ideal position relative to target bounding box variables
+  let top = targetBox.top + targetBox.height + margin;
+  if (top + tipHeight > window.innerHeight) {
+    if (targetBox.top - tipHeight - margin >= 0) {
+      top = targetBox.top - tipHeight - margin;
+    } else {
+      top = margin;
+    }
+  }
+
+  let left = targetBox.left + margin;
+  if (left + tipWidth > window.innerWidth) {
+    left = window.innerWidth - tipWidth - margin;
+  }
+  if (left < margin) {
+    left = margin;
+  }
+
+  // Render container background capsule
+  context.fillStyle = '#333740';
+  context.beginPath();
+  if (typeof context.roundRect === 'function') {
+    context.roundRect(left, top, tipWidth, tipHeight, 2);
+  } else {
+    context.rect(left, top, tipWidth, tipHeight);
+  }
+  context.fill();
+
+  // Draw Component Name Label
+  context.fillStyle = '#ee78e6';
+  context.fillText(name, left + paddingX, top + paddingY);
+
+  // Draw Separator Line Divider
+  context.strokeStyle = '#aaaaaa';
+  context.lineWidth = 1;
+  context.beginPath();
+  const lineX = left + paddingX + nameMetrics.width + gap / 2;
+  context.moveTo(lineX, top + paddingY);
+  context.lineTo(lineX, top + paddingY + textHeight);
+  context.stroke();
+
+  // Draw Dimensions Parameter Label
+  context.fillStyle = '#d7d7d7';
+  context.fillText(dimText, lineX + gap / 2, top + paddingY);
 }
 
 function initialize(): void {
