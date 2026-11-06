@@ -1687,6 +1687,138 @@ describe('ReactFlightDOMEdge', () => {
     expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
   });
 
+  it('does not detach a transport buffer shared between chunks when streaming bytes', async () => {
+    const s = new ReadableStream({
+      type: 'bytes',
+      start(c) {
+        c.enqueue(new Uint8Array([1, 2, 3, 4, 5]));
+        c.enqueue(new Uint8Array([6, 7, 8]));
+        c.close();
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({s, after: 'done'}, {}),
+    );
+
+    // Deliver the response as small chunks that are all views into one
+    // buffer, the way a Node transport hands out slices of a pooled Buffer.
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    const transport = new ReadableStream({
+      start(c) {
+        for (let i = 0; i < bytes.length; i += 3) {
+          c.enqueue(bytes.subarray(i, i + 3));
+        }
+        c.close();
+      },
+    });
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      transport,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+
+    const received = [];
+    const reader = result.s.getReader({mode: 'byob'});
+    let entry;
+    while (!(entry = await reader.read(new Uint8Array(4))).done) {
+      received.push(...entry.value);
+    }
+    expect(received).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(result.after).toBe('done');
+  });
+
+  it('preserves response chunks shared with another stream consumer', async () => {
+    let controller;
+    const source = new ReadableStream({
+      type: 'bytes',
+      start(c) {
+        controller = c;
+      },
+    });
+    const response = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(source, {}),
+    );
+    const expectedBytes = [];
+    const [flight, copy] = response
+      .pipeThrough(
+        new TransformStream({
+          transform(chunk, output) {
+            expectedBytes.push(...chunk);
+            output.enqueue(chunk.slice());
+          },
+        }),
+      )
+      .tee();
+    const result = await ReactServerDOMClient.createFromReadableStream(flight, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const reader = result.getReader();
+    await serverAct(() => controller.enqueue(new Uint8Array([1, 2, 3])));
+    expect(Array.from((await reader.read()).value)).toEqual([1, 2, 3]);
+    await serverAct(() => controller.close());
+    expect((await reader.read()).done).toBe(true);
+
+    // A transform produces a default stream, whose tee shares chunk objects.
+    // Reading Flight must leave those chunks intact for the other consumer.
+    expect(
+      Array.from(new Uint8Array(await new Response(copy).arrayBuffer())),
+    ).toEqual(expectedBytes);
+  });
+
+  it('keeps a typed array intact when its transport also carries a byte stream', async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const s = new ReadableStream({
+      type: 'bytes',
+      start(c) {
+        c.enqueue(new Uint8Array([65, 66, 67]));
+        c.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({bytes, s}, {}),
+    );
+    const all = new Uint8Array(await new Response(stream).arrayBuffer());
+    // Try every packet boundary in this small response. Reading the byte
+    // stream must leave the independently received typed array intact.
+    for (let cut = 1; cut < all.length; cut++) {
+      const first = all.slice(0, cut);
+      const second = all.slice(cut);
+      const split = new ReadableStream({
+        start(c) {
+          c.enqueue(first);
+          c.enqueue(second);
+          c.close();
+        },
+      });
+      const result = await ReactServerDOMClient.createFromReadableStream(
+        split,
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      );
+      const received = [];
+      const reader = result.s.getReader();
+      for (;;) {
+        const {done, value} = await reader.read();
+        if (done) {
+          break;
+        }
+        received.push(...value);
+      }
+      expect(received).toEqual([65, 66, 67]);
+      expect(Array.from(result.bytes)).toEqual([1, 2, 3, 4]);
+    }
+  });
+
   // @gate !__DEV__ || enableComponentPerformanceTrack
   it('supports async server component debug info as the element owner in DEV', async () => {
     function Container({children}) {
