@@ -170,8 +170,11 @@ function observePromise(state, metadata, {expectedValue, received, path}) {
       const events = getRequiredEvents(state.fixture, metadata.value);
       return getResultExpectation(
         metadata.value,
-        metadata.state === 'fulfilled' && canSettle(events),
-        getReleasedErrors(events),
+        metadata.state === 'rejected' ||
+          (metadata.state === 'fulfilled' && canSettle(events)),
+        metadata.state === 'rejected'
+          ? [state.fixture.valueMetadata.get(metadata.reason)]
+          : getReleasedErrors(events),
       );
     },
   );
@@ -233,14 +236,28 @@ function subscribe(state, thenable, check, subscribeAgain) {
 }
 
 function assertExpectedError(error, expected, path) {
-  // A client module failure must preserve the exact local error object.
-  if (!expected.some(candidate => candidate === error)) {
+  // Server errors are compared by digest; local module errors by identity.
+  if (
+    !expected.some(candidate =>
+      candidate instanceof Error
+        ? candidate === error
+        : error != null &&
+          candidate != null &&
+          error.digest === candidate.digest,
+    )
+  ) {
     throw new Error(
       path +
         ': rejected with "' +
         String(error) +
         '", expected ' +
-        expected.map(candidate => '"' + candidate.message + '"').join(' or '),
+        expected
+          .map(candidate =>
+            candidate instanceof Error
+              ? '"' + candidate.message + '"'
+              : 'digest ' + candidate.digest,
+          )
+          .join(' or '),
     );
   }
 }

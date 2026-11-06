@@ -14,15 +14,27 @@ function createFixture(graph, {WebpackMock}) {
   const valueMetadata = new Map();
   const requiredEvents = new Map();
   const deferredPromises = new Map();
+  const expectedErrors = new Map();
 
   function trackPromise(promise) {
     // Track native settlement without relying on React's thenable fields.
-    const metadata = {type: 'promise', state: 'pending', value: undefined};
+    const metadata = {
+      type: 'promise',
+      state: 'pending',
+      value: undefined,
+      reason: undefined,
+    };
     valueMetadata.set(promise, metadata);
-    promise.then(value => {
-      metadata.state = 'fulfilled';
-      metadata.value = value;
-    });
+    promise.then(
+      value => {
+        metadata.state = 'fulfilled';
+        metadata.value = value;
+      },
+      reason => {
+        metadata.state = 'rejected';
+        metadata.reason = reason;
+      },
+    );
   }
 
   const getValue = name => {
@@ -56,6 +68,10 @@ function createFixture(graph, {WebpackMock}) {
       );
       events.push(event);
       requiredEvents.set(value, [event]);
+    } else if (node.error !== undefined) {
+      const error = new Error(node.error);
+      values[name] = error;
+      valueMetadata.set(error, {type: 'error', digest: 'digest:' + node.error});
     } else if (node.object !== undefined) {
       values[name] = {};
     } else if (node.promise !== undefined) {
@@ -74,12 +90,28 @@ function createFixture(graph, {WebpackMock}) {
         values[name][key] = getValue(node.object[key]);
       });
     } else if (node.promise !== undefined) {
-      const target = getValue(node.promise);
-      events.push(
-        createEvent('resolve ' + name + ' to ' + node.promise, () =>
-          deferredPromises.get(name).resolve(target),
-        ),
-      );
+      const deferred = deferredPromises.get(name);
+      if (node.reject) {
+        const error = getValue(node.promise);
+        if (!(error instanceof Error)) {
+          throw new Error(
+            node.promise + ' is used as an Error but is not an error node',
+          );
+        }
+        events.push(
+          createEvent('reject ' + name, () => {
+            expectedErrors.set(error, 'rejecting ' + name);
+            deferred.reject(error);
+          }),
+        );
+      } else {
+        const target = getValue(node.promise);
+        events.push(
+          createEvent('resolve ' + name + ' to ' + node.promise, () =>
+            deferred.resolve(target),
+          ),
+        );
+      }
     }
   }
 
@@ -104,6 +136,7 @@ function createFixture(graph, {WebpackMock}) {
     valueMetadata,
     requiredEvents,
     unrelatedEvent,
+    expectedErrors,
   };
 }
 
