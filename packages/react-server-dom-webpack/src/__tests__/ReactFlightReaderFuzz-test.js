@@ -13,15 +13,26 @@
 const {PassThrough} = require('stream');
 const {finished} = require('stream/promises');
 const {createObjectCheck} = require('./fuzz/FlightReaderOracle');
+const {
+  patchSetImmediate,
+} = require('../../../../scripts/jest/patchSetImmediate');
 
 describe('ReactFlightReaderFuzz (node)', () => {
   let ReactServerDOMServer;
   let ReactServerDOMClient;
+  let WebpackMock;
+  let serverAct;
 
   beforeEach(() => {
     jest.resetModules();
-    jest.useRealTimers();
+    jest.useFakeTimers();
+    patchSetImmediate();
+    serverAct = require('internal-test-utils').serverAct;
     jest.mock('react', () => require('react/react.react-server'));
+    jest.mock('react-server-dom-webpack/server', () =>
+      require('react-server-dom-webpack/server.node'),
+    );
+    WebpackMock = require('./utils/WebpackMock');
     ReactServerDOMServer = require('react-server-dom-webpack/server.node');
 
     jest.resetModules();
@@ -133,24 +144,129 @@ describe('ReactFlightReaderFuzz (node)', () => {
     check();
   });
 
-  async function roundTrip(model) {
+  it('delivers a Promise result before an independent pending Promise or EOF', async () => {
+    let resolveValue;
+    const value = new Promise(resolve => {
+      resolveValue = resolve;
+    });
+    const source = {
+      label: 'containing object',
+      value,
+      independent: new Promise(() => {}),
+    };
+
+    await withResponse(source, async ({response, stream}) => {
+      const received = await response;
+      expect(received.label).toBe('containing object');
+      expect(Object.keys(received)).toEqual(['label', 'value', 'independent']);
+      const results = [];
+      received.value.then(result => results.push(result));
+      const independentResults = [];
+      received.independent.then(result => independentResults.push(result));
+      await actOnStream(() => {});
+      expect(results).toEqual([]);
+      expect(independentResults).toEqual([]);
+      expect(stream.readableEnded).toBe(false);
+
+      await actOnStream(() => resolveValue({message: 'ready'}));
+      expect(results).toStrictEqual([{message: 'ready'}]);
+      expect(await received.value).toStrictEqual({message: 'ready'});
+      expect(independentResults).toEqual([]);
+      expect(stream.readableEnded).toBe(false);
+    });
+  });
+
+  it('waits for a held client module before delivering its containing model', async () => {
+    let resolveModule;
+    const load = new Promise(resolve => {
+      resolveModule = resolve;
+    });
+    const {value} = WebpackMock.clientExports(
+      {value: 'ready'},
+      'basic',
+      'basic.js',
+      load,
+    );
+
+    await withResponse(
+      {label: 'containing object', value},
+      async ({response, completion}) => {
+        const models = [];
+        response.then(model => models.push(model));
+        // All bytes have arrived, but the containing model still needs its
+        // client export. Transport completion must not deliver a placeholder.
+        await completion;
+        await actOnStream(() => {});
+        expect(models).toEqual([]);
+
+        await actOnStream(() => resolveModule());
+        expect(models).toStrictEqual([
+          {label: 'containing object', value: 'ready'},
+        ]);
+        expect(await response).toStrictEqual({
+          label: 'containing object',
+          value: 'ready',
+        });
+      },
+    );
+  });
+
+  // Node streams deliver data through nextTick. Flush those deliveries in
+  // the act scope so pending observations include the work they trigger.
+  function actOnStream(action) {
+    return serverAct(() => {
+      action();
+      jest.runAllTicks();
+    });
+  }
+
+  async function withResponse(model, read) {
     const stream = new PassThrough();
     const response = ReactServerDOMClient.createFromNodeStream(stream, {
       moduleMap: null,
       serverModuleMap: null,
       moduleLoading: null,
     });
-    const writer = ReactServerDOMServer.renderToPipeableStream(model, {});
+    let disposed = false;
+    const errors = [];
+    // Observe rejection immediately, including when read finishes before EOF.
+    const completion = finished(stream, {cleanup: true}).catch(error => {
+      if (!disposed) {
+        errors.push(error);
+      }
+    });
+    const writer = ReactServerDOMServer.renderToPipeableStream(
+      model,
+      WebpackMock.webpackMap,
+      {
+        onError(error) {
+          if (!disposed) {
+            errors.push(error);
+          }
+        },
+      },
+    );
     try {
-      writer.pipe(stream);
-      const [value] = await Promise.all([
-        response,
-        finished(stream, {cleanup: true}),
-      ]);
+      await actOnStream(() => writer.pipe(stream));
+      const value = await read({response, stream, completion});
+      if (errors.length > 0) {
+        throw errors[0];
+      }
       return value;
     } finally {
-      writer.abort();
-      stream.destroy();
+      disposed = true;
+      await actOnStream(() => {
+        writer.abort();
+        stream.destroy();
+      });
+      await completion;
     }
+  }
+
+  function roundTrip(model) {
+    return withResponse(model, async ({response, completion}) => {
+      const [value] = await Promise.all([response, completion]);
+      return value;
+    });
   }
 });
