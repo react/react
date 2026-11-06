@@ -1669,8 +1669,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'component', other: 'data'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('suspended server component element used twice', () =>
+    it('suspended server component element used twice', () =>
       runGraph({
         nodes: {
           body: {value: 'shared'},

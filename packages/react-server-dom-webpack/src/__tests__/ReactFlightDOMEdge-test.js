@@ -715,6 +715,91 @@ describe('ReactFlightDOMEdge', () => {
     expect(result).toEqual(resolvedChildren.join('<!-- -->'));
   });
 
+  it('delivers a model holding a deferred server component twice before it renders', async () => {
+    let resolveRender;
+    const rendered = new Promise(resolve => (resolveRender = resolve));
+    async function Shared() {
+      await rendered;
+      return <b>shared</b>;
+    }
+    const element = <Shared />;
+    // Include a large sibling value while the shared element is suspended.
+    const padding = {};
+    for (let i = 0; i < 400; i++) {
+      padding['key' + i] = 'value' + i;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        padding,
+        first: element,
+        second: {again: element},
+      }),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(model => observed.push(Object.keys(model)));
+    });
+    expect(observed).toEqual([['padding', 'first', 'second']]);
+
+    await serverAct(() => resolveRender());
+    const model = await response;
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(
+        <div>
+          {model.first}
+          {model.second.again}
+        </div>,
+      ),
+    );
+    expect(await readResult(ssrStream)).toEqual(
+      '<div><b>shared</b><b>shared</b></div>',
+    );
+  });
+
+  it('delivers a model holding a suspended server component twice before it renders', async () => {
+    let resolveRender;
+    const rendered = new Promise(resolve => (resolveRender = resolve));
+    async function Shared() {
+      await rendered;
+      return <b>shared</b>;
+    }
+    const element = <Shared />;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        first: element,
+        second: element,
+      }),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(model => observed.push(Object.keys(model)));
+    });
+    // The element is a lazy boundary in both slots, so the model does not
+    // wait for the component.
+    expect(observed).toEqual([['first', 'second']]);
+
+    await serverAct(() => resolveRender());
+    const model = await response;
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream([model.first, model.second]),
+    );
+    expect(await readResult(ssrStream)).toEqual('<b>shared</b><b>shared</b>');
+  });
+
   it('should execute repeated host components only once', async () => {
     const div = <div>this is a long return value</div>;
     let timesRendered = 0;

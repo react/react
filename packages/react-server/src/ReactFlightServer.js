@@ -2282,7 +2282,7 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
   );
 
   pingTask(request, newTask);
-  return serializeLazyID(newTask.id);
+  return serializeLazyReference(request, task.model, newTask.id);
 }
 
 function outlineTask(request: Request, task: Task): ReactJSONValue {
@@ -2307,7 +2307,7 @@ function outlineTask(request: Request, task: Task): ReactJSONValue {
   }
   // This didn't complete synchronously so it wouldn't have even if we didn't
   // outline it, so this would reduce to a lazy reference even in prod.
-  return serializeLazyID(newTask.id);
+  return serializeLazyReference(request, task.model, newTask.id);
 }
 
 function outlineHaltedTask(
@@ -3065,6 +3065,28 @@ function serializeLazyID(id: number): string {
   return '$L' + id.toString(16);
 }
 
+function serializeLazyReference(
+  request: Request,
+  model: ReactClientValue,
+  id: number,
+): string {
+  const lazyReference = serializeLazyID(id);
+  // createTask registered the element by the new task's id. A later occurrence
+  // of the same element would otherwise make the model holding it wait for the
+  // component to render, even though it is reduced to a lazy here. Point those
+  // occurrences at the lazy reference too.
+  if (
+    typeof model === 'object' &&
+    model !== null &&
+    ((model as any).$$typeof === REACT_ELEMENT_TYPE ||
+      (model as any).$$typeof === REACT_LAZY_TYPE) &&
+    request.writtenObjects.get(model) === serializeByValueID(id)
+  ) {
+    request.writtenObjects.set(model, lazyReference);
+  }
+  return lazyReference;
+}
+
 function serializePromiseID(id: number): string {
   return '$@' + id.toString(16);
 }
@@ -3293,6 +3315,9 @@ function outlineModelWithFormatContext(
     null, // have any context on the server but can on the client.
   );
   retryTask(request, newTask);
+  if (newTask.status !== COMPLETED) {
+    serializeLazyReference(request, value, newTask.id);
+  }
   return newTask.id;
 }
 
@@ -3743,7 +3768,7 @@ function renderModel(
         task.implicitSlot = prevImplicitSlot;
 
         if (wasReactNode) {
-          return serializeLazyID(newTask.id);
+          return serializeLazyReference(request, task.model, newTask.id);
         }
         return serializeByValueID(newTask.id);
       }
