@@ -26,14 +26,20 @@ function createOracle(
       observeValue(state, expectedValue, received, 'value');
     },
     subscribeToRoot(root, expectedValue, {subscribeAgain = false} = {}) {
-      const check = registerResultCheck(state, expectedValue, 'root', () => {
-        const events = getRequiredEvents(fixture, expectedValue);
-        return getResultExpectation(
-          expectedValue,
-          canSettle(events),
-          getReleasedErrors(events),
-        );
-      });
+      const check = registerResultCheck(
+        state,
+        expectedValue,
+        'root',
+        findModels => {
+          const events = getRequiredEvents(fixture, expectedValue);
+          return getResultExpectation(
+            expectedValue,
+            canSettle(events),
+            getReleasedErrors(events),
+            findModels(expectedValue),
+          );
+        },
+      );
       subscribe(state, root, check, subscribeAgain);
     },
     throwIfFailed() {
@@ -41,8 +47,9 @@ function createOracle(
     },
     getMissingResults() {
       throwIfFailed(state);
+      const findModels = createModelLookup(fixture);
       return state.resultChecks.filter(
-        check => !check.done && check.getExpectation().mustSettle,
+        check => !check.done && check.getExpectation(findModels).mustSettle,
       );
     },
     isComplete() {
@@ -130,7 +137,8 @@ function compareValue(state, {expectedValue, received, path}, visited) {
     expect(typeof received.then).toBe('function');
     return [];
   }
-  if (Array.isArray(expectedValue)) {
+  const isArray = Array.isArray(expectedValue);
+  if (isArray) {
     expect(Array.isArray(received)).toBe(true);
     expect(received.length).toBe(expectedValue.length);
   } else {
@@ -142,7 +150,7 @@ function compareValue(state, {expectedValue, received, path}, visited) {
   return keys.map(key => ({
     expectedValue: expectedValue[key],
     received: received[key],
-    path: path + '.' + key,
+    path: isArray ? path + '[' + key + ']' : path + '.' + key,
   }));
 }
 
@@ -152,12 +160,18 @@ function registerResultCheck(state, expectedValue, path, getExpectation) {
   return check;
 }
 
-function getResultExpectation(value, inputsReady, errors) {
+function getResultExpectation(value, inputsReady, errors, models) {
   return {
     value,
     canFulfill: inputsReady && errors.length === 0,
-    errors: inputsReady ? errors : [],
-    mustSettle: inputsReady,
+    errors: (inputsReady ? errors : []).concat(
+      models.flatMap(model => getReleasedErrors(Array.from(model.events))),
+    ),
+    // A direct error is due even if a possible referenced owner is loading.
+    mustSettle:
+      inputsReady &&
+      (errors.length > 0 ||
+        models.every(model => canSettle(Array.from(model.events)))),
   };
 }
 
@@ -166,7 +180,7 @@ function observePromise(state, metadata, {expectedValue, received, path}) {
     state,
     expectedValue,
     path + '.then',
-    () => {
+    findModels => {
       const events = getRequiredEvents(state.fixture, metadata.value);
       return getResultExpectation(
         metadata.value,
@@ -175,6 +189,9 @@ function observePromise(state, metadata, {expectedValue, received, path}) {
         metadata.state === 'rejected'
           ? [state.fixture.valueMetadata.get(metadata.reason)]
           : getReleasedErrors(events),
+        // A consumer cannot borrow model errors until its source produces the
+        // value, even if that value already occurs in another eligible model.
+        metadata.state === 'fulfilled' ? findModels(metadata.value) : [],
       );
     },
   );
@@ -199,7 +216,9 @@ function subscribe(state, thenable, check, subscribeAgain) {
     });
     guard(state, () => {
       expect(check.done).toBe(false);
-      const expectation = check.getExpectation();
+      const expectation = check.getExpectation(
+        createModelLookup(state.fixture),
+      );
       if (rejected) {
         if (expectation.errors.length === 0) {
           throw new Error(
@@ -303,6 +322,92 @@ function canSettle(events) {
     events.every(event => event.released) ||
     getReleasedErrors(events).length > 0
   );
+}
+
+function collectModels(fixture) {
+  const modelsByRootValue = new Map();
+  const modelsByValue = new Map();
+  const promises = new Set();
+
+  function collectModel(rootValue) {
+    const model = {events: new Set(), referencedModels: new Set()};
+    const todo = [rootValue];
+    const seen = new Set();
+    while (todo.length > 0) {
+      const value = todo.pop();
+      if (
+        value === null ||
+        (typeof value !== 'object' && typeof value !== 'function') ||
+        seen.has(value)
+      ) {
+        continue;
+      }
+      seen.add(value);
+      if (value === rootValue) {
+        modelsByRootValue.set(value, model);
+      }
+      modelsByValue.set(value, (modelsByValue.get(value) || []).concat(model));
+      const metadata = fixture.valueMetadata.get(value);
+      if (metadata !== undefined && metadata.type === 'promise') {
+        promises.add(value);
+        continue;
+      }
+      (fixture.requiredEvents.get(value) || []).forEach(event =>
+        model.events.add(event),
+      );
+      if (metadata === undefined) {
+        todo.push(...Object.values(value));
+      }
+    }
+    return model;
+  }
+
+  const rootModel = collectModel(fixture.model);
+  // Visiting a produced result may discover more source Promises.
+  promises.forEach(promise => {
+    const metadata = fixture.valueMetadata.get(promise);
+    if (metadata.state === 'fulfilled') {
+      collectModel(metadata.value);
+    }
+  });
+  modelsByValue.forEach(models => {
+    // The root is serialized first. Otherwise any produced result containing
+    // this object could write it first, and the others could reference it.
+    const rootContainsValue = models.includes(rootModel);
+    models.forEach(model => {
+      const possibleSources = rootContainsValue
+        ? [rootModel]
+        : models.filter(other => other !== model);
+      possibleSources.forEach(source => model.referencedModels.add(source));
+    });
+  });
+  return modelsByRootValue;
+}
+
+function createModelLookup(fixture) {
+  let modelsByRootValue = null;
+  return value => {
+    // Share one analysis per synchronous check, then rebuild after events.
+    if (modelsByRootValue === null) {
+      modelsByRootValue = collectModels(fixture);
+    }
+    const model = modelsByRootValue.get(value);
+    if (model === undefined) {
+      return [];
+    }
+    const models = [];
+    const seen = new Set();
+    const todo = [model];
+    while (todo.length > 0) {
+      const current = todo.pop();
+      if (!seen.has(current)) {
+        seen.add(current);
+        models.push(current);
+        current.referencedModels.forEach(next => todo.push(next));
+      }
+    }
+    return models;
+  };
 }
 
 function guard(state, run) {
