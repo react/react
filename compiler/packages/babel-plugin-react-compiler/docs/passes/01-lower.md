@@ -91,7 +91,7 @@ The lowering algorithm uses a recursive descent pattern with a `HIRBuilder` help
 
 ## Edge Cases
 
-1. **Hoisting**: Forward references to `let`/`const`/`function` declarations emit `DeclareContext` before the reference, enabling correct temporal dead zone handling
+1. **Hoisting**: Forward references to `let`/`const`/`function` declarations emit `DeclareContext` before the reference, enabling correct temporal dead zone handling. Function params and catch clause params (`catch (e) {...}`) are never hoisted: they are initialized before the block body runs. Note that Babel registers a catch param as a `let` binding on the CatchClause scope, which the catch body block shares, so it must be excluded explicitly (see fixture `catch-param-captured-by-lambda`)
 
 2. **Context Variables**: Variables captured by nested functions use `LoadContext`/`StoreContext` instead of `LoadLocal`/`StoreLocal`
 

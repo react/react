@@ -11,8 +11,9 @@
 //! 1. Props (component parameters may change between renders)
 //! 2. Hooks (can access state or context)
 //! 3. `use` operator (can access context)
-//! 4. Mutation with reactive operands
-//! 5. Conditional assignment based on reactive control flow
+//! 4. Catch bindings (the caught value can differ between renders)
+//! 5. Mutation with reactive operands
+//! 6. Conditional assignment based on reactive control flow
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -22,8 +23,8 @@ use react_compiler_hir::environment::Environment;
 use react_compiler_hir::object_shape::HookKind;
 use react_compiler_hir::visitors;
 use react_compiler_hir::{
-    BlockId, Effect, FunctionId, HirFunction, IdentifierId, InstructionValue, ParamPattern,
-    Terminal, Type,
+    BlockId, Effect, FunctionId, HirFunction, IdentifierId, InstructionKind, InstructionValue,
+    ParamPattern, Terminal, Type,
 };
 
 use react_compiler_utils::DisjointSet;
@@ -154,6 +155,14 @@ pub fn infer_reactive_places(
                         {
                             has_reactive_input = true;
                         }
+                    }
+                    // Catch bindings are also a source of reactivity: the caught
+                    // value can differ from one render to the next, and not every
+                    // throw site is visible as an alias of the binding.
+                    InstructionValue::DeclareLocal { lvalue, .. }
+                        if lvalue.kind == InstructionKind::Catch =>
+                    {
+                        has_reactive_input = true;
                     }
                     _ => {}
                 }
@@ -622,6 +631,12 @@ fn apply_reactive_flags_replay(
                     {
                         has_reactive_input = true;
                     }
+                }
+                // Catch bindings are a source of reactivity (see fixpoint loop above)
+                InstructionValue::DeclareLocal { lvalue, .. }
+                    if lvalue.kind == InstructionKind::Catch =>
+                {
+                    has_reactive_input = true;
                 }
                 _ => {}
             }
