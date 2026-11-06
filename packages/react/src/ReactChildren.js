@@ -306,16 +306,27 @@ function mapIntoArray(
       let step;
       let ii = 0;
       // $FlowFixMe[incompatible-use] `iteratorFn` might return null according to typing.
-      while (!(step = iterator.next()).done) {
-        child = step.value;
-        nextName = nextNamePrefix + getElementKey(child, ii++);
-        subtreeCount += mapIntoArray(
-          child,
-          array,
-          escapedPrefix,
-          nextName,
-          callback,
-        );
+      try {
+        while (!(step = iterator.next()).done) {
+          child = step.value;
+          nextName = nextNamePrefix + getElementKey(child, ii++);
+          subtreeCount += mapIntoArray(
+            child,
+            array,
+            escapedPrefix,
+            nextName,
+            callback,
+          );
+        }
+      } catch (error) {
+        // If processing a child throws, close the iterator so that generators
+        // run their cleanup logic. Re-throw the original error.
+        if (typeof iterator.return === 'function') {
+          try {
+            iterator.return();
+          } catch (ignored) {}
+        }
+        throw error;
       }
     } else if (type === 'object') {
       if (typeof (children as any).then === 'function') {
