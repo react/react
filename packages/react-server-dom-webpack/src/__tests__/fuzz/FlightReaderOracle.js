@@ -18,6 +18,7 @@ function createOracle(
     receivedValues: [],
     observedAsyncValues: new WeakSet(),
     thenableResults: new WeakMap(),
+    iteratorItems: new WeakMap(),
     resultChecks: [],
     failures: [],
   };
@@ -93,6 +94,22 @@ function traverse(state, root, observe) {
         continue;
       }
       const metadata = state.fixture.valueMetadata.get(pair.expectedValue);
+      if (metadata !== undefined && metadata.type === 'iterator') {
+        if (observe && !state.iteratorItems.has(pair.received)) {
+          observeIterator(state, metadata, pair.received);
+        }
+        const items = state.iteratorItems.get(pair.received);
+        if (items === undefined) {
+          throw new Error('A received iterator was replaced');
+        }
+        children.push(
+          ...items.map((item, i) => ({
+            expectedValue: metadata.items[i],
+            received: item,
+            path: pair.path + '.item' + i,
+          })),
+        );
+      }
       if (metadata !== undefined && metadata.type === 'promise') {
         if (observe) {
           if (!state.observedAsyncValues.has(pair.received)) {
@@ -226,10 +243,19 @@ function compareValue(state, {expectedValue, received, path}, visited) {
   }
   visited.add(received);
   if (metadata !== undefined) {
-    if (metadata.type !== 'promise') {
+    if (metadata.type === 'iterator') {
+      assertOracle(
+        typeof received.next === 'function',
+        'expected an iterator but received ' + describeValue(received),
+      );
+    } else if (metadata.type === 'promise') {
+      assertOracle(
+        typeof received.then === 'function',
+        'expected a thenable but received ' + describeValue(received),
+      );
+    } else {
       throw new Error('Unknown value type: ' + metadata.type);
     }
-    expect(typeof received.then).toBe('function');
     return [];
   }
   if (expectedValue instanceof Set) {
@@ -295,6 +321,19 @@ function compareValue(state, {expectedValue, received, path}, visited) {
     received: received[key],
     path: isArray ? path + '[' + key + ']' : path + '.' + key,
   }));
+}
+
+function observeIterator(state, metadata, received) {
+  const items = [];
+  for (let i = 0; i < metadata.items.length; i++) {
+    const result = received.next();
+    expect(result.done).toBe(false);
+    items.push(result.value);
+  }
+  const last = received.next();
+  expect(last.done).toBe(true);
+  expect(last.value).toBe(undefined);
+  state.iteratorItems.set(received, items);
 }
 
 function registerResultCheck(
@@ -438,8 +477,9 @@ function assertExpectedError(error, expected, path) {
 }
 
 function getValueDependencies(fixture, value) {
-  if (fixture.valueMetadata.has(value)) {
-    return [];
+  const metadata = fixture.valueMetadata.get(value);
+  if (metadata !== undefined) {
+    return metadata.type === 'iterator' ? metadata.items : [];
   }
   if (value instanceof Set) {
     return Array.from(value);

@@ -576,4 +576,24 @@ describe('FlightReaderOracle', () => {
       'root[2].then',
     ]);
   });
+
+  it('rechecks delivered iterator items without consuming the iterator again', async () => {
+    const source = {};
+    const item = {value: 'expected'};
+    const received = [item].values();
+    const next = jest.spyOn(received, 'next');
+    const {oracle, resolve} = createTestOracle(source, {
+      valueMetadata: new Map([
+        [source, {type: 'iterator', items: [{value: 'expected'}]}],
+      ]),
+    });
+    resolve(received);
+    expect(oracle.isComplete()).toBe(true);
+    await expect(oracle.checkForMutations()).resolves.toBeUndefined();
+    expect(next).toHaveBeenCalledTimes(2);
+
+    item.value = 'changed';
+    await expect(oracle.checkForMutations()).rejects.toThrow('.item0.value');
+    expect(next).toHaveBeenCalledTimes(2);
+  });
 });

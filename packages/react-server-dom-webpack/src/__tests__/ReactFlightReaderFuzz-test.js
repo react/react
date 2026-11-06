@@ -500,4 +500,39 @@ describe('ReactFlightReaderFuzz (node)', () => {
         roots: {entry: 'a', other: 'b'},
       }));
   });
+
+  describe('synchronous iterator graphs', () => {
+    it('round-trips a synchronous iterator in order', async () => {
+      const received = await roundTrip(['first', {value: 'second'}].values());
+      expect(received.next()).toStrictEqual({done: false, value: 'first'});
+      expect(received.next()).toStrictEqual({
+        done: false,
+        value: {value: 'second'},
+      });
+      expect(received.next()).toStrictEqual({done: true, value: undefined});
+    });
+
+    it('iterator over values still loading', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          shared: {object: {field0: 'ready'}},
+          iterator: {iterator: ['shared', 'ready']},
+          object: {object: {field0: 'shared', field1: 'iterator'}},
+        },
+        roots: {entry: 'object', other: 'object'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('iterator resolved by a Promise', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          shared: {object: {field0: 'ready'}},
+          iterator: {iterator: ['shared', 'ready']},
+          later: {promise: 'iterator'},
+        },
+        roots: {entry: 'later', other: 'shared'},
+      }));
+  });
 });

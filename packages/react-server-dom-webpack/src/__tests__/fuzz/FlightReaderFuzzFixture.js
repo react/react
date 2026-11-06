@@ -114,9 +114,34 @@ async function createFixture(graph, {WebpackMock}) {
       trackPromise(deferred.promise);
       deferredPromises.set(name, deferred);
       values[name] = deferred.promise;
-    } else {
+    } else if (node.iterator === undefined) {
       throw new Error('Unsupported node: ' + name);
     }
+  }
+  // Iterators need their arguments, but containers may refer back to them.
+  const buildingValues = new Set();
+  function buildValue(name) {
+    if (Object.prototype.hasOwnProperty.call(values, name)) {
+      return values[name];
+    }
+    if (!Object.prototype.hasOwnProperty.call(nodes, name)) {
+      return getValue(name);
+    }
+    if (buildingValues.has(name)) {
+      throw new Error(
+        name + ' must be constructed before its own dependencies',
+      );
+    }
+    buildingValues.add(name);
+    const items = nodes[name].iterator.map(buildValue);
+    const iterator = items[Symbol.iterator]();
+    values[name] = iterator;
+    valueMetadata.set(iterator, {type: 'iterator', items});
+    buildingValues.delete(name);
+    return iterator;
+  }
+  for (const name in nodes) {
+    buildValue(name);
   }
   for (const name in nodes) {
     const node = nodes[name];
