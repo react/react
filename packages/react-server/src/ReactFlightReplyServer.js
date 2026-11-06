@@ -555,14 +555,7 @@ function resolveServerReferenceChunk<T>(
   chunk: BlockedChunk<T>,
   value: T,
 ): void {
-  const resolveListeners = chunk.value;
-  const initializedChunk: InitializedChunk<T> = chunk as any;
-  initializedChunk.status = INITIALIZED;
-  initializedChunk.value = value;
-  initializedChunk.reason = null;
-  if (resolveListeners !== null) {
-    wakeChunk(response, resolveListeners, value, initializedChunk);
-  }
+  initializeBlockedChunk(response, chunk, value, null);
 }
 
 function readServerReference<T>(
@@ -882,10 +875,7 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
         return;
       }
     }
-    const initializedChunk: InitializedChunk<T> = chunk as any;
-    initializedChunk.status = INITIALIZED;
-    initializedChunk.value = value;
-    initializedChunk.reason = arrayRoot;
+    markChunkInitialized(response, cyclicChunk, value, arrayRoot);
   } catch (error) {
     const erroredChunk: ErroredChunk<T> = chunk as any;
     erroredChunk.status = ERRORED;
@@ -942,6 +932,36 @@ function getChunk(response: Response, id: number): SomeChunk<any> {
     chunks.set(id, chunk);
   }
   return chunk;
+}
+
+function initializeBlockedChunk<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: InitializedChunk<T>['reason'],
+): void {
+  const resolveListeners = markChunkInitialized(response, chunk, value, reason);
+  if (resolveListeners !== null) {
+    wakeChunk(response, resolveListeners, value, chunk as any);
+  }
+}
+
+// Moves a blocked chunk to INITIALIZED and returns the listeners that were
+// waiting on it, for the caller to wake. A set of chunks that completes
+// together is marked in full before any of its listeners wakes, so that
+// none of them finds a chunk of the set still blocked.
+function markChunkInitialized<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: InitializedChunk<T>['reason'],
+): null | Array<InitializationReference | (T => mixed)> {
+  const resolveListeners = chunk.value;
+  const initializedChunk: InitializedChunk<T> = chunk as any;
+  initializedChunk.status = INITIALIZED;
+  initializedChunk.value = value;
+  initializedChunk.reason = reason;
+  return resolveListeners;
 }
 
 function fulfillReference(
@@ -1054,16 +1074,13 @@ function resolveReference(
     if (chunk === null || chunk.status !== BLOCKED) {
       return;
     }
-    const resolveListeners = chunk.value;
-    const initializedChunk: InitializedChunk<any> = chunk as any;
-    initializedChunk.status = INITIALIZED;
-    initializedChunk.value = handler.value;
-    initializedChunk.reason =
+    initializeBlockedChunk(
+      response,
+      chunk,
+      handler.value,
       // $FlowFixMe[incompatible-type] Assuming handler.errored is false.
-      handler.reason;
-    if (resolveListeners !== null) {
-      wakeChunk(response, resolveListeners, handler.value, initializedChunk);
-    }
+      handler.reason,
+    );
   }
 }
 
@@ -1428,16 +1445,9 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
       if (chunk === null || chunk.status !== BLOCKED) {
         return;
       }
-      const resolveListeners = chunk.value;
-      const initializedChunk: InitializedChunk<T> = chunk as any;
-      initializedChunk.status = INITIALIZED;
-      initializedChunk.value = handler.value;
       // We don't keep an array count for this since it won't be referenced again.
       // In fact, we don't really need to store this chunk at all.
-      initializedChunk.reason = null;
-      if (resolveListeners !== null) {
-        wakeChunk(response, resolveListeners, handler.value, initializedChunk);
-      }
+      initializeBlockedChunk(response, chunk, handler.value, null);
     }
   }
 
