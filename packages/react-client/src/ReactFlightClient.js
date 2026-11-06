@@ -3586,14 +3586,26 @@ function startReadableStream<T>(
     },
   });
   let previousBlockedChunk: SomeChunk<T> | null = null;
+  function enqueue(value: T): void {
+    if (type === 'bytes') {
+      // Byte stream controllers transfer the backing buffer. It may still
+      // be shared with another transport chunk, decoded value, or tee reader.
+      const view: $ArrayBufferView = value as any;
+      controller.enqueue(
+        new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice(),
+      );
+    } else {
+      controller.enqueue(value);
+    }
+  }
   const flightController = {
     enqueueValue(value: T): void {
       if (previousBlockedChunk === null) {
-        controller.enqueue(value);
+        enqueue(value);
       } else {
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         previousBlockedChunk.then(function () {
-          controller.enqueue(value);
+          enqueue(value);
         });
       }
     },
@@ -3608,12 +3620,9 @@ function startReadableStream<T>(
         initializeModelChunk(chunk);
         const initializedChunk: SomeChunk<T> = chunk;
         if (initializedChunk.status === INITIALIZED) {
-          controller.enqueue(initializedChunk.value);
+          enqueue(initializedChunk.value);
         } else {
-          chunk.then(
-            v => controller.enqueue(v),
-            e => controller.error(e as any),
-          );
+          chunk.then(enqueue, e => controller.error(e as any));
           previousBlockedChunk = chunk;
         }
       } else {
@@ -3627,7 +3636,7 @@ function startReadableStream<T>(
               // to synchronous emitting.
               previousBlockedChunk = null;
             }
-            controller.enqueue(v);
+            enqueue(v);
           },
           e => controller.error(e as any),
         );
@@ -5450,18 +5459,9 @@ export function processBinaryChunk(
       const length = lastIdx - i;
       const lastChunk = new Uint8Array(chunk.buffer, offset, length);
 
-      // Check if this is a Uint8Array for a byte stream. We enqueue it
-      // immediately but need to determine if we can use zero-copy or must copy.
+      // A byte stream can receive this slice without waiting for a full row.
       if (rowTag === 98 /* "b" */) {
-        resolveBuffer(
-          response,
-          rowID,
-          // If we're at the end of the RSC chunk, no more parsing will access
-          // this buffer and we don't need to copy the chunk to allow detaching
-          // the buffer, otherwise we need to copy.
-          lastIdx === chunkLength ? lastChunk : lastChunk.slice(),
-          streamState,
-        );
+        resolveBuffer(response, rowID, lastChunk, streamState);
       } else {
         // Process all other row types.
         processFullBinaryRow(
@@ -5490,13 +5490,8 @@ export function processBinaryChunk(
       const length = chunk.byteLength - i;
       const remainingSlice = new Uint8Array(chunk.buffer, offset, length);
 
-      // For byte streams, we can enqueue the partial row immediately without
-      // copying since we're at the end of the RSC chunk and no more parsing
-      // will access this buffer.
+      // Byte streams can receive partial rows as soon as their bytes arrive.
       if (rowTag === 98 /* "b" */) {
-        // Update how many bytes we're still waiting for. We need to do this
-        // before enqueueing, as enqueue will detach the buffer and byteLength
-        // will become 0.
         rowLength -= remainingSlice.byteLength;
         resolveBuffer(response, rowID, remainingSlice, streamState);
       } else {
