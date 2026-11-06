@@ -3069,4 +3069,65 @@ describe('ReactFlightDOMNode', () => {
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
   });
+
+  it('writes strings to an object-mode destination and bytes to a byte-mode one', async () => {
+    const model = {
+      items: Array.from({length: 40}, (_, i) => ({id: i, name: 'item ' + i})),
+      text: 'x'.repeat(2000),
+      bytes: new Uint8Array([1, 2, 3]),
+    };
+
+    async function collect(objectMode) {
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(model),
+      );
+      const writable = new Stream.PassThrough({objectMode});
+      const chunks = [];
+      writable.on('data', chunk => chunks.push(chunk));
+      const done = new Promise(resolve => writable.on('end', resolve));
+      stream.pipe(writable);
+      await done;
+      return chunks;
+    }
+
+    const stringChunks = await collect(true);
+    const byteChunks = await collect(false);
+
+    // Rows reach an object-mode destination as strings. Small rows are joined
+    // so the destination still receives few writes, but a text row's body is a
+    // chunk of its own because the reader parses it as one.
+    expect(stringChunks.length).toBeGreaterThan(1);
+    expect(stringChunks.length).toBeLessThan(10);
+    expect(stringChunks.filter(c => typeof c === 'string').length).toBe(
+      stringChunks.length - 1,
+    );
+    expect(stringChunks.some(c => c === model.text)).toBe(true);
+    expect(stringChunks.some(c => c instanceof Uint8Array)).toBe(true);
+
+    // A byte-mode destination is unchanged: everything arrives as bytes.
+    expect(byteChunks.every(c => c instanceof Uint8Array)).toBe(true);
+
+    // Both destinations receive the same payload, apart from the timestamps
+    // in debug timing rows.
+    const decoder = new TextDecoder();
+    const withoutTimestamps = payload => payload.replace(/:N[\d.]+\n/g, '');
+    const fromStrings = stringChunks
+      .map(c => (typeof c === 'string' ? c : decoder.decode(c)))
+      .join('');
+    const fromBytes = decoder.decode(Buffer.concat(byteChunks));
+    expect(withoutTimestamps(fromStrings)).toBe(withoutTimestamps(fromBytes));
+
+    // The reader accepts the string chunks as written.
+    const readable = new Stream.PassThrough({objectMode: true});
+    const parsed = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stringChunks.forEach(chunk => readable.write(chunk));
+    readable.end();
+    const result = await parsed;
+    expect(result.text).toBe(model.text);
+    expect(result.items).toEqual(model.items);
+    expect(Array.from(result.bytes)).toEqual([1, 2, 3]);
+  });
 });

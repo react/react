@@ -15,6 +15,7 @@ import hasOwnProperty from 'shared/hasOwnProperty';
 
 interface MightBeFlushable {
   flush?: () => void;
+  writableObjectMode?: boolean;
 }
 
 export type Destination = Writable & MightBeFlushable;
@@ -53,14 +54,54 @@ let currentView = null;
 let writtenBytes = 0;
 let destinationHasCapacity = true;
 
+// An object-mode destination receives strings as strings. Small strings are
+// joined into pendingString so the destination still receives fewer writes.
+// Strings and views are flushed in write order, so at most one of
+// pendingString and currentView holds data at a time.
+let destinationIsObjectMode = false;
+let pendingString = '';
+
 export function beginWriting(destination: Destination) {
   currentView = new Uint8Array(VIEW_SIZE);
   writtenBytes = 0;
   destinationHasCapacity = true;
+  destinationIsObjectMode = destination.writableObjectMode === true;
+  pendingString = '';
+}
+
+function flushPendingString(destination: Destination) {
+  if (pendingString.length > 0) {
+    writeToDestination(destination, pendingString);
+    pendingString = '';
+  }
+}
+
+function flushCurrentView(destination: Destination) {
+  if (writtenBytes > 0) {
+    writeToDestination(
+      destination,
+      (currentView as any as Uint8Array).subarray(0, writtenBytes),
+    );
+    currentView = new Uint8Array(VIEW_SIZE);
+    writtenBytes = 0;
+  }
 }
 
 function writeStringChunk(destination: Destination, stringChunk: string) {
   if (stringChunk.length === 0) {
+    return;
+  }
+  if (destinationIsObjectMode) {
+    flushCurrentView(destination);
+    if (stringChunk.length * 3 > VIEW_SIZE) {
+      flushPendingString(destination);
+      writeToDestination(destination, stringChunk);
+      return;
+    }
+    pendingString += stringChunk;
+    if (pendingString.length * 3 > VIEW_SIZE) {
+      flushPendingString(destination);
+    }
     return;
   }
   // maximum possible view needed to encode entire string
@@ -131,6 +172,9 @@ function writeViewChunk(
     }
 
     return;
+  }
+  if (destinationIsObjectMode) {
+    flushPendingString(destination);
   }
   if (chunk.byteLength > VIEW_SIZE) {
     // this chunk may overflow a single view which implies it was not
@@ -208,7 +252,29 @@ export function writeChunkAndReturn(
   return destinationHasCapacity;
 }
 
+// The reader frames this chunk by length, so an object-mode destination must
+// receive it as written: not joined with other chunks.
+export function writeStandaloneChunkAndReturn(
+  destination: Destination,
+  chunk: PrecomputedChunk | Chunk | BinaryChunk,
+): boolean {
+  if (destinationIsObjectMode && typeof chunk === 'string') {
+    if (chunk.length > 0) {
+      flushCurrentView(destination);
+      flushPendingString(destination);
+      writeToDestination(destination, chunk);
+    }
+    return destinationHasCapacity;
+  }
+  writeChunk(destination, chunk);
+  return destinationHasCapacity;
+}
+
 export function completeWriting(destination: Destination) {
+  if (pendingString.length > 0) {
+    destination.write(pendingString);
+    pendingString = '';
+  }
   if (currentView && writtenBytes > 0) {
     destination.write(currentView.subarray(0, writtenBytes));
   }
