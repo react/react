@@ -1761,4 +1761,80 @@ describe('ReactLazy', () => {
       expect(root).toMatchRenderedOutput('ba');
     });
   });
+  it('preserves state when switching from a lazy component to its resolved type', async () => {
+    let setCount;
+
+    function Stateful() {
+      const [count, updateCount] = React.useState(0);
+      setCount = updateCount;
+      return <Text text={String(count)} />;
+    }
+
+    const LazyStateful = lazy(() => fakeImport(Stateful));
+
+    const root = ReactTestRenderer.create(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <LazyStateful />
+      </Suspense>,
+      {unstable_isConcurrent: true},
+    );
+    await waitForAll(['Loading...']);
+    await act(() => resolveFakeImport(Stateful));
+    assertLog(['0']);
+    expect(root).toMatchRenderedOutput('0');
+
+    await act(async () => {
+      setCount(1);
+    });
+    assertLog(['1']);
+    expect(root).toMatchRenderedOutput('1');
+
+    await act(async () => {
+      root.update(<Suspense fallback={<Text text="Loading..." />}>
+          <Stateful />
+        </Suspense>,);
+    });
+    assertLog(['1']);
+    expect(root).toMatchRenderedOutput('1');
+  });
+  it('preserves state when switching from a lazy component to its resolved type in an array', async () => {
+    let setCount;
+
+    function Stateful() {
+      const [count, updateCount] = React.useState(0);
+      setCount = updateCount;
+      return <Text text={String(count)} />;
+    }
+
+    const LazyStateful = lazy(() => fakeImport(Stateful));
+
+    const root = ReactTestRenderer.create(
+      <Suspense fallback={<Text text="Loading..." />}>
+        {[<LazyStateful key="stateful" />]}
+      </Suspense>,
+      { unstable_isConcurrent: true },
+    );
+
+    await waitForAll(['Loading...']);
+    await act(() => resolveFakeImport(Stateful));
+    assertLog(['0']);
+    expect(root).toMatchRenderedOutput('0');
+
+    await act(async () => {
+      setCount(1);
+    });
+    assertLog(['1']);
+    expect(root).toMatchRenderedOutput('1');
+
+    await act(async () => {
+      root.update(
+        <Suspense fallback={<Text text="Loading..." />}>
+          {[<Stateful key="stateful" />]}
+        </Suspense>,
+      );
+    });
+
+    assertLog(['1']);
+    expect(root).toMatchRenderedOutput('1');
+  });
 });
