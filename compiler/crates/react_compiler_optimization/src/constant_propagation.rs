@@ -296,10 +296,29 @@ fn evaluate_instruction(
             value: value.clone(),
             loc: *loc,
         }),
-        InstructionValue::LoadGlobal { binding, loc } => Some(Constant::LoadGlobal {
-            binding: binding.clone(),
-            loc: *loc,
-        }),
+        InstructionValue::LoadGlobal { binding, loc } => {
+            // A LoadGlobal is only a compile-time constant if the binding it reads can
+            // never be reassigned. Import bindings are immutable, but a binding declared
+            // in this module (ModuleLocal) may be a `let`/`var` that is reassigned at any
+            // point - including by a call between the load and its use. Tracking it as a
+            // constant forwards the *value* of the load to the use site, which then
+            // observes a later value:
+            //
+            //   let pending = 'value';
+            //   const copy = pending;
+            //   pending = null;
+            //   console.log(copy); // must log 'value', not null
+            //
+            // NonLocalBinding doesn't record whether a module binding is `const`, so
+            // module bindings are never treated as constants.
+            if matches!(binding, NonLocalBinding::ModuleLocal { .. }) {
+                return None;
+            }
+            Some(Constant::LoadGlobal {
+                binding: binding.clone(),
+                loc: *loc,
+            })
+        }
         InstructionValue::ComputedLoad {
             object,
             property,
