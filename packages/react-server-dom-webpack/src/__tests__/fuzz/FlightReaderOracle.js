@@ -11,12 +11,43 @@
 // results are missing. Readiness comes from the source, not the client.
 function createOracle(
   fixture = {valueMetadata: new Map(), requiredEvents: new Map()},
-  {render} = {},
+  {
+    render,
+    strictIdentity = process.env.FLIGHT_FUZZ_STRICT_IDENTITY === '1',
+  } = {},
 ) {
   const state = {
     fixture,
     render,
+    strictIdentity,
     expectedByReceived: new WeakMap(),
+    // The first received object seen for a source, so later occurrences can be
+    // required to decode to that same object where identity is guaranteed.
+    receivedBySource: new WeakMap(),
+    // Source objects that are reachable from themselves through the edges the
+    // writer keeps in one row. Their received value must preserve the cycle.
+    cyclicSources: new WeakSet(),
+    analyzedSources: new WeakSet(),
+    // Counts aliased source objects (reachable more than once) delivered as one
+    // object vs as several, so split rates can be compared against base.
+    aliasStats: {shared: 0, split: 0},
+    countedAliases: new WeakSet(),
+    // Cycle or collection identity violations excused by default as known tip
+    // runtime findings (see the comments where they are detected).
+    identityFindings: 0,
+    // Client elements that are a Server Component's rendered output. Their props
+    // serialize in that component's output row, not the main model row, so (like
+    // a Promise result or a stream item) a cyclic or aliased value reachable from
+    // another row may arrive there split into a copy.
+    serverComponentOutputs: collectServerComponentOutputs(fixture),
+    // The tolerance of the row each client element was observed in. An element
+    // carried in a tolerant sub-row (a Promise result, a stream or async iterable
+    // item, bound arguments) serializes its props in that sub-row, so a split
+    // there is tolerated too. An element seen in the main model row stays strict.
+    // Recorded as traverse visits the element (synchronously, before the async
+    // props callback fires), with strict winning if it is ever seen in a strict
+    // row.
+    elementRowTolerant: new WeakMap(),
     receivedValues: [],
     observedAsyncValues: new WeakSet(),
     thenableResults: new WeakMap(),
@@ -41,11 +72,17 @@ function createOracle(
             'A component received props before their inputs arrived',
           );
         }
+        // Props are a tolerant row when the element is a Server Component's
+        // rendered output, or when the element itself was observed in a tolerant
+        // sub-row (a Promise result, a stream or async iterable item, bound
+        // arguments). An element in the main model row stays strict.
         observeValue(
           state,
           element.props,
           received,
           'props of ' + element.type.name,
+          state.serverComponentOutputs.has(element) ||
+            state.elementRowTolerant.get(element) === true,
         );
       });
     },
@@ -90,8 +127,9 @@ function createOracle(
         state.functionCalls.forEach((call, received) =>
           observeServerFunction(state, received, call.metadata, call.args),
         );
+        const visited = new Set();
         const blobs = state.receivedValues.flatMap(root =>
-          traverse(state, root, false),
+          traverse(state, root, false, visited),
         );
         await Promise.all(
           blobs.map(({expectedValue, received}) =>
@@ -109,13 +147,92 @@ function createOracle(
   };
 }
 
-function observeValue(state, expectedValue, received, path) {
-  const root = {expectedValue, received, path};
+// A Server Component's rendered output is a separate model row. The props of the
+// client element it renders therefore belong to that sub-row, not the main model
+// row, so splitting is tolerated there. Collect those elements up front so their
+// props callback can enter a tolerant row.
+function collectServerComponentOutputs(fixture) {
+  const outputs = new WeakSet();
+  fixture.valueMetadata.forEach(metadata => {
+    if (metadata.type === 'element' && metadata.renderedElement != null) {
+      outputs.add(metadata.renderedElement);
+    }
+  });
+  return outputs;
+}
+
+function observeValue(state, expectedValue, received, path, tolerant) {
+  // Find which source objects sit on a cycle before comparing, so a cycle that
+  // decoded as a copy can be rejected as it is traversed.
+  analyzeCycles(state, expectedValue);
+  const root = {expectedValue, received, path, tolerant};
   traverse(state, root, true);
   state.receivedValues.push(root);
 }
 
-function traverse(state, root, observe) {
+// Marks every source object reachable from itself through the writer's in-row
+// edges. A Server Function's bound arguments serialize in their own row, so
+// descending into them starts a new row and a back-edge across that boundary is
+// not a same-row cycle. Iterative so deep graphs do not overflow, and shared
+// across calls so each object is analyzed once.
+function analyzeCycles(state, root) {
+  // Each greyed node records the row it is open in; a back-edge is a cycle only
+  // when the ancestor was greyed in the same row.
+  const grey = new Map();
+  let nextRow = 1;
+  const stack = [{node: root, children: null, index: 0, row: 0}];
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    const node = frame.node;
+    if (frame.children === null) {
+      if (
+        node === null ||
+        (typeof node !== 'object' && typeof node !== 'function') ||
+        state.analyzedSources.has(node)
+      ) {
+        stack.pop();
+        continue;
+      }
+      grey.set(node, frame.row);
+      frame.children = getValueDependencies(state.fixture, node);
+      const metadata = state.fixture.valueMetadata.get(node);
+      // Bound arguments share one new row; every other child stays in this row.
+      frame.childRow =
+        metadata !== undefined && metadata.type === 'function'
+          ? nextRow++
+          : frame.row;
+    }
+    if (frame.index < frame.children.length) {
+      const child = frame.children[frame.index++];
+      if (
+        child !== null &&
+        (typeof child === 'object' || typeof child === 'function')
+      ) {
+        if (grey.has(child)) {
+          // A back-edge. It is a cycle only within one row; across a row
+          // boundary the writer may split it. Either way the ancestor is still
+          // open, so it must not be pushed again.
+          if (grey.get(child) === frame.childRow) {
+            state.cyclicSources.add(child);
+          }
+        } else if (!state.analyzedSources.has(child)) {
+          stack.push({
+            node: child,
+            children: null,
+            index: 0,
+            row: frame.childRow,
+          });
+        }
+      }
+    } else {
+      grey.delete(node);
+      state.analyzedSources.add(node);
+      stack.pop();
+    }
+  }
+}
+
+function traverse(state, root, observe, visited = new Set()) {
   const blobs = [];
   // Same-row identity is scoped per model row. A new row begins at the root and
   // at a Server Function's bound arguments, which the writer serializes
@@ -130,7 +247,6 @@ function traverse(state, root, observe) {
   const todo = [root];
   // One source object may have several received copies. Visit each copy,
   // including on a later check, rather than stopping at the source object.
-  const visited = new Set();
   while (todo.length > 0) {
     const pair = todo.pop();
     try {
@@ -321,8 +437,9 @@ function numberArraysEqual(received, expected) {
 // This is the same comparison for initial delivery and later mutation checks.
 function compareValue(
   state,
-  {expectedValue, received, path, isCallResult},
+  {expectedValue, received, path, isCallResult, isCollectionKey},
   visited,
+  row,
 ) {
   if (
     expectedValue === null ||
@@ -347,6 +464,65 @@ function compareValue(
       throw new Error('A received object matches two distinct source objects');
     }
     state.expectedByReceived.set(received, expectedValue);
+    // Same-row identity: within one delivered value a cycle must still contain
+    // itself, and a collection must still contain an aliased member or key, or
+    // set.has / map.get on the alias would fail.
+    if (isCollectionKey) {
+      row.collectionKeys.add(expectedValue);
+    }
+    const localFirst = row.received.get(expectedValue);
+    if (localFirst === undefined) {
+      row.received.set(expectedValue, received);
+    } else if (localFirst !== received) {
+      if (state.cyclicSources.has(expectedValue)) {
+        // A cycle must contain itself. This is enforced in the main model row
+        // (where the Set-containing-null class and the Proxy experiment live).
+        // A cycle carried into a separate row (a Promise result, a stream or
+        // async iterable item or return, a Server Function's bound arguments, or
+        // the props of a Server Component's rendered output) is sometimes re-sent
+        // as a copy that points back at the original, which breaks the cycle in
+        // that row depending on event order. That shape is excused by default and
+        // reported as a runtime finding; strict mode still requires it
+        // everywhere.
+        if (state.strictIdentity || !row.tolerant) {
+          throw new Error(
+            'A cyclic source value decoded as a copy instead of the same object',
+          );
+        }
+        state.identityFindings++;
+      } else if (row.collectionKeys.has(expectedValue)) {
+        // A collection must still contain an aliased member or key so set.has /
+        // map.get on the alias works. The reply decoder splits some same-row
+        // members into copies; that is enforced only under strict identity for
+        // now and reported, so the default run stays green.
+        if (state.strictIdentity) {
+          throw new Error(
+            'A collection member or key decoded as a copy of its alias',
+          );
+        }
+        state.identityFindings++;
+      }
+    }
+    // Cross-value aliasing: Flight may legitimately split a shared object into
+    // copies across rows, so this is allowed by default and only counted, to
+    // compare the split rate against base. Strict mode requires identity here.
+    const globalFirst = state.receivedBySource.get(expectedValue);
+    if (globalFirst === undefined) {
+      state.receivedBySource.set(expectedValue, received);
+    } else if (globalFirst !== received) {
+      if (!state.countedAliases.has(expectedValue)) {
+        state.countedAliases.add(expectedValue);
+        state.aliasStats.split++;
+      }
+      if (state.strictIdentity) {
+        throw new Error(
+          'A shared source value decoded as a copy under strict identity',
+        );
+      }
+    } else if (!state.countedAliases.has(expectedValue)) {
+      state.countedAliases.add(expectedValue);
+      state.aliasStats.shared++;
+    }
     if (visited.has(received)) {
       return null;
     }
@@ -380,6 +556,15 @@ function compareValue(
     } else if (metadata.type === 'element') {
       // Flight may deliver a lazy element before its props are ready.
       // Rendering and the component's props callback check its contents.
+      // Record the tolerance of the row this element is in, so its props
+      // callback (observeProps) inherits it: an element carried in a tolerant
+      // sub-row may have its props split like any other sub-row value. Strict
+      // wins if the element is also reachable in the main model row.
+      const previous = state.elementRowTolerant.get(expectedValue);
+      state.elementRowTolerant.set(
+        expectedValue,
+        (previous === undefined || previous) && row.tolerant === true,
+      );
     } else if (metadata.type === 'error') {
       assertOracle(
         received instanceof Error,

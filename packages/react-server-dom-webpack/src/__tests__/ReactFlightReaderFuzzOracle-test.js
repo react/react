@@ -49,19 +49,19 @@ describe('FlightReaderOracle', () => {
     expect(() => oracle.throwIfFailed()).toThrow();
   });
 
-  // Visiting source identities only would miss corruption in a later copy.
-  it('rechecks every received copy of a source cycle', async () => {
-    const source = {value: 'expected'};
-    source.next = source;
+  // A shared source object may decode to several copies. Visiting source
+  // identities only would miss corruption in a later copy.
+  it('rechecks every received copy of a shared source', async () => {
+    const shared = {value: 'expected'};
+    const source = {first: shared, second: shared};
     const copy = {value: 'expected'};
-    copy.next = copy;
-    const received = {value: 'expected', next: copy};
+    const received = {first: {value: 'expected'}, second: copy};
     const oracle = createOracle();
     oracle.observeValue(source, received);
     await oracle.checkForMutations();
 
     copy.value = 'changed';
-    await expect(oracle.checkForMutations()).rejects.toThrow('.next.value');
+    await expect(oracle.checkForMutations()).rejects.toThrow('.second.value');
     expect(() => createOracle().observeValue(source, received)).toThrow();
   });
 
@@ -74,6 +74,176 @@ describe('FlightReaderOracle', () => {
     expect(() =>
       createOracle().observeValue(source, {a: merged, b: merged}),
     ).toThrow('two distinct source objects');
+  });
+
+  // A cycle must decode to a structure that contains itself; a copy in its own
+  // place is a correctness bug (it is how the Set-containing-null class shows up).
+  it('rejects a self-cycle delivered as a copy by default', () => {
+    const source = {};
+    source.self = source;
+    const copy = {};
+    copy.self = copy;
+    const received = {self: copy};
+    expect(() => createOracle().observeValue(source, received)).toThrow(
+      'cyclic source value decoded as a copy',
+    );
+  });
+
+  it('rejects a Set that contains itself delivered as a copy by default', () => {
+    const source = new Set();
+    source.add(source);
+    const copy = new Set();
+    copy.add(copy);
+    const received = new Set([copy]);
+    expect(() => createOracle().observeValue(source, received)).toThrow(
+      'cyclic source value decoded as a copy',
+    );
+  });
+
+  it('rejects a Map that contains itself delivered as a copy by default', () => {
+    const source = new Map();
+    source.set('self', source);
+    const copy = new Map();
+    copy.set('self', copy);
+    const received = new Map([['self', copy]]);
+    expect(() => createOracle().observeValue(source, received)).toThrow(
+      'cyclic source value decoded as a copy',
+    );
+  });
+
+  // The props of a client element rendered by a Server Component serialize in
+  // that component's output row, not the main model row. A cyclic value reachable
+  // from another row may arrive there split: the outer prop is a copy whose inner
+  // reference points back at the self-contained original. Like other sub-rows,
+  // that split is tolerated by default and only rejected under strict identity.
+  it('tolerates a cyclic prop split in a Server Component output row', () => {
+    const cyclic = {};
+    cyclic.self = cyclic;
+    const renderedElement = {type: {name: 'Body'}, props: {value: cyclic}};
+    const serverElement = {};
+    const makeOracle = options =>
+      createOracle(
+        {
+          model: serverElement,
+          valueMetadata: new Map([
+            [serverElement, {type: 'element', html: '', renderedElement}],
+          ]),
+          requiredEvents: new Map(),
+        },
+        options,
+      );
+    // The outer prop is a copy; following its cycle reaches the self-contained
+    // original received object, not the copy itself.
+    const original = {};
+    original.self = original;
+    const copy = {self: original};
+    const oracle = makeOracle();
+    oracle.observeProps(renderedElement, {value: copy});
+    expect(() => oracle.throwIfFailed()).not.toThrow();
+    const strict = makeOracle({strictIdentity: true});
+    strict.observeProps(renderedElement, {value: copy});
+    expect(() => strict.throwIfFailed()).toThrow(
+      'cyclic source value decoded as a copy',
+    );
+  });
+
+  // A client element that sits in the main model row keeps the strict cycle
+  // guarantee: its props must still decode to a structure that contains itself.
+  it('still rejects a cyclic prop split for a main model element', () => {
+    const cyclic = {};
+    cyclic.self = cyclic;
+    const element = {type: {name: 'Component'}, props: {value: cyclic}};
+    const oracle = createOracle({
+      model: element,
+      valueMetadata: new Map([[element, {type: 'element', html: ''}]]),
+      requiredEvents: new Map(),
+    });
+    const original = {};
+    original.self = original;
+    const copy = {self: original};
+    oracle.observeProps(element, {value: copy});
+    expect(() => oracle.throwIfFailed()).toThrow(
+      'cyclic source value decoded as a copy',
+    );
+  });
+
+  // A client element carried in a tolerant sub-row (here a Promise result)
+  // serializes its props in that sub-row, so a cyclic prop split is tolerated
+  // there too. The element's props callback inherits the tolerance of the row in
+  // which the element was observed.
+  it('tolerates a cyclic prop split for an element in a Promise result row', async () => {
+    const cyclic = {};
+    cyclic.self = cyclic;
+    const element = {type: {name: 'Comp'}, props: {value: cyclic}};
+    const promise = {};
+    const source = {promise};
+    const original = {};
+    original.self = original;
+    const copy = {self: original};
+    // Deliver the Promise's result (the element) so traverse records that the
+    // element lives in a tolerant row, then run its props callback.
+    const run = async strictIdentity => {
+      const oracle = createOracle(
+        {
+          model: source,
+          valueMetadata: new Map([
+            [promise, {type: 'promise', state: 'fulfilled', value: element}],
+            [element, {type: 'element', html: ''}],
+          ]),
+          requiredEvents: new Map(),
+        },
+        {render: () => new Promise(() => {}), strictIdentity},
+      );
+      let resolveRoot;
+      oracle.subscribeToRoot(
+        {then: onFulfill => (resolveRoot = onFulfill)},
+        source,
+      );
+      let resolveInner;
+      resolveRoot({promise: new Promise(d => (resolveInner = d))});
+      await tick();
+      resolveInner({type: {name: 'Comp'}, props: {}});
+      await tick();
+      oracle.observeProps(element, {value: copy});
+      return oracle;
+    };
+    const lenient = await run(false);
+    expect(() => lenient.throwIfFailed()).not.toThrow();
+    const strict = await run(true);
+    expect(() => strict.throwIfFailed()).toThrow(
+      'cyclic source value decoded as a copy',
+    );
+  });
+
+  // Flight may split a shared object into copies across rows, so this is allowed
+  // by default and only rejected when hunting with strict identity.
+  it('accepts a shared source object delivered as two copies by default', () => {
+    const shared = {value: 'x'};
+    const source = {first: shared, second: shared};
+    const received = {first: {value: 'x'}, second: {value: 'x'}};
+    expect(() => createOracle().observeValue(source, received)).not.toThrow();
+  });
+
+  it('rejects a shared source object delivered as two copies under strict identity', () => {
+    const shared = {value: 'x'};
+    const source = {first: shared, second: shared};
+    const received = {first: {value: 'x'}, second: {value: 'x'}};
+    const oracle = createOracle(undefined, {strictIdentity: true});
+    expect(() => oracle.observeValue(source, received)).toThrow(
+      'strict identity',
+    );
+  });
+
+  // A Set member aliased elsewhere in the same row must stay the same object, or
+  // set.has(alias) fails. The reply decoder splits some, so this is enforced
+  // under strict identity for now and reported as a finding.
+  it('rejects a split Set member aliased in the same row under strict identity', () => {
+    const member = {value: 'm'};
+    const source = {set: new Set([member]), alias: member};
+    const received = {set: new Set([{value: 'm'}]), alias: {value: 'm'}};
+    expect(() => createOracle().observeValue(source, received)).not.toThrow();
+    const strict = createOracle(undefined, {strictIdentity: true});
+    expect(() => strict.observeValue(source, received)).toThrow();
   });
 
   // The class name is part of a DEV Error's identity, not just its message.

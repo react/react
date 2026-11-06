@@ -17,9 +17,24 @@ const {
   tick,
   runInIOCallback,
 } = require('./fuzz/FlightReaderFuzzTransport');
-const {createRandom} = require('./fuzz/FlightReaderFuzzGraph');
+const {
+  createRandom,
+  generateGraph,
+  generateScaleGraph,
+} = require('./fuzz/FlightReaderFuzzGraph');
 
 const SEED = process.env.FUZZ_TEST_SEED || 'default';
+const caseCount = +(process.env.FLIGHT_FUZZ_CASES ?? 4);
+if (!Number.isSafeInteger(caseCount) || caseCount < 1) {
+  throw new Error('FLIGHT_FUZZ_CASES must be a positive integer.');
+}
+// Generated graph checks can exceed Jest's default timeout on CI.
+jest.setTimeout(15000);
+// Keep the first seed unchanged so the printed command replays that case.
+const seeds = Array.from({length: caseCount}, (_, i) =>
+  i === 0 ? SEED : SEED + ':' + i,
+);
+
 const readTimings = ['early', 'late', 'after-events', 'after-eof'];
 const NativeAbortController = global.AbortController;
 class FuzzAbortController extends NativeAbortController {
@@ -1801,6 +1816,51 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
       },
     );
   });
+
+  const formatCaseName = (label, seed, readTiming, scheduleIndex) =>
+    label +
+    ' seed=' +
+    seed +
+    ' readTiming=' +
+    readTiming +
+    ' schedule=' +
+    scheduleIndex;
+
+  // eslint-disable-next-line jest/no-disabled-tests
+  describe.skip('generated graphs', () => {
+    seeds.forEach(seed => {
+      for (let scheduleIndex = 0; scheduleIndex < 2; scheduleIndex++) {
+        readTimings.forEach(readTiming => {
+          // eslint-disable-next-line jest/valid-title
+          it(formatCaseName('graph', seed, readTiming, scheduleIndex), () =>
+            runGraph({
+              ...generateGraph(seed, {
+                without: ['undefined', 'colon'],
+              }),
+              seed,
+              readTiming,
+              scheduleIndex,
+            }),
+          );
+        });
+      }
+      const scaled = generateScaleGraph(seed);
+      const readTiming =
+        readTimings[createRandom(seed + '/scale-demand')(readTimings.length)];
+      it(
+        // eslint-disable-next-line jest/valid-title
+        formatCaseName(
+          scaled.shape + ' size=' + scaled.size,
+          seed,
+          readTiming,
+          0,
+        ),
+        () => runGraph({...scaled.graph, seed, readTiming}),
+      );
+    });
+  });
+
+  // Paste a failing graph's test here.
 });
 
 function shuffle(array, pick) {
