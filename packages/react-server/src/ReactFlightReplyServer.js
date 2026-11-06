@@ -1021,26 +1021,32 @@ function fulfillReference(
 
   // There are no Elements or Debug Info to transfer here.
 
-  resolveReference(response, handler, parentObject, key, resolvedValue);
+  installReference(response, reference, resolvedValue);
+  resolveReference(response, handler);
 }
 
-function resolveReference(
+// Writes the resolved value into the field the reference fills.
+function installReference(
   response: Response,
-  handler: InitializationHandler,
-  parentObject: Object,
-  key: string,
-  resolvedValue: mixed,
+  reference: InitializationReference,
+  value: any,
 ): void {
+  const {handler, parentObject, key} = reference;
   if (key !== __PROTO__) {
-    parentObject[key] = resolvedValue;
+    parentObject[key] = value;
   }
 
   // If this is the root object for a model reference, where `handler.value`
   // is a stale `null`, the resolved value can be used directly.
   if (key === '' && handler.value === null) {
-    handler.value = resolvedValue;
+    handler.value = value;
   }
+}
 
+function resolveReference(
+  response: Response,
+  handler: InitializationHandler,
+): void {
   handler.deps--;
 
   if (handler.deps === 0) {
@@ -1092,6 +1098,28 @@ function waitForReference<T>(
   map: (response: Response, model: any, parentObject: Object, key: string) => T,
   path: Array<string>,
 ): T {
+  const reference = createInitializationReference(
+    parentObject,
+    key,
+    arrayRoot,
+    map,
+    path,
+  );
+  addReferenceListener(referencedChunk, reference);
+
+  // Return a place holder value for now.
+  return null as any;
+}
+
+// Creates a reference that fills `parentObject[key]` once it resolves, and
+// counts it against the handler of the model being initialized.
+function createInitializationReference<T>(
+  parentObject: Object,
+  key: string,
+  arrayRoot: null | NestedArrayContext,
+  map: (response: Response, model: any, parentObject: Object, key: string) => T,
+  path: Array<string>,
+): InitializationReference {
   let handler: InitializationHandler;
   if (initializingHandler) {
     handler = initializingHandler;
@@ -1100,7 +1128,7 @@ function waitForReference<T>(
     handler = initializingHandler = createInitializationHandler(1);
   }
 
-  const reference: InitializationReference = {
+  return {
     handler,
     parentObject,
     key,
@@ -1108,21 +1136,24 @@ function waitForReference<T>(
     path,
     arrayRoot,
   };
+}
 
-  // Add "listener".
-  if (referencedChunk.value === null) {
-    referencedChunk.value = [reference];
+// Queues the reference on a chunk that has not initialized yet. It is fulfilled
+// or rejected with the chunk.
+function addReferenceListener(
+  chunk: BlockedChunk<any>,
+  reference: InitializationReference,
+): void {
+  if (chunk.value === null) {
+    chunk.value = [reference];
   } else {
-    referencedChunk.value.push(reference);
+    chunk.value.push(reference);
   }
-  if (referencedChunk.reason === null) {
-    referencedChunk.reason = [reference];
+  if (chunk.reason === null) {
+    chunk.reason = [reference];
   } else {
-    referencedChunk.reason.push(reference);
+    chunk.reason.push(reference);
   }
-
-  // Return a place holder value for now.
-  return null as any;
 }
 
 function getOutlinedModel<T>(
