@@ -2296,6 +2296,11 @@ fn codegen_base_instruction_value(
                 type_arguments: None,
                 optional: None,
             });
+            // Matches TS: in forest mode a call is emitted as a plain call
+            // expression, so hook invocations are not wrapped in a hook guard.
+            if cx.env.config.enable_forest {
+                return Ok(ExpressionOrJsxText::Expression(call_expr));
+            }
             // enableEmitHookGuards: wrap hook calls in try/finally IIFE
             let result = maybe_wrap_hook_call(cx, call_expr, callee.identifier);
             Ok(ExpressionOrJsxText::Expression(result))
