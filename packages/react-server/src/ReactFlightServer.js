@@ -5473,6 +5473,10 @@ function renderDebugModel(
     if (existingReference !== undefined) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
+      // Remember the reference we actually emit. Referring through the debug
+      // parent instead would make later uses wait for that parent's other
+      // dependencies, even when this value is already available.
+      writtenDebugObjects.set(value, existingReference);
       return referTo(request, value, existingReference);
     }
 
