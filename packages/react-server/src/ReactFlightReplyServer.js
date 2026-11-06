@@ -1501,6 +1501,19 @@ function parseReadableStream<T>(
       controller.error(error);
     }
   }
+  function closeStream(): void {
+    if (canceled) {
+      return;
+    }
+    controller.close();
+    // Closing a byte stream leaves a BYOB read that is already waiting
+    // pending. Only responding to its request settles it.
+    // $FlowFixMe[prop-missing]
+    const byobRequest = type === 'bytes' ? controller.byobRequest : null;
+    if (byobRequest != null) {
+      byobRequest.respond(0);
+    }
+  }
   const flightController = {
     enqueueModel(json: string): void {
       if (canceled) {
@@ -1546,16 +1559,12 @@ function parseReadableStream<T>(
       }
       closed = true;
       if (previousBlockedChunk === null) {
-        controller.close();
+        closeStream();
       } else {
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => {
-          if (!canceled) {
-            controller.close();
-          }
-        });
+        blockedChunk.then(closeStream);
       }
     },
     error(error: mixed): void {

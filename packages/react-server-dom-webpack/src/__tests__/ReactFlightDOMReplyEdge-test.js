@@ -377,6 +377,45 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(read.value).toBe('inner');
   });
 
+  it('ends a BYOB read that is waiting when the byte stream closes', async () => {
+    const s = new ReadableStream({
+      type: 'bytes',
+      start(c) {
+        c.enqueue(new Uint8Array([1, 2, 3]));
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+
+    let sendClose;
+    const closeSent = new Promise(resolve => (sendClose = resolve));
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+        for (const entry of body) {
+          if (entry[1] === 'C') {
+            await closeSent;
+          }
+          yield entry;
+        }
+      },
+    };
+
+    const result = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader({mode: 'byob'});
+    const first = await reader.read(new Uint8Array(3));
+    expect(Array.from(first.value)).toEqual([1, 2, 3]);
+
+    const waiting = reader.read(new Uint8Array(3));
+    sendClose();
+    expect((await waiting).done).toBe(true);
+  });
+
   it('waits for a queued stream item to initialize before closing', async () => {
     let resolveModule;
     const ServerModule = serverExports(
