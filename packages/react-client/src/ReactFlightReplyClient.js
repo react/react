@@ -904,6 +904,11 @@ export function processReply(
         // $FlowFixMe[invalid-compare]
         if (iterator === value) {
           // Iterator, not Iterable
+          // Its contents are consumed once. Keep the containing item available
+          // so later occurrences can refer to this iterator through it.
+          if (streamItemContext !== null) {
+            streamItemContext.referenced = true;
+          }
           const iteratorId = nextPartId++;
           const partJSON = serializeModel(
             Array.from(iterator as any),
@@ -923,12 +928,21 @@ export function processReply(
         typeof ReadableStream === 'function' &&
         value instanceof ReadableStream
       ) {
+        // A stream is read once. If it is written inside a stream item, the
+        // item keeps its part, so that another place holding the stream can
+        // refer to it by a path through that part.
+        if (streamItemContext !== null) {
+          streamItemContext.referenced = true;
+        }
         return serializeReadableStream(value);
       }
       const getAsyncIterator: void | (() => $AsyncIterator<any, any, any>) = (
         value as any
       )[ASYNC_ITERATOR];
       if (typeof getAsyncIterator === 'function') {
+        if (streamItemContext !== null) {
+          streamItemContext.referenced = true;
+        }
         // We treat AsyncIterables as a Fragment and as such we might need to key them.
         return serializeAsyncIterable(
           value as any,

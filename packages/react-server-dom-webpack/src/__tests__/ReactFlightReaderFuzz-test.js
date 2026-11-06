@@ -1166,20 +1166,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
       }),
     );
 
-    (host === 'reply' ? it.skip : it).each(['stream'])(
-      '%s in repeated stream items',
-      type =>
-        runGraph({
-          nodes: {
-            inner: {[type]: type === 'bytes' ? 2 : []},
-            item: {array: ['inner']},
-            outer: {stream: ['item', 'item']},
-          },
-          roots: {entry: 'outer', other: 'outer'},
-        }),
-    );
-
-    it.each(['iterable'])('%s in repeated stream items', type =>
+    it.each(['stream', 'iterable'])('%s in repeated stream items', type =>
       runGraph({
         nodes: {
           inner: {[type]: type === 'bytes' ? 2 : []},
@@ -1190,7 +1177,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
       }),
     );
 
-    (host === 'reply' ? it.skip : it).each(['stream'])(
+    it.each(['stream', 'iterable'])(
       '%s shared between different stream items',
       type =>
         runGraph({
@@ -1209,23 +1196,6 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
         }),
     );
 
-    it.each(['iterable'])('%s shared between different stream items', type =>
-      runGraph({
-        nodes: {
-          inner:
-            type === 'bytes'
-              ? {bytes: 2}
-              : type === 'iterable'
-                ? {iterable: [], single: true}
-                : {stream: []},
-          first: {array: ['inner']},
-          second: {object: {again: 'inner'}},
-          outer: {stream: ['first', 'second']},
-        },
-        roots: {entry: 'outer', other: 'outer'},
-      }),
-    );
-
     if (host !== 'reply') {
       it('source stream failure while another value is still loading', () =>
         runGraph({
@@ -1241,20 +1211,17 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
         }));
     }
 
-    (host === 'reply' ? it.skip : it)(
-      'an iterator reused in later stream items',
-      () =>
-        runGraph({
-          nodes: {
-            value: {value: 'first'},
-            iterator: {iterator: ['value']},
-            first: {object: {iterator: 'iterator'}},
-            second: {object: {iterator: 'iterator'}},
-            stream: {stream: ['first', 'second']},
-          },
-          roots: {entry: 'stream', other: 'stream'},
-        }),
-    );
+    it('an iterator reused in later stream items', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'first'},
+          iterator: {iterator: ['value']},
+          first: {object: {iterator: 'iterator'}},
+          second: {object: {iterator: 'iterator'}},
+          stream: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
 
     it('streamed array containing itself', () =>
       runGraph({
@@ -1359,22 +1326,19 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'array', other: 'array'},
       }));
 
-    (host === 'reply' ? it.skip : it)(
-      'async iterator with cyclic items and a return value',
-      () =>
-        runGraph({
-          nodes: {
-            ready: {module: 'export-0'},
-            item: {array: ['item', 'ready', 'iterator']},
-            iterator: {
-              iterable: ['item', 'item'],
-              returns: 'item',
-              single: true,
-            },
+    it('async iterator with cyclic items and a return value', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          item: {array: ['item', 'ready', 'iterator']},
+          iterator: {
+            iterable: ['item', 'item'],
+            returns: 'item',
+            single: true,
           },
-          roots: {entry: 'iterator', other: 'iterator'},
-        }),
-    );
+        },
+        roots: {entry: 'iterator', other: 'iterator'},
+      }));
   });
 
   describe('byte streams', () => {
@@ -1407,36 +1371,32 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
       }),
     );
 
-    (host === 'reply' ? it.skip : it).each(['bytes'])(
-      '%s in repeated stream items',
-      type =>
-        runGraph({
-          nodes: {
-            inner: {[type]: type === 'bytes' ? 2 : []},
-            item: {array: ['inner']},
-            outer: {stream: ['item', 'item']},
-          },
-          roots: {entry: 'outer', other: 'outer'},
-        }),
+    it.each(['bytes'])('%s in repeated stream items', type =>
+      runGraph({
+        nodes: {
+          inner: {[type]: type === 'bytes' ? 2 : []},
+          item: {array: ['inner']},
+          outer: {stream: ['item', 'item']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }),
     );
 
-    (host === 'reply' ? it.skip : it).each(['bytes'])(
-      '%s shared between different stream items',
-      type =>
-        runGraph({
-          nodes: {
-            inner:
-              type === 'bytes'
-                ? {bytes: 2}
-                : type === 'iterable'
-                  ? {iterable: [], single: true}
-                  : {stream: []},
-            first: {array: ['inner']},
-            second: {object: {again: 'inner'}},
-            outer: {stream: ['first', 'second']},
-          },
-          roots: {entry: 'outer', other: 'outer'},
-        }),
+    it.each(['bytes'])('%s shared between different stream items', type =>
+      runGraph({
+        nodes: {
+          inner:
+            type === 'bytes'
+              ? {bytes: 2}
+              : type === 'iterable'
+                ? {iterable: [], single: true}
+                : {stream: []},
+          first: {array: ['inner']},
+          second: {object: {again: 'inner'}},
+          outer: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }),
     );
   });
 
