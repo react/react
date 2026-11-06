@@ -920,4 +920,17 @@ describe('ReactFlightReaderFuzz (node)', () => {
       }),
     );
   });
+
+  describe('stream cancellation', () => {
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('stream canceled while the writer is still producing', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          shared: {object: {field0: 'ready'}},
+          stream: {stream: ['shared'], cancel: true},
+        },
+        roots: {entry: 'stream', other: 'shared'},
+      }));
+  });
 });

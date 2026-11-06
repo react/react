@@ -141,13 +141,17 @@ function traverse(state, root, observe) {
       }
       if (
         metadata !== undefined &&
-        ['promise', 'stream', 'iterable', 'bytes'].includes(metadata.type)
+        ['promise', 'stream', 'iterable', 'bytes', 'canceled'].includes(
+          metadata.type,
+        )
       ) {
         if (observe) {
           if (!state.observedAsyncValues.has(pair.received)) {
             state.observedAsyncValues.add(pair.received);
             if (metadata.type === 'promise') {
               observePromise(state, metadata, pair);
+            } else if (metadata.type === 'canceled') {
+              observeCanceledStream(state, metadata, pair.received, pair.path);
             } else if (metadata.type === 'bytes') {
               observeByteStream(
                 state,
@@ -306,7 +310,11 @@ function compareValue(state, {expectedValue, received, path}, visited) {
         typeof received[Symbol.asyncIterator] === 'function',
         'expected an async iterable but received ' + describeValue(received),
       );
-    } else if (metadata.type === 'stream' || metadata.type === 'bytes') {
+    } else if (
+      metadata.type === 'stream' ||
+      metadata.type === 'bytes' ||
+      metadata.type === 'canceled'
+    ) {
       assertOracle(
         typeof received.getReader === 'function',
         'expected a readable stream but received ' + describeValue(received),
@@ -692,6 +700,38 @@ function observeByteStream(state, metadata, expectedValue, received, path) {
   });
 }
 
+function observeCanceledStream(state, metadata, received, path) {
+  const {fixture} = state;
+  const check = registerResultCheck(
+    state,
+    metadata.first,
+    path + '.first',
+    findModels => {
+      const events = getRequiredEvents(fixture, metadata.first);
+      return getResultExpectation(
+        metadata.first,
+        canSettle(events),
+        getReleasedErrors(events),
+        findModels(metadata.first),
+      );
+    },
+    true,
+  );
+  runAsyncTask(state, async () => {
+    const reader = received.getReader();
+    let item;
+    try {
+      item = await reader.read();
+    } catch (error) {
+      handleResult(state, check, error, true);
+      return;
+    }
+    expect(item.done).toBe(false);
+    await reader.cancel('canceled by the test');
+    handleResult(state, check, item.value);
+  });
+}
+
 function observeIterator(state, metadata, received) {
   const items = [];
   for (let i = 0; i < metadata.items.length; i++) {
@@ -883,7 +923,9 @@ function getRequiredEvents(fixture, value) {
     // A containing object need not wait for its nested Promise's result.
     if (
       metadata !== undefined &&
-      ['promise', 'stream', 'iterable', 'bytes'].includes(metadata.type)
+      ['promise', 'stream', 'iterable', 'bytes', 'canceled'].includes(
+        metadata.type,
+      )
     ) {
       continue;
     }
@@ -949,7 +991,9 @@ function collectModels(fixture) {
       const metadata = fixture.valueMetadata.get(value);
       if (
         metadata !== undefined &&
-        ['promise', 'stream', 'iterable', 'bytes'].includes(metadata.type)
+        ['promise', 'stream', 'iterable', 'bytes', 'canceled'].includes(
+          metadata.type,
+        )
       ) {
         asyncValues.add(value);
         continue;
@@ -976,6 +1020,9 @@ function collectModels(fixture) {
       if (metadata.state === 'fulfilled') {
         collectModel(metadata.value);
       }
+    } else if (metadata.type === 'canceled') {
+      // Its first item is enqueued when the native source is constructed.
+      collectModel(metadata.first);
     } else if (metadata.type === 'stream' || metadata.type === 'iterable') {
       for (let i = 0; i < metadata.items.length; i++) {
         if (!metadata.events[i].released) {
