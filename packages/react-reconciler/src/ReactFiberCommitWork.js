@@ -58,6 +58,7 @@ import {
   enableComponentPerformanceTrack,
   enableViewTransition,
   enableDefaultTransitionIndicator,
+  enableViewTransitionForPersistenceMode,
 } from 'shared/ReactFeatureFlags';
 import {
   FunctionComponent,
@@ -236,6 +237,7 @@ import {
 import {
   commitHostMount,
   commitHostHydratedInstance,
+  commitHostCloned,
   commitHostUpdate,
   commitHostTextUpdate,
   commitHostResetTextContent,
@@ -2276,6 +2278,9 @@ function commitMutationEffectsOnFiber(
         }
       } else {
         if (supportsPersistence) {
+          if (enableViewTransitionForPersistenceMode && flags & Cloned) {
+            commitHostCloned();
+          }
           if (finishedWork.alternate !== null) {
             // `finishedWork.alternate.stateNode` is pointing to a stale shadow
             // node at this point, retaining it and its subtree. To reclaim
@@ -2311,6 +2316,13 @@ function commitMutationEffectsOnFiber(
 
           commitHostTextUpdate(finishedWork, newText, oldText);
         }
+      }
+      if (
+        supportsPersistence &&
+        enableViewTransitionForPersistenceMode &&
+        flags & Cloned
+      ) {
+        commitHostCloned();
       }
       break;
     }
