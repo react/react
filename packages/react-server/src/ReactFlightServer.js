@@ -5577,7 +5577,12 @@ function renderDebugModel(
 
     const iteratorFn = getIteratorFn(value);
     if (iteratorFn) {
-      return Array.from(value as any);
+      const iterator = iteratorFn.call(value);
+      if (iterator !== value) {
+        return Array.from(iterator as any);
+      }
+      // An iterator can only be read once, and the model that holds it will
+      // read it. Describe it by its shape below instead of consuming it.
     }
 
     const proto = getPrototypeOf(value);
