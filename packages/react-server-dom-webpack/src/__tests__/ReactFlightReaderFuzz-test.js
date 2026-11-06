@@ -35,7 +35,6 @@ describe('ReactFlightReaderFuzz (node)', () => {
   let WebpackMock;
   let assertConsoleErrorDev;
   let assertConsoleLogsCleared;
-  let previousAbortController;
 
   // Restore console methods between cases to avoid retaining old server modules.
   const consoleMethods = Object.fromEntries(
@@ -43,31 +42,6 @@ describe('ReactFlightReaderFuzz (node)', () => {
       ([, descriptor]) => typeof descriptor.value === 'function',
     ),
   );
-
-  beforeEach(() => {
-    previousAbortController = global.AbortController;
-    global.AbortController = FuzzAbortController;
-    loadModules();
-  });
-
-  afterEach(() => {
-    try {
-      assertConsoleErrorDev(
-        global.__loggedErrors
-          .map(entry => entry[0])
-          .filter(
-            message =>
-              typeof message === 'string' &&
-              message.includes('ArrayBuffer.prototype.detached'),
-          ),
-        {withoutStack: true},
-      );
-      assertConsoleLogsCleared();
-    } finally {
-      Object.defineProperties(console, consoleMethods);
-      global.AbortController = previousAbortController;
-    }
-  });
 
   // Reset caches so each case starts with unloaded client modules.
   function loadModules() {
@@ -94,184 +68,200 @@ describe('ReactFlightReaderFuzz (node)', () => {
   // readiness vary: preserve contents and collection insertion order.
   it.each([null, true, false, 0, 42, 'hello'])(
     'round-trips the ordinary value %p',
-    async value => {
-      expect(await roundTrip(value)).toBe(value);
-    },
+    value =>
+      withFlightModules(async () => {
+        expect(await roundTrip(value)).toBe(value);
+      }),
   );
 
-  it('round-trips an array containing an object', async () => {
-    const received = await roundTrip([1, 'two', {active: true}]);
-    expect(received).toStrictEqual([1, 'two', {active: true}]);
-  });
+  it('round-trips an array containing an object', () =>
+    withFlightModules(async () => {
+      const received = await roundTrip([1, 'two', {active: true}]);
+      expect(received).toStrictEqual([1, 'two', {active: true}]);
+    }));
 
-  it('round-trips an object containing arrays and objects', async () => {
-    const received = await roundTrip({
-      count: 3,
-      items: [true, null],
-      nested: {label: 'ready'},
-    });
-    expect(received).toStrictEqual({
-      count: 3,
-      items: [true, null],
-      nested: {label: 'ready'},
-    });
-  });
+  it('round-trips an object containing arrays and objects', () =>
+    withFlightModules(async () => {
+      const received = await roundTrip({
+        count: 3,
+        items: [true, null],
+        nested: {label: 'ready'},
+      });
+      expect(received).toStrictEqual({
+        count: 3,
+        items: [true, null],
+        nested: {label: 'ready'},
+      });
+    }));
 
-  it('round-trips Set entries in insertion order', async () => {
-    const received = await roundTrip(
-      new Set([1, 'two', {items: [true, null]}]),
-    );
-    expect(received).toBeInstanceOf(Set);
-    expect(Array.from(received)).toStrictEqual([
-      1,
-      'two',
-      {items: [true, null]},
-    ]);
-  });
+  it('round-trips Set entries in insertion order', () =>
+    withFlightModules(async () => {
+      const received = await roundTrip(
+        new Set([1, 'two', {items: [true, null]}]),
+      );
+      expect(received).toBeInstanceOf(Set);
+      expect(Array.from(received)).toStrictEqual([
+        1,
+        'two',
+        {items: [true, null]},
+      ]);
+    }));
 
-  it('round-trips Map keys and values in insertion order', async () => {
-    const received = await roundTrip(
-      new Map([
+  it('round-trips Map keys and values in insertion order', () =>
+    withFlightModules(async () => {
+      const received = await roundTrip(
+        new Map([
+          ['first', {value: 1}],
+          [{key: 'second'}, [2, 3]],
+        ]),
+      );
+      expect(received).toBeInstanceOf(Map);
+      expect(Array.from(received)).toStrictEqual([
         ['first', {value: 1}],
         [{key: 'second'}, [2, 3]],
-      ]),
-    );
-    expect(received).toBeInstanceOf(Map);
-    expect(Array.from(received)).toStrictEqual([
-      ['first', {value: 1}],
-      [{key: 'second'}, [2, 3]],
-    ]);
-  });
+      ]);
+    }));
 
-  it('round-trips a Date', async () => {
-    const received = await roundTrip(new Date(1700000000000));
-    expect(received).toBeInstanceOf(Date);
-    expect(received.getTime()).toBe(1700000000000);
-  });
+  it('round-trips a Date', () =>
+    withFlightModules(async () => {
+      const received = await roundTrip(new Date(1700000000000));
+      expect(received).toBeInstanceOf(Date);
+      expect(received.getTime()).toBe(1700000000000);
+    }));
 
-  it('preserves negative zero and NaN', async () => {
-    const received = await roundTrip({zero: -0, notANumber: NaN});
-    expect(received.zero).toBe(-0);
-    expect(received.notANumber).toBeNaN();
-  });
+  it('preserves negative zero and NaN', () =>
+    withFlightModules(async () => {
+      const received = await roundTrip({zero: -0, notANumber: NaN});
+      expect(received.zero).toBe(-0);
+      expect(received.notANumber).toBeNaN();
+    }));
 
-  it('round-trips the bytes of a typed array view', async () => {
-    const received = await roundTrip(
-      new Uint8Array([0, 1, 2, 3]).subarray(1, 3),
-    );
-    expect(received).toBeInstanceOf(Uint8Array);
-    expect(Array.from(received)).toEqual([1, 2]);
-  });
-
-  it('checks shared values without merging distinct source objects', async () => {
-    const shared = {value: 'shared'};
-    const source = {
-      first: shared,
-      second: shared,
-      distinct: {value: 'shared'},
-    };
-    const received = await roundTrip(source);
-    const oracle = createOracle();
-    oracle.observeValue(source, received);
-    expect(received.first).not.toBe(received.distinct);
-    expect(received.second).not.toBe(received.distinct);
-
-    await roundTrip('another value');
-    await oracle.checkForMutations();
-  });
-
-  it('checks values along object and array cycles', async () => {
-    const source = {value: 'cycle', items: []};
-    source.items.push(source, source.items);
-    const received = await roundTrip(source);
-    const oracle = createOracle();
-    oracle.observeValue(source, received);
-    expect(received.value).toBe('cycle');
-    expect(received.items[0].value).toBe('cycle');
-    expect(Array.isArray(received.items[1])).toBe(true);
-
-    await roundTrip('another value');
-    await oracle.checkForMutations();
-  });
-
-  it('delivers a Promise result before an independent pending Promise or EOF', async () => {
-    let resolveValue;
-    const value = new Promise(resolve => {
-      resolveValue = resolve;
-    });
-    const source = {
-      label: 'containing object',
-      value,
-      independent: new Promise(() => {}),
-    };
-
-    await withResponse(source, async ({response, transport}) => {
-      const received = await readRoot(transport);
-      expect(received.label).toBe('containing object');
-      expect(Object.keys(received)).toEqual(['label', 'value', 'independent']);
-      const results = [];
-      received.value.then(
-        result => results.push(result),
-        error => results.push({error}),
+  it('round-trips the bytes of a typed array view', () =>
+    withFlightModules(async () => {
+      const received = await roundTrip(
+        new Uint8Array([0, 1, 2, 3]).subarray(1, 3),
       );
-      const independentResults = [];
-      received.independent.then(
-        result => independentResults.push(result),
-        error => independentResults.push({error}),
-      );
-      await flushAction(transport, () => {});
-      expect(results).toEqual([]);
-      expect(independentResults).toEqual([]);
-      expect(transport.isClosed).toBe(false);
-      expect(transport.isServerDone).toBe(false);
+      expect(received).toBeInstanceOf(Uint8Array);
+      expect(Array.from(received)).toEqual([1, 2]);
+    }));
 
-      await flushAction(transport, () => resolveValue({message: 'ready'}));
-      expect(results).toStrictEqual([{message: 'ready'}]);
-      expect(await received.value).toStrictEqual({message: 'ready'});
-      expect(independentResults).toEqual([]);
-      expect(transport.isClosed).toBe(false);
-      expect(transport.isServerDone).toBe(false);
-    });
-  });
+  it('checks shared values without merging distinct source objects', () =>
+    withFlightModules(async () => {
+      const shared = {value: 'shared'};
+      const source = {
+        first: shared,
+        second: shared,
+        distinct: {value: 'shared'},
+      };
+      const received = await roundTrip(source);
+      const oracle = createOracle();
+      oracle.observeValue(source, received);
+      expect(received.first).not.toBe(received.distinct);
+      expect(received.second).not.toBe(received.distinct);
 
-  it('waits for a held client module before delivering its containing model', async () => {
-    let resolveModule;
-    const load = new Promise(resolve => {
-      resolveModule = resolve;
-    });
-    const {value} = WebpackMock.clientExports(
-      {value: 'ready'},
-      'basic',
-      'basic.js',
-      load,
-    );
+      await roundTrip('another value');
+      await oracle.checkForMutations();
+    }));
 
-    await withResponse(
-      {label: 'containing object', value},
-      async ({response, transport}) => {
-        const models = [];
-        response.then(
-          model => models.push(model),
-          error => models.push({error}),
-        );
-        // All bytes have arrived, but the containing model still needs its
-        // client export. Transport completion must not deliver a placeholder.
-        await transport.finish();
-        transport.close();
-        await flushAction(transport, () => {});
-        expect(models).toEqual([]);
+  it('checks values along object and array cycles', () =>
+    withFlightModules(async () => {
+      const source = {value: 'cycle', items: []};
+      source.items.push(source, source.items);
+      const received = await roundTrip(source);
+      const oracle = createOracle();
+      oracle.observeValue(source, received);
+      expect(received.value).toBe('cycle');
+      expect(received.items[0].value).toBe('cycle');
+      expect(Array.isArray(received.items[1])).toBe(true);
 
-        await flushAction(transport, () => resolveModule());
-        expect(models).toStrictEqual([
-          {label: 'containing object', value: 'ready'},
+      await roundTrip('another value');
+      await oracle.checkForMutations();
+    }));
+
+  it('delivers a Promise result before an independent pending Promise or EOF', () =>
+    withFlightModules(async () => {
+      let resolveValue;
+      const value = new Promise(resolve => {
+        resolveValue = resolve;
+      });
+      const source = {
+        label: 'containing object',
+        value,
+        independent: new Promise(() => {}),
+      };
+
+      await withResponse(source, async ({response, transport}) => {
+        const received = await readRoot(transport);
+        expect(received.label).toBe('containing object');
+        expect(Object.keys(received)).toEqual([
+          'label',
+          'value',
+          'independent',
         ]);
-        expect(await response).toStrictEqual({
-          label: 'containing object',
-          value: 'ready',
-        });
-      },
-    );
-  });
+        const results = [];
+        received.value.then(
+          result => results.push(result),
+          error => results.push({error}),
+        );
+        const independentResults = [];
+        received.independent.then(
+          result => independentResults.push(result),
+          error => independentResults.push({error}),
+        );
+        await flushAction(transport, () => {});
+        expect(results).toEqual([]);
+        expect(independentResults).toEqual([]);
+        expect(transport.isClosed).toBe(false);
+        expect(transport.isServerDone).toBe(false);
+
+        await flushAction(transport, () => resolveValue({message: 'ready'}));
+        expect(results).toStrictEqual([{message: 'ready'}]);
+        expect(await received.value).toStrictEqual({message: 'ready'});
+        expect(independentResults).toEqual([]);
+        expect(transport.isClosed).toBe(false);
+        expect(transport.isServerDone).toBe(false);
+      });
+    }));
+
+  it('waits for a held client module before delivering its containing model', () =>
+    withFlightModules(async () => {
+      let resolveModule;
+      const load = new Promise(resolve => {
+        resolveModule = resolve;
+      });
+      const {value} = WebpackMock.clientExports(
+        {value: 'ready'},
+        'basic',
+        'basic.js',
+        load,
+      );
+
+      await withResponse(
+        {label: 'containing object', value},
+        async ({response, transport}) => {
+          const models = [];
+          response.then(
+            model => models.push(model),
+            error => models.push({error}),
+          );
+          // All bytes have arrived, but the containing model still needs its
+          // client export. Transport completion must not deliver a placeholder.
+          await transport.finish();
+          transport.close();
+          await flushAction(transport, () => {});
+          expect(models).toEqual([]);
+
+          await flushAction(transport, () => resolveModule());
+          expect(models).toStrictEqual([
+            {label: 'containing object', value: 'ready'},
+          ]);
+          expect(await response).toStrictEqual({
+            label: 'containing object',
+            value: 'ready',
+          });
+        },
+      );
+    }));
 
   async function flushAction(transport, action) {
     await runInIOCallback(action);
@@ -340,37 +330,39 @@ describe('ReactFlightReaderFuzz (node)', () => {
   // Check progress before EOF after each source or client-load event. By
   // default, resolve source Promises before loading their client modules.
   async function runGraph(graph) {
-    const fixture = await createFixture(graph, {
-      React,
-      ReactServer,
-      WebpackMock,
-      observeProps(element, props) {
-        oracle.observeProps(element, props);
-      },
-    });
-    const oracle = createOracle(fixture, {render});
-    const events = fixture.events.filter(
-      event => event !== fixture.unrelatedEvent,
-    );
-    if (graph.events === undefined) {
-      events.sort((a, b) => +a.isClient - +b.isClient);
-    } else {
-      // This is a priority list: absent labels do not create source events.
-      // Stable sorting keeps unspecified actual events in their source order.
-      const position = label => {
-        const index = graph.events.indexOf(label);
-        return index === -1 ? graph.events.length : index;
-      };
-      events.sort((a, b) => position(a.label) - position(b.label));
-    }
-    events.push(fixture.unrelatedEvent);
+    return withFlightModules(async () => {
+      const fixture = await createFixture(graph, {
+        React,
+        ReactServer,
+        WebpackMock,
+        observeProps(element, props) {
+          oracle.observeProps(element, props);
+        },
+      });
+      const oracle = createOracle(fixture, {render});
+      const events = fixture.events.filter(
+        event => event !== fixture.unrelatedEvent,
+      );
+      if (graph.events === undefined) {
+        events.sort((a, b) => +a.isClient - +b.isClient);
+      } else {
+        // This is a priority list: absent labels do not create source events.
+        // Stable sorting keeps unspecified actual events in their source order.
+        const position = label => {
+          const index = graph.events.indexOf(label);
+          return index === -1 ? graph.events.length : index;
+        };
+        events.sort((a, b) => position(a.label) - position(b.label));
+      }
+      events.push(fixture.unrelatedEvent);
 
-    await checkResponse(fixture, oracle, {
-      readTiming: 'early',
-      events,
-      packetSizes: graph.packetSizes || [1, 21, 4096],
-      yieldBetweenPackets: graph.yieldBetweenPackets !== false,
-      afterEof: graph.afterEof === true,
+      await checkResponse(fixture, oracle, {
+        readTiming: 'early',
+        events,
+        packetSizes: graph.packetSizes || [1, 21, 4096],
+        yieldBetweenPackets: graph.yieldBetweenPackets !== false,
+        afterEof: graph.afterEof === true,
+      });
     });
   }
 
@@ -508,6 +500,56 @@ describe('ReactFlightReaderFuzz (node)', () => {
       await oracle.checkForMutations();
     } finally {
       await transport.dispose();
+    }
+  }
+
+  async function withFlightModules(run) {
+    let failure = null;
+    let loaded = false;
+    const previousAbortController = global.AbortController;
+    global.AbortController = FuzzAbortController;
+    try {
+      loadModules();
+      loaded = true;
+      await run();
+    } catch (error) {
+      failure = error;
+    } finally {
+      try {
+        if (loaded) {
+          // Check and clear console output before the next replay in both modes.
+          const checks = [
+            // Allow the warning on runtimes without ArrayBuffer.prototype.detached.
+            () =>
+              assertConsoleErrorDev(
+                global.__loggedErrors
+                  .map(entry => entry[0])
+                  .filter(
+                    message =>
+                      typeof message === 'string' &&
+                      message.includes('ArrayBuffer.prototype.detached'),
+                  ),
+                {withoutStack: true},
+              ),
+            assertConsoleLogsCleared,
+          ];
+          for (let i = 0; i < checks.length; i++) {
+            try {
+              checks[i]();
+            } catch (error) {
+              if (failure === null) {
+                failure = error;
+              }
+            }
+          }
+        }
+      } finally {
+        Object.defineProperties(console, consoleMethods);
+        global.AbortController = previousAbortController;
+      }
+    }
+    if (failure !== null) {
+      throw failure;
     }
   }
 
@@ -746,15 +788,16 @@ describe('ReactFlightReaderFuzz (node)', () => {
   });
 
   describe('synchronous iterator graphs', () => {
-    it('round-trips a synchronous iterator in order', async () => {
-      const received = await roundTrip(['first', {value: 'second'}].values());
-      expect(received.next()).toStrictEqual({done: false, value: 'first'});
-      expect(received.next()).toStrictEqual({
-        done: false,
-        value: {value: 'second'},
-      });
-      expect(received.next()).toStrictEqual({done: true, value: undefined});
-    });
+    it('round-trips a synchronous iterator in order', () =>
+      withFlightModules(async () => {
+        const received = await roundTrip(['first', {value: 'second'}].values());
+        expect(received.next()).toStrictEqual({done: false, value: 'first'});
+        expect(received.next()).toStrictEqual({
+          done: false,
+          value: {value: 'second'},
+        });
+        expect(received.next()).toStrictEqual({done: true, value: undefined});
+      }));
 
     it('iterator over values still loading', () =>
       runGraph({
@@ -781,80 +824,82 @@ describe('ReactFlightReaderFuzz (node)', () => {
   });
 
   describe('data streams and shared sequences', () => {
-    it('delivers ordered data stream reads before source close and EOF', async () => {
-      let controller;
-      const data = new ReadableStream({start: c => (controller = c)});
-      await withResponse(
-        {data, independent: new Promise(() => {})},
-        async ({response, transport}) => {
-          const received = await readRoot(transport);
-          const reader = received.data.getReader();
-          const results = [];
-          reader.read().then(
-            result => results.push(result),
-            error => results.push({error}),
-          );
-          await flushAction(transport, () => {});
-          expect(results).toEqual([]);
-          await flushAction(transport, () => controller.enqueue('first'));
-          expect(results).toStrictEqual([{done: false, value: 'first'}]);
-          reader.read().then(
-            result => results.push(result),
-            error => results.push({error}),
-          );
-          await flushAction(transport, () =>
-            controller.enqueue({value: 'second'}),
-          );
-          expect(results).toStrictEqual([
-            {done: false, value: 'first'},
-            {done: false, value: {value: 'second'}},
-          ]);
-          expect(transport.isClosed).toBe(false);
-          expect(transport.isServerDone).toBe(false);
-          reader.read().then(
-            result => results.push(result),
-            error => results.push({error}),
-          );
-          await flushAction(transport, () => controller.close());
-          expect(results[2]).toStrictEqual({done: true, value: undefined});
-          expect(transport.isClosed).toBe(false);
-          expect(transport.isServerDone).toBe(false);
-        },
-      );
-    });
-
-    it('keeps a Promise fulfilled when its delivered stream later fails', async () => {
-      let controller;
-      const data = new ReadableStream({start: c => (controller = c)});
-      const error = new Error('source stream failed');
-      const reported = [];
-      await withResponse(
-        {data: Promise.resolve(data), unrelated: new Promise(() => {})},
-        async ({response, transport}) => {
-          const model = await readRoot(transport);
-          const received = await model.data;
-          const failedRead = received
-            .getReader()
-            .read()
-            .catch(reason => reason);
-          await flushAction(transport, () => controller.error(error));
-          expect(await failedRead).toEqual(
-            expect.objectContaining({digest: 'stream failure'}),
-          );
-          expect(await model.data).toBe(received);
-          expect(reported).toEqual([error]);
-          expect(transport.isClosed).toBe(false);
-          expect(transport.isServerDone).toBe(false);
-        },
-        {
-          onError(reason) {
-            expect(reason).toBe(error);
-            reported.push(reason);
-            return 'stream failure';
+    it('delivers ordered data stream reads before source close and EOF', () =>
+      withFlightModules(async () => {
+        let controller;
+        const data = new ReadableStream({start: c => (controller = c)});
+        await withResponse(
+          {data, independent: new Promise(() => {})},
+          async ({response, transport}) => {
+            const received = await readRoot(transport);
+            const reader = received.data.getReader();
+            const results = [];
+            reader.read().then(
+              result => results.push(result),
+              error => results.push({error}),
+            );
+            await flushAction(transport, () => {});
+            expect(results).toEqual([]);
+            await flushAction(transport, () => controller.enqueue('first'));
+            expect(results).toStrictEqual([{done: false, value: 'first'}]);
+            reader.read().then(
+              result => results.push(result),
+              error => results.push({error}),
+            );
+            await flushAction(transport, () =>
+              controller.enqueue({value: 'second'}),
+            );
+            expect(results).toStrictEqual([
+              {done: false, value: 'first'},
+              {done: false, value: {value: 'second'}},
+            ]);
+            expect(transport.isClosed).toBe(false);
+            expect(transport.isServerDone).toBe(false);
+            reader.read().then(
+              result => results.push(result),
+              error => results.push({error}),
+            );
+            await flushAction(transport, () => controller.close());
+            expect(results[2]).toStrictEqual({done: true, value: undefined});
+            expect(transport.isClosed).toBe(false);
+            expect(transport.isServerDone).toBe(false);
           },
-        },
-      );
-    });
+        );
+      }));
+
+    it('keeps a Promise fulfilled when its delivered stream later fails', () =>
+      withFlightModules(async () => {
+        let controller;
+        const data = new ReadableStream({start: c => (controller = c)});
+        const error = new Error('source stream failed');
+        const reported = [];
+        await withResponse(
+          {data: Promise.resolve(data), unrelated: new Promise(() => {})},
+          async ({response, transport}) => {
+            const model = await readRoot(transport);
+            const received = await model.data;
+            const failedRead = received
+              .getReader()
+              .read()
+              .catch(reason => reason);
+            await flushAction(transport, () => controller.error(error));
+            expect(await failedRead).toEqual(
+              expect.objectContaining({digest: 'stream failure'}),
+            );
+            expect(await model.data).toBe(received);
+            expect(reported).toEqual([error]);
+            expect(transport.isClosed).toBe(false);
+            expect(transport.isServerDone).toBe(false);
+          },
+          {
+            onError(reason) {
+              expect(reason).toBe(error);
+              reported.push(reason);
+              return 'stream failure';
+            },
+          },
+        );
+      }));
 
     it.each(['stream', 'iterable'])('%s shared between two collections', type =>
       runGraph({
@@ -961,33 +1006,37 @@ describe('ReactFlightReaderFuzz (node)', () => {
   describe('async iterable graphs', () => {
     it.each([false, true])(
       'round-trips an async iterable with single use %s',
-      async single => {
-        const source = {
-          async *[Symbol.asyncIterator]() {
-            yield 'first';
-            yield {value: 'second'};
-            return 'end';
-          },
-        };
-        const received = await roundTrip(
-          single ? source[Symbol.asyncIterator]() : source,
-        );
-        const iterator = received[Symbol.asyncIterator]();
-        expect(iterator === received).toBe(single);
-        expect(await iterator.next()).toStrictEqual({
-          done: false,
-          value: 'first',
-        });
-        expect(await iterator.next()).toStrictEqual({
-          done: false,
-          value: {value: 'second'},
-        });
-        expect(await iterator.next()).toStrictEqual({done: true, value: 'end'});
-        expect(await iterator.next()).toStrictEqual({
-          done: true,
-          value: undefined,
-        });
-      },
+      single =>
+        withFlightModules(async () => {
+          const source = {
+            async *[Symbol.asyncIterator]() {
+              yield 'first';
+              yield {value: 'second'};
+              return 'end';
+            },
+          };
+          const received = await roundTrip(
+            single ? source[Symbol.asyncIterator]() : source,
+          );
+          const iterator = received[Symbol.asyncIterator]();
+          expect(iterator === received).toBe(single);
+          expect(await iterator.next()).toStrictEqual({
+            done: false,
+            value: 'first',
+          });
+          expect(await iterator.next()).toStrictEqual({
+            done: false,
+            value: {value: 'second'},
+          });
+          expect(await iterator.next()).toStrictEqual({
+            done: true,
+            value: 'end',
+          });
+          expect(await iterator.next()).toStrictEqual({
+            done: true,
+            value: undefined,
+          });
+        }),
     );
 
     it('an async iterable produces independent results while its first module is loading', () =>
@@ -1112,14 +1161,15 @@ describe('ReactFlightReaderFuzz (node)', () => {
   });
 
   describe('bound Server Functions', () => {
-    it('calls a delivered Server Function with bound and supplied arguments', async () => {
-      const {fn} = WebpackMock.serverExports({fn: (...args) => args});
-      const received = await roundTrip(fn.bind(null, 'bound'));
-      const first = received('argument');
-      expect(first).toEqual(['bound', 'argument']);
-      expect(received('argument')).toEqual(['bound', 'argument']);
-      expect(received('argument')).not.toBe(first);
-    });
+    it('calls a delivered Server Function with bound and supplied arguments', () =>
+      withFlightModules(async () => {
+        const {fn} = WebpackMock.serverExports({fn: (...args) => args});
+        const received = await roundTrip(fn.bind(null, 'bound'));
+        const first = received('argument');
+        expect(first).toEqual(['bound', 'argument']);
+        expect(received('argument')).toEqual(['bound', 'argument']);
+        expect(received('argument')).not.toBe(first);
+      }));
 
     it('a bound object finishes loading before the function is delivered', () =>
       runGraph({
@@ -1255,45 +1305,46 @@ describe('ReactFlightReaderFuzz (node)', () => {
       }));
   });
   describe('elements and observed props', () => {
-    it('delivers an element before its client props finish loading', async () => {
-      let load;
-      const ready = new Promise(resolve => (load = resolve));
-      const {value} = WebpackMock.clientExports(
-        {value: 'ready'},
-        'held prop',
-        'held-prop.js',
-        ready,
-      );
-      const seen = [];
-      const {Client} = WebpackMock.clientExports({
-        Client(props) {
-          seen.push(props.value);
-          return React.createElement('span', null, props.value);
-        },
-      });
-      const element = ReactServer.createElement(Client, {value});
-      await withResponse(
-        {element, unrelated: new Promise(() => {})},
-        async ({response, transport}) => {
-          const received = await readRoot(transport);
-          await flushAction(transport, () => {});
-          expect(received).toBeDefined();
-          let html;
-          const rendered = render(received.element).then(
-            result => (html = result),
-          );
-          rendered.catch(() => {});
-          await flushAction(transport, () => {});
-          expect(seen).toEqual([]);
-          expect(html).toBe(undefined);
-          await flushAction(transport, load);
-          expect(await rendered).toBe('<span>ready</span>');
-          expect(seen).toEqual(['ready']);
-          expect(transport.isClosed).toBe(false);
-          expect(transport.isServerDone).toBe(false);
-        },
-      );
-    });
+    it('delivers an element before its client props finish loading', () =>
+      withFlightModules(async () => {
+        let load;
+        const ready = new Promise(resolve => (load = resolve));
+        const {value} = WebpackMock.clientExports(
+          {value: 'ready'},
+          'held prop',
+          'held-prop.js',
+          ready,
+        );
+        const seen = [];
+        const {Client} = WebpackMock.clientExports({
+          Client(props) {
+            seen.push(props.value);
+            return React.createElement('span', null, props.value);
+          },
+        });
+        const element = ReactServer.createElement(Client, {value});
+        await withResponse(
+          {element, unrelated: new Promise(() => {})},
+          async ({response, transport}) => {
+            const received = await readRoot(transport);
+            await flushAction(transport, () => {});
+            expect(received).toBeDefined();
+            let html;
+            const rendered = render(received.element).then(
+              result => (html = result),
+            );
+            rendered.catch(() => {});
+            await flushAction(transport, () => {});
+            expect(seen).toEqual([]);
+            expect(html).toBe(undefined);
+            await flushAction(transport, load);
+            expect(await rendered).toBe('<span>ready</span>');
+            expect(seen).toEqual(['ready']);
+            expect(transport.isClosed).toBe(false);
+            expect(transport.isServerDone).toBe(false);
+          },
+        );
+      }));
 
     it('an element first written inside another loading value', () =>
       runGraph({
@@ -1416,27 +1467,28 @@ describe('ReactFlightReaderFuzz (node)', () => {
       }));
   });
   describe('Error properties and mixed graph values', () => {
-    it('exposes Error causes and AggregateError members in DEV', async () => {
-      const cause = {detail: 'source'};
-      const received = await roundTrip({
-        error: new Error('single', {cause}),
-        aggregate: new AggregateError([cause], 'several', {cause}),
-      });
-      expect(received.error).toBeInstanceOf(Error);
-      expect(received.aggregate).toBeInstanceOf(Error);
-      if (__DEV__) {
-        expect(received.error.message).toBe('single');
-        expect(received.error.cause).toEqual({detail: 'source'});
-        expect(received.aggregate).toBeInstanceOf(AggregateError);
-        expect(received.aggregate.message).toBe('several');
-        expect(received.aggregate.cause).toEqual({detail: 'source'});
-        expect(received.aggregate.errors).toEqual([{detail: 'source'}]);
-      } else {
-        expect('cause' in received.error).toBe(false);
-        expect('cause' in received.aggregate).toBe(false);
-        expect('errors' in received.aggregate).toBe(false);
-      }
-    });
+    it('exposes Error causes and AggregateError members in DEV', () =>
+      withFlightModules(async () => {
+        const cause = {detail: 'source'};
+        const received = await roundTrip({
+          error: new Error('single', {cause}),
+          aggregate: new AggregateError([cause], 'several', {cause}),
+        });
+        expect(received.error).toBeInstanceOf(Error);
+        expect(received.aggregate).toBeInstanceOf(Error);
+        if (__DEV__) {
+          expect(received.error.message).toBe('single');
+          expect(received.error.cause).toEqual({detail: 'source'});
+          expect(received.aggregate).toBeInstanceOf(AggregateError);
+          expect(received.aggregate.message).toBe('several');
+          expect(received.aggregate.cause).toEqual({detail: 'source'});
+          expect(received.aggregate.errors).toEqual([{detail: 'source'}]);
+        } else {
+          expect('cause' in received.error).toBe(false);
+          expect('cause' in received.aggregate).toBe(false);
+          expect('errors' in received.aggregate).toBe(false);
+        }
+      }));
 
     // eslint-disable-next-line jest/no-disabled-tests
     it.skip('an Error that is its own cause', () =>
