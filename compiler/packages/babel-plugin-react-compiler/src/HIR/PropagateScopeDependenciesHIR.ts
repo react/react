@@ -567,21 +567,20 @@ export class DependencyCollectionContext {
     this.visitDependency(nextDependency);
   }
 
-  visitDependency(maybeDependency: ReactiveScopeDependency): void {
-    /*
-     * Any value used after its originally defining scope has concluded must be added as an
-     * output of its defining scope. Regardless of whether its a const or not,
-     * some later code needs access to the value. If the current
-     * scope we are visiting is the same scope where the value originates, it can't be a dependency
-     * on itself.
-     */
-
+  /*
+   * Any value used after its originally defining scope has concluded must be added as an
+   * output of its defining scope. Regardless of whether its a const or not,
+   * some later code needs access to the value. If the current
+   * scope we are visiting is the same scope where the value originates, it can't be a dependency
+   * on itself.
+   */
+  markPotentialScopeEscape(identifier: Identifier): void {
     /*
      * if originalDeclaration is undefined here, then this is not a local var
      * (all decls e.g. `let x;` should be initialized in BuildHIR)
      */
     const originalDeclaration = this.#declarations.get(
-      maybeDependency.identifier.declarationId,
+      identifier.declarationId,
     );
     if (
       originalDeclaration !== undefined &&
@@ -592,18 +591,20 @@ export class DependencyCollectionContext {
           !this.#isScopeActive(scope) &&
           !Iterable_some(
             scope.declarations.values(),
-            decl =>
-              decl.identifier.declarationId ===
-              maybeDependency.identifier.declarationId,
+            decl => decl.identifier.declarationId === identifier.declarationId,
           )
         ) {
-          scope.declarations.set(maybeDependency.identifier.id, {
-            identifier: maybeDependency.identifier,
+          scope.declarations.set(identifier.id, {
+            identifier,
             scope: originalDeclaration.scope.value!,
           });
         }
       });
     }
+  }
+
+  visitDependency(maybeDependency: ReactiveScopeDependency): void {
+    this.markPotentialScopeEscape(maybeDependency.identifier);
 
     // ref.current access is not a valid dep
     if (
@@ -690,6 +691,10 @@ export function handleInstruction(
   if (
     context.isDeferredDependency({kind: HIRValue.Instruction, value: instr})
   ) {
+    // An unused chain (e.g. `const x = a?.b`) still needs `a` to escape its scope.
+    if (value.kind === 'LoadLocal') {
+      context.markPotentialScopeEscape(value.place.identifier);
+    }
     return;
   }
   if (value.kind === 'PropertyLoad') {
