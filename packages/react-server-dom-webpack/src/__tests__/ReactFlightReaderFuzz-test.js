@@ -1253,8 +1253,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'bytes', other: 'data'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('byte stream closed while a read is waiting', () =>
+    it('byte stream closed while a read is waiting', () =>
       runGraph({
         nodes: {array: {array: ['bytes']}, bytes: {bytes: 3}},
         roots: {entry: 'array', other: 'array'},

@@ -1859,6 +1859,33 @@ describe('ReactFlightDOMEdge', () => {
     }
   });
 
+  it('ends a BYOB read that is waiting when the byte stream closes', async () => {
+    let close;
+    const source = new ReadableStream({
+      type: 'bytes',
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        close = () => controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(source, {}),
+    );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const reader = result.getReader({mode: 'byob'});
+    const first = await reader.read(new Uint8Array(3));
+    expect(Array.from(first.value)).toEqual([1, 2, 3]);
+
+    const waiting = reader.read(new Uint8Array(3));
+    await serverAct(() => close());
+    expect((await waiting).done).toBe(true);
+  });
+
   // @gate !__DEV__ || enableComponentPerformanceTrack
   it('supports async server component debug info as the element owner in DEV', async () => {
     function Container({children}) {
