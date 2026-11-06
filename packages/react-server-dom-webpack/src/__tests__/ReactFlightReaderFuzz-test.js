@@ -1823,26 +1823,23 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         afterEof: true,
       }));
 
-    (__DEV__ && host === 'node' ? it.skip : it)(
-      'a Promise resolves before another value containing it finishes loading',
-      () =>
-        runGraph({
-          nodes: {
-            value: {value: null},
-            data: {promise: 'value'},
-            ready: {module: 'loaded'},
-            section: {object: {data: 'data', ready: 'ready'}},
-            later: {promise: 'section'},
-            root: {object: {data: 'data', section: 'later'}},
-          },
-          roots: {entry: 'root', other: 'root'},
-          events: [
-            'resolve later to section',
-            'resolve data to value',
-            'load ready',
-          ],
-        }),
-    );
+    it('a Promise resolves before another value containing it finishes loading', () =>
+      runGraph({
+        nodes: {
+          value: {value: null},
+          data: {promise: 'value'},
+          ready: {module: 'loaded'},
+          section: {object: {data: 'data', ready: 'ready'}},
+          later: {promise: 'section'},
+          root: {object: {data: 'data', section: 'later'}},
+        },
+        roots: {entry: 'root', other: 'root'},
+        events: [
+          'resolve later to section',
+          'resolve data to value',
+          'load ready',
+        ],
+      }));
 
     it.each([
       ['stream', null],
