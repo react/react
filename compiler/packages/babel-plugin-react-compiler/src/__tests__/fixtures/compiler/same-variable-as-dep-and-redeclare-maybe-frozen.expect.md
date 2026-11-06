@@ -74,13 +74,13 @@ function foo(props) {
   const header = t0;
   let y;
   if ($[5] !== props.b || $[6] !== props.c || $[7] !== x) {
+    $[7] = x;
     y = [x];
     x = [];
     y.push(props.b);
     x.push(props.c);
     $[5] = props.b;
     $[6] = props.c;
-    $[7] = x;
     $[8] = y;
     $[9] = x;
   } else {

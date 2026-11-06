@@ -46,6 +46,7 @@ function Component(props) {
     $[3] !== props.d ||
     $[4] !== x
   ) {
+    $[4] = x;
     values = [];
     const y = props.a || props.b;
     values.push(y);
@@ -63,7 +64,6 @@ function Component(props) {
     $[1] = props.b;
     $[2] = props.c;
     $[3] = props.d;
-    $[4] = x;
     $[5] = values;
     $[6] = x;
   } else {
