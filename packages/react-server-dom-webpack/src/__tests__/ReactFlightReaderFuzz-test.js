@@ -281,7 +281,7 @@ describe('ReactFlightReaderFuzz (node)', () => {
   // Check progress before EOF after each source or client-load event. By
   // default, resolve source Promises before loading their client modules.
   async function runGraph(graph) {
-    const fixture = createFixture(graph, {WebpackMock});
+    const fixture = await createFixture(graph, {WebpackMock});
     const oracle = createOracle(fixture);
     const reported = [];
     const onError = error => {
@@ -417,6 +417,17 @@ describe('ReactFlightReaderFuzz (node)', () => {
         roots: {entry: 'object', other: 'object'},
         rootPromise: true,
         events: ['reject failed', 'resolve the root Promise'],
+      }));
+
+    it('async module failing to evaluate after loading', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0', async: true, fail: 'evaluate'},
+          other: {module: 'export-1'},
+          broken: {object: {field0: 'ready'}},
+          fine: {object: {field0: 'other'}},
+        },
+        roots: {entry: 'broken', other: 'fine'},
       }));
   });
 });
