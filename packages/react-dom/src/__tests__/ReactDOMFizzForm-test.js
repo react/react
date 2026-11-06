@@ -69,7 +69,8 @@ describe('ReactDOMFizzForm', () => {
       return;
     }
     const action =
-      (submitter && submitter.getAttribute('formaction')) || form.action;
+      (submitter && submitter.getAttribute('formaction')) ||
+      Element.prototype.getAttribute.call(form, 'action');
     if (!/\s*javascript:/i.test(action)) {
       throw new Error('Navigate to: ' + action);
     }
@@ -482,6 +483,49 @@ describe('ReactDOMFizzForm', () => {
 
     // It should've now been replayed
     expect(foo).toBe('bar');
+  });
+
+  it('should replay a form action when fields shadow form properties', async () => {
+    let intent;
+    function action(formData) {
+      intent = formData.get('action');
+    }
+    function App() {
+      return (
+        <form action={action}>
+          <input type="hidden" name="action" value="delete" />
+          <input type="hidden" name="getAttribute" value="" />
+        </form>
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<App />),
+    );
+    await readIntoContainer(stream);
+
+    const form = container.getElementsByTagName('form')[0];
+    // Browsers expose named form controls as properties of the form, shadowing
+    // built-ins like form.action and form.getAttribute. JSDOM doesn't, so
+    // emulate it.
+    ['action', 'getAttribute'].forEach(name => {
+      Object.defineProperty(form, name, {
+        configurable: true,
+        get: () => form.elements.namedItem(name),
+      });
+    });
+
+    // Dispatch an event before hydration
+    submit(form);
+    // Hydration diffing in DEV calls form.getAttribute as well.
+    delete form.getAttribute;
+
+    await act(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />);
+    });
+
+    // It should've now been replayed
+    expect(intent).toBe('delete');
   });
 
   it('should replay input/button formAction', async () => {
