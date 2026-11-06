@@ -32,11 +32,12 @@ function createOracle(
         'root',
         findModels => {
           const events = getRequiredEvents(fixture, expectedValue);
+          const produced = isRootProduced(fixture);
           return getResultExpectation(
             expectedValue,
-            canSettle(events),
+            produced && canSettle(events),
             getReleasedErrors(events),
-            findModels(expectedValue),
+            produced ? findModels(expectedValue) : [],
           );
         },
       );
@@ -482,7 +483,13 @@ function collectModels(fixture) {
     return model;
   }
 
-  const rootModel = collectModel(fixture.model);
+  // A known future root cannot have written objects or supplied their errors.
+  if (!isRootProduced(fixture)) {
+    return modelsByRootValue;
+  }
+  const rootModel = collectModel(
+    fixture.rootPromise == null ? fixture.model : fixture.resolvedModel,
+  );
   // Visiting a produced result may discover more source Promises.
   promises.forEach(promise => {
     const metadata = fixture.valueMetadata.get(promise);
@@ -502,6 +509,13 @@ function collectModels(fixture) {
     });
   });
   return modelsByRootValue;
+}
+
+function isRootProduced(fixture) {
+  return (
+    fixture.rootPromise == null ||
+    fixture.valueMetadata.get(fixture.rootPromise).state === 'fulfilled'
+  );
 }
 
 function createModelLookup(fixture) {

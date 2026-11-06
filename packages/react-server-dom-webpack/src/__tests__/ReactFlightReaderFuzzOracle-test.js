@@ -427,6 +427,44 @@ describe('FlightReaderOracle', () => {
     expect(valid.oracle.isComplete()).toBe(true);
   });
 
+  // Knowing the future root does not make it an error source. The same local
+  // module error is legitimate only after the native root source produces it.
+  it('waits for root source production before accepting its model error', async () => {
+    const module = {};
+    const source = {module};
+    const error = new Error('future root module failed');
+    let resolveSource;
+    const rootPromise = new Promise(resolve => (resolveSource = resolve));
+    const metadata = {type: 'promise', state: 'pending', value: undefined};
+    rootPromise.then(value => {
+      metadata.state = 'fulfilled';
+      metadata.value = value;
+    });
+    const options = {
+      model: rootPromise,
+      resolvedModel: source,
+      rootPromise,
+      valueMetadata: new Map([
+        [rootPromise, metadata],
+        [module, {type: 'module', value: 'ready'}],
+      ]),
+      requiredEvents: new Map([[module, [{released: true, error}]]]),
+    };
+    const early = createTestOracle(source, options);
+    expect(early.oracle.getMissingResults()).toEqual([]);
+    early.reject(error);
+    expect(() => early.oracle.throwIfFailed()).toThrow('unexpected rejection');
+
+    resolveSource(source);
+    await rootPromise;
+    const valid = createTestOracle(source, options);
+    expect(valid.oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root',
+    ]);
+    valid.reject(error);
+    expect(valid.oracle.isComplete()).toBe(true);
+  });
+
   // Requiring every locally ready result would hide the writer's valid choice
   // to reference a shared object from another still-loading result.
   it('keeps a shared value blocked while one possible containing model is loading', () => {
