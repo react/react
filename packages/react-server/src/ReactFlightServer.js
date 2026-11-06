@@ -2256,7 +2256,19 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
   );
 
   pingTask(request, newTask);
-  return serializeLazyID(newTask.id);
+  const lazyReference = serializeLazyID(newTask.id);
+  const model = task.model;
+  const writtenObjects = request.writtenObjects;
+  if (
+    typeof model === 'object' &&
+    model !== null &&
+    writtenObjects.get(model) === serializeByValueID(newTask.id)
+  ) {
+    // Like outlineTask: later occurrences of the deferred element are lazy
+    // too, or the model holding them would wait for it to render.
+    writtenObjects.set(model, lazyReference);
+  }
+  return lazyReference;
 }
 
 function outlineTask(request: Request, task: Task): ReactJSONValue {
@@ -2281,7 +2293,20 @@ function outlineTask(request: Request, task: Task): ReactJSONValue {
   }
   // This didn't complete synchronously so it wouldn't have even if we didn't
   // outline it, so this would reduce to a lazy reference even in prod.
-  return serializeLazyID(newTask.id);
+  const lazyReference = serializeLazyID(newTask.id);
+  const model = task.model;
+  const writtenObjects = request.writtenObjects;
+  if (
+    typeof model === 'object' &&
+    model !== null &&
+    writtenObjects.get(model) === serializeByValueID(newTask.id)
+  ) {
+    // createTask registered the element by the new task's ID. Later
+    // occurrences of the same element would then wait for the component to
+    // render before the model holding them can resolve. They are lazy too.
+    writtenObjects.set(model, lazyReference);
+  }
+  return lazyReference;
 }
 
 function outlineHaltedTask(
@@ -3267,6 +3292,18 @@ function outlineModelWithFormatContext(
     null, // have any context on the server but can on the client.
   );
   retryTask(request, newTask);
+  if (
+    newTask.status !== COMPLETED &&
+    typeof value === 'object' &&
+    value !== null &&
+    ((value as any).$$typeof === REACT_ELEMENT_TYPE ||
+      (value as any).$$typeof === REACT_LAZY_TYPE) &&
+    request.writtenObjects.get(value) === serializeByValueID(newTask.id)
+  ) {
+    // Like outlineTask: an element that did not render synchronously is lazy
+    // for later occurrences, or the model holding them would wait for it.
+    request.writtenObjects.set(value, serializeLazyID(newTask.id));
+  }
   return newTask.id;
 }
 
