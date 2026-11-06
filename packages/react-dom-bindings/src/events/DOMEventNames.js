@@ -27,6 +27,7 @@ export type DOMEventName =
   | 'change'
   | 'click'
   | 'close'
+  | 'command'
   | 'compositionend'
   | 'compositionstart'
   | 'compositionupdate'
