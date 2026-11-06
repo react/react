@@ -28,6 +28,8 @@ jobs:
         ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       shell: bash
     - name: Run fuzz tests
+      env:
+        FLIGHT_FUZZ_CASES: 128
       run: |-
         FUZZ_TEST_SEED=$RANDOM yarn test fuzz --ci
         FUZZ_TEST_SEED=$RANDOM yarn test --prod fuzz --ci
