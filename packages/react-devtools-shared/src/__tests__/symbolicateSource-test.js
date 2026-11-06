@@ -8,19 +8,19 @@
  */
 
 import {encode} from '@jridgewell/sourcemap-codec';
-import {symbolicateSource} from 'react-devtools-shared/src/symbolicateSource';
 
 global.TextEncoder = require('util').TextEncoder;
 global.TextDecoder = require('util').TextDecoder;
 
-// Generated line 2, column 5 maps to original line 10, column 6 (all 1-based).
+// Generated line 1, column 1 maps to original line 5, column 3, and
+// generated line 2, column 5 maps to original line 10, column 6 (all 1-based).
 function createSourceMap(sources: Array<string>) {
   return {
     version: 3,
     sources,
     names: [],
     // [generatedColumn, sourceIndex, originalLine, originalColumn], 0-based
-    mappings: encode([[], [[4, 0, 9, 5]]]),
+    mappings: encode([[[0, 0, 4, 2]], [[4, 0, 9, 5]]]),
   };
 }
 
@@ -47,6 +47,17 @@ function createFetchFileWithCaching(files: {[url: string]: string}) {
 }
 
 describe('symbolicateSource', () => {
+  let symbolicateSource;
+  let symbolicateSourceWithCache;
+
+  beforeEach(() => {
+    jest.resetModules();
+    ({
+      symbolicateSource,
+      symbolicateSourceWithCache,
+    } = require('react-devtools-shared/src/symbolicateSource'));
+  });
+
   it('should resolve relative sources against the source map URL', async () => {
     const fetchFileWithCaching = createFetchFileWithCaching({
       'http://localhost:3000/assets/index.js': createScript('index.js.map'),
@@ -131,5 +142,44 @@ describe('symbolicateSource', () => {
       ],
       ignored: false,
     });
+  });
+
+  it('should fetch and parse a file once for all of its frames', async () => {
+    const fetchFileWithCaching = createFetchFileWithCaching({
+      'http://localhost:3000/assets/index.js': createScript('index.js.map'),
+      'http://localhost:3000/assets/index.js.map': JSON.stringify(
+        createSourceMap(['../src/App.tsx']),
+      ),
+    });
+
+    expect(
+      await Promise.all([
+        symbolicateSourceWithCache(
+          fetchFileWithCaching,
+          'http://localhost:3000/assets/index.js',
+          1,
+          1,
+        ),
+        symbolicateSourceWithCache(
+          fetchFileWithCaching,
+          'http://localhost:3000/assets/index.js',
+          2,
+          5,
+        ),
+      ]),
+    ).toEqual([
+      {
+        location: ['', 'http://localhost:3000/src/App.tsx', 5, 3],
+        ignored: false,
+      },
+      {
+        location: ['', 'http://localhost:3000/src/App.tsx', 10, 6],
+        ignored: false,
+      },
+    ]);
+    expect(fetchFileWithCaching.mock.calls).toEqual([
+      ['http://localhost:3000/assets/index.js'],
+      ['http://localhost:3000/assets/index.js.map'],
+    ]);
   });
 });
