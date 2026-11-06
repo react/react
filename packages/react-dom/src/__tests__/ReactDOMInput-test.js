@@ -1192,6 +1192,68 @@ describe('ReactDOMInput', () => {
     expect(isValueDirty(inputRef.current)).toBe(false);
   });
 
+  it('should restore controlled inputs to their latest checked prop upon reset', async () => {
+    const checkboxRef = React.createRef();
+    const radioRef = React.createRef();
+    const uncontrolledRef = React.createRef();
+
+    function App({checked}) {
+      return (
+        <form>
+          <input
+            type="checkbox"
+            ref={checkboxRef}
+            checked={checked}
+            onChange={emptyFunction}
+          />
+          <input
+            type="radio"
+            name="radio"
+            ref={radioRef}
+            checked={checked}
+            onChange={emptyFunction}
+          />
+          <input type="checkbox" ref={uncontrolledRef} />
+        </form>
+      );
+    }
+
+    await act(() => {
+      root.render(<App checked={false} />);
+    });
+    await act(() => {
+      root.render(<App checked={true} />);
+    });
+    expect(checkboxRef.current.checked).toBe(true);
+    expect(radioRef.current.checked).toBe(true);
+
+    setUntrackedChecked.call(uncontrolledRef.current, true);
+    dispatchEventOnNode(uncontrolledRef.current, 'click');
+    expect(uncontrolledRef.current.checked).toBe(true);
+
+    container.firstChild.reset();
+
+    if (disableInputAttributeSyncing) {
+      // The checked attribute is only controllable from defaultChecked, which
+      // was never specified, so the controlled inputs reset to unchecked too.
+      expect(checkboxRef.current.checked).toBe(false);
+      expect(radioRef.current.checked).toBe(false);
+    } else {
+      expect(checkboxRef.current.checked).toBe(true);
+      expect(radioRef.current.checked).toBe(true);
+    }
+    // Uncontrolled inputs are still reset.
+    expect(uncontrolledRef.current.checked).toBe(false);
+
+    // Unchecking removes the attribute again, so a reset keeps them unchecked.
+    await act(() => {
+      root.render(<App checked={false} />);
+    });
+    container.firstChild.reset();
+    expect(checkboxRef.current.checked).toBe(false);
+    expect(radioRef.current.checked).toBe(false);
+  });
+
   it('should not set a value for submit buttons unnecessarily', async () => {
     const stub = <input type="submit" />;
     await act(() => {
