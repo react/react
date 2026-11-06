@@ -1603,6 +1603,14 @@ export default class Store extends EventEmitter<{
 
             const parentElement = this._idToElement.get(parentID);
             if (parentElement === undefined) {
+              if (removedElementIDs.has(parentID)) {
+                // The parent was removed earlier in this same operations batch;
+                // treat this (and any of its own children added later in the
+                // batch) as part of the same subtree tear-down instead of an error.
+                removedElementIDs.set(id, parentID);
+                break;
+              }
+
               // We should never reach this. This is a bug in the backend renderer.
               return this._throwAndEmitError(
                 Error(
@@ -1951,6 +1959,14 @@ export default class Store extends EventEmitter<{
           if (parentID !== 0) {
             const parentSuspense = this._idToSuspense.get(parentID);
             if (parentSuspense === undefined) {
+              if (removedSuspenseIDs.has(parentID)) {
+                // The parent was removed earlier in this same operations batch;
+                // treat this (and any of its own children added later in the
+                // batch) as part of the same subtree tear-down instead of an error.
+                removedSuspenseIDs.set(id, parentID);
+                break;
+              }
+
               // We should never reach this. This is a bug in the backend renderer.
               return this._throwAndEmitError(
                 Error(
