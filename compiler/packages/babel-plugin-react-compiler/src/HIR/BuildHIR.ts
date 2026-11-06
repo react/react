@@ -2322,7 +2322,14 @@ function lowerExpression(
         }
         const valueExpr = attribute.get('value');
         let value;
-        if (valueExpr.isJSXElement() || valueExpr.isStringLiteral()) {
+        if (valueExpr.isStringLiteral()) {
+          // Match the JSX transform before lowering a literal attribute to an expression.
+          value = lowerValueToTemporary(builder, {
+            kind: 'Primitive',
+            value: valueExpr.node.value.replace(/\n\s+/g, ' '),
+            loc: getSourceLocation(valueExpr.node),
+          });
+        } else if (valueExpr.isJSXElement()) {
           value = lowerExpressionToTemporary(builder, valueExpr);
         } else if (valueExpr.type == null) {
           value = lowerValueToTemporary(builder, {

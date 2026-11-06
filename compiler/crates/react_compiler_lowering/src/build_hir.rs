@@ -11,6 +11,7 @@ use react_compiler_diagnostics::CompilerDiagnosticDetail;
 use react_compiler_diagnostics::CompilerError;
 use react_compiler_diagnostics::CompilerErrorDetail;
 use react_compiler_diagnostics::ErrorCategory;
+use react_compiler_diagnostics::JsString;
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::*;
 
@@ -1990,7 +1991,9 @@ fn lower_expression(
                                 lower_value_to_temporary(
                                     builder,
                                     InstructionValue::Primitive {
-                                        value: PrimitiveValue::String(s.value.clone()),
+                                        value: PrimitiveValue::String(normalize_jsx_attribute(
+                                            &s.value,
+                                        )),
                                         loc: str_loc,
                                     },
                                 )?
@@ -6481,6 +6484,48 @@ fn split_line_endings(s: &str) -> Vec<&str> {
     }
     lines.push(&s[start..]);
     lines
+}
+
+/// Matches the JSX transform's `/\n\s+/g` normalization for literal attributes.
+fn normalize_jsx_attribute(value: &JsString) -> JsString {
+    let is_whitespace = |unit: &u16| {
+        matches!(
+            *unit,
+            0x0009..=0x000d | 0x0020 | 0x00a0 | 0x1680 | 0x2000..=0x200a
+                | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000 | 0xfeff
+        )
+    };
+    let code_units = value.code_units();
+    let mut normalized = Vec::with_capacity(code_units.len());
+    let mut units = code_units.into_iter().peekable();
+    while let Some(unit) = units.next() {
+        if unit == 0x000a && units.peek().is_some_and(is_whitespace) {
+            normalized.push(0x0020);
+            while units.peek().is_some_and(is_whitespace) {
+                units.next();
+            }
+        } else {
+            normalized.push(unit);
+        }
+    }
+    JsString::from_code_units(normalized)
+}
+
+#[cfg(test)]
+mod jsx_attribute_tests {
+    use super::normalize_jsx_attribute;
+    use react_compiler_diagnostics::JsString;
+
+    #[test]
+    fn preserves_surrogates_and_matches_javascript_whitespace() {
+        let input = JsString::from_code_units(vec![
+            0xd800, 0x000a, 0x00a0, 0xfeff, 0xdc00, 0x000a, 0x0085, 0x0020,
+        ]);
+        assert_eq!(
+            normalize_jsx_attribute(&input).code_units(),
+            vec![0xd800, 0x0020, 0xdc00, 0x000a, 0x0085, 0x0020],
+        );
+    }
 }
 
 /// Trims whitespace according to the JSX spec.
