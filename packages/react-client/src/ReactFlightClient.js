@@ -104,6 +104,8 @@ import getPrototypeOf from 'shared/getPrototypeOf';
 
 import {injectInternals} from './ReactFlightClientDevToolsHook';
 
+import {evalInDEV} from './ReactFlightClientDebugEval';
+
 import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
 
 import ReactVersion from 'shared/ReactVersion';
@@ -2653,8 +2655,7 @@ function getInferredFunctionApproximate(code: string): () => void {
     const idx = slicedCode.indexOf('(', 14);
     if (idx !== -1) {
       const name = slicedCode.slice(14, idx).trim();
-      // eslint-disable-next-line no-eval
-      return (0, eval)('({' + JSON.stringify(name) + ':async function(){}})')[
+      return evalInDEV('({' + JSON.stringify(name) + ':async function(){}})')[
         name
       ];
     }
@@ -2662,15 +2663,13 @@ function getInferredFunctionApproximate(code: string): () => void {
     const idx = slicedCode.indexOf('(', 8);
     if (idx !== -1) {
       const name = slicedCode.slice(8, idx).trim();
-      // eslint-disable-next-line no-eval
-      return (0, eval)('({' + JSON.stringify(name) + ':function(){}})')[name];
+      return evalInDEV('({' + JSON.stringify(name) + ':function(){}})')[name];
     }
   } else if (slicedCode.startsWith('class')) {
     const idx = slicedCode.indexOf('{', 5);
     if (idx !== -1) {
       const name = slicedCode.slice(5, idx).trim();
-      // eslint-disable-next-line no-eval
-      return (0, eval)('({' + JSON.stringify(name) + ':class{}})')[name];
+      return evalInDEV('({' + JSON.stringify(name) + ':class{}})')[name];
     }
   }
   return function () {};
@@ -2901,8 +2900,7 @@ function parseModelString(
             // side-effects. Instead, fallback to parsing out the function type
             // and name.
             if (!mightHaveStaticConstructor.test(code)) {
-              // eslint-disable-next-line no-eval
-              return (0, eval)(code);
+              return evalInDEV(code);
             }
           } catch (x) {
             // Fallthrough to fallback case.
@@ -4168,8 +4166,7 @@ function createFakeFunction<T>(
 
   let fn: FakeFunction<T>;
   try {
-    // eslint-disable-next-line no-eval
-    fn = (0, eval)(code)[name];
+    fn = evalInDEV(code)[name];
   } catch (x) {
     // If eval fails, such as if in an environment that doesn't support it,
     // we fallback to creating a function here. It'll still have the right
