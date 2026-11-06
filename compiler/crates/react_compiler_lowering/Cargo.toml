@@ -14,3 +14,6 @@ react_compiler_diagnostics.workspace = true
 indexmap = "2"
 rustc-hash = "2"
 serde_json = "1"
+
+[lints]
+workspace = true
