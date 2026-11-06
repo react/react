@@ -19,6 +19,7 @@ let Suspense;
 let Activity;
 let assertLog;
 let waitForPaint;
+let waitFor;
 let textCache;
 
 describe('ReactDeferredValue', () => {
@@ -39,6 +40,7 @@ describe('ReactDeferredValue', () => {
     const InternalTestUtils = require('internal-test-utils');
     assertLog = InternalTestUtils.assertLog;
     waitForPaint = InternalTestUtils.waitForPaint;
+    waitFor = InternalTestUtils.waitFor;
 
     textCache = new Map();
   });
@@ -403,6 +405,81 @@ describe('ReactDeferredValue', () => {
     assertLog(['Final']);
     expect(root).toMatchRenderedOutput('Final');
   });
+
+  it.each([false, true])(
+    'preserves a ping for the original task while rendering a deferred task (sibling also pings deferred task: %s)',
+    async pingDeferredTask => {
+      function Content() {
+        const text = useDeferredValue('Final', 'Initial');
+        return <AsyncText text={text} />;
+      }
+
+      function App({showContent}) {
+        return (
+          <Suspense fallback="Fallback">
+            {showContent ? (
+              <>
+                <Content />
+                <Text text="Before sibling" />
+                <AsyncText text="Sibling" />
+                <Text text="After sibling" />
+                <Text text="End" />
+              </>
+            ) : (
+              <Text text="Previous" />
+            )}
+          </Suspense>
+        );
+      }
+
+      resolveText('Initial');
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<App showContent={false} />));
+      assertLog(['Previous']);
+
+      await act(async () => {
+        startTransition(() => root.render(<App showContent={true} />));
+        await waitFor([
+          'Initial',
+          'Before sibling',
+          'Suspend! [Sibling]',
+          'After sibling',
+          'End',
+          'Suspend! [Final]',
+          'Before sibling',
+        ]);
+        if (pingDeferredTask) {
+          await waitFor(['Suspend! [Sibling]', 'After sibling']);
+        }
+        expect(root).toMatchRenderedOutput('Previous');
+
+        // Resolve the original task's dependency while the deferred task is
+        // in progress. The deferred value is still pending.
+        resolveText('Sibling');
+      });
+      assertLog([
+        ...(pingDeferredTask ? ['Suspend! [Final]', 'Before sibling'] : []),
+        'Sibling',
+        'After sibling',
+        'End',
+        'Initial',
+        'Before sibling',
+        'Sibling',
+        'After sibling',
+        'End',
+        'Suspend! [Final]',
+      ]);
+      expect(root).toMatchRenderedOutput(
+        'InitialBefore siblingSiblingAfter siblingEnd',
+      );
+
+      await act(() => resolveText('Final'));
+      assertLog(['Final']);
+      expect(root).toMatchRenderedOutput(
+        'FinalBefore siblingSiblingAfter siblingEnd',
+      );
+    },
+  );
 
   it(
     'if a suspended render spawns a deferred task, we can switch to the ' +
