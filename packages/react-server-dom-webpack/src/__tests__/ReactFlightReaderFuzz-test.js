@@ -356,6 +356,29 @@ describe('ReactFlightReaderFuzz (node)', () => {
         events: ['reject failed', 'load ready'],
       }));
 
+    it('shared object in two Promise results whose modules load and fail separately', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          failed: {module: 'failed', fail: 'load'},
+          shared: {object: {}},
+          loading: {array: ['shared', 'ready']},
+          failing: {array: ['shared', 'failed']},
+          first: {promise: 'loading'},
+          second: {promise: 'failing'},
+          last: {promise: 'shared'},
+          roots: {array: ['first', 'second', 'last']},
+        },
+        roots: {entry: 'roots', other: 'roots'},
+        events: [
+          'resolve first to loading',
+          'resolve second to failing',
+          'resolve last to shared',
+          'reject failed',
+          'load ready',
+        ],
+      }));
+
     it.each(['', ':', '%3A', '%25:', ':%3A:', 'constructor', '01', '0', '🙂'])(
       'references through the property name %j',
       key =>

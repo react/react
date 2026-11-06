@@ -19,6 +19,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 // can be reproduced even when the real reader handles the graph correctly.
 function createTestOracle(source, options = {}) {
   const oracle = createOracle({
+    model: source,
     valueMetadata: new Map(),
     requiredEvents: new Map(),
     ...options,
@@ -344,5 +345,129 @@ describe('FlightReaderOracle', () => {
     const then = jest.spyOn(received.promise, 'then');
     await expect(oracle.checkForMutations()).rejects.toThrow('was replaced');
     expect(then).not.toHaveBeenCalled();
+  });
+  // A future result cannot lend its error. Once produced, that same owner can
+  // legitimately reject a reference even while a local module is still loading.
+  it('accepts a produced owner error while local inputs are still pending', () => {
+    const shared = {};
+    const ready = {};
+    const failed = {};
+    const loading = {};
+    const failing = {};
+    const error = new Error('owner failed');
+    const failure = {released: true, error};
+    const failingMetadata = {
+      type: 'promise',
+      state: 'pending',
+      value: {shared, failed},
+    };
+    const source = [loading, failing];
+    const options = {
+      valueMetadata: new Map([
+        [
+          loading,
+          {type: 'promise', state: 'fulfilled', value: {shared, ready}},
+        ],
+        [failing, failingMetadata],
+        [ready, {type: 'module', value: 'ready'}],
+        [failed, {type: 'module', value: 'failed'}],
+      ]),
+      requiredEvents: new Map([
+        [ready, [{released: false}]],
+        [failed, [failure]],
+      ]),
+    };
+    const rejectWithError = () => ({
+      then(onFulfill, onReject) {
+        onReject(error);
+      },
+    });
+    const early = createTestOracle(source, options);
+    early.resolve([rejectWithError(), {then() {}}]);
+    expect(() => early.oracle.throwIfFailed()).toThrow('unexpected rejection');
+
+    failingMetadata.state = 'fulfilled';
+    const valid = createTestOracle(source, options);
+    valid.resolve([rejectWithError(), rejectWithError()]);
+    expect(valid.oracle.isComplete()).toBe(true);
+  });
+
+  // An eligible owner does not authorize delivery to a consumer whose source
+  // has not produced that value yet, even when its future value is known.
+  it('waits for a source Promise before accepting errors from an eligible owner', () => {
+    const owner = {};
+    const consumer = {};
+    const module = {};
+    const shared = {module};
+    const error = new Error('shared module failed');
+    const consumerMetadata = {type: 'promise', state: 'pending', value: shared};
+    const source = [owner, consumer];
+    const options = {
+      valueMetadata: new Map([
+        [owner, {type: 'promise', state: 'fulfilled', value: shared}],
+        [consumer, consumerMetadata],
+        [module, {type: 'module', value: 'ready'}],
+      ]),
+      requiredEvents: new Map([[module, [{released: true, error}]]]),
+    };
+    const rejectWithError = () => ({
+      then(onFulfill, onReject) {
+        onReject(error);
+      },
+    });
+    const early = createTestOracle(source, options);
+    early.resolve([rejectWithError(), rejectWithError()]);
+    expect(() => early.oracle.throwIfFailed()).toThrow(
+      'root[1].then: unexpected rejection',
+    );
+
+    consumerMetadata.state = 'fulfilled';
+    const valid = createTestOracle(source, options);
+    valid.resolve([rejectWithError(), rejectWithError()]);
+    expect(valid.oracle.isComplete()).toBe(true);
+  });
+
+  // Requiring every locally ready result would hide the writer's valid choice
+  // to reference a shared object from another still-loading result.
+  it('keeps a shared value blocked while one possible containing model is loading', () => {
+    const shared = {};
+    const ready = {};
+    const failed = {};
+    const loading = {};
+    const failing = {};
+    const last = {};
+    const load = {released: false};
+    const failure = {released: true, error: new Error('module failed')};
+    const {oracle, resolve} = createTestOracle([loading, failing, last], {
+      valueMetadata: new Map([
+        [
+          loading,
+          {type: 'promise', state: 'fulfilled', value: {shared, ready}},
+        ],
+        [
+          failing,
+          {type: 'promise', state: 'fulfilled', value: {shared, failed}},
+        ],
+        [last, {type: 'promise', state: 'fulfilled', value: shared}],
+        [ready, {type: 'module', value: 'ready'}],
+        [failed, {type: 'module', value: 'failed'}],
+      ]),
+      requiredEvents: new Map([
+        [ready, [load]],
+        [failed, [failure]],
+      ]),
+    });
+    resolve([{then() {}}, {then() {}}, {then() {}}]);
+    // Only the failing model must settle. shared could have been serialized
+    // in the loading model, so the last Promise may still wait for it.
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root[1].then',
+    ]);
+    load.released = true;
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root[0].then',
+      'root[1].then',
+      'root[2].then',
+    ]);
   });
 });

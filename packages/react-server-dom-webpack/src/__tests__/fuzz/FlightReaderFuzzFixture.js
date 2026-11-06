@@ -74,6 +74,8 @@ function createFixture(graph, {WebpackMock}) {
       valueMetadata.set(error, {type: 'error', digest: 'digest:' + node.error});
     } else if (node.object !== undefined) {
       values[name] = {};
+    } else if (node.array !== undefined) {
+      values[name] = [];
     } else if (node.promise !== undefined) {
       const deferred = createResolvablePromise();
       trackPromise(deferred.promise);
@@ -89,6 +91,8 @@ function createFixture(graph, {WebpackMock}) {
       Object.keys(node.object).forEach(key => {
         values[name][key] = getValue(node.object[key]);
       });
+    } else if (node.array !== undefined) {
+      node.array.forEach(item => values[name].push(getValue(item)));
     } else if (node.promise !== undefined) {
       const deferred = deferredPromises.get(name);
       if (node.reject) {
