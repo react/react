@@ -204,12 +204,14 @@ const MAX_NORMALIZE_DEPTH = 3;
 // Normalize a value to a plain, serialization-safe shape. Tracks seen objects
 // to break circular references and limits depth to avoid stack overflow on
 // deeply nested structures. Functions/symbols/elements become descriptive
-// strings so the result can be safely serialized downstream.
+// strings and BigInts become '<digits>n' strings (JSON.stringify throws on
+// them) so the result can be safely serialized downstream.
 function normalizeValue(val: mixed, seen?: Set<mixed>, depth?: number): mixed {
   if (val === undefined) return null;
   if (typeof val === 'function')
     return val.name ? '[fn ' + val.name + ']' : '[fn]';
   if (typeof val === 'symbol') return '[symbol]';
+  if (typeof val === 'bigint') return val.toString() + 'n';
   if (typeof val === 'object' && val !== null) {
     if ((val as any).$$typeof != null) return '[React element]';
     const currentDepth = depth || 0;
@@ -400,11 +402,12 @@ export function createTreeTools(
 
     if (fiber.tag === HostHoistable) {
       const resource = fiber.memoizedState;
-      if (
-        resource != null &&
-        typeof resource === 'object' &&
-        (resource as any).instance != null
-      ) {
+      if (resource == null) {
+        // Hoistables that aren't backed by a Resource (e.g. <title>, <meta>)
+        // keep their instance on stateNode, like a HostComponent.
+        return fiber.stateNode;
+      }
+      if (typeof resource === 'object' && (resource as any).instance != null) {
         return (resource as any).instance;
       }
     }

@@ -5492,6 +5492,31 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  // @gate enableFizzExternalRuntime
+  it(`supports crossOrigin for the external runtime script`, async () => {
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <html>
+          <head />
+          <body>Hello</body>
+        </html>,
+        {
+          unstable_externalRuntimeSrc: {
+            src: 'src-of-external-runtime',
+            crossOrigin: 'anonymous',
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    const scripts = document.head.querySelectorAll(
+      'script[src="src-of-external-runtime"]',
+    );
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0].crossOrigin).toBe('anonymous');
+  });
+
   // @gate shouldUseFizzExternalRuntime
   it('does not send script tags for SSR instructions when using the external runtime', async () => {
     function App() {
