@@ -7,6 +7,29 @@
 
 'use strict';
 
+const specialValueFactories = {
+  bigint: () => 1234567890123456789n,
+  nan: () => NaN,
+  'negative zero': () => -0,
+  infinity: () => -Infinity,
+  symbol: () => Symbol.for('flight-fuzz'),
+  escaped: () => '$escaped\n🙂',
+  buffer: () => new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer,
+  'typed array': () => new Int16Array([1, -2, 3]),
+  'data view': () => new DataView(new ArrayBuffer(7), 1, 5),
+  'bigint array': () => new BigInt64Array([42n, -1n]),
+  undefined: () => undefined,
+  // Larger than a packet, to exercise fragmented binary data.
+  'large binary': () => Uint8Array.from({length: 6000}, (_, i) => i % 251),
+  'form data': () => {
+    const form = new FormData();
+    form.append('repeated', 'first');
+    form.append('repeated', 'second');
+    form.append('file', new Blob(['🙂']), 'source.bin');
+    return form;
+  },
+};
+
 async function createFixture(graph, {WebpackMock}) {
   const {nodes} = graph;
   const values = {};
@@ -15,6 +38,7 @@ async function createFixture(graph, {WebpackMock}) {
   const requiredEvents = new Map();
   const deferredPromises = new Map();
   const expectedErrors = new Map();
+  const bytes = new Map();
 
   function trackPromise(promise) {
     // Track native settlement without relying on React's thenable fields.
@@ -49,6 +73,32 @@ async function createFixture(graph, {WebpackMock}) {
     const node = nodes[name];
     if (Object.prototype.hasOwnProperty.call(node, 'value')) {
       values[name] = node.value;
+    } else if (node.date !== undefined) {
+      values[name] = new Date(node.date);
+    } else if (node.binary !== undefined) {
+      values[name] = new Uint8Array([node.binary, 10, 255]);
+      saveBytes(values[name]);
+    } else if (node.text !== undefined) {
+      values[name] = node.text + '🙂'.repeat(400);
+    } else if (node.blob !== undefined) {
+      values[name] = new Blob([node.blob], {type: 'text/plain'});
+    } else if (node.special !== undefined) {
+      const factory = specialValueFactories[node.special];
+      if (
+        !Object.prototype.hasOwnProperty.call(
+          specialValueFactories,
+          node.special,
+        )
+      ) {
+        throw new Error('Unsupported special value: ' + node.special);
+      }
+      values[name] = factory();
+      if (
+        values[name] instanceof ArrayBuffer ||
+        ArrayBuffer.isView(values[name])
+      ) {
+        saveBytes(values[name]);
+      }
     } else if (node.module !== undefined) {
       const load = createResolvablePromise();
       const evaluate = node.async === true ? createResolvablePromise() : null;
@@ -291,6 +341,15 @@ async function createFixture(graph, {WebpackMock}) {
     return iterable;
   }
 
+  function saveBytes(value) {
+    // The writer may detach source buffers. Save only the exposed view bytes.
+    const view =
+      value instanceof ArrayBuffer
+        ? new Uint8Array(value)
+        : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    bytes.set(value, Array.from(view));
+  }
+
   // Ready results must arrive while this independent source keeps EOF open.
   const unrelated = createResolvablePromise();
   trackPromise(unrelated.promise);
@@ -325,6 +384,7 @@ async function createFixture(graph, {WebpackMock}) {
     requiredEvents,
     unrelatedEvent,
     expectedErrors,
+    bytes,
   };
 }
 

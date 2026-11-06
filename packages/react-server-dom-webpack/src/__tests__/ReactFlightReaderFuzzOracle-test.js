@@ -957,4 +957,38 @@ describe('FlightReaderOracle', () => {
       }
     },
   );
+
+  it('compares the type and saved bytes of a detached source view', () => {
+    const source = new Uint8Array([0, 1, 2, 3]).subarray(1, 3);
+    const options = {bytes: new Map([[source, [1, 2]]])};
+    structuredClone(source.buffer, {transfer: [source.buffer]});
+    expect(source.byteLength).toBe(0);
+
+    const valid = createTestOracle(source, options);
+    valid.resolve(new Uint8Array([9, 1, 2, 9]).subarray(1, 3));
+    expect(valid.oracle.isComplete()).toBe(true);
+
+    [new Uint8Array([1, 3]), new Int8Array([1, 2])].forEach(incorrect => {
+      const invalid = createTestOracle(source, options);
+      invalid.resolve(incorrect);
+      expect(() => invalid.oracle.throwIfFailed()).toThrow();
+    });
+  });
+
+  it('waits for Blob contents before completing a mutation check', async () => {
+    const source = new Blob([new Uint8Array([1])]);
+    const received = new Blob([new Uint8Array([1])]);
+    const {oracle, resolve} = createTestOracle(source);
+    resolve(received);
+    await tick();
+    expect(oracle.isComplete()).toBe(true);
+
+    let resolveRead;
+    received.arrayBuffer = () => new Promise(done => (resolveRead = done));
+    const recheck = oracle.checkForMutations();
+    await tick();
+    expect(oracle.isComplete()).toBe(false);
+    resolveRead(new Uint8Array([2]).buffer);
+    await expect(recheck).rejects.toThrow();
+  });
 });

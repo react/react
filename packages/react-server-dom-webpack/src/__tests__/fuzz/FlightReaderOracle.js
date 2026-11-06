@@ -63,8 +63,23 @@ function createOracle(
       );
     },
     async checkForMutations() {
-      state.receivedValues.forEach(root => traverse(state, root, false));
-      throwIfFailed(state);
+      state.pendingTasks++;
+      try {
+        const blobs = state.receivedValues.flatMap(root =>
+          traverse(state, root, false),
+        );
+        await Promise.all(
+          blobs.map(({expectedValue, received}) =>
+            assertBlobContents(expectedValue, received),
+          ),
+        );
+        throwIfFailed(state);
+      } finally {
+        state.pendingTasks--;
+      }
+    },
+    getAliasStats() {
+      return {...state.aliasStats};
     },
   };
 }
@@ -76,6 +91,7 @@ function observeValue(state, expectedValue, received, path) {
 }
 
 function traverse(state, root, observe) {
+  const blobs = [];
   // Same-row identity is scoped per model row. A new row begins at the root and
   // at a Server Function's bound arguments, which the writer serializes
   // separately, so a cross-row alias is not mistaken for a same-row cycle. Each
@@ -98,6 +114,15 @@ function traverse(state, root, observe) {
         continue;
       }
       const metadata = state.fixture.valueMetadata.get(pair.expectedValue);
+      if (metadata === undefined && pair.expectedValue instanceof Blob) {
+        if (observe) {
+          runAsyncTask(state, () =>
+            assertBlobContents(pair.expectedValue, pair.received),
+          );
+        } else {
+          blobs.push(pair);
+        }
+      }
       if (metadata !== undefined && metadata.type === 'iterator') {
         if (observe && !state.iteratorItems.has(pair.received)) {
           observeIterator(state, metadata, pair.received);
@@ -159,6 +184,7 @@ function traverse(state, root, observe) {
       throw error;
     }
   }
+  return blobs;
 }
 
 // A readable rendering of a value for a mismatch message.
@@ -322,6 +348,72 @@ function compareValue(state, {expectedValue, received, path}, visited) {
       },
     ]);
   }
+  if (expectedValue instanceof Date) {
+    assertOracle(
+      received instanceof Date,
+      'expected a Date but received ' + describeValue(received),
+    );
+    assertSame(received.getTime(), expectedValue.getTime());
+    return [];
+  }
+  if (
+    expectedValue instanceof ArrayBuffer ||
+    ArrayBuffer.isView(expectedValue)
+  ) {
+    assertSame(
+      Object.prototype.toString.call(received),
+      Object.prototype.toString.call(expectedValue),
+    );
+    const expectedBytes = state.fixture.bytes.get(expectedValue);
+    assertOracle(
+      numberArraysEqual(getBytes(received), expectedBytes),
+      'expected bytes ' +
+        describeValue(expectedBytes) +
+        ' but received ' +
+        describeValue(getBytes(received)),
+    );
+    return [];
+  }
+  if (expectedValue instanceof Blob) {
+    assertOracle(
+      received instanceof Blob,
+      'expected a Blob but received ' + describeValue(received),
+    );
+    assertSame(received.type, expectedValue.type);
+    assertSame(received.size, expectedValue.size);
+    // A File carried in FormData should keep its name. The writer re-sends it
+    // with the default "blob" name instead, losing the original, so this is
+    // enforced only under strict identity for now and reported as a finding.
+    if (
+      state.strictIdentity &&
+      typeof File !== 'undefined' &&
+      expectedValue instanceof File
+    ) {
+      assertOracle(
+        received instanceof File,
+        'expected a File but received a plain Blob',
+      );
+      assertSame(received.name, expectedValue.name);
+    }
+    return [];
+  }
+  if (expectedValue instanceof FormData) {
+    assertOracle(
+      received instanceof FormData,
+      'expected FormData but received ' + describeValue(received),
+    );
+    const entries = Array.from(received.entries());
+    const expectedEntries = Array.from(expectedValue.entries());
+    assertSame(entries.length, expectedEntries.length);
+    return expectedEntries.map(([key, value], i) => {
+      assertSame(entries[i][0], key);
+      return {
+        expectedValue: value,
+        received: entries[i][1],
+        path: path + '.form' + i,
+      };
+    });
+  }
   const isArray = Array.isArray(expectedValue);
   if (isArray) {
     assertOracle(
@@ -350,6 +442,20 @@ function compareValue(state, {expectedValue, received, path}, visited) {
     received: received[key],
     path: isArray ? path + '[' + key + ']' : path + '.' + key,
   }));
+}
+
+function getBytes(value) {
+  return value instanceof ArrayBuffer
+    ? Array.from(new Uint8Array(value))
+    : Array.from(
+        new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+      );
+}
+
+async function assertBlobContents(expectedValue, received) {
+  expect(Array.from(new Uint8Array(await received.arrayBuffer()))).toEqual(
+    Array.from(new Uint8Array(await expectedValue.arrayBuffer())),
+  );
 }
 
 function observeStream(state, metadata, expectedValue, received, path) {
@@ -681,7 +787,13 @@ function getValueDependencies(fixture, value) {
   if (value instanceof Map) {
     return Array.from(value.entries()).flat();
   }
-  return Object.values(value);
+  if (value instanceof FormData) {
+    return Array.from(value.values());
+  }
+  return Array.isArray(value) ||
+    Object.getPrototypeOf(value) === Object.prototype
+    ? Object.values(value)
+    : [];
 }
 
 function getRequiredEvents(fixture, value) {
