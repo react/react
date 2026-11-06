@@ -29,7 +29,10 @@ import {
   ElementTypeSuspense,
   ElementTypeActivity,
 } from 'react-devtools-shared/src/frontend/types';
-import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
+import {
+  preloadSymbolicatedStack,
+  symbolicateSourceWithCache,
+} from 'react-devtools-shared/src/symbolicateSource';
 
 import styles from './InspectedElementView.css';
 
@@ -54,6 +57,19 @@ function StackTraceGroup({
 }: StackTraceGroupProps): React.Node {
   const [showIgnoreList, setShowIgnoreList] = useState(false);
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  if (fetchFileWithCaching !== null) {
+    if (componentStack !== null) {
+      preloadSymbolicatedStack(fetchFileWithCaching, componentStack);
+    }
+    if (owners !== null) {
+      owners.forEach(owner => {
+        if (owner.stack !== null) {
+          preloadSymbolicatedStack(fetchFileWithCaching, owner.stack);
+        }
+      });
+    }
+  }
 
   const componentStackHasIgnoredFrames =
     componentStack !== null &&

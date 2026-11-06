@@ -23,7 +23,10 @@ import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSo
 
 import FetchFileWithCachingContext from './FetchFileWithCachingContext';
 
-import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
+import {
+  preloadSymbolicatedStack,
+  symbolicateSourceWithCache,
+} from 'react-devtools-shared/src/symbolicateSource';
 
 import formatLocationForDisplay from './formatLocationForDisplay';
 
@@ -132,6 +135,10 @@ export default function StackTraceView({
   showIgnoreList,
 }: Props): React.Node {
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  if (fetchFileWithCaching !== null) {
+    preloadSymbolicatedStack(fetchFileWithCaching, stack);
+  }
 
   let lastMeaningfulFrameIndex = -1;
   // Reverse loop to find the last non-ignored, non-built-in index
