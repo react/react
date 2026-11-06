@@ -1896,6 +1896,88 @@ describe('ReactFlightDOMEdge', () => {
     ).toEqual(expectedBytes);
   });
 
+  it('can pass a stream a second time after a stream item held it', async () => {
+    const inner = new ReadableStream({
+      start(c) {
+        c.enqueue('a');
+        c.enqueue('b');
+        c.close();
+      },
+    });
+    const outer = new ReadableStream({
+      start(c) {
+        c.enqueue([inner]);
+        c.enqueue({again: inner});
+        c.close();
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(outer, {}),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    const second = (await reader.read()).value;
+    expect(second.again).toBe(first[0]);
+    expect((await reader.read()).done).toBe(true);
+
+    const innerReader = first[0].getReader();
+    expect((await innerReader.read()).value).toBe('a');
+    expect((await innerReader.read()).value).toBe('b');
+    expect((await innerReader.read()).done).toBe(true);
+  });
+
+  it('can return the same stream from two keyed server components', async () => {
+    const shared = new ReadableStream({
+      start(c) {
+        c.enqueue('a');
+        c.enqueue('b');
+        c.close();
+      },
+    });
+    function Comp() {
+      return shared;
+    }
+    // The components are keyed, so the stream is not registered by the task that
+    // renders them and the second occurrence has to reuse the emitted row.
+    const model = {
+      a: [ReactServer.createElement(Comp, {key: 'k1'})],
+      b: [ReactServer.createElement(Comp, {key: 'k2'})],
+    };
+
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        model,
+        {},
+        {
+          onError(x) {
+            errors.push(x.message);
+          },
+        },
+      ),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+
+    expect(result.a[0]).toBe(result.b[0]);
+    const reader = result.a[0].getReader();
+    expect((await reader.read()).value).toBe('a');
+    expect((await reader.read()).value).toBe('b');
+    expect((await reader.read()).done).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
   it('keeps a typed array intact when its transport also carries a byte stream', async () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const s = new ReadableStream({
