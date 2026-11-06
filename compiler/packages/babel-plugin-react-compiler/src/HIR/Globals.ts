@@ -1182,7 +1182,7 @@ export function getReanimatedModuleType(registry: ShapeRegistry): ObjectType {
         restParam: Effect.Freeze,
         returnType: {kind: 'Poly'},
         returnValueKind: ValueKind.Frozen,
-        noAlias: true,
+        noAlias: hook !== 'useFrameCallback',
         calleeEffect: Effect.Read,
         hookKind: 'Custom',
       }),
