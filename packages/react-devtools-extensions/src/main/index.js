@@ -3,10 +3,7 @@
 
 import type {RootType} from 'react-dom/src/client/ReactDOMRoot';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
-import type {
-  TabID,
-  ViewElementSource,
-} from 'react-devtools-shared/src/devtools/views/DevTools';
+import type {TabID} from 'react-devtools-shared/src/devtools/views/DevTools';
 import type {SourceSelection} from 'react-devtools-shared/src/devtools/views/Editor/EditorPane';
 import type {Element} from 'react-devtools-shared/src/frontend/types';
 
@@ -30,16 +27,18 @@ import {logEvent} from 'react-devtools-shared/src/Logger';
 import {
   getAlwaysOpenInEditor,
   getOpenInEditorURL,
-  normalizeUrlIfValid,
 } from 'react-devtools-shared/src/utils';
 import {checkConditions} from 'react-devtools-shared/src/devtools/views/Editor/utils';
 import * as parseHookNames from 'react-devtools-shared/src/hooks/parseHookNames';
+import WorkerizedSourceMap from 'react-devtools-shared/src/sourceMap.worker';
+import {setSourceMapWorkerFactory} from 'react-devtools-shared/src/symbolicateSource';
 
 import {
   setBrowserSelectionFromReact,
   setReactSelectionFromBrowser,
 } from './elementSelection';
 import {viewAttributeSource} from './sourceSelection';
+import {createViewElementSource} from './viewElementSource';
 
 import {evalInInspectedWindow} from './evalInInspectedWindow';
 import {startReactPolling} from './reactPolling';
@@ -55,6 +54,8 @@ import {
   getExtensionBridgeConnectionType,
 } from '../constants';
 import './requestAnimationFramePolyfill';
+
+setSourceMapWorkerFactory(WorkerizedSourceMap);
 
 const resolvedParseHookNames = Promise.resolve(parseHookNames);
 // DevTools assumes this is a dynamically imported module. Since we outline
@@ -292,21 +293,9 @@ function createDevToolsInstance(): DevToolsInstance {
     }
   };
 
-  const viewElementSourceFunction: ViewElementSource = (
-    source,
-    symbolicatedSource,
-  ) => {
-    const [, sourceURL, line, column] = symbolicatedSource
-      ? symbolicatedSource
-      : source;
-
-    // We use 1-based line and column, Chrome expects them 0-based.
-    chrome.devtools.panels.openResource(
-      normalizeUrlIfValid(sourceURL),
-      line - 1,
-      column - 1,
-    );
-  };
+  const viewElementSourceFunction = createViewElementSource(id =>
+    store.getRendererIDForElement(id),
+  );
 
   const root = createRoot(document.createElement('div'));
 

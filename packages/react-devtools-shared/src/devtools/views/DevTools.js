@@ -61,6 +61,7 @@ export type TabID = 'components' | 'profiler' | 'suspense';
 export type ViewElementSource = (
   source: ReactFunctionLocation | ReactCallSite,
   symbolicatedSource: ReactFunctionLocation | ReactCallSite | null,
+  elementID?: number | null,
 ) => void;
 export type ViewAttributeSource = (
   id: number,
