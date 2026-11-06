@@ -570,7 +570,19 @@ export function printInstructionValue(instrValue: ReactiveValue): string {
       break;
     }
     case 'TaggedTemplateExpression': {
-      value = `${printPlace(instrValue.tag)}\`${instrValue.value.raw}\``;
+      value = `${printPlace(instrValue.tag)}\``;
+      CompilerError.invariant(
+        instrValue.subexprs.length === instrValue.quasis.length - 1,
+        {
+          reason: 'Bad assumption about quasi length.',
+          loc: instrValue.loc,
+        },
+      );
+      for (let i = 0; i < instrValue.subexprs.length; i++) {
+        value += instrValue.quasis[i].raw;
+        value += `\${${printPlace(instrValue.subexprs[i])}}`;
+      }
+      value += instrValue.quasis.at(-1)!.raw + '`';
       break;
     }
     case 'LogicalExpression': {
