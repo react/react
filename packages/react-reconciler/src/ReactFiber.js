@@ -42,7 +42,6 @@ import {
   enableTransitionTracing,
   disableLegacyMode,
   enableObjectFiber,
-  enableViewTransition,
   enableSuspenseyImages,
   enableOptimisticKey,
 } from 'shared/ReactFeatureFlags';
@@ -620,9 +619,7 @@ export function createFiberFromTypeAndProps(
         }
       // $FlowFixMe[invalid-compare] -- falls through
       case REACT_VIEW_TRANSITION_TYPE:
-        if (enableViewTransition) {
-          return createFiberFromViewTransition(pendingProps, mode, lanes, key);
-        }
+        return createFiberFromViewTransition(pendingProps, mode, lanes, key);
       // $FlowFixMe[invalid-compare] -- falls through
       case REACT_SCOPE_TYPE:
         if (enableScopeAPI) {

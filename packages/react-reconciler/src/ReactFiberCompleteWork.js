@@ -39,7 +39,6 @@ import {
   enableTransitionTracing,
   passChildrenWhenCloningPersistedNodes,
   disableLegacyMode,
-  enableViewTransition,
   enableViewTransitionParentEnterExit,
   enableSuspenseyImages,
 } from 'shared/ReactFeatureFlags';
@@ -1318,11 +1317,9 @@ function completeWork(
 
             // This can happen when we abort work.
             bubbleProperties(workInProgress);
-            if (enableViewTransition) {
-              // Host Components act as their own View Transitions which doesn't run enter/exit animations.
-              // We clear any ViewTransitionStatic flag bubbled from inner View Transitions.
-              workInProgress.subtreeFlags &= ~ViewTransitionStatic;
-            }
+            // Host Components act as their own View Transitions which doesn't run enter/exit animations.
+            // We clear any ViewTransitionStatic flag bubbled from inner View Transitions.
+            workInProgress.subtreeFlags &= ~ViewTransitionStatic;
             return null;
           }
 
@@ -1348,11 +1345,9 @@ function completeWork(
           }
         }
         bubbleProperties(workInProgress);
-        if (enableViewTransition) {
-          // Host Components act as their own View Transitions which doesn't run enter/exit animations.
-          // We clear any ViewTransitionStatic flag bubbled from inner View Transitions.
-          workInProgress.subtreeFlags &= ~ViewTransitionStatic;
-        }
+        // Host Components act as their own View Transitions which doesn't run enter/exit animations.
+        // We clear any ViewTransitionStatic flag bubbled from inner View Transitions.
+        workInProgress.subtreeFlags &= ~ViewTransitionStatic;
         return null;
       }
       // Fall through
@@ -1379,11 +1374,9 @@ function completeWork(
 
           // This can happen when we abort work.
           bubbleProperties(workInProgress);
-          if (enableViewTransition) {
-            // Host Components act as their own View Transitions which doesn't run enter/exit animations.
-            // We clear any ViewTransitionStatic flag bubbled from inner View Transitions.
-            workInProgress.subtreeFlags &= ~ViewTransitionStatic;
-          }
+          // Host Components act as their own View Transitions which doesn't run enter/exit animations.
+          // We clear any ViewTransitionStatic flag bubbled from inner View Transitions.
+          workInProgress.subtreeFlags &= ~ViewTransitionStatic;
           return null;
         }
 
@@ -1438,11 +1431,9 @@ function completeWork(
         }
       }
       bubbleProperties(workInProgress);
-      if (enableViewTransition) {
-        // Host Components act as their own View Transitions which doesn't run enter/exit animations.
-        // We clear any ViewTransitionStatic flag bubbled from inner View Transitions.
-        workInProgress.subtreeFlags &= ~ViewTransitionStatic;
-      }
+      // Host Components act as their own View Transitions which doesn't run enter/exit animations.
+      // We clear any ViewTransitionStatic flag bubbled from inner View Transitions.
+      workInProgress.subtreeFlags &= ~ViewTransitionStatic;
 
       // This must come at the very end of the complete phase, because it might
       // throw to suspend, and if the resource immediately loads, the work loop
@@ -2059,28 +2050,26 @@ function completeWork(
       return null;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        // We're a component that might need an exit transition. This flag will
-        // bubble up to the parent tree to indicate that there's a child that
-        // might need an exit View Transition upon unmount.
-        workInProgress.flags |= ViewTransitionStatic;
-        if (enableViewTransitionParentEnterExit) {
-          const props = workInProgress.pendingProps;
-          if (
-            props.parentEnter !== undefined ||
-            props.parentExit !== undefined ||
-            props.onParentEnter != null ||
-            props.onParentExit != null ||
-            props.onGestureParentEnter != null ||
-            props.onGestureParentExit != null
-          ) {
-            workInProgress.flags |= ViewTransitionStaticParent;
-          } else {
-            workInProgress.flags &= ~ViewTransitionStaticParent;
-          }
+      // We're a component that might need an exit transition. This flag will
+      // bubble up to the parent tree to indicate that there's a child that
+      // might need an exit View Transition upon unmount.
+      workInProgress.flags |= ViewTransitionStatic;
+      if (enableViewTransitionParentEnterExit) {
+        const props = workInProgress.pendingProps;
+        if (
+          props.parentEnter !== undefined ||
+          props.parentExit !== undefined ||
+          props.onParentEnter != null ||
+          props.onParentExit != null ||
+          props.onGestureParentEnter != null ||
+          props.onGestureParentExit != null
+        ) {
+          workInProgress.flags |= ViewTransitionStaticParent;
+        } else {
+          workInProgress.flags &= ~ViewTransitionStaticParent;
         }
-        bubbleProperties(workInProgress);
       }
+      bubbleProperties(workInProgress);
       return null;
     }
     case Throw: {
