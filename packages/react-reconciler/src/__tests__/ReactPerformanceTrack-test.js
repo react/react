@@ -307,6 +307,82 @@ describe('ReactPerformanceTracks', () => {
   });
 
   // @gate __DEV__ && enableComponentPerformanceTrack
+  it('shows window objects as opaque values instead of walking them', async () => {
+    const App = function App({popup}) {
+      Scheduler.unstable_advanceTime(10);
+      React.useEffect(() => {}, [popup]);
+    };
+
+    const createFakeWindow = name => {
+      const win = {};
+      // Real Window objects stringify as '[object Window]'.
+      Object.defineProperty(win, Symbol.toStringTag, {value: 'Window'});
+      // A Window's own enumerable properties include self-references, so
+      // walking it fans out across the entire global surface at every level
+      // of the depth limit (issue #37330).
+      win.window = win;
+      win.self = win;
+      win.frames = win;
+      win.top = win;
+      win.parent = win;
+      win.name = name;
+      return win;
+    };
+
+    Scheduler.unstable_advanceTime(1);
+    await act(() => {
+      ReactNoop.render(<App popup={createFakeWindow('one')} />);
+    });
+
+    expect(performanceMeasureCalls).toEqual([
+      [
+        'Mount',
+        {
+          detail: {
+            devtools: {
+              color: 'warning',
+              properties: null,
+              tooltipText: 'Mount',
+              track: 'Components ⚛',
+            },
+          },
+          end: 11,
+          start: 1,
+        },
+      ],
+    ]);
+    performanceMeasureCalls.length = 0;
+
+    Scheduler.unstable_advanceTime(10);
+
+    await act(() => {
+      ReactNoop.render(<App popup={createFakeWindow('two')} />);
+    });
+
+    expect(performanceMeasureCalls).toEqual([
+      [
+        '​App',
+        {
+          detail: {
+            devtools: {
+              color: 'primary-dark',
+              properties: [
+                ['Changed Props', ''],
+                ['-\xa0popup', 'Window'],
+                ['+\xa0popup', 'Window'],
+              ],
+              tooltipText: 'App',
+              track: 'Components ⚛',
+            },
+          },
+          end: 31,
+          start: 21,
+        },
+      ],
+    ]);
+  });
+
+  // @gate __DEV__ && enableComponentPerformanceTrack
   it('includes console.timeStamp spans for Components with no prop changes', async () => {
     function Left({value}) {
       Scheduler.unstable_advanceTime(5000);
