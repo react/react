@@ -1470,23 +1470,50 @@ function parseReadableStream<T>(
   }
 
   let controller: ReadableStreamController = null as any;
+  // `closed` is set once a close or error has been requested, so no further
+  // entry is read. `terminated` is set once the controller has actually closed
+  // or errored: a late entry that resolves after that point must be dropped,
+  // because enqueuing onto a closed or errored controller throws and the throw
+  // escapes as an unhandled promise rejection.
   let closed = false;
+  let terminated = false;
   const stream = new ReadableStream({
     type: type,
     start(c) {
       controller = c;
     },
+    cancel() {
+      // The consumer is done with the stream. Entries that are still arriving
+      // for it are dropped.
+      closed = true;
+      terminated = true;
+    },
   });
   let previousBlockedChunk: SomeChunk<T> | null = null;
   function enqueue(value: T): void {
+    if (terminated) {
+      return;
+    }
     if (type === 'bytes' && !ArrayBuffer.isView(value)) {
       flightController.error(new Error('Invalid data for bytes stream.'));
       return;
     }
     controller.enqueue(value);
   }
+  function fail(error: mixed): void {
+    if (!terminated) {
+      terminated = true;
+      // $FlowFixMe[incompatible-type]
+      controller.error(error);
+    }
+  }
   const flightController = {
     enqueueModel(json: string): void {
+      if (closed) {
+        // Once a close or error has been requested no further entry is read,
+        // so a late model never parses onto a stream that is ending.
+        return;
+      }
       if (previousBlockedChunk === null) {
         // If we're not blocked on any other chunks, we can try to eagerly initialize
         // this as a fast-path to avoid awaiting them.
@@ -1500,7 +1527,7 @@ function parseReadableStream<T>(
         if (initializedChunk.status === INITIALIZED) {
           enqueue(initializedChunk.value);
         } else {
-          chunk.then(enqueue, flightController.error);
+          chunk.then(enqueue, fail);
           previousBlockedChunk = chunk;
         }
       } else {
@@ -1514,7 +1541,7 @@ function parseReadableStream<T>(
             previousBlockedChunk = null;
           }
           enqueue(v);
-        }, flightController.error);
+        }, fail);
         previousBlockedChunk = chunk;
         blockedChunk.then(function () {
           resolveModelChunk(response, chunk, json, -1);
@@ -1532,7 +1559,11 @@ function parseReadableStream<T>(
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.close());
+        blockedChunk.then(() => {
+          if (!terminated) {
+            controller.close();
+          }
+        });
       }
     },
     error(error: mixed): void {
@@ -1541,13 +1572,12 @@ function parseReadableStream<T>(
       }
       closed = true;
       if (previousBlockedChunk === null) {
-        // $FlowFixMe[incompatible-type]
-        controller.error(error);
+        fail(error);
       } else {
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.error(error as any));
+        blockedChunk.then(() => fail(error));
       }
     },
   };

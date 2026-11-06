@@ -548,6 +548,92 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(Array.from(await decoded.b)).toEqual(Array.from(buffer));
   });
 
+  it('drops a stream entry that resolves after the stream has errored', async () => {
+    // A bytes stream gets an invalid entry and errors, then a later entry (a
+    // Blob-backed typed array) resolves and would enqueue onto the errored
+    // controller. That throw must not escape as an unhandled rejection.
+    const rejections = [];
+    const onRejection = reason => rejections.push(reason);
+    process.on('unhandledRejection', onRejection);
+    try {
+      const body = new FormData();
+      body.set('0', '["$r1"]');
+      body.append('S1', '"nope"');
+      body.append('S1', '"$o5"');
+      body.append('S1', 'C');
+      body.set('5', new Blob([new Uint8Array([1, 2, 3, 4])]));
+      const result = await ReactServerDOMServer.decodeReply(
+        body,
+        webpackServerMap,
+      );
+      const reader = result[0].getReader();
+      let readError = null;
+      await reader.read().then(null, error => (readError = error));
+      // Let the Blob read resolve and attempt the late enqueue.
+      for (let i = 0; i < 8; i++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      expect(readError).not.toBe(null);
+      expect(readError.message).toBe('Invalid data for bytes stream.');
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+    expect(
+      rejections.filter(
+        reason => reason && /already closed|Invalid state/.test(reason.message),
+      ),
+    ).toEqual([]);
+  });
+
+  it('drops stream entries that arrive after the consumer canceled the stream', async () => {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue('first');
+        c.enqueue('second');
+        c.close();
+      },
+    });
+    const formData = await ReactServerDOMClient.encodeReply({
+      stream,
+      later: Promise.resolve('later'),
+    });
+    // Keep the independent Promise's value until after the canceled stream's
+    // remaining entries, so observing it proves the decoder kept going.
+    const laterEntry = Array.from(formData).find(
+      entry => entry[1] === '"later"',
+    );
+    expect(laterEntry).toBeDefined();
+    const entries = Array.from(formData).filter(
+      entry => entry[0] !== laterEntry[0],
+    );
+    expect(entries.length).toBe(4);
+    let continueStream;
+    const canceled = new Promise(resolve => (continueStream = resolve));
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        yield entries[0];
+        yield entries[1];
+        await canceled;
+        yield entries[2];
+        yield entries[3];
+        yield laterEntry;
+      },
+    };
+
+    const decoded = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+    const reader = decoded.stream.getReader();
+    expect(await reader.read()).toEqual({value: 'first', done: false});
+    await reader.cancel('not interested');
+
+    // The stream's second item and its close marker still arrive. They must
+    // not throw into the decoder.
+    continueStream();
+    expect(await decoded.later).toBe('later');
+  });
+
   it('supports streamed values whose entries are not contiguous in the body', async () => {
     // The chunks of a streamed value are matched to their stream by field
     // name, not by position, so the client may interleave the entries of
