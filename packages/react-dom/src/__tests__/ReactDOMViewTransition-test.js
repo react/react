@@ -16,6 +16,7 @@ let SuspenseList;
 let ViewTransition;
 let act;
 let assertLog;
+let assertConsoleErrorDev;
 let Scheduler;
 let textCache;
 let startTransition;
@@ -30,6 +31,8 @@ describe('ReactDOMViewTransition', () => {
     Scheduler = require('scheduler');
     act = require('internal-test-utils').act;
     assertLog = require('internal-test-utils').assertLog;
+    assertConsoleErrorDev =
+      require('internal-test-utils').assertConsoleErrorDev;
     Suspense = React.Suspense;
     ViewTransition = React.ViewTransition;
     startTransition = React.startTransition;
@@ -1421,6 +1424,102 @@ describe('ReactDOMViewTransition', () => {
         } else {
           expect(errors[0].message).toBe(message);
         }
+      });
+    });
+  });
+
+  describe('named ViewTransitions duplicate checking', () => {
+    it('warns when two ViewTransitions mount with the same name at the same time', async () => {
+      function App() {
+        return (
+          <div>
+            <ViewTransition name="duplicate-1">
+              <div>first</div>
+            </ViewTransition>
+            <ViewTransition name="duplicate-1">
+              <div>second</div>
+            </ViewTransition>
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<App />);
+      });
+
+      assertConsoleErrorDev([
+        'There are two <ViewTransition name="duplicate-1"> components with the same name mounted at the same time. ' +
+          'This is not supported and will cause View Transitions to error. Try to use a more unique name e.g. by using a namespace prefix and adding the id of an item to the name.\n' +
+          '    in ViewTransition (at **)\n' +
+          '    in App (at **)',
+        'The existing <ViewTransition name="duplicate-1"> duplicate has this stack trace.\n' +
+          '    in ViewTransition (at **)\n' +
+          '    in App (at **)',
+      ]);
+    });
+
+    it('does not warn when a ViewTransition name changes to undefined before another component mounts with that name', async () => {
+      function App({active, showOther}) {
+        return (
+          <div>
+            <ViewTransition name={active ? 'cover-1' : undefined}>
+              <div>first</div>
+            </ViewTransition>
+            {showOther && (
+              <ViewTransition name="cover-1">
+                <div>second</div>
+              </ViewTransition>
+            )}
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<App active={true} showOther={false} />);
+      });
+
+      // Change name to undefined on the first ViewTransition
+      await act(() => {
+        root.render(<App active={false} showOther={false} />);
+      });
+
+      // Mount second ViewTransition with 'cover-1': should not warn
+      await act(() => {
+        root.render(<App active={false} showOther={true} />);
+      });
+    });
+
+    it('does not warn when a ViewTransition name changes to another name before another component mounts with the old name', async () => {
+      function App({name, showOther}) {
+        return (
+          <div>
+            <ViewTransition name={name}>
+              <div>first</div>
+            </ViewTransition>
+            {showOther && (
+              <ViewTransition name="cover-1">
+                <div>second</div>
+              </ViewTransition>
+            )}
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<App name="cover-1" showOther={false} />);
+      });
+
+      // Change name to 'cover-2' on the first ViewTransition
+      await act(() => {
+        root.render(<App name="cover-2" showOther={false} />);
+      });
+
+      // Mount second ViewTransition with 'cover-1': should not warn
+      await act(() => {
+        root.render(<App name="cover-2" showOther={true} />);
       });
     });
   });
