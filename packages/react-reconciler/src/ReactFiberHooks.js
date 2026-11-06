@@ -1144,6 +1144,12 @@ function useThenable<T>(thenable: Thenable<T>): T {
       if (currentFiber !== null && currentFiber.memoizedState !== null) {
         ReactSharedInternals.H = HooksDispatcherOnUpdateInDEV;
       } else {
+        if (
+          ReactSharedInternals.H === HooksDispatcherOnRerenderInDEV &&
+          hookTypesDev !== null
+        ) {
+          hookTypesDev.length = hookTypesUpdateIndexDev + 1;
+        }
         ReactSharedInternals.H = HooksDispatcherOnMountInDEV;
       }
     } else {
