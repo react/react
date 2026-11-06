@@ -181,7 +181,8 @@ async function createFixture(
       node.bound === undefined &&
       node.element === undefined &&
       node.fragment === undefined &&
-      node.props === undefined
+      node.props === undefined &&
+      node.component === undefined
     ) {
       throw new Error('Unsupported node: ' + name);
     }
@@ -202,7 +203,34 @@ async function createFixture(
     }
     buildingValues.add(name);
     const node = nodes[name];
-    if (node.element !== undefined) {
+    if (node.component !== undefined) {
+      if (node.throw) {
+        const error = buildValue(node.component);
+        if (!(error instanceof Error)) {
+          throw new Error(
+            node.component + ' is used as an Error but is not an error node',
+          );
+        }
+        values[name] = createServerElement(
+          undefined,
+          () => {
+            expectedErrors.set(error, 'thrown by ' + name);
+            throw error;
+          },
+          {label: name, failure: error, key: name},
+        );
+      } else {
+        const renderedElement = createClientElement(
+          {value: buildValue(node.component)},
+          {name: name + ' body'},
+        );
+        values[name] = createServerElement(
+          valueMetadata.get(renderedElement).html,
+          () => renderedElement,
+          {label: name, key: name, renderedElement},
+        );
+      }
+    } else if (node.element !== undefined) {
       const props = Array.isArray(node.element)
         ? {
             value: buildValue(node.element[0]),
@@ -352,6 +380,41 @@ async function createFixture(
       type: 'element',
       html: children.map(child => valueMetadata.get(child).html).join(''),
     });
+    return element;
+  }
+
+  // Suspend the Server Component until the test releases its render event.
+  function createServerElement(
+    html,
+    render,
+    {label = 'server component', failure, key, renderedElement} = {},
+  ) {
+    const deferred = createResolvablePromise();
+    async function Body() {
+      await deferred.promise;
+      return render();
+    }
+    const element = ReactServer.createElement(
+      Body,
+      key === undefined ? null : {key},
+    );
+    const renderEvent = createEvent('render ' + label, () =>
+      deferred.resolve(),
+    );
+    events.push(renderEvent);
+    valueMetadata.set(element, {
+      type: 'element',
+      html,
+      failure,
+      renderEvent,
+      renderedElement,
+    });
+    requiredEvents.set(element, [
+      renderEvent,
+      ...(renderedElement === undefined
+        ? []
+        : requiredEvents.get(renderedElement) || []),
+    ]);
     return element;
   }
 

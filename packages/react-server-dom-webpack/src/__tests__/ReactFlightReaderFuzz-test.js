@@ -1200,4 +1200,59 @@ describe('ReactFlightReaderFuzz (node)', () => {
         roots: {entry: 'element', other: 'data'},
       }));
   });
+  describe('Server Component output', () => {
+    it('a rendered component can fail through an owner while another prop is loading', () =>
+      runGraph({
+        nodes: {
+          shared: {object: {}},
+          broken: {module: 'failed', fail: 'load'},
+          pending: {module: 'pending'},
+          owner: {object: {shared: 'shared', broken: 'broken'}},
+          result: {promise: 'owner'},
+          output: {object: {shared: 'shared', pending: 'pending'}},
+          component: {component: 'output'},
+        },
+        roots: {entry: 'component', other: 'result'},
+        events: [
+          'load component body',
+          'resolve result to owner',
+          'reject broken',
+          'render component',
+          'load pending',
+        ],
+      }));
+
+    it('server component rendering after the rest of the response', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          body: {value: 'body'},
+          component: {component: 'body'},
+          data: {object: {field0: 'ready'}},
+        },
+        roots: {entry: 'component', other: 'data'},
+      }));
+
+    it('failing server component', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          error: {error: 'component failed'},
+          component: {component: 'error', throw: true},
+          data: {object: {field0: 'ready'}},
+        },
+        roots: {entry: 'component', other: 'data'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('suspended server component element used twice', () =>
+      runGraph({
+        nodes: {
+          body: {value: 'shared'},
+          component: {component: 'body'},
+          pair: {array: ['component', 'component']},
+        },
+        roots: {entry: 'pair', other: 'pair'},
+      }));
+  });
 });
