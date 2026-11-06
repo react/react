@@ -991,4 +991,29 @@ describe('FlightReaderOracle', () => {
     resolveRead(new Uint8Array([2]).buffer);
     await expect(recheck).rejects.toThrow();
   });
+
+  it('requires available bytes without waiting for the stream to close', async () => {
+    const source = {};
+    const produced = {released: false};
+    const remaining = {released: false};
+    const {oracle, resolve} = createTestOracle(source, {
+      valueMetadata: new Map([
+        [
+          source,
+          {
+            type: 'bytes',
+            chunks: [new Uint8Array([1]), new Uint8Array([2])],
+            events: [produced, remaining],
+          },
+        ],
+      ]),
+    });
+    resolve({getReader: () => ({read: () => new Promise(() => {})})});
+    await tick();
+    expect(oracle.getMissingResults()).toEqual([]);
+    produced.released = true;
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root.byte0',
+    ]);
+  });
 });

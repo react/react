@@ -167,7 +167,8 @@ async function createFixture(graph, {WebpackMock}) {
     } else if (
       node.iterator === undefined &&
       node.stream === undefined &&
-      node.iterable === undefined
+      node.iterable === undefined &&
+      node.bytes === undefined
     ) {
       throw new Error('Unsupported node: ' + name);
     }
@@ -205,6 +206,11 @@ async function createFixture(graph, {WebpackMock}) {
         label: name,
         failure,
       });
+    } else if (node.bytes !== undefined) {
+      values[name] = createByteStream(
+        Array.from({length: node.bytes}, (_, i) => new Uint8Array([i, 7])),
+        {label: name},
+      );
     } else if (node.iterable !== undefined) {
       values[name] = createAsyncIterable(
         node.iterable.map(buildValue),
@@ -261,6 +267,30 @@ async function createFixture(graph, {WebpackMock}) {
         );
       }
     }
+  }
+
+  function createByteStream(chunks, {label = 'bytes'} = {}) {
+    let controller;
+    let produced = 0;
+    const stream = new ReadableStream({
+      type: 'bytes',
+      start: c => (controller = c),
+    });
+    const streamEvents = [];
+    const pump = () => {
+      while (produced < chunks.length && streamEvents[produced].released) {
+        controller.enqueue(chunks[produced++].slice());
+      }
+      if (produced === chunks.length) {
+        controller.close();
+      }
+    };
+    for (let i = 0; i < chunks.length; i++) {
+      streamEvents.push(createEvent(label + ' chunk ' + i, pump));
+    }
+    events.push(...streamEvents);
+    valueMetadata.set(stream, {type: 'bytes', chunks, events: streamEvents});
+    return stream;
   }
 
   // Events can be released out of order, but stream items must be enqueued
