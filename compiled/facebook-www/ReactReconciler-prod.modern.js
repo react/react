@@ -11709,6 +11709,7 @@ module.exports = function ($$$config) {
       lanes &= ~lane;
     }
     0 !== spawnedLane &&
+      0 !== (suspendedLanes & 261930) &&
       markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
   }
   function flushSyncWork() {
@@ -14444,7 +14445,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-5b610964-20261106"
+      reconcilerVersion: "19.3.0-www-modern-d71b5372-20261106"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);

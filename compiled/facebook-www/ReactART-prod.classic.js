@@ -10341,6 +10341,7 @@ function markRootSuspended(
     lanes &= ~lane;
   }
   0 !== spawnedLane &&
+    0 !== (suspendedLanes & 261930) &&
     markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
 }
 function flushSyncWork() {
@@ -11755,10 +11756,10 @@ var slice = Array.prototype.slice,
   })(React.Component);
 var internals$jscomp$inline_1607 = {
   bundleType: 0,
-  version: "19.3.0-www-classic-5b610964-20261106",
+  version: "19.3.0-www-classic-d71b5372-20261106",
   rendererPackageName: "react-art",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-classic-5b610964-20261106"
+  reconcilerVersion: "19.3.0-www-classic-d71b5372-20261106"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1608 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11784,4 +11785,4 @@ exports.RadialGradient = RadialGradient;
 exports.Shape = TYPES.SHAPE;
 exports.Surface = Surface;
 exports.Text = Text;
-exports.version = "19.3.0-www-classic-5b610964-20261106";
+exports.version = "19.3.0-www-classic-d71b5372-20261106";
