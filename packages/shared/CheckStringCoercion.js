@@ -22,9 +22,10 @@ function typeName(value: mixed): string {
   if (__DEV__) {
     // toStringTag is needed for namespaced types like Temporal.Instant
     const hasToStringTag = typeof Symbol === 'function' && Symbol.toStringTag;
+    const constructor = (value as any).constructor;
     const type =
       (hasToStringTag && (value as any)[Symbol.toStringTag]) ||
-      (value as any).constructor.name ||
+      (constructor && constructor.name) ||
       'Object';
     // $FlowFixMe[incompatible-type]
     return type;
