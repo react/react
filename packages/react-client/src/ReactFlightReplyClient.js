@@ -842,7 +842,11 @@ export function processReply(
         proto !== ObjectPrototype &&
         (proto === null || getPrototypeOf(proto) !== null)
       ) {
-        if (temporaryReferences === undefined) {
+        if (temporaryReferences === undefined || proto === null) {
+          // Null-prototype objects are plain data, not pass-through references.
+          // Unlike class instances, they can't have been received from the
+          // server (which rejects them too), so replacing them with a temporary
+          // reference marker would silently drop their data on the server.
           throw new Error(
             'Only plain objects, and a few built-ins, can be passed to Server Functions. ' +
               'Classes or null prototypes are not supported.' +

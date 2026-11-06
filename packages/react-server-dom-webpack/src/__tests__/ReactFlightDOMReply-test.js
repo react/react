@@ -358,6 +358,33 @@ describe('ReactFlightDOMReply', () => {
     );
   });
 
+  it('errors when passing null-prototype objects with temporary references', async () => {
+    const attrs = Object.create(null);
+    attrs.src = 'https://example.com/a.jpg';
+
+    let error;
+    try {
+      await ReactServerDOMClient.encodeReply(
+        {attrs},
+        {
+          temporaryReferences:
+            ReactServerDOMClient.createTemporaryReferenceSet(),
+        },
+      );
+    } catch (x) {
+      error = x;
+    }
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: __DEV__
+          ? expect.stringContaining(
+              'Classes or null prototypes are not supported.',
+            )
+          : expect.stringContaining(''),
+      }),
+    );
+  });
+
   it('can pass JSX through a round trip using temporary references', async () => {
     function Component() {
       return <div />;
