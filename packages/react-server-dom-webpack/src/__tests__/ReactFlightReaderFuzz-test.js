@@ -536,7 +536,7 @@ describe('ReactFlightReaderFuzz (node)', () => {
       }));
   });
 
-  describe('data stream graphs', () => {
+  describe('data streams and shared sequences', () => {
     it('delivers ordered data stream reads before source close and EOF', async () => {
       let controller;
       const data = new ReadableStream({start: c => (controller = c)});
@@ -598,7 +598,7 @@ describe('ReactFlightReaderFuzz (node)', () => {
       );
     });
 
-    it.each(['stream'])('%s shared between two collections', type =>
+    it.each(['stream', 'iterable'])('%s shared between two collections', type =>
       runGraph({
         nodes: {
           inner: {[type]: []},
@@ -609,7 +609,7 @@ describe('ReactFlightReaderFuzz (node)', () => {
       }),
     );
 
-    it.each(['stream'])('%s in repeated stream items', type =>
+    it.each(['stream', 'iterable'])('%s in repeated stream items', type =>
       runGraph({
         nodes: {
           inner: {[type]: type === 'bytes' ? 2 : []},
@@ -620,21 +620,23 @@ describe('ReactFlightReaderFuzz (node)', () => {
       }),
     );
 
-    it.each(['stream'])('%s shared between different stream items', type =>
-      runGraph({
-        nodes: {
-          inner:
-            type === 'bytes'
-              ? {bytes: 2}
-              : type === 'iterable'
-                ? {iterable: [], single: true}
-                : {stream: []},
-          first: {array: ['inner']},
-          second: {object: {again: 'inner'}},
-          outer: {stream: ['first', 'second']},
-        },
-        roots: {entry: 'outer', other: 'outer'},
-      }),
+    it.each(['stream', 'iterable'])(
+      '%s shared between different stream items',
+      type =>
+        runGraph({
+          nodes: {
+            inner:
+              type === 'bytes'
+                ? {bytes: 2}
+                : type === 'iterable'
+                  ? {iterable: [], single: true}
+                  : {stream: []},
+            first: {array: ['inner']},
+            second: {object: {again: 'inner'}},
+            outer: {stream: ['first', 'second']},
+          },
+          roots: {entry: 'outer', other: 'outer'},
+        }),
     );
 
     it('source stream failure while another value is still loading', () =>
@@ -695,6 +697,82 @@ describe('ReactFlightReaderFuzz (node)', () => {
           stream: {stream: ['item0', 'item1']},
         },
         roots: {entry: 'stream', other: 'stream'},
+      }));
+  });
+
+  describe('async iterable graphs', () => {
+    it.each([false, true])(
+      'round-trips an async iterable with single use %s',
+      async single => {
+        const source = {
+          async *[Symbol.asyncIterator]() {
+            yield 'first';
+            yield {value: 'second'};
+            return 'end';
+          },
+        };
+        const received = await roundTrip(
+          single ? source[Symbol.asyncIterator]() : source,
+        );
+        const iterator = received[Symbol.asyncIterator]();
+        expect(iterator === received).toBe(single);
+        expect(await iterator.next()).toStrictEqual({
+          done: false,
+          value: 'first',
+        });
+        expect(await iterator.next()).toStrictEqual({
+          done: false,
+          value: {value: 'second'},
+        });
+        expect(await iterator.next()).toStrictEqual({done: true, value: 'end'});
+        expect(await iterator.next()).toStrictEqual({
+          done: true,
+          value: undefined,
+        });
+      },
+    );
+
+    it('an async iterable produces independent results while its first module is loading', () =>
+      runGraph({
+        nodes: {
+          held: {module: 'loaded'},
+          first: {object: {value: 'held'}},
+          ready: {value: 'ready'},
+          end: {value: 'end'},
+          sequence: {
+            iterable: ['first', 'ready'],
+            returns: 'end',
+            single: true,
+          },
+        },
+        roots: {entry: 'sequence', other: 'sequence'},
+        events: [
+          'start sequence',
+          'sequence item 1',
+          'return sequence',
+          'load held',
+        ],
+      }));
+
+    it('an async iterable returns a cycle that was already sent', () =>
+      runGraph({
+        nodes: {
+          array: {array: ['object']},
+          object: {object: {field0: 'array', field1: 'iterable'}},
+          iterable: {iterable: [], returns: 'array'},
+        },
+        roots: {entry: 'array', other: 'array'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('async iterator with cyclic items and a return value', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          item: {array: ['item', 'ready', 'iterator']},
+          iterator: {iterable: ['item', 'item'], returns: 'item', single: true},
+        },
+        roots: {entry: 'iterator', other: 'iterator'},
       }));
   });
 });
