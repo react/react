@@ -11,6 +11,7 @@
 'use strict';
 
 let assertConsoleErrorDev;
+let serverAct;
 let serverExports;
 let webpackServerMap;
 let ReactServerDOMServer;
@@ -33,6 +34,7 @@ describe('ReactFlightDOMReplyEdge', () => {
 
     const InternalTestUtils = require('internal-test-utils');
     assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
+    serverAct = InternalTestUtils.serverAct;
   });
 
   it('can encode a reply', async () => {
@@ -373,6 +375,67 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(laterValue).toBe(item.holder);
     const read = await laterValue.inner.getReader().read();
     expect(read.value).toBe('inner');
+  });
+
+  it('waits for a queued stream item to initialize before closing', async () => {
+    let resolveModule;
+    const ServerModule = serverExports(
+      {
+        greet() {
+          return 'hi';
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    ReactServerDOMClient.registerServerReference(
+      ServerModule.greet,
+      ServerModule.greet.$$id,
+    );
+
+    // The first item travels as a Blob, which the decoder reads
+    // asynchronously; the second waits for its module to load.
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue({bytes: new Uint8Array([1])});
+        c.enqueue({greet: ServerModule.greet});
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+
+    // Deliver the second item only after the first read has completed.
+    let continueStream;
+    const firstRead = new Promise(resolve => (continueStream = resolve));
+    let finishSending;
+    const sent = new Promise(resolve => (finishSending = resolve));
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        let items = 0;
+        // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+        for (const entry of body) {
+          yield entry;
+          if (entry[0].startsWith('S') && items++ === 0) {
+            await firstRead;
+          }
+        }
+        finishSending();
+      },
+    };
+
+    const result = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader();
+    expect(Array.from((await reader.read()).value.bytes)).toEqual([1]);
+    const secondRead = reader.read();
+    continueStream();
+    await sent;
+    await serverAct(() => resolveModule());
+    expect((await secondRead).value.greet()).toBe('hi');
+    expect((await reader.read()).done).toBe(true);
   });
 
   it('should cancel the transported ReadableStream when we are cancelled', async () => {
