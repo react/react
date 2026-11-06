@@ -2048,8 +2048,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
     'failing stream',
   ];
 
-  // Normal graphs stay enabled while the reply fixes catch up.
-  (host === 'reply' ? describe.skip : describe)('generated graphs', () => {
+  describe('generated graphs', () => {
     seeds.forEach(seed => {
       for (let scheduleIndex = 0; scheduleIndex < 2; scheduleIndex++) {
         readTimings.forEach(readTiming => {
