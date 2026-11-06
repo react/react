@@ -611,6 +611,32 @@ describe('ReactDOMServerIntegration', () => {
           expect(e.textContent).toBe('\nHello');
         },
       );
+      itRenders(
+        'a newline-eating tag with multiple children starting with \\n',
+        async render => {
+          const e = await render(
+            <pre>
+              {'\nHello'}
+              {' world'}
+            </pre>,
+          );
+          expect(e.textContent).toBe('\nHello world');
+        },
+      );
+      itRenders(
+        'a newline-eating tag with a component child starting with \\n',
+        async render => {
+          function Text({text}) {
+            return text;
+          }
+          const e = await render(
+            <pre>
+              <Text text={'\nHello'} />
+            </pre>,
+          );
+          expect(e.textContent).toBe('\nHello');
+        },
+      );
       itRenders('a normal tag with content starting with \\n', async render => {
         const e = await render(<div>{'\nHello'}</div>);
         expect(e.textContent).toBe('\nHello');
