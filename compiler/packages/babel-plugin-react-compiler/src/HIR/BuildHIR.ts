@@ -159,6 +159,14 @@ export function lower(
         reactive: false,
         loc,
       };
+      /*
+       * Promote the rest parameter's placeholder like every other
+       * destructuring parameter above does. Outlined functions are code
+       * generated without running PromoteUsedTemporaries, so an unpromoted
+       * parameter there reaches codegen unnamed and trips the "Expected
+       * temporaries to be promoted to named identifiers" invariant.
+       */
+      promoteTemporary(place.identifier);
       params.push({
         kind: 'Spread',
         place,
