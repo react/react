@@ -3686,6 +3686,72 @@ function serializeImportString(request: Request, value: string): string {
 
 let modelRoot: null | ReactClientValue = false;
 
+// A stream item is written straight into its stream's row and has no id of
+// its own, so it is given one before it is written, in case it or anything
+// below it comes up a second time. The id becomes a row of its own only when
+// something referred to the item or to a path under it; otherwise those
+// references are dropped again, since no row will ever be emitted for them.
+type StreamItemContext = {
+  task: Task,
+  id: number,
+  referenced: boolean,
+  objects: Set<Reference>,
+  previousOwners?: Map<Reference, StreamItemContext>,
+};
+let streamItemContext: null | StreamItemContext = null;
+let streamItemOwners: null | WeakMap<Reference, StreamItemContext> = null;
+
+function registerStreamItemObject(
+  context: StreamItemContext,
+  value: Reference,
+): void {
+  context.objects.add(value);
+  const owners = streamItemOwners;
+  if (owners !== null) {
+    const previousOwner = owners.get(value);
+    if (previousOwner !== undefined && previousOwner !== context) {
+      // A host can synchronously start another request with the same object.
+      // Its item shadows the outer owner only until this context completes.
+      let previousOwners = context.previousOwners;
+      if (previousOwners === undefined) {
+        previousOwners = context.previousOwners = new Map();
+      }
+      previousOwners.set(value, previousOwner);
+    }
+    owners.set(value, context);
+  }
+}
+
+function registerByPath(
+  request: Request,
+  task: Task,
+  value: Reference,
+  reference: string,
+): void {
+  request.writtenObjects.set(value, reference);
+  if (streamItemContext !== null && task === streamItemContext.task) {
+    registerStreamItemObject(streamItemContext, value);
+  }
+}
+
+function referTo(value: Reference, reference: string): string {
+  // A synchronously settling iterator can refer back to an item whose
+  // serialization is still on the stack.
+  const owners = streamItemOwners;
+  if (owners === null) {
+    const context = streamItemContext;
+    if (context !== null && context.objects.has(value)) {
+      context.referenced = true;
+    }
+  } else {
+    const owner = owners.get(value);
+    if (owner !== undefined) {
+      owner.referenced = true;
+    }
+  }
+  return reference;
+}
+
 function renderModel(
   request: Request,
   task: Task,
@@ -3853,7 +3919,7 @@ function renderModelDestructive(
               // detect whether this already was emitted and synchronously available. In that
               // case we can refer to it synchronously and only make it lazy otherwise.
               // We currently don't have a data structure that lets us see that though.
-              return existingReference;
+              return referTo(value, existingReference);
             }
           } else if (parentPropertyName.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
@@ -3862,7 +3928,7 @@ function renderModelDestructive(
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
               elementReference = parentReference + ':' + parentPropertyName;
-              writtenObjects.set(value, elementReference);
+              registerByPath(request, task, value, elementReference);
             }
           }
         }
@@ -3946,7 +4012,7 @@ function renderModelDestructive(
           // If this element renders another object, we can now refer to that object through
           // the same location as this element.
           if (!writtenObjects.has(newChild)) {
-            writtenObjects.set(newChild, elementReference);
+            registerByPath(request, task, newChild, elementReference);
           }
         }
         return newChild;
@@ -4084,10 +4150,17 @@ function renderModelDestructive(
 
     if (existingReference !== undefined) {
       if (modelRoot === value) {
-        if (existingReference !== serializeByValueID(task.id)) {
+        if (
+          existingReference !== serializeByValueID(task.id) &&
+          !(
+            streamItemContext !== null &&
+            task === streamItemContext.task &&
+            existingReference === serializeByValueID(streamItemContext.id)
+          )
+        ) {
           // Turns out that we already have this root at a different reference.
           // Use that after all.
-          return existingReference;
+          return referTo(value, existingReference);
         }
         // This is the ID we're currently emitting so we need to write it
         // once but if we discover it again, we refer to it by id.
@@ -4095,7 +4168,7 @@ function renderModelDestructive(
       } else {
         // We've already emitted this as an outlined object, so we can
         // just refer to that by its existing ID.
-        return existingReference;
+        return referTo(value, existingReference);
       }
     } else if (parentPropertyName.indexOf(':') === -1) {
       // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
@@ -4123,7 +4196,12 @@ function renderModelDestructive(
               break;
           }
         }
-        writtenObjects.set(value, parentReference + ':' + propertyName);
+        registerByPath(
+          request,
+          task,
+          value,
+          parentReference + ':' + propertyName,
+        );
       }
     }
 
@@ -5369,7 +5447,7 @@ function renderDebugModel(
     if (existingReference !== undefined) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
-      return existingReference;
+      return referTo(value, existingReference);
     }
 
     if (counter.objectLimit <= 0 && !doNotLimit.has(value)) {
@@ -6283,6 +6361,15 @@ function emitChunk(
   const resolvedModel = resolveModel(request, task, {'': value}, '', value);
   // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
   const json: string = stringify(resolvedModel);
+  const context = streamItemContext;
+  if (context !== null && task === context.task && context.referenced) {
+    const reference = serializeByValueID(context.id);
+    request.pendingChunks++;
+    emitModelChunk(request, context.id, json);
+    context.id = -1;
+    emitModelChunk(request, task.id, stringify(reference));
+    return;
+  }
   emitModelChunk(request, task.id, json);
 }
 
@@ -6449,9 +6536,66 @@ function tryStreamTask(request: Request, task: Task): void {
     canEmitDebugInfo = false;
   }
   const parentSerializedSize = serializedSize;
+  const item = task.model;
+  const writtenObjects = request.writtenObjects;
+  const previousModelRoot = modelRoot;
+  const parent = streamItemContext;
+  if (parent !== null && streamItemOwners === null) {
+    // Ordinary asynchronous items have only one active context. Index owners
+    // only when a synchronously settling iterator nests another item.
+    const owners = new WeakMap<Reference, StreamItemContext>();
+    parent.objects.forEach(object => owners.set(object, parent));
+    streamItemOwners = owners;
+  }
+  const context: StreamItemContext = {
+    task,
+    id: -1,
+    referenced: false,
+    objects: new Set(),
+  };
+  modelRoot = item;
+  streamItemContext = context;
+  if (typeof item === 'object' && item !== null && !writtenObjects.has(item)) {
+    context.id = request.nextChunkId++;
+    writtenObjects.set(item, serializeByValueID(context.id));
+    registerStreamItemObject(context, item);
+  }
   try {
-    emitChunk(request, task, task.model);
+    emitChunk(request, task, item);
   } finally {
+    if (context.id !== -1) {
+      // The item was written inline after all. A value that got a row of
+      // its own in the meantime, like a stream, keeps that reference.
+      const itemReference = serializeByValueID(context.id);
+      context.objects.forEach(object => {
+        const reference = writtenObjects.get(object);
+        if (
+          reference !== undefined &&
+          (reference === itemReference ||
+            reference.indexOf(itemReference + ':') === 0)
+        ) {
+          writtenObjects.delete(object);
+        }
+      });
+    }
+    const owners = streamItemOwners;
+    if (owners !== null) {
+      const previousOwners = context.previousOwners;
+      context.objects.forEach(object => {
+        const previousOwner =
+          previousOwners === undefined ? undefined : previousOwners.get(object);
+        if (previousOwner === undefined) {
+          owners.delete(object);
+        } else {
+          owners.set(object, previousOwner);
+        }
+      });
+      if (parent === null) {
+        streamItemOwners = null;
+      }
+    }
+    streamItemContext = parent;
+    modelRoot = previousModelRoot;
     serializedSize = parentSerializedSize;
     if (__DEV__) {
       canEmitDebugInfo = prevCanEmitDebugInfo;
