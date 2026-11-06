@@ -19,6 +19,7 @@ let Suspense;
 let Activity;
 let assertLog;
 let waitForPaint;
+let waitFor;
 let textCache;
 
 describe('ReactDeferredValue', () => {
@@ -39,6 +40,7 @@ describe('ReactDeferredValue', () => {
     const InternalTestUtils = require('internal-test-utils');
     assertLog = InternalTestUtils.assertLog;
     waitForPaint = InternalTestUtils.waitForPaint;
+    waitFor = InternalTestUtils.waitFor;
 
     textCache = new Map();
   });
@@ -385,6 +387,61 @@ describe('ReactDeferredValue', () => {
     });
     assertLog(['Final']);
     expect(root).toMatchRenderedOutput('Final');
+  });
+
+  it('keeps a pinged transition lane when a deferred render suspends', async () => {
+    resolveText('Initial');
+    let resolveLazy;
+    const Lazy = React.lazy(
+      () => new Promise(resolve => (resolveLazy = resolve)),
+    );
+
+    function App({value}) {
+      const deferredValue = useDeferredValue(value, 'Initial');
+      if (deferredValue !== 'Initial') {
+        Scheduler.log('Deferred render');
+      }
+      return (
+        <>
+          <Lazy />
+          <AsyncText text={deferredValue} />
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() =>
+      root.render(
+        <Suspense fallback={null}>
+          <Text text="Before" />
+        </Suspense>,
+      ),
+    );
+    assertLog(['Before']);
+
+    startTransition(() => {
+      root.render(
+        <Suspense fallback={null}>
+          <App value="Final" />
+        </Suspense>,
+      );
+    });
+
+    await waitFor(['Initial', 'Deferred render']);
+    expect(root).toMatchRenderedOutput('Before');
+
+    await act(() => resolveLazy({default: () => <Text text="Lazy" />}));
+
+    assertLog([
+      'Lazy',
+      'Suspend! [Final]',
+      'Lazy',
+      'Initial',
+      'Deferred render',
+      'Lazy',
+      'Suspend! [Final]',
+    ]);
+    expect(root).toMatchRenderedOutput('LazyInitial');
   });
 
   it('defers during initial render when initialValue is provided, even if render is not sync', async () => {

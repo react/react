@@ -5102,6 +5102,14 @@ function pingSuspendedRoot(
     if (workInProgressSuspendedRetryLanes === workInProgressRootRenderLanes) {
       workInProgressSuspendedRetryLanes = NoLanes;
     }
+  } else if (workInProgressRoot === root) {
+    // The ping is on a different lane than the current render, but it may be
+    // entangled with the lanes being suspended. Keep it out of the suspended
+    // lanes so we don't clear the ping.
+    workInProgressRootPingedLanes = mergeLanes(
+      workInProgressRootPingedLanes,
+      pingedLanes,
+    );
   }
 
   ensureRootIsScheduled(root);
