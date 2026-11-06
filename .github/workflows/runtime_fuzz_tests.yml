@@ -16,6 +16,9 @@ env:
 jobs:
   test_fuzz:
     runs-on: ubuntu-latest
+    # A 128-case dev+prod run takes about five minutes; with checkout and install
+    # the job is around seven. Allow roughly three times that as headroom.
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4.1.0
     - uses: actions/setup-node@v4
@@ -28,6 +31,8 @@ jobs:
         ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       shell: bash
     - name: Run fuzz tests
+      env:
+        FLIGHT_FUZZ_CASES: 128
       run: |-
         FUZZ_TEST_SEED=$RANDOM yarn test fuzz --ci
         FUZZ_TEST_SEED=$RANDOM yarn test --prod fuzz --ci
