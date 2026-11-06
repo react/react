@@ -286,6 +286,51 @@ describe('ReactDOMViewTransition', () => {
     });
 
     // @gate enableViewTransition
+    it('restores the document view transition name when the root is a ShadowRoot', async () => {
+      const shadowHost = document.createElement('div');
+      container.appendChild(shadowHost);
+      const shadowRoot = shadowHost.attachShadow({mode: 'open'});
+      const root = ReactDOMClient.createRoot(shadowRoot);
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition>
+            <div>Hello</div>
+          </ViewTransition>
+        );
+      }
+
+      await act(() => {
+        root.render(<App show={false} />);
+      });
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      expect(shadowRoot.textContent).toBe('Hello');
+      expect(document.documentElement.style.viewTransitionName).toBe('');
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      expect(shadowRoot.textContent).toBe('');
+      expect(document.documentElement.style.viewTransitionName).toBe('');
+
+      await act(() => {
+        root.unmount();
+      });
+    });
+
+    // @gate enableViewTransition
     it('fires onExit when a ViewTransition unmounts', async () => {
       const onExit = jest.fn();
 
