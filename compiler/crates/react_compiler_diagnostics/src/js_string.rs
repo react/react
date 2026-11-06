@@ -10,11 +10,77 @@
 //! because serde_json can neither parse nor emit a lone `\uXXXX` escape.
 //! Serde for `JsString` decodes and re-emits that marker form, which keeps the
 //! JS side of the bridge unchanged.
+//!
+//! User text can itself contain something that looks like a marker (e.g. the
+//! literal string `"__SURROGATE_D83D__"`). To keep that indistinguishable
+//! from an actual encoded surrogate, `bridge.ts` escapes any such literal
+//! text into `__SURROGATE_ESCAPED_XXXX__` before it reaches Rust.
+//! `from_marker_string` reverses that escape back to the plain literal text
+//! (instead of decoding it as a surrogate), and `to_marker_string` re-applies
+//! the escape to any literal marker-shaped text it emits, so `bridge.ts`'s
+//! `restoreJsonSurrogates` can unescape it again on the way back.
 
 use std::fmt;
 
 use serde::Deserialize;
 use serde::Serialize;
+
+/// Constants describing the bridge wire form's marker and escaped-marker
+/// shapes, shared by `JsString::from_marker_string`, `JsString::to_marker_string`,
+/// and `escape_literal_markers`.
+mod marker {
+    /// `__SURROGATE_`
+    pub const PREFIX: &[u8] = b"__SURROGATE_";
+    pub const PREFIX_STR: &str = "__SURROGATE_";
+    /// `ESCAPED_`, inserted right after `PREFIX` to mark literal text that
+    /// merely looks like a marker (as opposed to an actual encoded
+    /// surrogate).
+    pub const ESCAPE_INFIX: &[u8] = b"ESCAPED_";
+    /// Length in bytes of a well-formed marker: `__SURROGATE_` + 4 hex
+    /// digits + `__`.
+    pub const LEN: usize = PREFIX.len() + 4 + 2;
+    /// Length in bytes of a well-formed escaped marker: `__SURROGATE_` +
+    /// `ESCAPED_` + 4 hex digits + `__`.
+    pub const ESCAPED_LEN: usize = PREFIX.len() + ESCAPE_INFIX.len() + 4 + 2;
+}
+
+/// Escape literal occurrences of the marker pattern (e.g. user text
+/// `"__SURROGATE_D83D__"`) into `__SURROGATE_ESCAPED_XXXX__`, so they can't
+/// be confused with a real marker for an unpaired surrogate. Mirrors
+/// `escapeLiteralMarkers` in bridge.ts; `JsString::from_marker_string`
+/// reverses this.
+fn escape_literal_markers(s: &str) -> String {
+    if !s.contains(marker::PREFIX_STR) {
+        return s.to_string();
+    }
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let mut pos = 0;
+    let mut segment_start = 0;
+    while let Some(found) = s[pos..].find(marker::PREFIX_STR) {
+        let idx = pos + found;
+        let tail = &bytes[idx..];
+        let well_formed = tail.len() >= marker::LEN
+            && &tail[marker::LEN - 2..marker::LEN] == b"__"
+            && tail[marker::PREFIX.len()..marker::PREFIX.len() + 4]
+                .iter()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_lowercase());
+        if well_formed {
+            let hex_start = idx + marker::PREFIX.len();
+            out.push_str(&s[segment_start..idx]);
+            out.push_str(marker::PREFIX_STR);
+            out.push_str("ESCAPED_");
+            out.push_str(&s[hex_start..hex_start + 4]);
+            out.push_str("__");
+            pos = idx + marker::LEN;
+            segment_start = pos;
+        } else {
+            pos = idx + marker::PREFIX.len();
+        }
+    }
+    out.push_str(&s[segment_start..]);
+    out
+}
 
 /// Invariant: `Repr::Utf8` holds every well-formed value and `Repr::Wtf16`
 /// only ill-formed ones (at least one unpaired surrogate). The derived
@@ -91,41 +157,66 @@ impl JsString {
 
     /// Decode the bridge wire form: a UTF-8 string in which lone surrogates
     /// appear as `__SURROGATE_XXXX__` markers (uppercase hex, mirroring what
-    /// `sanitizeJsonSurrogates` emits and `restoreJsonSurrogates` accepts).
+    /// `sanitizeJsonSurrogates` emits and `restoreJsonSurrogates` accepts),
+    /// and literal text that merely looks like a marker has been escaped to
+    /// `__SURROGATE_ESCAPED_XXXX__` (see `escapeLiteralMarkers` in
+    /// bridge.ts). The escaped form is unescaped back to the plain literal
+    /// text here rather than decoded as a surrogate.
     ///
-    /// All scanning is byte-wise: a marker is 18 ASCII bytes, so byte-slice
-    /// comparisons cannot land on a UTF-8 char boundary the way `str` range
-    /// indexing can when multibyte text follows the prefix.
+    /// All scanning is byte-wise: a marker is 18 ASCII bytes (26 for the
+    /// escaped form), so byte-slice comparisons cannot land on a UTF-8 char
+    /// boundary the way `str` range indexing can when multibyte text follows
+    /// the prefix.
     pub fn from_marker_string(s: &str) -> Self {
-        const PREFIX: &[u8] = b"__SURROGATE_";
-        const MARKER_LEN: usize = 18;
-        if !s.contains("__SURROGATE_") {
+        if !s.contains(marker::PREFIX_STR) {
             return JsString(Repr::Utf8(s.to_string()));
         }
         let bytes = s.as_bytes();
         let mut units: Vec<u16> = Vec::with_capacity(s.len());
         let mut pos = 0;
         let mut segment_start = 0;
-        while let Some(found) = s[pos..].find("__SURROGATE_") {
+        while let Some(found) = s[pos..].find(marker::PREFIX_STR) {
             let idx = pos + found;
             let tail = &bytes[idx..];
-            let well_formed = tail.len() >= MARKER_LEN
-                && &tail[MARKER_LEN - 2..MARKER_LEN] == b"__"
-                && tail[PREFIX.len()..PREFIX.len() + 4]
+
+            let escaped_hex_start = marker::PREFIX.len() + marker::ESCAPE_INFIX.len();
+            let is_escaped = tail.len() >= marker::ESCAPED_LEN
+                && &tail[marker::PREFIX.len()..escaped_hex_start] == marker::ESCAPE_INFIX
+                && &tail[marker::ESCAPED_LEN - 2..marker::ESCAPED_LEN] == b"__"
+                && tail[escaped_hex_start..escaped_hex_start + 4]
+                    .iter()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_lowercase());
+            if is_escaped {
+                // Escaped literal text: unescape back to the plain
+                // `__SURROGATE_XXXX__` text instead of decoding a surrogate.
+                let hex_start = idx + escaped_hex_start;
+                units.extend(s[segment_start..idx].encode_utf16());
+                units.extend(marker::PREFIX_STR.encode_utf16());
+                units.extend(s[hex_start..hex_start + 4].encode_utf16());
+                units.extend("__".encode_utf16());
+                pos = idx + marker::ESCAPED_LEN;
+                segment_start = pos;
+                continue;
+            }
+
+            let well_formed = tail.len() >= marker::LEN
+                && &tail[marker::LEN - 2..marker::LEN] == b"__"
+                && tail[marker::PREFIX.len()..marker::PREFIX.len() + 4]
                     .iter()
                     .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_lowercase());
             if well_formed {
-                let hex = std::str::from_utf8(&tail[PREFIX.len()..PREFIX.len() + 4])
-                    .expect("ascii hex is valid utf8");
+                let hex =
+                    std::str::from_utf8(&tail[marker::PREFIX.len()..marker::PREFIX.len() + 4])
+                        .expect("ascii hex is valid utf8");
                 let unit = u16::from_str_radix(hex, 16).expect("validated hex digits");
                 units.extend(s[segment_start..idx].encode_utf16());
                 units.push(unit);
-                pos = idx + MARKER_LEN;
+                pos = idx + marker::LEN;
                 segment_start = pos;
             } else {
                 // Not a well-formed marker: keep the literal text and continue
                 // scanning after the prefix.
-                pos = idx + PREFIX.len();
+                pos = idx + marker::PREFIX.len();
             }
         }
         units.extend(s[segment_start..].encode_utf16());
@@ -133,11 +224,22 @@ impl JsString {
     }
 
     /// Encode to the bridge wire form (markers for unpaired surrogates).
+    ///
+    /// Literal text that merely looks like a marker (e.g. user source
+    /// containing `"__SURROGATE_D83D__"`) is escaped via
+    /// `escape_literal_markers` so it can't be confused with a real marker
+    /// minted for an unpaired surrogate below; `bridge.ts`'s
+    /// `restoreJsonSurrogates` unescapes it again on the way back.
     pub fn to_marker_string(&self) -> String {
         match &self.0 {
-            Repr::Utf8(s) => s.clone(),
+            Repr::Utf8(s) => escape_literal_markers(s),
             Repr::Wtf16(units) => {
                 let mut out = String::with_capacity(units.len() * 2);
+                // Literal (non-surrogate) text accumulates here so it can be
+                // escaped as a whole run before a real marker, or at the end,
+                // is appended -- escaping must not run on top of a marker
+                // this loop itself just emitted.
+                let mut literal = String::new();
                 let mut iter = units.iter().copied().peekable();
                 while let Some(unit) = iter.next() {
                     match unit {
@@ -148,22 +250,27 @@ impl JsString {
                                     let cp = 0x10000
                                         + ((unit as u32 - 0xD800) << 10)
                                         + (next as u32 - 0xDC00);
-                                    out.push(char::from_u32(cp).expect("valid supplementary"));
+                                    literal.push(char::from_u32(cp).expect("valid supplementary"));
                                     continue;
                                 }
                             }
+                            out.push_str(&escape_literal_markers(&literal));
+                            literal.clear();
                             out.push_str(&format!("__SURROGATE_{unit:04X}__"));
                         }
                         0xDC00..=0xDFFF => {
+                            out.push_str(&escape_literal_markers(&literal));
+                            literal.clear();
                             out.push_str(&format!("__SURROGATE_{unit:04X}__"));
                         }
                         _ => {
-                            out.push(
+                            literal.push(
                                 char::from_u32(unit as u32).expect("BMP non-surrogate is a char"),
                             );
                         }
                     }
                 }
+                out.push_str(&escape_literal_markers(&literal));
                 out
             }
         }
@@ -331,5 +438,48 @@ mod tests {
         // user text and must survive verbatim.
         let input = "__SURROGATE_d83e__";
         assert_eq!(JsString::from_marker_string(input).as_str(), Some(input));
+    }
+
+    #[test]
+    fn escaped_marker_text_decodes_to_the_original_literal() {
+        // bridge.ts's escapeLiteralMarkers turns literal user text that looks
+        // like a marker into this escaped form before it reaches Rust.
+        // from_marker_string must unescape it back to the literal text
+        // instead of decoding a surrogate.
+        let escaped = "__SURROGATE_ESCAPED_D83D__";
+        let js = JsString::from_marker_string(escaped);
+        assert_eq!(js.as_str(), Some("__SURROGATE_D83D__"));
+        // And re-encoding must escape it again, matching the wire form Rust
+        // received, not decode it as a surrogate.
+        assert_eq!(js.to_marker_string(), escaped);
+    }
+
+    #[test]
+    fn literal_marker_shaped_text_round_trips_through_to_marker_string() {
+        // A plain (well-formed) JsString containing literal marker-shaped
+        // text must come back out escaped, so bridge.ts's
+        // restoreJsonSurrogates on the far side doesn't mistake it for a
+        // real surrogate marker.
+        let js = JsString::from("__SURROGATE_D83D__");
+        assert_eq!(js.to_marker_string(), "__SURROGATE_ESCAPED_D83D__");
+    }
+
+    #[test]
+    fn literal_marker_text_mixed_with_a_real_surrogate_round_trips() {
+        // A string with an actual unpaired surrogate *and* literal
+        // marker-shaped text elsewhere must escape only the literal part.
+        let mut units: Vec<u16> = "prefix __SURROGATE_D83D__ ".encode_utf16().collect();
+        units.push(0xD83E);
+        units.extend(" suffix".encode_utf16());
+        let js = JsString::from_code_units(units.clone());
+
+        let wire = js.to_marker_string();
+        assert_eq!(
+            wire,
+            "prefix __SURROGATE_ESCAPED_D83D__ __SURROGATE_D83E__ suffix"
+        );
+
+        // And decoding that wire form must reproduce the original value.
+        assert_eq!(JsString::from_marker_string(&wire).code_units(), units);
     }
 }
