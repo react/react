@@ -478,6 +478,58 @@ describe('useSyncExternalStore', () => {
     },
   );
 
+  it(
+    'does not run effects with a stale snapshot when an Activity subtree ' +
+      'that bails out of rendering is revealed',
+    async () => {
+      const store = createExternalStore('initial');
+
+      function Subscriber() {
+        const value = useSyncExternalStore(store.subscribe, store.getState);
+        Scheduler.log('render:' + value);
+        React.useEffect(() => {
+          Scheduler.log('effect:' + value);
+        }, [value]);
+        return value;
+      }
+
+      // The same element on every render, like `children` passed through a
+      // component that toggles the Activity boundary. Revealing the boundary
+      // bails out of rendering the subscriber.
+      const subscriber = <Subscriber />;
+
+      function App({mode}) {
+        return <React.Activity mode={mode}>{subscriber}</React.Activity>;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => {
+        root.render(<App mode="visible" />);
+      });
+      assertLog(['render:initial', 'effect:initial']);
+
+      // Hide the subtree. React unsubscribes from the store.
+      await act(() => {
+        root.render(<App mode="hidden" />);
+      });
+      expect(store.getSubscriberCount()).toBe(0);
+
+      // Mutate the store while the subtree is hidden.
+      await act(() => {
+        store.set('updated');
+      });
+      assertLog([]);
+
+      // Show the subtree again. Effects must not observe the snapshot from
+      // before the subtree was hidden.
+      await act(() => {
+        root.render(<App mode="visible" />);
+      });
+      assertLog(['render:updated', 'effect:updated']);
+      expect(root).toMatchRenderedOutput('updated');
+    },
+  );
+
   it('regression: does not infinite loop for only changing store reference in render', async () => {
     let store = {value: {}};
     let listeners = [];
