@@ -4,10 +4,10 @@ module.exports = {
   plugins: [
     '@babel/plugin-syntax-jsx',
     '@babel/plugin-transform-flow-strip-types',
-    ['@babel/plugin-proposal-class-properties', {loose: true}],
+    ['@babel/plugin-transform-class-properties', {loose: true}],
     'syntax-trailing-function-commas',
     [
-      '@babel/plugin-proposal-object-rest-spread',
+      '@babel/plugin-transform-object-rest-spread',
       {loose: true, useBuiltIns: true},
     ],
     ['@babel/plugin-transform-template-literals', {loose: true}],
