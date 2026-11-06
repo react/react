@@ -689,6 +689,165 @@ describe('FragmentRefs', () => {
         });
         expect(document.activeElement.id).toEqual('child-a');
       });
+
+      it('removes focus from an element inside of the Fragment in a ShadowRoot', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        container.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(shadowRoot);
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <input id="shadow-input" />
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        // Document.activeElement is retargeted to the host element, so the
+        // ShadowRoot is the only place the focused child is observable.
+        expect(shadowRoot.activeElement.id).toEqual('shadow-input');
+
+        // The focused input is a child of the Fragment, so blur() should
+        // remove focus from it.
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(shadowRoot.activeElement).toBe(null);
+      });
+
+      it('does not remove focus from elements outside of the Fragment in a ShadowRoot', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        container.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(shadowRoot);
+
+        function Test() {
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                <input id="inside" />
+              </Fragment>
+              <input id="outside" />
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          shadowRoot.getElementById('outside').focus();
+        });
+        expect(shadowRoot.activeElement.id).toEqual('outside');
+
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(shadowRoot.activeElement.id).toEqual('outside');
+      });
+
+      it('removes focus from inside a ShadowRoot owned by a child', async () => {
+        const fragmentRef = React.createRef();
+        const hostRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <div ref={hostRef} />
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        const shadowRoot = hostRef.current.attachShadow({mode: 'open'});
+        const input = document.createElement('input');
+        input.id = 'shadow-child-input';
+        shadowRoot.appendChild(input);
+
+        await act(() => {
+          input.focus();
+        });
+        // Document.activeElement is retargeted to the child that hosts the
+        // shadow tree, not the input that actually holds focus.
+        expect(document.activeElement).toBe(hostRef.current);
+        expect(shadowRoot.activeElement.id).toEqual('shadow-child-input');
+
+        // Focus is inside a child of the Fragment, so blur() should remove it.
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(shadowRoot.activeElement).toBe(null);
+      });
+
+      it('removes focus from a child portaled into a ShadowRoot', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                {createPortal(<input id="portaled-shadow-input" />, shadowRoot)}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        expect(shadowRoot.activeElement.id).toEqual('portaled-shadow-input');
+
+        // The portaled input is a child of the Fragment, so blur() should
+        // remove focus from it.
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(shadowRoot.activeElement).toBe(null);
+      });
+
+      it('does not throw when the container is a detached DocumentFragment', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(
+          document.createDocumentFragment(),
+        );
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <input id="detached-input" />
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        expect(() => fragmentRef.current.blur()).not.toThrow();
+      });
     });
   });
 
