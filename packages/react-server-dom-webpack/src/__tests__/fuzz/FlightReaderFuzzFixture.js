@@ -114,11 +114,11 @@ async function createFixture(graph, {WebpackMock}) {
       trackPromise(deferred.promise);
       deferredPromises.set(name, deferred);
       values[name] = deferred.promise;
-    } else if (node.iterator === undefined) {
+    } else if (node.iterator === undefined && node.stream === undefined) {
       throw new Error('Unsupported node: ' + name);
     }
   }
-  // Iterators need their arguments, but containers may refer back to them.
+  // Sequences need their items, but containers may refer back to them.
   const buildingValues = new Set();
   function buildValue(name) {
     if (Object.prototype.hasOwnProperty.call(values, name)) {
@@ -133,12 +133,27 @@ async function createFixture(graph, {WebpackMock}) {
       );
     }
     buildingValues.add(name);
-    const items = nodes[name].iterator.map(buildValue);
-    const iterator = items[Symbol.iterator]();
-    values[name] = iterator;
-    valueMetadata.set(iterator, {type: 'iterator', items});
+    const node = nodes[name];
+    if (node.iterator !== undefined) {
+      const items = node.iterator.map(buildValue);
+      const iterator = items[Symbol.iterator]();
+      values[name] = iterator;
+      valueMetadata.set(iterator, {type: 'iterator', items});
+    } else if (node.stream !== undefined) {
+      const failure =
+        node.fail === undefined ? undefined : buildValue(node.fail);
+      if (failure !== undefined && !(failure instanceof Error)) {
+        throw new Error(
+          node.fail + ' is used as an Error but is not an error node',
+        );
+      }
+      values[name] = createStream(node.stream.map(buildValue), {
+        label: name,
+        failure,
+      });
+    }
     buildingValues.delete(name);
-    return iterator;
+    return values[name];
   }
   for (const name in nodes) {
     buildValue(name);
@@ -186,6 +201,42 @@ async function createFixture(graph, {WebpackMock}) {
         );
       }
     }
+  }
+
+  // Events can be released out of order, but stream items must be enqueued
+  // in order. The last event closes or errors the stream.
+  function createStream(items, {label = 'stream', failure} = {}) {
+    let controller;
+    let produced = 0;
+    const stream = new ReadableStream({start: c => (controller = c)});
+    const streamEvents = [];
+    const pump = () => {
+      while (produced < items.length && streamEvents[produced].released) {
+        controller.enqueue(items[produced++]);
+      }
+      if (produced === items.length && streamEvents[items.length].released) {
+        if (failure === undefined) {
+          controller.close();
+        } else {
+          expectedErrors.set(failure, 'failing ' + label);
+          controller.error(failure);
+        }
+      }
+    };
+    for (let i = 0; i < items.length; i++) {
+      streamEvents.push(createEvent(label + ' item ' + i, pump));
+    }
+    streamEvents.push(
+      createEvent((failure === undefined ? 'close ' : 'fail ') + label, pump),
+    );
+    events.push(...streamEvents);
+    valueMetadata.set(stream, {
+      type: 'stream',
+      items,
+      events: streamEvents,
+      failure,
+    });
+    return stream;
   }
 
   // Ready results must arrive while this independent source keeps EOF open.

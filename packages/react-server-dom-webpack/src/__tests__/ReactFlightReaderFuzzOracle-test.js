@@ -596,4 +596,163 @@ describe('FlightReaderOracle', () => {
     await expect(oracle.checkForMutations()).rejects.toThrow('.item0.value');
     expect(next).toHaveBeenCalledTimes(2);
   });
+
+  it('does not accept errors from unproduced repeated stream items', async () => {
+    const source = {};
+    const shared = {};
+    const currentModule = {};
+    const futureModule = {};
+    const currentError = new Error('current item failed');
+    const futureError = new Error('future item failed');
+    const options = {
+      valueMetadata: new Map([
+        [
+          source,
+          {
+            type: 'stream',
+            // Only the first two items have been produced. The later copy of
+            // shared must not make the future model's error observable yet.
+            items: [shared, currentModule, shared, {shared, futureModule}],
+            events: [true, true, false, false, false].map(released => ({
+              released,
+            })),
+          },
+        ],
+        [currentModule, {type: 'module', value: 'current'}],
+        [futureModule, {type: 'module', value: 'future'}],
+      ]),
+      requiredEvents: new Map([
+        [currentModule, [{released: true, error: currentError}]],
+        [futureModule, [{released: true, error: futureError}]],
+      ]),
+    };
+    for (let i = 0; i < 2; i++) {
+      const error = i === 0 ? currentError : futureError;
+      const {oracle, resolve} = createTestOracle(source, options);
+      let first = true;
+      resolve({
+        getReader: () => ({
+          async read() {
+            if (first) {
+              first = false;
+              return {done: false, value: {}};
+            }
+            throw error;
+          },
+        }),
+      });
+      await tick();
+      if (error === currentError) {
+        expect(oracle.isComplete()).toBe(true);
+      } else {
+        expect(() => oracle.throwIfFailed()).toThrow(
+          'expected "current item failed"',
+        );
+      }
+    }
+  });
+
+  it.each(['stream'])(
+    'rejects a module error before its %s item is produced',
+    async type => {
+      for (let i = 0; i < 2; i++) {
+        const produced = i === 1;
+        const source = {};
+        const module = {};
+        const item = {module};
+        const error = new Error('item module failed');
+        const {oracle, resolve} = createTestOracle(source, {
+          valueMetadata: new Map([
+            [
+              source,
+              {
+                type,
+                items: [item],
+                events: [{released: produced}, {released: false}],
+              },
+            ],
+            [module, {type: 'module', value: 'loaded'}],
+          ]),
+          requiredEvents: new Map([[module, [{released: true, error}]]]),
+        });
+        resolve({
+          getReader: () => ({
+            async read() {
+              throw error;
+            },
+          }),
+        });
+        await tick();
+        if (produced) {
+          oracle.throwIfFailed();
+        } else {
+          expect(() => oracle.throwIfFailed()).toThrow('unexpected rejection');
+        }
+      }
+    },
+  );
+
+  // A reader that silently drops the terminal error must leave a due result.
+  it('requires the end read after a source stream failure', async () => {
+    const source = {};
+    const failure = new Error('source failed');
+    const {oracle, resolve} = createTestOracle(source, {
+      valueMetadata: new Map([
+        [
+          source,
+          {type: 'stream', items: [], events: [{released: true}], failure},
+        ],
+        [failure, {type: 'error', digest: 'stream failure'}],
+      ]),
+    });
+    resolve({getReader: () => ({read: () => new Promise(() => {})})});
+    await tick();
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root.end',
+    ]);
+    expect(oracle.isComplete()).toBe(false);
+  });
+
+  // The future-owner probe: a later model may lend an error only after its
+  // source item is produced. Then that error may discard a queued earlier read.
+  it('borrows a later stream model error only after its source is produced', async () => {
+    for (let i = 0; i < 2; i++) {
+      const futureProduced = i === 1;
+      const source = {};
+      const shared = {};
+      const module = {};
+      const error = new Error('future item module failed');
+      const {oracle, resolve} = createTestOracle(source, {
+        valueMetadata: new Map([
+          [
+            source,
+            {
+              type: 'stream',
+              items: [shared, {shared, module}],
+              events: [
+                {released: true},
+                {released: futureProduced},
+                {released: false},
+              ],
+            },
+          ],
+          [module, {type: 'module', value: 'future'}],
+        ]),
+        requiredEvents: new Map([[module, [{released: true, error}]]]),
+      });
+      resolve({
+        getReader: () => ({
+          async read() {
+            throw error;
+          },
+        }),
+      });
+      await tick();
+      if (futureProduced) {
+        expect(oracle.isComplete()).toBe(true);
+      } else {
+        expect(() => oracle.throwIfFailed()).toThrow('unexpected rejection');
+      }
+    }
+  });
 });

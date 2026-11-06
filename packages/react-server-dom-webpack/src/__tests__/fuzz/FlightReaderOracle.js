@@ -21,6 +21,7 @@ function createOracle(
     iteratorItems: new WeakMap(),
     resultChecks: [],
     failures: [],
+    pendingTasks: 0,
   };
   return {
     observeValue(expectedValue, received) {
@@ -56,7 +57,10 @@ function createOracle(
     },
     isComplete() {
       throwIfFailed(state);
-      return state.resultChecks.every(check => check.done);
+      return (
+        state.pendingTasks === 0 &&
+        state.resultChecks.every(check => check.done)
+      );
     },
     async checkForMutations() {
       state.receivedValues.forEach(root => traverse(state, root, false));
@@ -110,11 +114,24 @@ function traverse(state, root, observe) {
           })),
         );
       }
-      if (metadata !== undefined && metadata.type === 'promise') {
+      if (
+        metadata !== undefined &&
+        ['promise', 'stream'].includes(metadata.type)
+      ) {
         if (observe) {
           if (!state.observedAsyncValues.has(pair.received)) {
             state.observedAsyncValues.add(pair.received);
-            observePromise(state, metadata, pair);
+            if (metadata.type === 'promise') {
+              observePromise(state, metadata, pair);
+            } else {
+              observeStream(
+                state,
+                metadata,
+                pair.expectedValue,
+                pair.received,
+                pair.path,
+              );
+            }
           }
         } else if (!state.observedAsyncValues.has(pair.received)) {
           throw new Error('A received async value was replaced');
@@ -248,6 +265,11 @@ function compareValue(state, {expectedValue, received, path}, visited) {
         typeof received.next === 'function',
         'expected an iterator but received ' + describeValue(received),
       );
+    } else if (metadata.type === 'stream') {
+      assertOracle(
+        typeof received.getReader === 'function',
+        'expected a readable stream but received ' + describeValue(received),
+      );
     } else if (metadata.type === 'promise') {
       assertOracle(
         typeof received.then === 'function',
@@ -323,6 +345,107 @@ function compareValue(state, {expectedValue, received, path}, visited) {
   }));
 }
 
+function observeStream(state, metadata, expectedValue, received, path) {
+  const {fixture} = state;
+  const items = metadata.items;
+  const areItemsProducedThrough = i =>
+    areAllEventsReleased(metadata.events.slice(0, i + 1));
+  const isClosed = () => areAllEventsReleased(metadata.events);
+  const getStreamErrors = () =>
+    isClosed() && metadata.failure !== undefined
+      ? [fixture.valueMetadata.get(metadata.failure)]
+      : [];
+  const canSettleThrough = i => {
+    for (let j = 0; j <= i; j++) {
+      if (!canSettle(getRequiredEvents(fixture, items[j]))) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const getModelsThrough = (i, findModels) =>
+    items.slice(0, i + 1).flatMap(findModels);
+  function getItemExpectation(i, findModels) {
+    const errors = getReleasedErrors(getRequiredEvents(fixture, items[i]));
+    const expectation = getResultExpectation(
+      items[i],
+      areItemsProducedThrough(i) && canSettleThrough(i),
+      errors,
+      areItemsProducedThrough(i) ? getModelsThrough(i, findModels) : [],
+    );
+    // A stream error discards queued items. This read may receive an error
+    // from a later item, even while an earlier item's inputs are pending.
+    const laterErrors = items
+      .slice(i + 1)
+      .filter((item, offset) => areItemsProducedThrough(i + 1 + offset))
+      .flatMap(item => getReleasedErrors(getRequiredEvents(fixture, item)))
+      .concat(getStreamErrors());
+    const referenceErrors = items
+      .slice(i)
+      .filter((item, offset) => areItemsProducedThrough(i + offset))
+      .flatMap(item => getModelErrors(findModels(item)));
+    if (laterErrors.length > 0 || referenceErrors.length > 0) {
+      expectation.errors = laterErrors.concat(referenceErrors, errors);
+    }
+    return expectation;
+  }
+  function getEndExpectation(findModels) {
+    const errors = getStreamErrors();
+    return getResultExpectation(
+      undefined,
+      isClosed() && (errors.length > 0 || canSettleThrough(items.length - 1)),
+      errors,
+      isClosed() ? getModelsThrough(items.length - 1, findModels) : [],
+    );
+  }
+  const itemChecks = items.map((item, i) =>
+    registerResultCheck(
+      state,
+      item,
+      path + '.item' + i,
+      findModels => getItemExpectation(i, findModels),
+      true,
+    ),
+  );
+  const endCheck = registerResultCheck(
+    state,
+    expectedValue,
+    path + '.end',
+    getEndExpectation,
+    true,
+  );
+  runAsyncTask(state, async () => {
+    const reader = received.getReader();
+    for (let i = 0; i < items.length; i++) {
+      let item;
+      try {
+        item = await reader.read();
+      } catch (error) {
+        handleResult(state, itemChecks[i], error, true);
+        // No further reads are possible after a stream error.
+        for (let j = i + 1; j < items.length; j++) {
+          itemChecks[j].done = true;
+        }
+        endCheck.done = true;
+        return;
+      }
+      if (item.done) {
+        throw new Error(path + '.item' + i + ': ended early');
+      }
+      handleResult(state, itemChecks[i], item.value);
+    }
+    let last;
+    try {
+      last = await reader.read();
+    } catch (error) {
+      handleResult(state, endCheck, error, true);
+      return;
+    }
+    expect(last.done).toBe(true);
+    handleResult(state, endCheck, last.value);
+  });
+}
+
 function observeIterator(state, metadata, received) {
   const items = [];
   for (let i = 0; i < metadata.items.length; i++) {
@@ -358,9 +481,7 @@ function getResultExpectation(value, inputsReady, errors, models) {
   return {
     value,
     canFulfill: inputsReady && errors.length === 0,
-    errors: (inputsReady ? errors : []).concat(
-      models.flatMap(model => getReleasedErrors(Array.from(model.events))),
-    ),
+    errors: (inputsReady ? errors : []).concat(getModelErrors(models)),
     // A direct error is due even if a possible referenced owner is loading.
     mustSettle:
       inputsReady &&
@@ -408,30 +529,7 @@ function subscribe(state, thenable, check, subscribeAgain) {
         );
       }
     });
-    guard(state, () => {
-      expect(check.done).toBe(false);
-      const expectation = check.getExpectation(
-        createModelLookup(state.fixture),
-      );
-      if (rejected) {
-        if (expectation.errors.length === 0) {
-          throw new Error(
-            check.path + ': unexpected rejection: ' + String(value),
-            {cause: value},
-          );
-        }
-        assertExpectedError(value, expectation.errors, check.path);
-      } else {
-        if (!expectation.canFulfill) {
-          if (expectation.mustSettle) {
-            throw new Error(check.path + ': expected a rejection');
-          }
-          throw new Error('Delivered before its inputs arrived: ' + check.path);
-        }
-        observeValue(state, expectation.value, value, check.path);
-      }
-      check.done = true;
-    });
+    handleResult(state, check, value, rejected);
     if (subscribeAgain) {
       const repeat = registerResultCheck(
         state,
@@ -447,6 +545,31 @@ function subscribe(state, thenable, check, subscribeAgain) {
     value => settle(value, false),
     error => settle(error, true),
   );
+}
+
+function handleResult(state, check, value, rejected = false) {
+  guard(state, () => {
+    expect(check.done).toBe(false);
+    const expectation = check.getExpectation(createModelLookup(state.fixture));
+    if (rejected) {
+      if (expectation.errors.length === 0) {
+        throw new Error(
+          check.path + ': unexpected rejection: ' + String(value),
+          {cause: value},
+        );
+      }
+      assertExpectedError(value, expectation.errors, check.path);
+    } else {
+      if (!expectation.canFulfill) {
+        if (expectation.mustSettle) {
+          throw new Error(check.path + ': expected a rejection');
+        }
+        throw new Error('Delivered before its inputs arrived: ' + check.path);
+      }
+      observeValue(state, expectation.value, value, check.path, check.tolerant);
+    }
+    check.done = true;
+  });
 }
 
 function assertExpectedError(error, expected, path) {
@@ -506,7 +629,10 @@ function getRequiredEvents(fixture, value) {
     seen.add(current);
     const metadata = fixture.valueMetadata.get(current);
     // A containing object need not wait for its nested Promise's result.
-    if (metadata !== undefined && metadata.type === 'promise') {
+    if (
+      metadata !== undefined &&
+      ['promise', 'stream'].includes(metadata.type)
+    ) {
       continue;
     }
     (fixture.requiredEvents.get(current) || []).forEach(event =>
@@ -518,7 +644,7 @@ function getRequiredEvents(fixture, value) {
 }
 
 function getReleasedErrors(events) {
-  return events
+  return Array.from(events)
     .filter(
       event =>
         event.released &&
@@ -527,6 +653,14 @@ function getReleasedErrors(events) {
         (event.after === undefined || event.after.released),
     )
     .map(event => event.error);
+}
+
+function getModelErrors(models) {
+  return models.flatMap(model => getReleasedErrors(model.events));
+}
+
+function areAllEventsReleased(events) {
+  return Array.from(events).every(event => event.released);
 }
 
 function canSettle(events) {
@@ -540,7 +674,7 @@ function canSettle(events) {
 function collectModels(fixture) {
   const modelsByRootValue = new Map();
   const modelsByValue = new Map();
-  const promises = new Set();
+  const asyncValues = new Set();
 
   function collectModel(rootValue) {
     const model = {events: new Set(), referencedModels: new Set()};
@@ -561,8 +695,11 @@ function collectModels(fixture) {
       }
       modelsByValue.set(value, (modelsByValue.get(value) || []).concat(model));
       const metadata = fixture.valueMetadata.get(value);
-      if (metadata !== undefined && metadata.type === 'promise') {
-        promises.add(value);
+      if (
+        metadata !== undefined &&
+        ['promise', 'stream'].includes(metadata.type)
+      ) {
+        asyncValues.add(value);
         continue;
       }
       (fixture.requiredEvents.get(value) || []).forEach(event =>
@@ -580,11 +717,20 @@ function collectModels(fixture) {
   const rootModel = collectModel(
     fixture.rootPromise == null ? fixture.model : fixture.resolvedModel,
   );
-  // Visiting a produced result may discover more source Promises.
-  promises.forEach(promise => {
-    const metadata = fixture.valueMetadata.get(promise);
-    if (metadata.state === 'fulfilled') {
-      collectModel(metadata.value);
+  // Only a produced prefix can have serialized an object and owned its errors.
+  asyncValues.forEach(value => {
+    const metadata = fixture.valueMetadata.get(value);
+    if (metadata.type === 'promise') {
+      if (metadata.state === 'fulfilled') {
+        collectModel(metadata.value);
+      }
+    } else {
+      for (let i = 0; i < metadata.items.length; i++) {
+        if (!metadata.events[i].released) {
+          break;
+        }
+        collectModel(metadata.items[i]);
+      }
     }
   });
   modelsByValue.forEach(models => {
@@ -632,6 +778,14 @@ function createModelLookup(fixture) {
     }
     return models;
   };
+}
+
+function runAsyncTask(state, run) {
+  state.pendingTasks++;
+  Promise.resolve()
+    .then(run)
+    .catch(error => state.failures.push(error))
+    .then(() => state.pendingTasks--);
 }
 
 function guard(state, run) {

@@ -535,4 +535,166 @@ describe('ReactFlightReaderFuzz (node)', () => {
         roots: {entry: 'later', other: 'shared'},
       }));
   });
+
+  describe('data stream graphs', () => {
+    it('delivers ordered data stream reads before source close and EOF', async () => {
+      let controller;
+      const data = new ReadableStream({start: c => (controller = c)});
+      await withResponse(
+        {data, independent: new Promise(() => {})},
+        async ({response, stream}) => {
+          const received = await response;
+          const reader = received.data.getReader();
+          const results = [];
+          reader.read().then(result => results.push(result));
+          await actOnStream(() => {});
+          expect(results).toEqual([]);
+          await actOnStream(() => controller.enqueue('first'));
+          expect(results).toStrictEqual([{done: false, value: 'first'}]);
+          reader.read().then(result => results.push(result));
+          await actOnStream(() => controller.enqueue({value: 'second'}));
+          expect(results).toStrictEqual([
+            {done: false, value: 'first'},
+            {done: false, value: {value: 'second'}},
+          ]);
+          expect(stream.readableEnded).toBe(false);
+          reader.read().then(result => results.push(result));
+          await actOnStream(() => controller.close());
+          expect(results[2]).toStrictEqual({done: true, value: undefined});
+          expect(stream.readableEnded).toBe(false);
+        },
+      );
+    });
+
+    it('keeps a Promise fulfilled when its delivered stream later fails', async () => {
+      let controller;
+      const data = new ReadableStream({start: c => (controller = c)});
+      const error = new Error('source stream failed');
+      const reported = [];
+      await withResponse(
+        {data: Promise.resolve(data), unrelated: new Promise(() => {})},
+        async ({response, stream}) => {
+          const model = await response;
+          const received = await model.data;
+          const failedRead = received
+            .getReader()
+            .read()
+            .catch(reason => reason);
+          await actOnStream(() => controller.error(error));
+          expect(await failedRead).toEqual(
+            expect.objectContaining({digest: 'stream failure'}),
+          );
+          expect(await model.data).toBe(received);
+          expect(reported).toEqual([error]);
+          expect(stream.readableEnded).toBe(false);
+        },
+        {
+          onError(reason) {
+            expect(reason).toBe(error);
+            reported.push(reason);
+            return 'stream failure';
+          },
+        },
+      );
+    });
+
+    it.each(['stream'])('%s shared between two collections', type =>
+      runGraph({
+        nodes: {
+          inner: {[type]: []},
+          first: {set: ['inner']},
+          second: {set: ['inner']},
+        },
+        roots: {entry: 'first', other: 'second'},
+      }),
+    );
+
+    it.each(['stream'])('%s in repeated stream items', type =>
+      runGraph({
+        nodes: {
+          inner: {[type]: type === 'bytes' ? 2 : []},
+          item: {array: ['inner']},
+          outer: {stream: ['item', 'item']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }),
+    );
+
+    it.each(['stream'])('%s shared between different stream items', type =>
+      runGraph({
+        nodes: {
+          inner:
+            type === 'bytes'
+              ? {bytes: 2}
+              : type === 'iterable'
+                ? {iterable: [], single: true}
+                : {stream: []},
+          first: {array: ['inner']},
+          second: {object: {again: 'inner'}},
+          outer: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }),
+    );
+
+    it('source stream failure while another value is still loading', () =>
+      runGraph({
+        nodes: {
+          error: {error: 'stream failed'},
+          stream: {stream: [], fail: 'error'},
+          ready: {module: 'loaded'},
+          object: {object: {ready: 'ready'}},
+          later: {promise: 'object'},
+        },
+        roots: {entry: 'stream', other: 'later'},
+        events: ['resolve later to object', 'fail stream', 'load ready'],
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('an iterator reused in later stream items', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'first'},
+          iterator: {iterator: ['value']},
+          first: {object: {iterator: 'iterator'}},
+          second: {object: {iterator: 'iterator'}},
+          stream: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('streamed array containing itself', () =>
+      runGraph({
+        nodes: {
+          item: {array: ['item']},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('stream item with a failing module', () =>
+      runGraph({
+        nodes: {
+          broken: {module: 'export-0', fail: 'load'},
+          item: {array: ['broken']},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('two stream items each waiting on a module', () =>
+      runGraph({
+        nodes: {
+          first: {module: 'export-0'},
+          second: {module: 'export-1'},
+          item0: {set: ['first']},
+          item1: {set: ['second']},
+          stream: {stream: ['item0', 'item1']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+  });
 });
