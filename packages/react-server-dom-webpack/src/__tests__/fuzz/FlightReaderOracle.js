@@ -11,9 +11,11 @@
 // results are missing. Readiness comes from the source, not the client.
 function createOracle(
   fixture = {valueMetadata: new Map(), requiredEvents: new Map()},
+  {render} = {},
 ) {
   const state = {
     fixture,
+    render,
     expectedByReceived: new WeakMap(),
     receivedValues: [],
     observedAsyncValues: new WeakSet(),
@@ -27,6 +29,25 @@ function createOracle(
   return {
     observeValue(expectedValue, received) {
       observeValue(state, expectedValue, received, 'value');
+    },
+    observeProps(element, received) {
+      guard(state, () => {
+        const events = getRequiredEvents(fixture, element.props);
+        if (
+          !areAllEventsReleased(events) ||
+          getReleasedErrors(events).length > 0
+        ) {
+          throw new Error(
+            'A component received props before their inputs arrived',
+          );
+        }
+        observeValue(
+          state,
+          element.props,
+          received,
+          'props of ' + element.type.name,
+        );
+      });
     },
     subscribeToRoot(root, expectedValue, {subscribeAgain = false} = {}) {
       const check = registerResultCheck(
@@ -160,15 +181,22 @@ function traverse(state, root, observe) {
       }
       if (
         metadata !== undefined &&
-        ['promise', 'stream', 'iterable', 'bytes', 'canceled'].includes(
-          metadata.type,
-        )
+        [
+          'promise',
+          'element',
+          'stream',
+          'iterable',
+          'bytes',
+          'canceled',
+        ].includes(metadata.type)
       ) {
         if (observe) {
           if (!state.observedAsyncValues.has(pair.received)) {
             state.observedAsyncValues.add(pair.received);
             if (metadata.type === 'promise') {
               observePromise(state, metadata, pair);
+            } else if (metadata.type === 'element') {
+              observeElement(state, metadata, pair);
             } else if (metadata.type === 'canceled') {
               observeCanceledStream(state, metadata, pair.received, pair.path);
             } else if (metadata.type === 'bytes') {
@@ -349,6 +377,9 @@ function compareValue(
         typeof received.getReader === 'function',
         'expected a readable stream but received ' + describeValue(received),
       );
+    } else if (metadata.type === 'element') {
+      // Flight may deliver a lazy element before its props are ready.
+      // Rendering and the component's props callback check its contents.
     } else if (metadata.type === 'promise') {
       assertOracle(
         typeof received.then === 'function',
@@ -753,6 +784,36 @@ function observeServerFunction(state, received, metadata, args) {
   });
 }
 
+function observeElement(state, metadata, {expectedValue, received, path}) {
+  const {fixture} = state;
+  const check = registerResultCheck(
+    state,
+    expectedValue,
+    path + '.render',
+    findModels => {
+      const events = (fixture.requiredEvents.get(expectedValue) || []).concat(
+        getRequiredEvents(fixture, expectedValue.props),
+      );
+      return getResultExpectation(
+        metadata.html,
+        canSettle(events),
+        getReleasedErrors(events),
+        findModels(expectedValue).concat(findModels(expectedValue.props)),
+      );
+    },
+  );
+  runAsyncTask(state, async () => {
+    let html;
+    try {
+      html = await state.render(received);
+    } catch (error) {
+      handleResult(state, check, error, true);
+      return;
+    }
+    handleResult(state, check, html);
+  });
+}
+
 function observeCanceledStream(state, metadata, received, path) {
   const {fixture} = state;
   const check = registerResultCheck(
@@ -980,9 +1041,14 @@ function getRequiredEvents(fixture, value) {
     // A containing object need not wait for its nested Promise's result.
     if (
       metadata !== undefined &&
-      ['promise', 'stream', 'iterable', 'bytes', 'canceled'].includes(
-        metadata.type,
-      )
+      [
+        'promise',
+        'element',
+        'stream',
+        'iterable',
+        'bytes',
+        'canceled',
+      ].includes(metadata.type)
     ) {
       continue;
     }
@@ -1027,9 +1093,14 @@ function collectModels(fixture) {
   const modelsByValue = new Map();
   const asyncValues = new Set();
   const boundArgumentModels = new Map();
+  const visitedElements = new Set();
 
-  function collectModel(rootValues) {
-    const model = {events: new Set(), referencedModels: new Set()};
+  function collectModel(rootValues, parent = null, events = []) {
+    const model = {
+      parent,
+      events: new Set(events),
+      referencedModels: new Set(),
+    };
     const todo = rootValues.slice();
     const seen = new Set();
     while (todo.length > 0) {
@@ -1047,6 +1118,19 @@ function collectModels(fixture) {
       }
       modelsByValue.set(value, (modelsByValue.get(value) || []).concat(model));
       const metadata = fixture.valueMetadata.get(value);
+      if (metadata !== undefined && metadata.type === 'element') {
+        if (!visitedElements.has(value)) {
+          // Props errors belong to the rendered element; they need not block
+          // delivery of a containing model that can hold a lazy element.
+          visitedElements.add(value);
+          collectModel(
+            [value.props],
+            model,
+            fixture.requiredEvents.get(value) || [],
+          );
+        }
+        continue;
+      }
       if (
         metadata !== undefined &&
         ['promise', 'stream', 'iterable', 'bytes', 'canceled'].includes(
@@ -1108,15 +1192,24 @@ function collectModels(fixture) {
       .get(fn)
       .forEach(model => model.referencedModels.add(argumentModel));
   });
+  const getTopLevelModel = model =>
+    model.parent === null ? model : getTopLevelModel(model.parent);
   modelsByValue.forEach(models => {
     // The root is serialized first. Otherwise any produced result containing
     // this object could write it first, and the others could reference it.
-    const rootContainsValue = models.includes(rootModel);
+    const rootModels = models.filter(
+      model => getTopLevelModel(model) === rootModel,
+    );
     models.forEach(model => {
-      const possibleSources = rootContainsValue
-        ? [rootModel]
-        : models.filter(other => other !== model);
-      possibleSources.forEach(source => model.referencedModels.add(source));
+      const possibleSources =
+        rootModels.length > 0
+          ? rootModels
+          : models.filter(other => other !== model);
+      possibleSources.forEach(source => {
+        for (let owner = source; owner !== null; owner = owner.parent) {
+          model.referencedModels.add(owner);
+        }
+      });
     });
   });
   return modelsByRootValue;

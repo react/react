@@ -19,6 +19,9 @@ const {
 } = require('../../../../scripts/jest/patchSetImmediate');
 
 describe('ReactFlightReaderFuzz (node)', () => {
+  let React;
+  let ReactServer;
+  let ReactDOMServer;
   let ReactServerDOMServer;
   let ReactServerDOMClient;
   let WebpackMock;
@@ -35,10 +38,13 @@ describe('ReactFlightReaderFuzz (node)', () => {
     );
     WebpackMock = require('./utils/WebpackMock');
     ReactServerDOMServer = require('react-server-dom-webpack/server.node');
+    ReactServer = require('react');
 
     jest.resetModules();
     __unmockReact();
+    React = require('react');
     ReactServerDOMClient = require('react-server-dom-webpack/client.node');
+    ReactDOMServer = require('react-dom/server.edge');
   });
 
   // Ordinary source values establish the contract before references and
@@ -221,6 +227,12 @@ describe('ReactFlightReaderFuzz (node)', () => {
     });
   }
 
+  function render(element) {
+    return ReactDOMServer.renderToReadableStream(element, {
+      onError() {},
+    }).then(stream => new Response(stream).text());
+  }
+
   async function withResponse(model, read, {onError: handleError} = {}) {
     const stream = new PassThrough();
     const response = ReactServerDOMClient.createFromNodeStream(stream, {
@@ -281,8 +293,15 @@ describe('ReactFlightReaderFuzz (node)', () => {
   // Check progress before EOF after each source or client-load event. By
   // default, resolve source Promises before loading their client modules.
   async function runGraph(graph) {
-    const fixture = await createFixture(graph, {WebpackMock});
-    const oracle = createOracle(fixture);
+    const fixture = await createFixture(graph, {
+      React,
+      ReactServer,
+      WebpackMock,
+      observeProps(element, props) {
+        oracle.observeProps(element, props);
+      },
+    });
+    const oracle = createOracle(fixture, {render});
     const reported = [];
     const onError = error => {
       const digest = fixture.expectedErrors.has(error)
@@ -1074,6 +1093,111 @@ describe('ReactFlightReaderFuzz (node)', () => {
         ],
         packetSizes: [1, 25, 2091],
         yieldBetweenPackets: true,
+      }));
+  });
+  describe('elements and observed props', () => {
+    it('delivers an element before its client props finish loading', async () => {
+      let load;
+      const ready = new Promise(resolve => (load = resolve));
+      const {value} = WebpackMock.clientExports(
+        {value: 'ready'},
+        'held prop',
+        'held-prop.js',
+        ready,
+      );
+      const seen = [];
+      const {Client} = WebpackMock.clientExports({
+        Client(props) {
+          seen.push(props.value);
+          return React.createElement('span', null, props.value);
+        },
+      });
+      const element = ReactServer.createElement(Client, {value});
+      await withResponse(
+        {element, unrelated: new Promise(() => {})},
+        async ({response, stream}) => {
+          let received;
+          response.then(result => (received = result));
+          await actOnStream(() => {});
+          expect(received).toBeDefined();
+          let html;
+          const rendered = render(received.element).then(
+            result => (html = result),
+          );
+          await actOnStream(() => {});
+          expect(seen).toEqual([]);
+          expect(html).toBe(undefined);
+          await actOnStream(load);
+          expect(await rendered).toBe('<span>ready</span>');
+          expect(seen).toEqual(['ready']);
+          expect(stream.readableEnded).toBe(false);
+        },
+      );
+    });
+
+    it('an element first written inside another loading value', () =>
+      runGraph({
+        nodes: {
+          element: {host: 'atom'},
+          ready: {module: 'loaded'},
+          array: {array: ['element', 'ready']},
+          first: {promise: 'array'},
+          second: {promise: 'element'},
+          root: {array: ['first', 'second']},
+        },
+        roots: {entry: 'root', other: 'root'},
+        events: [
+          'resolve first to array',
+          'resolve second to element',
+          'load ready',
+        ],
+      }));
+
+    it('a Fragment first received inside a stream item', () =>
+      runGraph({
+        nodes: {
+          fragment: {fragment: []},
+          item: {array: ['fragment']},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('props object referenced again while a prop is loading', () =>
+      runGraph({
+        nodes: {
+          payload: {module: 'export-0'},
+          data: {object: {field0: 'props'}},
+          value: {array: ['payload', 'data']},
+          element: {element: 'value'},
+          props: {props: 'element'},
+        },
+        roots: {entry: 'element', other: 'props'},
+      }));
+
+    it('props sub-object referenced while a sibling prop is loading', () =>
+      runGraph({
+        nodes: {
+          payload: {module: 'export-0'},
+          sibling: {module: 'export-1'},
+          selected: {object: {field0: 'payload'}},
+          value: {array: ['selected', 'sibling']},
+          element: {element: 'value'},
+        },
+        roots: {entry: 'element', other: 'selected'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('element reaching itself through its props', () =>
+      runGraph({
+        nodes: {
+          payload: {module: 'export-0'},
+          data: {object: {field0: 'element'}},
+          value: {array: ['payload', 'data']},
+          element: {element: 'value'},
+        },
+        roots: {entry: 'element', other: 'data'},
       }));
   });
 });

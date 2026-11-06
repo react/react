@@ -30,7 +30,10 @@ const specialValueFactories = {
   },
 };
 
-async function createFixture(graph, {WebpackMock}) {
+async function createFixture(
+  graph,
+  {React, ReactServer, WebpackMock, observeProps},
+) {
   const {nodes} = graph;
   const values = {};
   const events = [];
@@ -99,6 +102,12 @@ async function createFixture(graph, {WebpackMock}) {
       ) {
         saveBytes(values[name]);
       }
+    } else if (node.host !== undefined) {
+      values[name] = createHostElement(
+        'span',
+        {title: node.host},
+        '<span title="' + node.host + '"></span>',
+      );
     } else if (node.module !== undefined) {
       const load = createResolvablePromise();
       const evaluate = node.async === true ? createResolvablePromise() : null;
@@ -169,7 +178,10 @@ async function createFixture(graph, {WebpackMock}) {
       node.stream === undefined &&
       node.iterable === undefined &&
       node.bytes === undefined &&
-      node.bound === undefined
+      node.bound === undefined &&
+      node.element === undefined &&
+      node.fragment === undefined &&
+      node.props === undefined
     ) {
       throw new Error('Unsupported node: ' + name);
     }
@@ -190,7 +202,24 @@ async function createFixture(graph, {WebpackMock}) {
     }
     buildingValues.add(name);
     const node = nodes[name];
-    if (node.bound !== undefined) {
+    if (node.element !== undefined) {
+      const props = Array.isArray(node.element)
+        ? {
+            value: buildValue(node.element[0]),
+            other: buildValue(node.element[1]),
+          }
+        : {value: buildValue(node.element)};
+      values[name] = createClientElement(props, {name, key: name});
+    } else if (node.fragment !== undefined) {
+      values[name] = createFragment(node.fragment.map(buildValue), {key: name});
+    } else if (node.props !== undefined) {
+      const element = buildValue(node.props);
+      const metadata = valueMetadata.get(element);
+      if (metadata === undefined || metadata.type !== 'element') {
+        throw new Error(node.props + ' is not an element node');
+      }
+      values[name] = element.props;
+    } else if (node.bound !== undefined) {
       values[name] = createServerFunction((...args) => args, {
         bound: node.bound.map(buildValue),
         label: name,
@@ -276,6 +305,54 @@ async function createFixture(graph, {WebpackMock}) {
         );
       }
     }
+  }
+
+  function createClientElement(props, {name, key} = {}) {
+    const id = name || 'component-' + valueMetadata.size;
+    const load = createResolvablePromise();
+    const Component = receivedProps => {
+      observeProps(element, receivedProps);
+      return React.createElement('span', null, id);
+    };
+    const {Component: Type} = WebpackMock.clientExports(
+      {Component},
+      id,
+      id + '.js',
+      load.promise,
+    );
+    const element = ReactServer.createElement(
+      Type,
+      key === undefined ? props : {key, ...props},
+    );
+    valueMetadata.set(element, {
+      type: 'element',
+      html: '<span>' + id + '</span>',
+    });
+    const loadEvent = createEvent('load ' + id, () => load.resolve(), {
+      isClient: true,
+    });
+    events.push(loadEvent);
+    requiredEvents.set(element, [loadEvent]);
+    return element;
+  }
+
+  function createHostElement(type, props, html) {
+    const element = ReactServer.createElement(type, props);
+    valueMetadata.set(element, {type: 'element', html});
+    return element;
+  }
+
+  function createFragment(children, {key}) {
+    const element = ReactServer.createElement(
+      ReactServer.Fragment,
+      {key},
+      ...children,
+    );
+    valueMetadata.set(element, {
+      type: 'element',
+      html: children.map(child => valueMetadata.get(child).html).join(''),
+    });
+    return element;
   }
 
   function createByteStream(chunks, {label = 'bytes'} = {}) {

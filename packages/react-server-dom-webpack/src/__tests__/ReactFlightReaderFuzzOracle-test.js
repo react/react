@@ -43,6 +43,12 @@ describe('FlightReaderOracle', () => {
     jest.useRealTimers();
   });
 
+  it('rejects omitting an own property whose value is undefined', () => {
+    const {oracle, resolve} = createTestOracle({value: undefined});
+    resolve({});
+    expect(() => oracle.throwIfFailed()).toThrow();
+  });
+
   // Visiting source identities only would miss corruption in a later copy.
   it('rechecks every received copy of a source cycle', async () => {
     const source = {value: 'expected'};
@@ -990,6 +996,29 @@ describe('FlightReaderOracle', () => {
     expect(oracle.isComplete()).toBe(false);
     resolveRead(new Uint8Array([2]).buffer);
     await expect(recheck).rejects.toThrow();
+  });
+
+  it('checks prop readiness even when an unloaded module exports undefined', () => {
+    const module = {};
+    const element = {type: {name: 'Component'}, props: {value: module}};
+    const load = {released: false};
+    const options = {
+      valueMetadata: new Map([
+        [element, {type: 'element', html: ''}],
+        [module, {type: 'module', value: undefined}],
+      ]),
+      requiredEvents: new Map([[module, [load]]]),
+    };
+    const early = createTestOracle(element, options);
+    early.oracle.observeProps(element, {value: undefined});
+    expect(() => early.oracle.throwIfFailed()).toThrow(
+      'before their inputs arrived',
+    );
+
+    load.released = true;
+    const valid = createTestOracle(element, options);
+    valid.oracle.observeProps(element, {value: undefined});
+    valid.oracle.throwIfFailed();
   });
 
   it('requires available bytes without waiting for the stream to close', async () => {
