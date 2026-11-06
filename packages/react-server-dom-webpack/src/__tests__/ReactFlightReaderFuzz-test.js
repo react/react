@@ -12,6 +12,10 @@
 
 const {createOracle} = require('./fuzz/FlightReaderOracle');
 const {createFixture} = require('./fuzz/FlightReaderFuzzFixture');
+const {createRandom} = require('./fuzz/FlightReaderFuzzGraph');
+
+const SEED = process.env.FUZZ_TEST_SEED || 'default';
+const readTimings = ['early', 'late', 'after-events', 'after-eof'];
 const NativeAbortController = global.AbortController;
 class FuzzAbortController extends NativeAbortController {
   constructor() {
@@ -20,8 +24,7 @@ class FuzzAbortController extends NativeAbortController {
   }
 }
 
-describe('ReactFlightReaderFuzz (node)', () => {
-  const host = 'node';
+describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   let React;
   let ReactServer;
   let ReactDOMServer;
@@ -210,6 +213,10 @@ describe('ReactFlightReaderFuzz (node)', () => {
         expect(transport.isServerDone).toBe(false);
 
         await flushAction(transport, () => resolveValue({message: 'ready'}));
+        await transport.drain(
+          () => results.length === 1,
+          () => 'literal Promise result',
+        );
         expect(results).toStrictEqual([{message: 'ready'}]);
         expect(await received.value).toStrictEqual({message: 'ready'});
         expect(independentResults).toEqual([]);
@@ -263,9 +270,9 @@ describe('ReactFlightReaderFuzz (node)', () => {
     await transport.flush();
   }
 
-  async function readRoot(transport) {
+  async function readRoot(transport, thenable = transport.root) {
     let result;
-    const settled = Promise.resolve(transport.root).then(
+    const settled = Promise.resolve(thenable).then(
       value => (result = {value}),
       error => (result = {error}),
     );
@@ -322,43 +329,68 @@ describe('ReactFlightReaderFuzz (node)', () => {
     });
   }
 
-  // Check progress before EOF after each source or client-load event. By
-  // default, resolve source Promises before loading their client modules.
-  async function runGraph(graph) {
-    return withFlightModules(async () => {
-      const fixture = await createFixture(graph, {
-        React,
-        ReactServer,
-        WebpackMock,
-        observeProps(element, props) {
-          oracle.observeProps(element, props);
-        },
+  // Reset the consuming module context before building each graph's proxies.
+  async function runGraph({
+    readTiming,
+    seed = SEED,
+    scheduleIndex = 0,
+    ...graph
+  }) {
+    const timings = readTiming === undefined ? readTimings : [readTiming];
+    for (let i = 0; i < timings.length; i++) {
+      await withFlightModules(async () => {
+        const fixture = await createFixture(graph, {
+          React,
+          ReactServer,
+          WebpackMock,
+          observeProps(element, props) {
+            oracle.observeProps(element, props);
+          },
+        });
+        const oracle = createOracle(fixture, {render});
+        const schedule = createSchedule(fixture, graph, seed, scheduleIndex);
+        await checkResponse(fixture, oracle, {
+          ...schedule,
+          readTiming: timings[i],
+        });
       });
-      const oracle = createOracle(fixture, {render});
-      const events = fixture.events.filter(
-        event => event !== fixture.unrelatedEvent,
-      );
-      if (graph.events === undefined) {
-        events.sort((a, b) => +a.isClient - +b.isClient);
-      } else {
-        // This is a priority list: absent labels do not create source events.
-        // Stable sorting keeps unspecified actual events in their source order.
-        const position = label => {
-          const index = graph.events.indexOf(label);
-          return index === -1 ? graph.events.length : index;
-        };
-        events.sort((a, b) => position(a.label) - position(b.label));
-      }
-      events.push(fixture.unrelatedEvent);
+    }
+  }
 
-      await checkResponse(fixture, oracle, {
-        readTiming: 'early',
-        events,
-        packetSizes: graph.packetSizes || [1, 21, 4096],
-        yieldBetweenPackets: graph.yieldBetweenPackets !== false,
-        afterEof: graph.afterEof === true,
-      });
+  function createSchedule(fixture, graph, seed, scheduleIndex) {
+    const events = fixture.events.slice();
+    const labels = new Set();
+    events.forEach(event => {
+      if (labels.has(event.label)) {
+        throw new Error('Two events are labeled "' + event.label + '"');
+      }
+      labels.add(event.label);
     });
+    // Change event order without changing the generated values.
+    const order = createRandom(seed + '/order/' + scheduleIndex);
+    if (graph.events !== undefined) {
+      const position = label => {
+        const index = graph.events.indexOf(label);
+        return index === -1 ? graph.events.length : index;
+      };
+      events.sort((a, b) => position(a.label) - position(b.label));
+    } else {
+      shuffle(events, order);
+    }
+    // Other results must finish before this independent Promise resolves.
+    events.splice(events.indexOf(fixture.unrelatedEvent), 1);
+    events.push(fixture.unrelatedEvent);
+    const packetSizes = [1 + order(8), 17 + order(100), 1024 + order(4096)];
+    const yieldBetweenPackets = order(2) === 0;
+    return {
+      events,
+      afterEof: graph.afterEof === true,
+      packetSizes: graph.packetSizes || packetSizes,
+      yieldBetweenPackets:
+        graph.yieldBetweenPackets !== undefined
+          ? graph.yieldBetweenPackets
+          : yieldBetweenPackets,
+    };
   }
 
   // Check progress after each event. Otherwise, a later event could hide
@@ -836,6 +868,10 @@ describe('ReactFlightReaderFuzz (node)', () => {
             await flushAction(transport, () => {});
             expect(results).toEqual([]);
             await flushAction(transport, () => controller.enqueue('first'));
+            await transport.drain(
+              () => results.length === 1,
+              () => 'first literal stream read',
+            );
             expect(results).toStrictEqual([{done: false, value: 'first'}]);
             reader.read().then(
               result => results.push(result),
@@ -843,6 +879,10 @@ describe('ReactFlightReaderFuzz (node)', () => {
             );
             await flushAction(transport, () =>
               controller.enqueue({value: 'second'}),
+            );
+            await transport.drain(
+              () => results.length === 2,
+              () => 'second literal stream read',
             );
             expect(results).toStrictEqual([
               {done: false, value: 'first'},
@@ -855,6 +895,10 @@ describe('ReactFlightReaderFuzz (node)', () => {
               error => results.push({error}),
             );
             await flushAction(transport, () => controller.close());
+            await transport.drain(
+              () => results.length === 3,
+              () => 'literal stream end',
+            );
             expect(results[2]).toStrictEqual({done: true, value: undefined});
             expect(transport.isClosed).toBe(false);
             expect(transport.isServerDone).toBe(false);
@@ -872,13 +916,22 @@ describe('ReactFlightReaderFuzz (node)', () => {
           {data: Promise.resolve(data), unrelated: new Promise(() => {})},
           async ({response, transport}) => {
             const model = await readRoot(transport);
-            const received = await model.data;
+            const received = await readRoot(transport, model.data);
+            let result;
             const failedRead = received
               .getReader()
               .read()
-              .catch(reason => reason);
+              .then(
+                value => (result = {value}),
+                reason => (result = {error: reason}),
+              );
             await flushAction(transport, () => controller.error(error));
-            expect(await failedRead).toEqual(
+            await transport.drain(
+              () => result !== undefined,
+              () => 'literal stream failure',
+            );
+            await failedRead;
+            expect(result.error).toEqual(
               expect.objectContaining({digest: 'stream failure'}),
             );
             expect(await model.data).toBe(received);
@@ -1633,6 +1686,112 @@ describe('ReactFlightReaderFuzz (node)', () => {
         roots: {entry: 'cycle', other: 'cycle'},
       }));
   });
+  describe('source timing and response context', () => {
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip.each([':', '%3A:', ':%25:'])(
+      'a cycle through the property name %j',
+      key =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            cycle: {object: {[key]: 'cycle', value: 'ready'}},
+            object: {object: {[key]: 'cycle'}},
+          },
+          roots: {entry: 'object', other: 'object'},
+        }),
+    );
+
+    it('module failing to load after eof', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0', fail: 'load'},
+          other: {module: 'export-1'},
+          broken: {object: {field0: 'ready'}},
+          fine: {object: {field0: 'other'}},
+        },
+        roots: {entry: 'broken', other: 'fine'},
+        afterEof: true,
+      }));
+
+    it('module loading after eof', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0', async: true},
+          region: {object: {field0: 'ready', field1: 'region'}},
+        },
+        roots: {entry: 'region', other: 'region'},
+        afterEof: true,
+      }));
+
+    (__DEV__ && host === 'node' ? it.skip : it)(
+      'a Promise resolves before another value containing it finishes loading',
+      () =>
+        runGraph({
+          nodes: {
+            value: {value: null},
+            data: {promise: 'value'},
+            ready: {module: 'loaded'},
+            section: {object: {data: 'data', ready: 'ready'}},
+            later: {promise: 'section'},
+            root: {object: {data: 'data', section: 'later'}},
+          },
+          roots: {entry: 'root', other: 'root'},
+          events: [
+            'resolve later to section',
+            'resolve data to value',
+            'load ready',
+          ],
+        }),
+    );
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip.each([
+      ['stream', null],
+      ['stream', 'keyed'],
+      ['iterable', null],
+    ])(
+      'a shared %s first returned through element context with key %s',
+      async (type, key) => {
+        await withFlightModules(async () => {
+          const fixture = await createFixture(
+            {
+              nodes: {
+                a: {value: 'a'},
+                b: {value: 'b'},
+                shared:
+                  type === 'stream'
+                    ? {stream: ['a', 'b']}
+                    : {iterable: ['a', 'b'], single: true},
+              },
+              roots: {entry: 'shared', other: 'shared'},
+            },
+            {React, ReactServer, WebpackMock},
+          );
+          const shared = fixture.model.entry;
+          function Body() {
+            return shared;
+          }
+          // Return the stream through an element first, then as an object property.
+          const first =
+            type === 'stream'
+              ? ReactServer.createElement(Body, {key})
+              : ReactServer.createElement(ReactServer.Fragment, null, shared);
+          const oracle = createOracle(fixture, {render});
+          await checkResponse(
+            fixture,
+            oracle,
+            {
+              readTiming: 'early',
+              events: fixture.events,
+              packetSizes: [1, 21, 4096],
+              yieldBetweenPackets: true,
+            },
+            {...fixture.model, entry: first},
+          );
+        });
+      },
+    );
+  });
 });
 
 const MAX_FLUSH_ATTEMPTS = 30;
@@ -1705,6 +1864,39 @@ function startFlightResponse({
     );
     abort = reason => writer.abort(reason);
     writer.pipe(output);
+  } else {
+    let controller;
+    const input = new ReadableStream({start: value => (controller = value)});
+    root = ReactServerDOMClient.createFromReadableStream(input, {
+      serverConsumerManifest: manifest,
+    });
+    send = bytes => controller.enqueue(bytes);
+    end = () => controller.close();
+    const control = new AbortController();
+    const output = ReactServerDOMServer.renderToReadableStream(
+      model,
+      WebpackMock.webpackMap,
+      {
+        ...options,
+        signal: control.signal,
+      },
+    );
+    abort = reason => control.abort(reason);
+    const reader = output.getReader();
+    serverCompletion = (async () => {
+      for (;;) {
+        const {done, value} = await reader.read();
+        if (done) {
+          serverDone = true;
+          return;
+        }
+        queued.push(Buffer.from(value));
+      }
+    })().catch(error => {
+      if (!disposed) {
+        errors.push(error);
+      }
+    });
   }
 
   // Split output into uneven packets to exercise partial reads.
@@ -1807,6 +1999,14 @@ function runInIOCallback(fn) {
     };
     channel.port2.postMessage(undefined);
   });
+}
+
+function shuffle(array, pick) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = pick(i + 1);
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
 }
 
 function releaseEvent(event) {
