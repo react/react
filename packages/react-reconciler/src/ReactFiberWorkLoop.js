@@ -1010,16 +1010,32 @@ export function scheduleUpdateOnFiber(
     // Suspended commit phase
     root.cancelPendingCommit !== null
   ) {
-    // The incoming update might unblock the current render. Interrupt the
-    // current attempt and restart from the top.
-    prepareFreshStack(root, NoLanes);
-    const didAttemptEntireTree = false;
-    markRootSuspended(
-      root,
-      workInProgressRootRenderLanes,
-      workInProgressDeferredLane,
-      didAttemptEntireTree,
-    );
+    if (
+      (executionContext & RenderContext) !== NoContext &&
+      workInProgressRoot !== null &&
+      root !== workInProgressRoot
+    ) {
+      // This update was scheduled while a different root is rendering. We
+      // must not reset the work stack, since that would unwind the other
+      // root's in-progress render (popping its context providers). Just cancel
+      // this root's pending commit; the update will be scheduled normally.
+      const cancelPendingCommit = root.cancelPendingCommit;
+      if (cancelPendingCommit !== null) {
+        root.cancelPendingCommit = null;
+        cancelPendingCommit();
+      }
+    } else {
+      // The incoming update might unblock the current render. Interrupt the
+      // current attempt and restart from the top.
+      prepareFreshStack(root, NoLanes);
+      const didAttemptEntireTree = false;
+      markRootSuspended(
+        root,
+        workInProgressRootRenderLanes,
+        workInProgressDeferredLane,
+        didAttemptEntireTree,
+      );
+    }
   }
 
   // Mark that the root has a pending update.
