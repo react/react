@@ -2251,6 +2251,10 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
     root.timeoutHandle = noTimeout;
     // $FlowFixMe[incompatible-call] Complains noTimeout is not a TimeoutID, despite the check above
     cancelTimeout(timeoutHandle);
+    // The timeout was holding back a throttled retry, whose data has already
+    // resolved, so nothing else will ping it. Ping it now so that it renders
+    // again once this render finishes or suspends.
+    markRootPinged(root, pendingEffectsLanes);
   }
   const cancelPendingCommit = root.cancelPendingCommit;
   if (cancelPendingCommit !== null) {
@@ -5186,7 +5190,12 @@ export function resolveRetryWakeable(boundaryFiber: Fiber, wakeable: Wakeable) {
       retryCache = boundaryFiber.stateNode;
       break;
     case OffscreenComponent: {
-      const instance: OffscreenInstance = boundaryFiber.stateNode;
+      const instance: OffscreenInstance | null = boundaryFiber.stateNode;
+      if (instance === null) {
+        // The boundary was deleted before the wakeable resolved. Deletion
+        // detaches the stateNode, so there's nothing to retry.
+        return;
+      }
       retryCache = instance._retryCache;
       break;
     }

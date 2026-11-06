@@ -11,6 +11,7 @@ let startTransition;
 let textCache;
 let waitFor;
 let waitForPaint;
+let waitForMicrotasks;
 let assertLog;
 let use;
 
@@ -33,6 +34,7 @@ describe('Activity Suspense', () => {
     const InternalTestUtils = require('internal-test-utils');
     waitFor = InternalTestUtils.waitFor;
     waitForPaint = InternalTestUtils.waitForPaint;
+    waitForMicrotasks = InternalTestUtils.waitForMicrotasks;
     assertLog = InternalTestUtils.assertLog;
 
     textCache = new Map();
@@ -455,6 +457,47 @@ describe('Activity Suspense', () => {
     });
     assertLog(['B1']);
     expect(root).toMatchRenderedOutput(<span hidden={true}>B1</span>);
+  });
+
+  test('deleting a hidden tree that suspended does not throw when the data resolves', async () => {
+    function App({showHidden}) {
+      return (
+        <>
+          <span>
+            <Text text="Visible" />
+          </span>
+          {showHidden ? (
+            <Activity mode="hidden">
+              <AsyncText text="Hidden" />
+            </Activity>
+          ) : null}
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App showHidden={true} />);
+    });
+    assertLog(['Visible', 'Suspend! [Hidden]']);
+    expect(root).toMatchRenderedOutput(<span>Visible</span>);
+
+    // Delete the hidden tree while it's still suspended.
+    await act(() => {
+      root.render(<App showHidden={false} />);
+    });
+    assertLog(['Visible']);
+    expect(root).toMatchRenderedOutput(<span>Visible</span>);
+
+    // The retry listener attached to the deleted Offscreen boundary still
+    // fires when the data resolves. It should not schedule any work.
+    await act(async () => {
+      resolveText('Hidden');
+      await waitForMicrotasks();
+      expect(Scheduler.unstable_hasPendingWork()).toBe(false);
+    });
+    assertLog([]);
+    expect(root).toMatchRenderedOutput(<span>Visible</span>);
   });
 
   test('detect updates to a hidden tree during a concurrent event', async () => {
