@@ -114,7 +114,11 @@ async function createFixture(graph, {WebpackMock}) {
       trackPromise(deferred.promise);
       deferredPromises.set(name, deferred);
       values[name] = deferred.promise;
-    } else if (node.iterator === undefined && node.stream === undefined) {
+    } else if (
+      node.iterator === undefined &&
+      node.stream === undefined &&
+      node.iterable === undefined
+    ) {
       throw new Error('Unsupported node: ' + name);
     }
   }
@@ -151,6 +155,12 @@ async function createFixture(graph, {WebpackMock}) {
         label: name,
         failure,
       });
+    } else if (node.iterable !== undefined) {
+      values[name] = createAsyncIterable(
+        node.iterable.map(buildValue),
+        node.returns === undefined ? undefined : buildValue(node.returns),
+        {label: name, single: node.single === true},
+      );
     }
     buildingValues.delete(name);
     return values[name];
@@ -237,6 +247,48 @@ async function createFixture(graph, {WebpackMock}) {
       failure,
     });
     return stream;
+  }
+
+  function createAsyncIterable(
+    items,
+    returnValue,
+    {label = 'iterable', single = false} = {},
+  ) {
+    const deferredResults = Array.from({length: items.length + 1}, () =>
+      createResolvablePromise(),
+    );
+    const iterationEvents = deferredResults.map((deferred, i) =>
+      createEvent(
+        i === items.length
+          ? 'return ' + label
+          : i === 0
+            ? 'start ' + label
+            : label + ' item ' + i,
+        () => deferred.resolve(),
+      ),
+    );
+    const iterableSource = {
+      async *[Symbol.asyncIterator]() {
+        for (let i = 0; i < items.length; i++) {
+          await deferredResults[i].promise;
+          yield items[i];
+        }
+        await deferredResults[items.length].promise;
+        return returnValue;
+      },
+    };
+    const iterable = single
+      ? iterableSource[Symbol.asyncIterator]()
+      : iterableSource;
+    events.push(...iterationEvents);
+    valueMetadata.set(iterable, {
+      type: 'iterable',
+      items,
+      returnValue,
+      events: iterationEvents,
+      single,
+    });
+    return iterable;
   }
 
   // Ready results must arrive while this independent source keeps EOF open.

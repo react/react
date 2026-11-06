@@ -652,7 +652,7 @@ describe('FlightReaderOracle', () => {
     }
   });
 
-  it.each(['stream'])(
+  it.each(['stream', 'iterable'])(
     'rejects a module error before its %s item is produced',
     async type => {
       for (let i = 0; i < 2; i++) {
@@ -669,19 +669,36 @@ describe('FlightReaderOracle', () => {
                 type,
                 items: [item],
                 events: [{released: produced}, {released: false}],
+                single: true,
               },
             ],
             [module, {type: 'module', value: 'loaded'}],
           ]),
           requiredEvents: new Map([[module, [{released: true, error}]]]),
         });
-        resolve({
-          getReader: () => ({
-            async read() {
-              throw error;
+        if (type === 'stream') {
+          resolve({
+            getReader: () => ({
+              async read() {
+                throw error;
+              },
+            }),
+          });
+        } else {
+          let first = true;
+          resolve({
+            [Symbol.asyncIterator]() {
+              return this;
             },
-          }),
-        });
+            next() {
+              if (first) {
+                first = false;
+                return Promise.reject(error);
+              }
+              return new Promise(() => {});
+            },
+          });
+        }
         await tick();
         if (produced) {
           oracle.throwIfFailed();
@@ -755,4 +772,189 @@ describe('FlightReaderOracle', () => {
       }
     }
   });
+
+  it('requires an independent iterable item while an earlier item is blocked', async () => {
+    const source = {};
+    const module = {};
+    const load = {released: false};
+    const {oracle, resolve} = createTestOracle(source, {
+      valueMetadata: new Map([
+        [
+          source,
+          {
+            type: 'iterable',
+            items: [module, 'ready'],
+            events: Array.from({length: 3}, () => ({released: true})),
+            returnValue: 'end',
+            single: true,
+          },
+        ],
+        [module, {type: 'module', value: 'loaded'}],
+      ]),
+      requiredEvents: new Map([[module, [load]]]),
+    });
+    let resolveFirst;
+    let resolveSecond;
+    const results = [
+      new Promise(done => (resolveFirst = done)),
+      new Promise(done => (resolveSecond = done)),
+      Promise.resolve({done: true, value: 'end'}),
+    ];
+    let index = 0;
+    resolve({
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      next() {
+        return (
+          results[index++] || Promise.resolve({done: true, value: undefined})
+        );
+      },
+    });
+    await tick();
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root.ahead.next1',
+    ]);
+
+    resolveSecond({done: false, value: 'ready'});
+    await tick();
+    expect(oracle.getMissingResults()).toEqual([]);
+    expect(oracle.isComplete()).toBe(false);
+
+    load.released = true;
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root.ahead.next0',
+    ]);
+    resolveFirst({done: false, value: 'loaded'});
+    await tick();
+    expect(oracle.isComplete()).toBe(true);
+  });
+
+  // A future iterable item or return cannot have serialized the shared value.
+  it.each(['item', 'return'])(
+    'borrows a produced iterable %s model error',
+    async kind => {
+      for (let i = 0; i < 2; i++) {
+        const produced = i === 1;
+        const source = {};
+        const shared = {};
+        const module = {};
+        const error = new Error('owner failed');
+        const owner = {shared, module};
+        const {oracle, resolve} = createTestOracle(source, {
+          valueMetadata: new Map([
+            [
+              source,
+              {
+                type: 'iterable',
+                items: kind === 'item' ? [shared, owner] : [shared],
+                returnValue: kind === 'return' ? owner : undefined,
+                events: (kind === 'item'
+                  ? [true, produced, false]
+                  : [true, produced]
+                ).map(released => ({released})),
+                single: true,
+              },
+            ],
+            [module, {type: 'module', value: 'failed'}],
+          ]),
+          requiredEvents: new Map([[module, [{released: true, error}]]]),
+        });
+        let index = 0;
+        resolve({
+          [Symbol.asyncIterator]() {
+            return this;
+          },
+          next() {
+            const current = index++;
+            if (current < 2) {
+              return Promise.reject(error);
+            }
+            return kind === 'return' && produced
+              ? Promise.resolve({done: true, value: undefined})
+              : new Promise(() => {});
+          },
+        });
+        await tick();
+        if (produced) {
+          oracle.throwIfFailed();
+          expect(oracle.isComplete()).toBe(kind === 'return');
+        } else {
+          expect(() => oracle.throwIfFailed()).toThrow('unexpected rejection');
+        }
+      }
+    },
+  );
+
+  // Even an already produced owner cannot lend its error to a future consumer.
+  it.each(['stream', 'iterable'])(
+    'waits for the consuming %s item before consulting eligible owners',
+    async type => {
+      for (let i = 0; i < 2; i++) {
+        const produced = i === 1;
+        const sequence = {};
+        const promise = {};
+        const shared = {};
+        const module = {};
+        const error = new Error('eligible owner failed');
+        const source = {promise, sequence};
+        const {oracle, resolve} = createTestOracle(source, {
+          valueMetadata: new Map([
+            [
+              promise,
+              {type: 'promise', state: 'fulfilled', value: {shared, module}},
+            ],
+            [
+              sequence,
+              {
+                type,
+                items: [shared],
+                events: [{released: produced}, {released: false}],
+                single: true,
+              },
+            ],
+            [module, {type: 'module', value: 'failed'}],
+          ]),
+          requiredEvents: new Map([[module, [{released: true, error}]]]),
+        });
+        const rejectOwner = {
+          then(onFulfill, onReject) {
+            onReject(error);
+          },
+        };
+        let first = true;
+        resolve({
+          promise: rejectOwner,
+          sequence:
+            type === 'stream'
+              ? {
+                  getReader: () => ({
+                    async read() {
+                      throw error;
+                    },
+                  }),
+                }
+              : {
+                  [Symbol.asyncIterator]() {
+                    return this;
+                  },
+                  next() {
+                    if (first) {
+                      first = false;
+                      return Promise.reject(error);
+                    }
+                    return new Promise(() => {});
+                  },
+                },
+        });
+        await tick();
+        if (produced) {
+          oracle.throwIfFailed();
+          expect(oracle.isComplete()).toBe(type === 'stream');
+        } else {
+          expect(() => oracle.throwIfFailed()).toThrow('unexpected rejection');
+        }
+      }
+    },
+  );
 });
