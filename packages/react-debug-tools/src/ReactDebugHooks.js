@@ -28,6 +28,7 @@ import assign from 'shared/assign';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
   FunctionComponent,
+  MemoComponent,
   SimpleMemoComponent,
   ContextProvider,
   ForwardRef,
@@ -1339,15 +1340,27 @@ function inspectHooksOfFiberImpl(
   fiber: Fiber,
   currentDispatcher: CurrentDispatcherRef,
 ): HooksTree {
+  // A MemoComponent fiber is a wrapper around a memoized component that
+  // isn't "simple" (e.g. memo(forwardRef(...)) or a function component with
+  // statics). The wrapper never renders directly; the hooks belong to the
+  // child fiber, so resolve through it first.
+  let fiberToInspect: Fiber | null = fiber;
+  while (fiberToInspect !== null && fiberToInspect.tag === MemoComponent) {
+    fiberToInspect = fiberToInspect.child;
+  }
+
   if (
-    fiber.tag !== FunctionComponent &&
-    fiber.tag !== SimpleMemoComponent &&
-    fiber.tag !== ForwardRef
+    fiberToInspect === null ||
+    (fiberToInspect.tag !== FunctionComponent &&
+      fiberToInspect.tag !== SimpleMemoComponent &&
+      fiberToInspect.tag !== ForwardRef)
   ) {
     throw new Error(
       'Unknown Fiber. Needs to be a function component to inspect hooks.',
     );
   }
+
+  fiber = fiberToInspect;
 
   // Warm up the cache so that it doesn't consume the currentHook.
   getPrimitiveStackCache();
