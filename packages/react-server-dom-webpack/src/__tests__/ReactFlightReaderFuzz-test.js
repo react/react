@@ -314,7 +314,11 @@ describe('ReactFlightReaderFuzz (node)', () => {
     await withResponse(
       fixture.model,
       async ({response, stream}) => {
-        oracle.subscribeToRoot(response, fixture.model, {subscribeAgain: true});
+        const expectedModel =
+          fixture.rootPromise === null ? fixture.model : fixture.resolvedModel;
+        const root =
+          fixture.rootPromise === null ? response : Promise.resolve(response);
+        oracle.subscribeToRoot(root, expectedModel, {subscribeAgain: true});
         async function checkProgress() {
           await actOnStream(() => {});
           oracle.throwIfFailed();
@@ -402,6 +406,17 @@ describe('ReactFlightReaderFuzz (node)', () => {
           fine: {object: {field0: 'ready'}},
         },
         roots: {entry: 'failing', other: 'fine'},
+      }));
+
+    it('waits for the root source Promise before accepting its model error', () =>
+      runGraph({
+        nodes: {
+          failed: {module: 'failed', fail: 'load'},
+          object: {object: {value: 'failed'}},
+        },
+        roots: {entry: 'object', other: 'object'},
+        rootPromise: true,
+        events: ['reject failed', 'resolve the root Promise'],
       }));
   });
 });

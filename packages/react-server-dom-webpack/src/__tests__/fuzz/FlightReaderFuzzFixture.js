@@ -126,16 +126,28 @@ function createFixture(graph, {WebpackMock}) {
     unrelated.resolve('end'),
   );
   events.push(unrelatedEvent);
+  const model = {
+    entry: getValue(graph.roots.entry),
+    other: getValue(graph.roots.other),
+    outcomes: Array.from(
+      deferredPromises.values(),
+      deferred => deferred.promise,
+    ),
+    unrelated: unrelated.promise,
+  };
+  let rootPromise = null;
+  if (graph.rootPromise) {
+    const root = createResolvablePromise();
+    trackPromise(root.promise);
+    rootPromise = root.promise;
+    events.unshift(
+      createEvent('resolve the root Promise', () => root.resolve(model)),
+    );
+  }
   return {
-    model: {
-      entry: getValue(graph.roots.entry),
-      other: getValue(graph.roots.other),
-      outcomes: Array.from(
-        deferredPromises.values(),
-        deferred => deferred.promise,
-      ),
-      unrelated: unrelated.promise,
-    },
+    model: rootPromise === null ? model : rootPromise,
+    resolvedModel: rootPromise === null ? null : model,
+    rootPromise,
     events,
     valueMetadata,
     requiredEvents,
