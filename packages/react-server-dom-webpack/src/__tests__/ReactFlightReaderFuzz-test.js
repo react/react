@@ -1114,8 +1114,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         events: ['resolve later to object', 'fail stream', 'load ready'],
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('an iterator reused in later stream items', () =>
+    it('an iterator reused in later stream items', () =>
       runGraph({
         nodes: {
           value: {value: 'first'},
