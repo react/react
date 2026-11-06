@@ -2448,7 +2448,11 @@ function installReference(
   reference.fulfilled = true;
   if (parentObject !== null) {
     if (key !== __PROTO__) {
-      parentObject[key] = value;
+      if (__DEV__ && value === REMOVED_PROPERTY) {
+        delete parentObject[key];
+      } else {
+        parentObject[key] = value;
+      }
     }
 
     // If this is the root object for a model reference, where `handler.value`
@@ -3583,15 +3587,18 @@ function createFormData(
   return formData;
 }
 
+// Debug constructor metadata occupies a property that must be removed after
+// decoding. An ordinary undefined value still occupies its property.
+const REMOVED_PROPERTY: symbol = __DEV__ ? Symbol() : (null as any);
+
 function applyConstructor(
   response: Response,
   model: Function,
   parentObject: Object,
   key: string,
-): void {
+): symbol {
   Object.setPrototypeOf(parentObject, model.prototype);
-  // Delete the property. It was just a placeholder.
-  return undefined;
+  return REMOVED_PROPERTY;
 }
 
 function defineLazyGetter<T>(
@@ -6775,10 +6782,10 @@ function reviveModel(
         delete (value as any)[k];
       } else {
         const walked = reviveModel(response, (value as any)[k], value, k);
-        if (walked !== undefined) {
-          (value as any)[k] = walked;
-        } else {
+        if (__DEV__ && walked === REMOVED_PROPERTY) {
           delete (value as any)[k];
+        } else {
+          (value as any)[k] = walked;
         }
       }
     }

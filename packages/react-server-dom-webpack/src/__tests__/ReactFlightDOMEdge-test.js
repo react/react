@@ -4855,6 +4855,18 @@ describe('ReactFlightDOMEdge', () => {
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
   });
+  it('keeps properties whose client module exports undefined', async () => {
+    const {value} = clientExports({value: undefined});
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({value}, webpackMap),
+    );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    expect(Object.keys(result)).toEqual(['value']);
+    expect(result.value).toBeUndefined();
+  });
+
   // Feeds raw Flight rows to a client response, a few microtasks apart, so the
   // reader's handling of particular shapes and orderings can be exercised
   // without going through the writer.
