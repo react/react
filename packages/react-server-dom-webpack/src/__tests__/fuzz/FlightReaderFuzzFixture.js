@@ -47,7 +47,9 @@ async function createFixture(graph, {WebpackMock}) {
   // Allocate containers first so named references share the source object.
   for (const name in nodes) {
     const node = nodes[name];
-    if (node.module !== undefined) {
+    if (Object.prototype.hasOwnProperty.call(node, 'value')) {
+      values[name] = node.value;
+    } else if (node.module !== undefined) {
       const load = createResolvablePromise();
       const evaluate = node.async === true ? createResolvablePromise() : null;
       const loadError =
@@ -103,6 +105,10 @@ async function createFixture(graph, {WebpackMock}) {
       values[name] = {};
     } else if (node.array !== undefined) {
       values[name] = [];
+    } else if (node.set !== undefined) {
+      values[name] = new Set();
+    } else if (node.map !== undefined) {
+      values[name] = new Map();
     } else if (node.promise !== undefined) {
       const deferred = createResolvablePromise();
       trackPromise(deferred.promise);
@@ -120,6 +126,17 @@ async function createFixture(graph, {WebpackMock}) {
       });
     } else if (node.array !== undefined) {
       node.array.forEach(item => values[name].push(getValue(item)));
+    } else if (node.set !== undefined) {
+      node.set.forEach(item => values[name].add(getValue(item)));
+    } else if (node.map !== undefined) {
+      node.map.forEach(([key, value]) => {
+        if (values[name].has(getValue(key))) {
+          throw new Error(
+            name + ' has two entries for the same source Map key',
+          );
+        }
+        values[name].set(getValue(key), getValue(value));
+      });
     } else if (node.promise !== undefined) {
       const deferred = deferredPromises.get(name);
       if (node.reject) {

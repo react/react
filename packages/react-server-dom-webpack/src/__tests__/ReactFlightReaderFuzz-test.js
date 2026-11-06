@@ -430,4 +430,74 @@ describe('ReactFlightReaderFuzz (node)', () => {
         roots: {entry: 'broken', other: 'fine'},
       }));
   });
+
+  describe('collection graphs', () => {
+    it('cycle first exposed through two Promises', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          member: {object: {field0: 'ready', field1: 'set'}},
+          set: {set: ['member']},
+          first: {promise: 'member'},
+          second: {promise: 'set'},
+        },
+        roots: {entry: 'first', other: 'second'},
+      }));
+
+    it('Map keys and values wait for their client modules', () =>
+      runGraph({
+        nodes: {
+          key: {module: 'key'},
+          ready: {module: 'ready'},
+          literal: {value: 'literal'},
+          object: {object: {value: 'ready'}},
+          map: {
+            map: [
+              ['key', 'object'],
+              ['literal', 'ready'],
+            ],
+          },
+          later: {promise: 'map'},
+        },
+        roots: {entry: 'map', other: 'later'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('Set containing itself', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          set: {set: ['set', 'ready']},
+        },
+        roots: {entry: 'set', other: 'set'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('Map containing itself', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          key: {value: 'value'},
+          map: {
+            map: [
+              ['map', 'map'],
+              ['key', 'ready'],
+            ],
+          },
+        },
+        roots: {entry: 'map', other: 'map'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('two collections containing each other', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          key: {value: 'a'},
+          a: {set: ['b', 'ready']},
+          b: {map: [['key', 'a']]},
+        },
+        roots: {entry: 'a', other: 'b'},
+      }));
+  });
 });

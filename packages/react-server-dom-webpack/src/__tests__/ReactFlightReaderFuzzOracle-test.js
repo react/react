@@ -70,6 +70,48 @@ describe('FlightReaderOracle', () => {
     ).toThrow('two distinct source objects');
   });
 
+  // Compare entries in iteration order; membership equality misses reordering.
+  it('checks collection iteration order', () => {
+    expect(() =>
+      createOracle().observeValue(
+        new Map([
+          ['first', 1],
+          ['second', 2],
+        ]),
+        new Map([
+          ['second', 2],
+          ['first', 1],
+        ]),
+      ),
+    ).toThrow('.key0');
+    expect(() =>
+      createOracle().observeValue(new Set([1, 2]), new Set([2, 1])),
+    ).toThrow('.item0');
+  });
+
+  // Map normalizes -0 to 0. Reject a recipe whose entries would silently merge.
+  it('rejects a Map recipe with duplicate source keys', async () => {
+    const {createFixture} = require('./fuzz/FlightReaderFuzzFixture');
+    await expect(
+      createFixture(
+        {
+          nodes: {
+            zero: {value: 0},
+            negativeZero: {value: -0},
+            map: {
+              map: [
+                ['zero', 'zero'],
+                ['negativeZero', 'negativeZero'],
+              ],
+            },
+          },
+          roots: {entry: 'map', other: 'map'},
+        },
+        {},
+      ),
+    ).rejects.toThrow('map has two entries for the same source Map key');
+  });
+
   // Eventual value equality alone accepts both early delivery and missing
   // wakeups. Two inputs distinguish partial readiness from full readiness.
   it('requires delivery only after all inputs arrive', () => {

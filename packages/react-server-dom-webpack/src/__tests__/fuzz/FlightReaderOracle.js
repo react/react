@@ -138,6 +138,29 @@ function compareValue(state, {expectedValue, received, path}, visited) {
     expect(typeof received.then).toBe('function');
     return [];
   }
+  if (expectedValue instanceof Set) {
+    expect(received).toBeInstanceOf(Set);
+    expect(received.size).toBe(expectedValue.size);
+    const items = Array.from(received);
+    return Array.from(expectedValue, (item, i) => ({
+      expectedValue: item,
+      received: items[i],
+      path: path + '.item' + i,
+    }));
+  }
+  if (expectedValue instanceof Map) {
+    expect(received).toBeInstanceOf(Map);
+    expect(received.size).toBe(expectedValue.size);
+    const entries = Array.from(received);
+    return Array.from(expectedValue).flatMap(([key, value], i) => [
+      {expectedValue: key, received: entries[i][0], path: path + '.key' + i},
+      {
+        expectedValue: value,
+        received: entries[i][1],
+        path: path + '.value' + i,
+      },
+    ]);
+  }
   const isArray = Array.isArray(expectedValue);
   if (isArray) {
     expect(Array.isArray(received)).toBe(true);
@@ -282,6 +305,19 @@ function assertExpectedError(error, expected, path) {
   }
 }
 
+function getValueDependencies(fixture, value) {
+  if (fixture.valueMetadata.has(value)) {
+    return [];
+  }
+  if (value instanceof Set) {
+    return Array.from(value);
+  }
+  if (value instanceof Map) {
+    return Array.from(value.entries()).flat();
+  }
+  return Object.values(value);
+}
+
 function getRequiredEvents(fixture, value) {
   const todo = [value];
   const seen = new Set();
@@ -304,9 +340,7 @@ function getRequiredEvents(fixture, value) {
     (fixture.requiredEvents.get(current) || []).forEach(event =>
       events.add(event),
     );
-    if (metadata === undefined) {
-      todo.push(...Object.values(current));
-    }
+    todo.push(...getValueDependencies(fixture, current));
   }
   return Array.from(events);
 }
@@ -362,9 +396,7 @@ function collectModels(fixture) {
       (fixture.requiredEvents.get(value) || []).forEach(event =>
         model.events.add(event),
       );
-      if (metadata === undefined) {
-        todo.push(...Object.values(value));
-      }
+      todo.push(...getValueDependencies(fixture, value));
     }
     return model;
   }
