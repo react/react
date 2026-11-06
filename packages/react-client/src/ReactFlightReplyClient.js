@@ -198,6 +198,11 @@ function escapeStringValue(value: string): string {
 
 interface Reference {}
 
+type StreamItemContext = {
+  referenced: boolean,
+  objects: Set<Reference>,
+};
+
 export function processReply(
   root: ReactServerValue,
   formFieldPrefix: string,
@@ -342,9 +347,7 @@ export function processReply(
         }
       } else {
         try {
-          // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
-          const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-          data.append(streamPrefix, partJSON);
+          data.append(streamPrefix, serializeStreamItem(entry.value));
           reader.read().then(progress, reject);
         } catch (x) {
           reject(x);
@@ -354,6 +357,90 @@ export function processReply(
     reader.read().then(progress, reject);
 
     return '$R' + streamId.toString(16);
+  }
+
+  // A stream item is written straight into its stream's part and has no id
+  // of its own, so it is given one before it is written, in case it or
+  // anything below it comes up a second time. The id becomes a part of its
+  // own only when something referred to the item or to a path under it;
+  // otherwise those references are dropped again, since no part will ever
+  // be written for them.
+  let streamItemContext: null | StreamItemContext = null;
+  let streamItemOwners: null | WeakMap<Reference, StreamItemContext> = null;
+
+  function registerStreamItemObject(
+    context: StreamItemContext,
+    value: Reference,
+  ): void {
+    context.objects.add(value);
+    const owners = streamItemOwners;
+    if (owners !== null) {
+      owners.set(value, context);
+    }
+  }
+
+  function serializeStreamItem(value: ReactServerValue): string {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      writtenObjects.has(value)
+    ) {
+      // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
+      const partJSON: string = JSON.stringify(value, resolveToJSON);
+      return partJSON;
+    }
+    const id = nextPartId++;
+    const reference = serializeByValueID(id);
+    const previousModelRoot = modelRoot;
+    const parent = streamItemContext;
+    if (parent !== null && streamItemOwners === null) {
+      // Synchronous reentry needs an owner index. Ordinary asynchronous items
+      // keep their single-context Set lookup.
+      const owners = new WeakMap<Reference, StreamItemContext>();
+      parent.objects.forEach(object => owners.set(object, parent));
+      streamItemOwners = owners;
+    }
+    const context: StreamItemContext = {
+      referenced: false,
+      objects: new Set(),
+    };
+    writtenObjects.set(value, reference);
+    registerStreamItemObject(context, value);
+    streamItemContext = context;
+    modelRoot = value;
+    try {
+      // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
+      const partJSON: string = JSON.stringify(value, resolveToJSON);
+      if (!context.referenced) {
+        // The item is written inline after all. A value that got a part of
+        // its own in the meantime, like a stream, keeps that reference.
+        context.objects.forEach(object => {
+          const objectReference = writtenObjects.get(object);
+          if (
+            objectReference !== undefined &&
+            (objectReference === reference ||
+              objectReference.indexOf(reference + ':') === 0)
+          ) {
+            writtenObjects.delete(object);
+          }
+        });
+        return partJSON;
+      }
+      // $FlowFixMe[incompatible-type] We know it's not null because we assigned it above.
+      const data: FormData = formData;
+      data.append(formFieldPrefix + id, partJSON);
+      return JSON.stringify(reference);
+    } finally {
+      const owners = streamItemOwners;
+      if (owners !== null) {
+        context.objects.forEach(object => owners.delete(object));
+        if (parent === null) {
+          streamItemOwners = null;
+        }
+      }
+      streamItemContext = parent;
+      modelRoot = previousModelRoot;
+    }
   }
 
   function serializeReadableStream(stream: ReadableStream): string {
@@ -406,9 +493,7 @@ export function processReply(
           // Unlike streams, the last value may not be undefined. If it's not
           // we outline it and encode a reference to it in the closing instruction.
           try {
-            // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
-            const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-            data.append(streamPrefix, 'C' + partJSON); // Close signal
+            data.append(streamPrefix, 'C' + serializeStreamItem(entry.value)); // Close signal
           } catch (x) {
             reject(x);
             return;
@@ -420,9 +505,7 @@ export function processReply(
         }
       } else {
         try {
-          // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
-          const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-          data.append(streamPrefix, partJSON);
+          data.append(streamPrefix, serializeStreamItem(entry.value));
           iterator.next().then(progress, reject);
         } catch (x) {
           reject(x);
@@ -670,6 +753,20 @@ export function processReply(
         } else {
           // We've already emitted this as an outlined object, so we can
           // just refer to that by its existing ID.
+          // A synchronously settling iterator can refer to an item whose
+          // serialization is still on the stack.
+          const owners = streamItemOwners;
+          if (owners === null) {
+            const context = streamItemContext;
+            if (context !== null && context.objects.has(value)) {
+              context.referenced = true;
+            }
+          } else {
+            const owner = owners.get(value);
+            if (owner !== undefined) {
+              owner.referenced = true;
+            }
+          }
           return existingReference;
         }
       } else if (key.indexOf(':') === -1) {
@@ -680,6 +777,9 @@ export function processReply(
           // through the property name inside that parent.
           const reference = parentReference + ':' + key;
           writtenObjects.set(value, reference);
+          if (streamItemContext !== null) {
+            registerStreamItemObject(streamItemContext, value);
+          }
           if (temporaryReferences !== undefined) {
             // Store this object so that the server can refer to it later in responses.
             writeTemporaryReference(temporaryReferences, reference, value);
