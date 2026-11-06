@@ -529,6 +529,8 @@ export function printFunctionType(type: ReactFunctionType): string {
   }
 }
 
+const KNOWN_REACT_MODULES: ReadonlyArray<string> = ['react', 'react-dom'];
+
 export class Environment {
   #globals: GlobalRegistry;
   #shapes: ShapeRegistry;
@@ -953,7 +955,13 @@ export class Environment {
       moduleName.toLowerCase() === 'react-dom'
     );
   }
-  static knownReactModules: ReadonlyArray<string> = ['react', 'react-dom'];
+  /*
+   * A getter rather than a static field, which the build would emit as a class
+   * static block (not supported before Node 16.11).
+   */
+  static get knownReactModules(): ReadonlyArray<string> {
+    return KNOWN_REACT_MODULES;
+  }
 
   getFallthroughPropertyType(
     receiver: Type,
