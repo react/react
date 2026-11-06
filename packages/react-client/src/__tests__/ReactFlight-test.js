@@ -4560,4 +4560,49 @@ describe('ReactFlight', () => {
     );
     expect(await ReactNoopFlightClient.read(chunks)).toBe(text);
   });
+
+  it('preserves an outer stream item after another request writes the same item', async () => {
+    function stream(value) {
+      return {
+        [Symbol.asyncIterator]() {
+          let done = false;
+          return {
+            next() {
+              const entry = {done, value: done ? undefined : value};
+              done = true;
+              return {then: resolve => resolve(entry)};
+            },
+          };
+        },
+      };
+    }
+
+    let innerTransport;
+    let reentered = false;
+    function Reenter() {
+      if (!reentered) {
+        reentered = true;
+        // Noop schedules this request synchronously, while the outer request
+        // is serializing the same item. Its own reference must be retained.
+        innerTransport = ReactNoopFlightServer.render(stream(item));
+      }
+      return null;
+    }
+    const item = {component: ReactServer.createElement(Reenter), self: null};
+    item.self = item;
+    const outerTransport = ReactNoopFlightServer.render(stream(item));
+
+    const transports = [outerTransport, innerTransport];
+    for (let i = 0; i < transports.length; i++) {
+      const received = await ReactNoopFlightClient.read(transports[i], {
+        close: true,
+      });
+      const iterator = received[Symbol.asyncIterator]();
+      const entry = await iterator.next();
+      expect(entry.done).toBe(false);
+      expect(entry.value.component).toBe(null);
+      expect(entry.value.self).toBe(entry.value);
+      expect((await iterator.next()).done).toBe(true);
+    }
+  });
 });
