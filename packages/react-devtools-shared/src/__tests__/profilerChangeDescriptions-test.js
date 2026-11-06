@@ -147,4 +147,143 @@ describe('Profiler change descriptions', () => {
       }
     `);
   });
+
+  // @reactVersion >=18.0
+  it('should not throw for memo components that wrap a forwardRef', () => {
+    const MemoizedForwardRef = React.memo(
+      React.forwardRef(function Input({onChange, value}, ref) {
+        const [count] = React.useState(0);
+        return value + count;
+      }),
+    );
+
+    let forceUpdate = null;
+
+    const App = function App() {
+      const [val, dispatch] = React.useReducer(x => x + 1, 0);
+
+      forceUpdate = dispatch;
+
+      return <MemoizedForwardRef value={val} onChange={() => {}} />;
+    };
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => render(<App />));
+    utils.act(() => forceUpdate());
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const rootID = store.roots[0];
+    const commitData = store.profilerStore.getCommitData(rootID, 1);
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Input> [Memo]
+              <Input> [ForwardRef]
+    `);
+
+    let element = store.getElementAtIndex(1);
+    expect(element.hocDisplayNames).toEqual(['Memo']);
+    expect(commitData.changeDescriptions.get(element.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": null,
+        "isFirstMount": false,
+        "props": [
+          "value",
+          "onChange",
+        ],
+        "state": null,
+      }
+    `);
+
+    element = store.getElementAtIndex(2);
+    expect(element.hocDisplayNames).toEqual(['ForwardRef']);
+    expect(commitData.changeDescriptions.get(element.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": [],
+        "isFirstMount": false,
+        "props": [
+          "value",
+          "onChange",
+        ],
+        "state": null,
+      }
+    `);
+  });
+
+  // @reactVersion >=18.0
+  it('should not throw for memo components with a custom comparison function', () => {
+    function Label({value}) {
+      const [count] = React.useState(0);
+      return value + count;
+    }
+
+    const MemoizedLabel = React.memo(
+      Label,
+      (prevProps, nextProps) => prevProps.value === nextProps.value,
+    );
+
+    let forceUpdate = null;
+
+    const App = function App() {
+      const [val, dispatch] = React.useReducer(x => x + 1, 0);
+
+      forceUpdate = dispatch;
+
+      return <MemoizedLabel value={val} />;
+    };
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => render(<App />));
+    utils.act(() => forceUpdate());
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const rootID = store.roots[0];
+    const commitData = store.profilerStore.getCommitData(rootID, 1);
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Label> [Memo]
+              <Label>
+    `);
+
+    let element = store.getElementAtIndex(1);
+    expect(element.hocDisplayNames).toEqual(['Memo']);
+    expect(commitData.changeDescriptions.get(element.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": null,
+        "isFirstMount": false,
+        "props": [
+          "value",
+        ],
+        "state": null,
+      }
+    `);
+
+    element = store.getElementAtIndex(2);
+    expect(element.hocDisplayNames).toBeNull();
+    expect(commitData.changeDescriptions.get(element.id))
+      .toMatchInlineSnapshot(`
+      {
+        "context": false,
+        "didHooksChange": false,
+        "hooks": [],
+        "isFirstMount": false,
+        "props": [
+          "value",
+        ],
+        "state": null,
+      }
+    `);
+  });
 });
