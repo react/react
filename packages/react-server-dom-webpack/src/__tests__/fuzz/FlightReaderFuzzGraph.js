@@ -252,18 +252,16 @@ function generateGraph(seed, {without = [], extra = []} = {}) {
     } else if ('object' in node) {
       const i = Object.keys(node.object).length;
       // Include names that need escaping and integer-like keys that affect order.
-      const keys = without.includes('colon')
-        ? ['field' + i]
-        : [
-            'field' + i,
-            ':' + i,
-            '%3A' + i,
-            '%25:' + i,
-            '' + i,
-            i === 0 ? '' : 'field' + i,
-            '🙂' + i,
-            'constructor' + i,
-          ];
+      const keys = [
+        'field' + i,
+        ':' + i,
+        '%3A' + i,
+        '%25:' + i,
+        '' + i,
+        i === 0 ? '' : 'field' + i,
+        '🙂' + i,
+        'constructor' + i,
+      ];
       const key = pickFrom(keys);
       node.object[key] = item;
     } else {
@@ -342,9 +340,7 @@ function generateGraph(seed, {without = [], extra = []} = {}) {
     add(node);
   }
   ['array', 'object', 'set', 'map'].forEach(addContainer);
-  if (!without.includes('colon')) {
-    containers.push(add({object: {}}));
-  }
+  containers.push(add({object: {}}));
   const options = {};
 
   // Most cases stay small enough to inspect. One graph in LARGE_GRAPH_CHANCE

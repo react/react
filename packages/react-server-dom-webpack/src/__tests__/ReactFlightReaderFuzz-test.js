@@ -1978,8 +1978,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
     });
   }
   describe('source timing and response context', () => {
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip.each([':', '%3A:', ':%25:'])(
+    it.each([':', '%3A:', ':%25:'])(
       'a cycle through the property name %j',
       key =>
         runGraph({
@@ -2115,10 +2114,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
           it(formatCaseName('graph', seed, readTiming, scheduleIndex), () =>
             runGraph({
               ...generateGraph(seed, {
-                without: (host === 'reply'
-                  ? unsupportedReplyOperations
-                  : []
-                ).concat(['colon']),
+                without: host === 'reply' ? unsupportedReplyOperations : [],
               }),
               seed,
               readTiming,
@@ -2531,11 +2527,7 @@ describe('ReactFlightReaderFuzz (reply-temporary)', () => {
       }));
   });
 
-  // A value reused under a colon-containing property key is referenced only once
-  // the reply encoder escapes path segments; until then it re-serializes a
-  // shared stream and locks it.
-  // eslint-disable-next-line jest/no-disabled-tests
-  describe.skip('generated graphs', () => {
+  describe('generated graphs', () => {
     seeds.forEach(seed => {
       it('graph seed=' + seed, () =>
         runCaseWithReproduction(
