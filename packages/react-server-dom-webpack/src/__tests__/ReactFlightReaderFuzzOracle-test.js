@@ -165,6 +165,66 @@ describe('FlightReaderOracle', () => {
     );
   });
 
+  // Server messages and identities can change across the transport. A matching
+  // digest is required, and rejection cannot pass as undefined fulfillment.
+  it('matches a rejected source Promise by its recorded server digest', async () => {
+    const source = {};
+    const reason = new Error('expected failure');
+    const metadata = {
+      type: 'promise',
+      state: 'pending',
+      value: undefined,
+      reason: undefined,
+    };
+    const options = {
+      valueMetadata: new Map([
+        [source, metadata],
+        [reason, {type: 'error', digest: 'digest:expected failure'}],
+      ]),
+    };
+    const {oracle, resolve} = createTestOracle(source, options);
+    let rejectPromise;
+    resolve(new Promise((unused, reject) => (rejectPromise = reject)));
+    expect(oracle.getMissingResults()).toEqual([]);
+    const clientError = Object.assign(new Error('different client message'), {
+      digest: 'digest:expected failure',
+    });
+
+    const early = createTestOracle(source, options);
+    early.resolve(Promise.reject(clientError));
+    await tick();
+    expect(() => early.oracle.throwIfFailed()).toThrow('unexpected rejection');
+
+    metadata.state = 'rejected';
+    metadata.reason = reason;
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root.then',
+    ]);
+    rejectPromise(clientError);
+    await tick();
+    expect(oracle.isComplete()).toBe(true);
+
+    const wrongDigest = createTestOracle(source, options);
+    wrongDigest.resolve(
+      Promise.reject(
+        Object.assign(new Error('expected failure'), {
+          digest: 'wrong',
+        }),
+      ),
+    );
+    await tick();
+    expect(() => wrongDigest.oracle.throwIfFailed()).toThrow(
+      'expected digest digest:expected failure',
+    );
+
+    const fulfilled = createTestOracle(source, options);
+    fulfilled.resolve(Promise.resolve(undefined));
+    await tick();
+    expect(() => fulfilled.oracle.throwIfFailed()).toThrow(
+      'expected a rejection',
+    );
+  });
+
   // A single subscription cannot deliver twice, even with the same value.
   it('rejects a second call to a settlement callback', () => {
     const {oracle, resolve} = createTestOracle('value');

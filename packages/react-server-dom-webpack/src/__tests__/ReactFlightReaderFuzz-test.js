@@ -221,7 +221,7 @@ describe('ReactFlightReaderFuzz (node)', () => {
     });
   }
 
-  async function withResponse(model, read) {
+  async function withResponse(model, read, {onError: handleError} = {}) {
     const stream = new PassThrough();
     const response = ReactServerDOMClient.createFromNodeStream(stream, {
       moduleMap: null,
@@ -242,7 +242,14 @@ describe('ReactFlightReaderFuzz (node)', () => {
       {
         onError(error) {
           if (!disposed) {
-            errors.push(error);
+            try {
+              if (handleError === undefined) {
+                throw error;
+              }
+              return handleError(error);
+            } catch (unexpected) {
+              errors.push(unexpected);
+            }
           }
         },
       },
@@ -276,6 +283,17 @@ describe('ReactFlightReaderFuzz (node)', () => {
   async function runGraph(graph) {
     const fixture = createFixture(graph, {WebpackMock});
     const oracle = createOracle(fixture);
+    const reported = [];
+    const onError = error => {
+      const digest = fixture.expectedErrors.has(error)
+        ? fixture.valueMetadata.get(error).digest
+        : undefined;
+      if (digest === undefined) {
+        throw error;
+      }
+      reported.push(error);
+      return digest;
+    };
     const events = fixture.events.filter(
       event => event !== fixture.unrelatedEvent,
     );
@@ -293,28 +311,37 @@ describe('ReactFlightReaderFuzz (node)', () => {
     }
     events.push(fixture.unrelatedEvent);
 
-    await withResponse(fixture.model, async ({response, stream}) => {
-      oracle.subscribeToRoot(response, fixture.model, {subscribeAgain: true});
-      async function checkProgress() {
-        await actOnStream(() => {});
-        oracle.throwIfFailed();
-        expect(oracle.getMissingResults().map(check => check.path)).toEqual([]);
-        await oracle.checkForMutations();
-      }
-      await checkProgress();
-      for (let i = 0; i < events.length; i++) {
-        const event = events[i];
-        await actOnStream(() => {
-          event.released = true;
-          event.run();
-        });
-        await checkProgress();
-        if (event !== fixture.unrelatedEvent) {
-          expect(stream.readableEnded).toBe(false);
+    await withResponse(
+      fixture.model,
+      async ({response, stream}) => {
+        oracle.subscribeToRoot(response, fixture.model, {subscribeAgain: true});
+        async function checkProgress() {
+          await actOnStream(() => {});
+          oracle.throwIfFailed();
+          expect(oracle.getMissingResults().map(check => check.path)).toEqual(
+            [],
+          );
+          await oracle.checkForMutations();
+          Array.from(fixture.expectedErrors.keys()).forEach(error => {
+            expect(reported).toContain(error);
+          });
         }
-      }
-      expect(oracle.isComplete()).toBe(true);
-    });
+        await checkProgress();
+        for (let i = 0; i < events.length; i++) {
+          const event = events[i];
+          await actOnStream(() => {
+            event.released = true;
+            event.run();
+          });
+          await checkProgress();
+          if (event !== fixture.unrelatedEvent) {
+            expect(stream.readableEnded).toBe(false);
+          }
+        }
+        expect(oracle.isComplete()).toBe(true);
+      },
+      {onError},
+    );
   }
 
   describe('Promise and client-module graphs', () => {
@@ -342,5 +369,16 @@ describe('ReactFlightReaderFuzz (node)', () => {
           roots: {entry: 'object', other: 'later'},
         }),
     );
+
+    it('server error through a rejected Promise', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          error: {error: 'expected failure'},
+          failing: {promise: 'error', reject: true},
+          fine: {object: {field0: 'ready'}},
+        },
+        roots: {entry: 'failing', other: 'fine'},
+      }));
   });
 });
