@@ -13,6 +13,7 @@ const aliases = new Map([
   ['httpEquiv', 'http-equiv'],
   // HTML and SVG attributes, but the SVG attribute is case sensitive.],
   ['crossOrigin', 'crossorigin'],
+  ['commandFor', 'commandfor'],
   // This is a list of all SVG attributes that need special casing.
   // Regular attributes that just accept strings.],
   ['accentHeight', 'accent-height'],
