@@ -19,6 +19,7 @@ function createOracle(
     observedAsyncValues: new WeakSet(),
     thenableResults: new WeakMap(),
     iteratorItems: new WeakMap(),
+    functionCalls: new Map(),
     resultChecks: [],
     failures: [],
     pendingTasks: 0,
@@ -65,6 +66,9 @@ function createOracle(
     async checkForMutations() {
       state.pendingTasks++;
       try {
+        state.functionCalls.forEach((call, received) =>
+          observeServerFunction(state, received, call.metadata, call.args),
+        );
         const blobs = state.receivedValues.flatMap(root =>
           traverse(state, root, false),
         );
@@ -109,6 +113,21 @@ function traverse(state, root, observe) {
         } else {
           blobs.push(pair);
         }
+      }
+      if (metadata !== undefined && metadata.type === 'function') {
+        if (observe) {
+          observeServerFunction(state, pair.received, metadata, metadata.args);
+        }
+        const call = state.functionCalls.get(pair.received);
+        if (call === undefined) {
+          throw new Error('A received Server Function was replaced');
+        }
+        children.push({
+          expectedValue: metadata.result,
+          received: call.result,
+          path: pair.path + '()',
+          isCallResult: true,
+        });
       }
       if (metadata !== undefined && metadata.type === 'iterator') {
         if (observe && !state.iteratorItems.has(pair.received)) {
@@ -178,7 +197,11 @@ function traverse(state, root, observe) {
 }
 
 // This is the same comparison for initial delivery and later mutation checks.
-function compareValue(state, {expectedValue, received, path}, visited) {
+function compareValue(
+  state,
+  {expectedValue, received, path, isCallResult},
+  visited,
+) {
   if (
     expectedValue === null ||
     (typeof expectedValue !== 'object' && typeof expectedValue !== 'function')
@@ -193,17 +216,21 @@ function compareValue(state, {expectedValue, received, path}, visited) {
   }
   expect(received).not.toBe(null);
   expect(['object', 'function']).toContain(typeof received);
-  const previous = state.expectedByReceived.get(received);
-  if (previous !== undefined && previous !== expectedValue) {
-    throw new Error('A received object matches two distinct source objects');
+  if (!isCallResult) {
+    const previous = state.expectedByReceived.get(received);
+    if (previous !== undefined && previous !== expectedValue) {
+      throw new Error('A received object matches two distinct source objects');
+    }
+    state.expectedByReceived.set(received, expectedValue);
+    if (visited.has(received)) {
+      return null;
+    }
+    visited.add(received);
   }
-  state.expectedByReceived.set(received, expectedValue);
-  if (visited.has(received)) {
-    return null;
-  }
-  visited.add(received);
   if (metadata !== undefined) {
-    if (metadata.type === 'iterator') {
+    if (metadata.type === 'function') {
+      expect(typeof received).toBe('function');
+    } else if (metadata.type === 'iterator') {
       expect(typeof received.next).toBe('function');
     } else if (metadata.type === 'iterable') {
       expect(typeof received[Symbol.asyncIterator]).toBe('function');
@@ -529,6 +556,29 @@ function observeByteStream(state, metadata, expectedValue, received, path) {
   });
 }
 
+function observeServerFunction(state, received, metadata, args) {
+  const result = received(...args);
+  let bound = null;
+  if (metadata.bound.length > 0) {
+    expect(Array.isArray(result)).toBe(true);
+    const previous = state.functionCalls.get(received);
+    if (previous !== undefined) {
+      previous.bound.forEach((value, i) => {
+        if (!Object.is(result[i], value)) {
+          throw new Error('A Server Function changed a bound argument');
+        }
+      });
+    }
+    bound = result.slice(0, metadata.bound.length);
+  }
+  state.functionCalls.set(received, {
+    metadata,
+    args,
+    result,
+    bound,
+  });
+}
+
 function observeCanceledStream(state, metadata, received, path) {
   const {fixture} = state;
   const check = registerResultCheck(
@@ -703,7 +753,11 @@ function assertExpectedError(error, expected, path) {
 function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
   if (metadata !== undefined) {
-    return metadata.type === 'iterator' ? metadata.items : [];
+    return metadata.type === 'function'
+      ? metadata.bound
+      : metadata.type === 'iterator'
+        ? metadata.items
+        : [];
   }
   if (value instanceof Set) {
     return Array.from(value);
@@ -784,10 +838,11 @@ function collectModels(fixture) {
   const modelsByRootValue = new Map();
   const modelsByValue = new Map();
   const asyncValues = new Set();
+  const boundArgumentModels = new Map();
 
-  function collectModel(rootValue) {
+  function collectModel(rootValues) {
     const model = {events: new Set(), referencedModels: new Set()};
-    const todo = [rootValue];
+    const todo = rootValues.slice();
     const seen = new Set();
     while (todo.length > 0) {
       const value = todo.pop();
@@ -799,7 +854,7 @@ function collectModels(fixture) {
         continue;
       }
       seen.add(value);
-      if (value === rootValue) {
+      if (rootValues.includes(value)) {
         modelsByRootValue.set(value, model);
       }
       modelsByValue.set(value, (modelsByValue.get(value) || []).concat(model));
@@ -816,6 +871,11 @@ function collectModels(fixture) {
       (fixture.requiredEvents.get(value) || []).forEach(event =>
         model.events.add(event),
       );
+      if (metadata !== undefined && metadata.type === 'function') {
+        // Bound arguments serialize separately even when the function is in root.
+        asyncValues.add(value);
+        continue;
+      }
       todo.push(...getValueDependencies(fixture, value));
     }
     return model;
@@ -825,33 +885,40 @@ function collectModels(fixture) {
   if (!isRootProduced(fixture)) {
     return modelsByRootValue;
   }
-  const rootModel = collectModel(
+  const rootModel = collectModel([
     fixture.rootPromise == null ? fixture.model : fixture.resolvedModel,
-  );
+  ]);
   // Only a produced prefix can have serialized an object and owned its errors.
   asyncValues.forEach(value => {
     const metadata = fixture.valueMetadata.get(value);
-    if (metadata.type === 'promise') {
+    if (metadata.type === 'function') {
+      boundArgumentModels.set(value, collectModel(metadata.bound));
+    } else if (metadata.type === 'promise') {
       if (metadata.state === 'fulfilled') {
-        collectModel(metadata.value);
+        collectModel([metadata.value]);
       }
     } else if (metadata.type === 'canceled') {
       // Its first item is enqueued when the native source is constructed.
-      collectModel(metadata.first);
+      collectModel([metadata.first]);
     } else if (metadata.type === 'stream' || metadata.type === 'iterable') {
       for (let i = 0; i < metadata.items.length; i++) {
         if (!metadata.events[i].released) {
           break;
         }
-        collectModel(metadata.items[i]);
+        collectModel([metadata.items[i]]);
       }
       if (
         metadata.type === 'iterable' &&
         areAllEventsReleased(metadata.events)
       ) {
-        collectModel(metadata.returnValue);
+        collectModel([metadata.returnValue]);
       }
     }
+  });
+  boundArgumentModels.forEach((argumentModel, fn) => {
+    modelsByValue
+      .get(fn)
+      .forEach(model => model.referencedModels.add(argumentModel));
   });
   modelsByValue.forEach(models => {
     // The root is serialized first. Otherwise any produced result containing

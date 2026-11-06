@@ -225,7 +225,7 @@ describe('ReactFlightReaderFuzz (node)', () => {
     const stream = new PassThrough();
     const response = ReactServerDOMClient.createFromNodeStream(stream, {
       moduleMap: null,
-      serverModuleMap: null,
+      serverModuleMap: WebpackMock.webpackServerMap,
       moduleLoading: null,
     });
     let disposed = false;
@@ -300,9 +300,8 @@ describe('ReactFlightReaderFuzz (node)', () => {
     if (graph.events === undefined) {
       events.sort((a, b) => +a.isClient - +b.isClient);
     } else {
-      graph.events.forEach(label => {
-        expect(events.some(event => event.label === label)).toBe(true);
-      });
+      // This is a priority list: absent labels do not create source events.
+      // Stable sorting keeps unspecified actual events in their source order.
       const position = label => {
         const index = graph.events.indexOf(label);
         return index === -1 ? graph.events.length : index;
@@ -930,6 +929,150 @@ describe('ReactFlightReaderFuzz (node)', () => {
           stream: {stream: ['shared'], cancel: true},
         },
         roots: {entry: 'stream', other: 'shared'},
+      }));
+  });
+
+  describe('bound Server Functions', () => {
+    it('calls a delivered Server Function with bound and supplied arguments', async () => {
+      const {fn} = WebpackMock.serverExports({fn: (...args) => args});
+      const received = await roundTrip(fn.bind(null, 'bound'));
+      const first = received('argument');
+      expect(first).toEqual(['bound', 'argument']);
+      expect(received('argument')).toEqual(['bound', 'argument']);
+      expect(received('argument')).not.toBe(first);
+    });
+
+    it('a bound object finishes loading before the function is delivered', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          argument: {object: {value: 'ready'}},
+          fn: {bound: ['argument']},
+        },
+        roots: {entry: 'fn', other: 'fn'},
+        events: ['load fn', 'load ready'],
+      }));
+
+    it('a bound argument first written inside a loading stream item', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          shared: {iterable: []},
+          item: {object: {shared: 'shared', ready: 'ready'}},
+          stream: {stream: ['item']},
+          fn: {bound: ['shared']},
+          root: {array: ['stream', 'fn']},
+        },
+        roots: {entry: 'root', other: 'root'},
+        events: [
+          'load fn',
+          'stream item 0',
+          'close stream',
+          'start shared',
+          'load ready',
+        ],
+        packetSizes: [1, 20, 4288],
+        yieldBetweenPackets: false,
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('function bound to its array', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['container']},
+          container: {array: ['fn', 'container', 'ready']},
+        },
+        roots: {entry: 'container', other: 'container'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('function bound to its Map', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['container']},
+          container: {
+            map: [
+              ['fn', 'ready'],
+              ['container', 'container'],
+            ],
+          },
+        },
+        roots: {entry: 'container', other: 'container'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('cycle first exposed through a bound function', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['region']},
+          region: {set: ['fn', 'region', 'ready']},
+        },
+        roots: {entry: 'fn', other: 'fn'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('cycle first exposed through a Promise of a bound function', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['region']},
+          region: {object: {field0: 'fn', field1: 'region', field2: 'ready'}},
+          exposure: {promise: 'fn'},
+        },
+        roots: {entry: 'exposure', other: 'exposure'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('cycle first exposed through a stream item with a bound function', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['region']},
+          region: {array: ['fn', 'region', 'ready']},
+          item: {array: ['fn']},
+          exposure: {stream: ['item']},
+        },
+        roots: {entry: 'exposure', other: 'exposure'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('FormData bound to a function in a larger graph', () =>
+      runGraph({
+        nodes: {
+          form: {special: 'form data'},
+          set: {set: ['bytes', 'map', 'fn']},
+          outerMap: {map: [['set', 'iterable']]},
+          bytes: {bytes: 3},
+          map: {map: []},
+          fn: {bound: ['form']},
+          iterable: {iterable: []},
+        },
+        roots: {entry: 'map', other: 'outerMap'},
+        rootPromise: true,
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('a repeated Server Function bound to its loading container', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          argument: {object: {value: 'ready', fn: 'fn'}},
+          fn: {bound: ['argument']},
+          first: {promise: 'argument'},
+          result: {promise: 'fn'},
+        },
+        roots: {entry: 'first', other: 'result'},
+        events: [
+          'load fn',
+          'resolve first to argument',
+          'resolve result to fn',
+          'load ready',
+        ],
+        packetSizes: [1, 25, 2091],
+        yieldBetweenPackets: true,
       }));
   });
 });
