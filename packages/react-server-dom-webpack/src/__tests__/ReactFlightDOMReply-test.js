@@ -803,4 +803,27 @@ describe('ReactFlightDOMReply', () => {
     const result = await ReactServerDOMServer.decodeReply(body);
     expect(result.hello).toBe('world');
   });
+
+  it('can pass FormData after at least ten outlined parts', async () => {
+    const formData = new FormData();
+    formData.set('hello', 'world');
+
+    // Each promise is outlined as its own part, so with nine of them the
+    // FormData is part 10. That's the first id whose hex representation on the
+    // wire ("a") differs from the decimal id used to prefix its backing
+    // entries.
+    const model = {};
+    for (let i = 0; i < 9; i++) {
+      model['p' + i] = Promise.resolve(i);
+    }
+    model.formData = formData;
+
+    const body = await ReactServerDOMClient.encodeReply(model);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(Array.from(result.formData)).toEqual([['hello', 'world']]);
+  });
 });
