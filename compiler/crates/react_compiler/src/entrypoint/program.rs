@@ -357,7 +357,6 @@ fn expr_is_hook(expr: &Expression) -> bool {
 }
 
 /// Check if an expression is a React API call (e.g., `forwardRef` or `React.forwardRef`).
-#[allow(dead_code)]
 fn is_react_api(expr: &Expression, function_name: &str) -> bool {
     match expr {
         Expression::Identifier(id) => id.name == function_name,
@@ -629,7 +628,7 @@ fn calls_hooks_or_creates_jsx_in_expr(expr: &Expression) -> bool {
 
         // Hook calls
         Expression::CallExpression(call) => {
-            if expr_is_hook(&call.callee) {
+            if expr_is_hook(&call.callee) || is_react_api(&call.callee, "use") {
                 return true;
             }
             // Also check arguments for JSX/hooks (but not nested functions)
