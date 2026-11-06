@@ -47,6 +47,62 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(decoded).toEqual({some: 'object'});
   });
 
+  it.each(['Map', 'Set'])(
+    'can share a %s while its contents load',
+    async kind => {
+      let loadModule;
+      const loading = new Promise(resolve => (loadModule = resolve));
+      const ServerModule = serverExports({value: () => 'loaded'}, loading);
+      ReactServerDOMClient.registerServerReference(
+        ServerModule.value,
+        ServerModule.value.$$id,
+      );
+      const shared =
+        kind === 'Map'
+          ? new Map([['value', ServerModule.value]])
+          : new Set([ServerModule.value]);
+      const body = await ReactServerDOMClient.encodeReply(
+        Array(64).fill(shared),
+      );
+      const values = [];
+      const result = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+      await serverAct(() => {
+        result.then(value => values.push(value));
+      });
+      expect(values).toEqual([]);
+
+      await serverAct(() => loadModule());
+      expect(values).toHaveLength(1);
+      expect(values[0]).toHaveLength(64);
+      for (let i = 0; i < values[0].length; i++) {
+        const collection = values[0][i];
+        expect(collection.size).toBe(1);
+        expect(collection.values().next().value()).toBe('loaded');
+      }
+    },
+  );
+
+  it('rejects a Map with a primitive entry', async () => {
+    const body = new FormData();
+    body.set('0', '"$Q1"');
+    body.set('1', '["ab"]');
+    await expect(
+      Promise.resolve(ReactServerDOMServer.decodeReply(body, webpackServerMap)),
+    ).rejects.toThrow();
+  });
+
+  it('counts repeated binary values toward the array size limit', async () => {
+    const bytes = new Uint8Array(16);
+    const body = await ReactServerDOMClient.encodeReply([bytes, bytes]);
+    await expect(
+      Promise.resolve(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap, {
+          arraySizeLimit: 20,
+        }),
+      ),
+    ).rejects.toThrow('Maximum array nesting exceeded');
+  });
+
   it('can reuse an iterator in later stream items', async () => {
     const iterator = ['first', 'second'].values();
     const source = new ReadableStream({
@@ -308,9 +364,7 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect((await reader.read()).done).toBe(true);
   });
 
-  // Writing this cycle also requires the reader to fill the Map before delivery.
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can pass a stream item that contains itself', async () => {
+  it('can pass a stream item that contains itself', async () => {
     const item = ['first'];
     item.push(item);
     item.push({back: item});
@@ -787,6 +841,138 @@ describe('ReactFlightDOMReplyEdge', () => {
     );
     expect(replyResult.method).toBe(greet);
     expect(replyResult.boundMethod()).toBe('hi, there');
+  });
+
+  it.each(['fulfill', 'reject'])(
+    'a module can %s all the Promises of objects that depend on it',
+    async outcome => {
+      let resolveModule;
+      let rejectModule;
+      const {tail} = serverExports(
+        {tail: () => 'done'},
+        new Promise((resolve, reject) => {
+          resolveModule = resolve;
+          rejectModule = reject;
+        }),
+      );
+      const reference = ReactServerDOMClient.createServerReference(
+        tail.$$id,
+        () => {},
+      );
+      // Each object holds the previous one. Loading or failing the module
+      // must notify every subscriber, including those far down the chain.
+      const size = 5000;
+      const resolvers = [];
+      const model = Array.from(
+        {length: size},
+        () => new Promise(resolve => resolvers.push(resolve)),
+      );
+      const encoding = ReactServerDOMClient.encodeReply(model);
+      let previous = reference;
+      for (let i = 0; i < size; i++) {
+        previous = {previous};
+        resolvers[i](previous);
+        if (i % 250 === 249) {
+          await serverAct(() => {});
+        }
+      }
+      const body = await encoding;
+      let finished;
+      const consumed = new Promise(resolve => (finished = resolve));
+      const response = ReactServerDOMServer.decodeReplyFromAsyncIterable(
+        (async function* () {
+          yield* body.entries();
+          finished();
+        })(),
+        webpackServerMap,
+      );
+      const fulfilled = [];
+      const rejected = [];
+      const received = await response;
+      received.forEach(promise => {
+        promise.then(
+          value => fulfilled.push(value),
+          error => rejected.push(error),
+        );
+      });
+      await consumed;
+      await serverAct(() => {});
+      expect(fulfilled).toEqual([]);
+      expect(rejected).toEqual([]);
+
+      const failure = new Error('module failed');
+      await serverAct(() => {
+        if (outcome === 'fulfill') {
+          resolveModule();
+        } else {
+          rejectModule(failure);
+        }
+      });
+      expect(fulfilled.length).toBe(outcome === 'fulfill' ? size : 0);
+      expect(rejected.length).toBe(outcome === 'reject' ? size : 0);
+      if (outcome === 'fulfill') {
+        let last = fulfilled[size - 1];
+        for (let i = 0; i < size; i++) {
+          last = last.previous;
+        }
+        expect(last()).toBe('done');
+      } else {
+        rejected.forEach(error => expect(error).toBe(failure));
+      }
+    },
+    15000,
+  );
+
+  it('round trips deeply nested bound Server Functions', async () => {
+    const {identity} = serverExports({identity: value => value});
+    const reference = ReactServerDOMClient.createServerReference(
+      identity.$$id,
+      () => {},
+    );
+    const size = 1800;
+    let model = 'done';
+    for (let i = 0; i < size; i++) {
+      model = reference.bind(null, model);
+    }
+    const body = await ReactServerDOMClient.encodeReply(model);
+    let value = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    for (let i = 0; i < size; i++) {
+      value = value();
+    }
+    expect(value).toBe('done');
+  });
+
+  it('binds a server reference to its containing array once its module loads', async () => {
+    let resolveModule;
+    function read(array, other) {
+      return [array.length, array[1].length, other];
+    }
+    const ServerModule = serverExports(
+      {read},
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    ReactServerDOMClient.registerServerReference(
+      ServerModule.read,
+      ServerModule.read.$$id,
+    );
+    const array = [];
+    array.push(ServerModule.read.bind(null, array, null), array);
+
+    const body = await ReactServerDOMClient.encodeReply({array});
+    const observed = [];
+    const pending = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    await serverAct(() => {
+      pending.then(
+        value => observed.push(value.array[0]()),
+        error => observed.push(error.message),
+      );
+    });
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveModule());
+    const decoded = await pending;
+    expect(observed).toEqual([[2, 2, null]]);
+    expect(decoded.array[1]).toBe(decoded.array);
   });
 
   it('warns with a tailored message if eval is not available in dev', async () => {
