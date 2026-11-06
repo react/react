@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "cross-spawn": "^5.0.1",
-    "electron": "^23.1.2",
+    "electron": "^41.10.6",
     "internal-ip": "^6.2.0",
     "minimist": "^1.2.3",
     "react-devtools-core": "8.0.0",
