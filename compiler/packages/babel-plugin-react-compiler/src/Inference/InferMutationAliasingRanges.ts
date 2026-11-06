@@ -558,6 +558,21 @@ export function inferMutationAliasingRanges(
   return functionEffects;
 }
 
+/**
+ * Returns true if the function's own body (not merely a closure it creates) may
+ * mutate or call the given captured context variable.
+ */
+function functionMayMutate(fn: HIRFunction, captured: Identifier): boolean {
+  return (fn.aliasingEffects ?? []).some(
+    effect =>
+      (effect.kind === 'Mutate' ||
+        effect.kind === 'MutateConditionally' ||
+        effect.kind === 'MutateTransitive' ||
+        effect.kind === 'MutateTransitiveConditionally') &&
+      effect.value.identifier.id === captured.id,
+  );
+}
+
 function appendFunctionErrors(env: Environment | null, fn: HIRFunction): void {
   if (env == null) return;
   for (const effect of fn.aliasingEffects ?? []) {
@@ -720,9 +735,28 @@ class AliasingState {
       transitive: boolean;
       direction: 'backwards' | 'forwards';
       kind: MutationKind;
-    }> = [{place: start, transitive, direction: 'backwards', kind: startKind}];
+      /**
+       * True if the node was reached through a capture edge (or an alias of one)
+       * from a function that does not itself mutate/call the captured value.
+       */
+      viaCapture: boolean;
+    }> = [
+      {
+        place: start,
+        transitive,
+        direction: 'backwards',
+        kind: startKind,
+        viaCapture: false,
+      },
+    ];
     while (queue.length !== 0) {
-      const {place: current, transitive, direction, kind} = queue.pop()!;
+      const {
+        place: current,
+        transitive,
+        direction,
+        kind,
+        viaCapture,
+      } = queue.pop()!;
       const previousKind = seen.get(current);
       if (previousKind != null && previousKind >= kind) {
         continue;
@@ -739,10 +773,18 @@ class AliasingState {
           Math.max(node.id.mutableRange.end, end),
         );
       }
+      /**
+       * Only surface a function's effects when the function itself is the target
+       * of the mutation. Not when we reached it via a forward edge (it merely
+       * contains the mutated value, eg a closure over a hoisted context variable)
+       * or via a capture edge from a function that doesn't mutate/call it.
+       */
       if (
         node.value.kind === 'Function' &&
         node.transitive == null &&
-        node.local == null
+        node.local == null &&
+        direction === 'backwards' &&
+        !viaCapture
       ) {
         appendFunctionErrors(env, node.value.function);
       }
@@ -768,6 +810,7 @@ class AliasingState {
           place: edge.node,
           transitive,
           direction: 'forwards',
+          viaCapture: false,
           // Traversing a maybeAlias edge always downgrades to conditional mutation
           kind: edge.kind === 'maybeAlias' ? MutationKind.Conditional : kind,
         });
@@ -781,6 +824,7 @@ class AliasingState {
           transitive: true,
           direction: 'backwards',
           kind,
+          viaCapture: false,
         });
       }
       if (direction === 'backwards' || node.value.kind !== 'Phi') {
@@ -803,6 +847,7 @@ class AliasingState {
             transitive,
             direction: 'backwards',
             kind,
+            viaCapture,
           });
         }
         /**
@@ -821,6 +866,7 @@ class AliasingState {
             transitive,
             direction: 'backwards',
             kind: MutationKind.Conditional,
+            viaCapture: false,
           });
         }
       }
@@ -837,6 +883,12 @@ class AliasingState {
             transitive,
             direction: 'backwards',
             kind,
+            viaCapture:
+              viaCapture ||
+              !(
+                node.value.kind === 'Function' &&
+                functionMayMutate(node.value.function, capture)
+              ),
           });
         }
       }
