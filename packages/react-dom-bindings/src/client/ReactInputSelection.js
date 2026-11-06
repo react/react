@@ -8,7 +8,12 @@
 import getActiveElement from './getActiveElement';
 
 import {getOffsets, setOffsets} from './ReactDOMSelection';
-import {ELEMENT_NODE, TEXT_NODE} from './HTMLNodeType';
+import {
+  DOCUMENT_NODE,
+  DOCUMENT_FRAGMENT_NODE,
+  ELEMENT_NODE,
+  TEXT_NODE,
+} from './HTMLNodeType';
 
 function isTextNode(node) {
   return node && node.nodeType === TEXT_NODE;
@@ -33,6 +38,11 @@ function containsNode(outerNode, innerNode) {
 }
 
 function isInDocument(node) {
+  if (node && typeof node.getRootNode === 'function') {
+    // contains() does not include descendants of a shadow root. Check the
+    // composed root so that connected shadow descendants can regain focus.
+    return node.getRootNode({composed: true}) === node.ownerDocument;
+  }
   return (
     node &&
     node.ownerDocument &&
@@ -57,20 +67,41 @@ function isSameOriginFrame(iframe) {
 }
 
 function getActiveElementDeep(containerInfo) {
+  const ownerDocument =
+    containerInfo != null
+      ? containerInfo.nodeType === DOCUMENT_NODE
+        ? containerInfo
+        : containerInfo.ownerDocument
+      : null;
   let win =
-    containerInfo != null &&
-    containerInfo.ownerDocument != null &&
-    containerInfo.ownerDocument.defaultView != null
-      ? containerInfo.ownerDocument.defaultView
+    ownerDocument != null && ownerDocument.defaultView != null
+      ? ownerDocument.defaultView
       : window;
   let element = getActiveElement(win.document);
-  while (element instanceof win.HTMLIFrameElement) {
-    if (isSameOriginFrame(element)) {
-      win = element.contentWindow;
+  if (
+    containerInfo != null &&
+    typeof containerInfo.getRootNode === 'function'
+  ) {
+    const root = containerInfo.getRootNode();
+    if (root.nodeType === DOCUMENT_FRAGMENT_NODE && root.activeElement) {
+      // The container gives us access to its shadow root even when the root is
+      // closed and cannot be reached through the document's active element.
+      element = root.activeElement;
+    }
+  }
+  while (element) {
+    if (element instanceof win.HTMLIFrameElement) {
+      if (isSameOriginFrame(element)) {
+        win = element.contentWindow;
+        element = getActiveElement(win.document);
+      } else {
+        return element;
+      }
+    } else if (element.shadowRoot && element.shadowRoot.activeElement) {
+      element = element.shadowRoot.activeElement;
     } else {
       return element;
     }
-    element = getActiveElement(win.document);
   }
   return element;
 }
@@ -132,7 +163,11 @@ export function restoreSelection(priorSelectionInformation, containerInfo) {
     // Focusing a node can change the scroll position, which is undesirable
     const ancestors = [];
     let ancestor = priorFocusedElem;
-    while ((ancestor = ancestor.parentNode)) {
+    while (
+      (ancestor =
+        ancestor.parentNode ||
+        (ancestor.nodeType === DOCUMENT_FRAGMENT_NODE && ancestor.host))
+    ) {
       if (ancestor.nodeType === ELEMENT_NODE) {
         ancestors.push({
           element: ancestor,
