@@ -1,0 +1,85 @@
+{
+  "name": "react-server-dom-vite",
+  "description": "React Server Components bindings for DOM using Vite. This is intended to be integrated into meta-frameworks. It is not intended to be imported directly.",
+  "version": "19.1.0",
+  "keywords": [
+    "react"
+  ],
+  "homepage": "https://reactjs.org/",
+  "bugs": "https://github.com/facebook/react/issues",
+  "license": "MIT",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "index.js",
+    "client.js",
+    "client.browser.js",
+    "client.edge.js",
+    "client.node.js",
+    "server.js",
+    "server.browser.js",
+    "server.edge.js",
+    "server.node.js",
+    "static.js",
+    "static.browser.js",
+    "static.edge.js",
+    "static.node.js",
+    "cjs/"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": {
+      "workerd": "./client.edge.js",
+      "deno": "./client.edge.js",
+      "worker": "./client.edge.js",
+      "node": "./client.node.js",
+      "edge-light": "./client.edge.js",
+      "browser": "./client.browser.js",
+      "default": "./client.browser.js"
+    },
+    "./client.browser": "./client.browser.js",
+    "./client.edge": "./client.edge.js",
+    "./client.node": "./client.node.js",
+    "./server": {
+      "react-server": {
+        "workerd": "./server.edge.js",
+        "deno": "./server.browser.js",
+        "node": "./server.node.js",
+        "edge-light": "./server.edge.js",
+        "browser": "./server.browser.js"
+      },
+      "default": "./server.js"
+    },
+    "./server.browser": "./server.browser.js",
+    "./server.edge": "./server.edge.js",
+    "./server.node": "./server.node.js",
+    "./static": {
+      "react-server": {
+        "workerd": "./static.edge.js",
+        "deno": "./static.browser.js",
+        "node": "./static.node.js",
+        "edge-light": "./static.edge.js",
+        "browser": "./static.browser.js"
+      },
+      "default": "./static.js"
+    },
+    "./static.browser": "./static.browser.js",
+    "./static.edge": "./static.edge.js",
+    "./static.node": "./static.node.js",
+    "./src/*": "./src/*.js",
+    "./package.json": "./package.json"
+  },
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/facebook/react.git",
+    "directory": "packages/react-server-dom-vite"
+  },
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "peerDependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
