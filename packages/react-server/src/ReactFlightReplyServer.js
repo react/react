@@ -793,6 +793,28 @@ type InitializationHandler = {
   deps: number,
   errored: boolean,
 };
+
+function createInitializationHandler(deps: number): InitializationHandler {
+  return {
+    chunk: null,
+    value: null,
+    reason: null,
+    deps,
+    errored: false,
+  };
+}
+
+function createErroredInitializationHandler(
+  reason: mixed,
+): InitializationHandler {
+  return {
+    chunk: null,
+    value: null,
+    reason,
+    deps: 0,
+    errored: true,
+  };
+}
 let initializingHandler: null | InitializationHandler = null;
 
 function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
@@ -1075,13 +1097,7 @@ function waitForReference<T>(
     handler = initializingHandler;
     handler.deps++;
   } else {
-    handler = initializingHandler = {
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
+    handler = initializingHandler = createInitializationHandler(1);
   }
 
   const reference: InitializationReference = {
@@ -1229,13 +1245,7 @@ function getOutlinedModel<T>(
         initializingHandler.value = null;
         initializingHandler.reason = chunk.reason;
       } else {
-        initializingHandler = {
-          chunk: null,
-          value: null,
-          reason: chunk.reason,
-          deps: 0,
-          errored: true,
-        };
+        initializingHandler = createErroredInitializationHandler(chunk.reason);
       }
       // Placeholder
       return null as any;
@@ -1352,13 +1362,7 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
     handler = initializingHandler;
     handler.deps++;
   } else {
-    handler = initializingHandler = {
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
+    handler = initializingHandler = createInitializationHandler(1);
   }
 
   function fulfill(buffer: ArrayBuffer): void {
