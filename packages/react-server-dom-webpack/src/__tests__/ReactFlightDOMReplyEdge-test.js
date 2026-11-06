@@ -821,6 +821,47 @@ describe('ReactFlightDOMReplyEdge', () => {
     ).toEqual([]);
   });
 
+  it('rejects a duplicate field for a non-stream chunk instead of crashing', async () => {
+    const rejections = [];
+    const onRejection = reason => rejections.push(reason);
+    process.on('unhandledRejection', onRejection);
+    let result;
+    try {
+      const entries = [
+        ['0', '[1,2]'],
+        ['0', '[3,4]'],
+      ];
+      const iterable = {
+        async *[Symbol.asyncIterator]() {
+          // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+          for (const entry of entries) {
+            yield entry;
+          }
+        },
+      };
+      result = await settleReply(
+        ReactServerDOMServer.decodeReplyFromAsyncIterable(
+          iterable,
+          webpackServerMap,
+        ),
+      );
+      for (let i = 0; i < 6; i++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+    // The first field is the root value; the duplicate must not throw a
+    // TypeError out of the field handler.
+    expect(result.status).toBe('resolved');
+    expect(result.value).toEqual([1, 2]);
+    expect(
+      rejections.filter(
+        reason => reason && /is not a function/.test(reason.message),
+      ),
+    ).toEqual([]);
+  });
+
   it('drops stream entries that arrive after the consumer canceled the stream', async () => {
     const stream = new ReadableStream({
       start(c) {

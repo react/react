@@ -460,6 +460,23 @@ function resolveModelChunk<T>(
     // a stream chunk since any other row shouldn't have more than one entry.
     const streamChunk: InitializedStreamChunk<any> = chunk as any;
     const controller = streamChunk.reason;
+    // Only a stream chunk holds a controller and legitimately receives more
+    // than one field. A repeated field for any other chunk is malformed;
+    // reject the response rather than call a method the reason does not have.
+    // The reason is typed as a controller here but is really a controller only
+    // for a stream chunk, so it is probed as unknown.
+    const maybeController: mixed = controller;
+    if (
+      maybeController === null ||
+      typeof maybeController !== 'object' ||
+      typeof (maybeController as any).enqueueModel !== 'function'
+    ) {
+      reportGlobalError(
+        response,
+        new Error('A reply field was provided more than once.'),
+      );
+      return;
+    }
     if (value[0] === 'C') {
       controller.close(value === 'C' ? '"$undefined"' : value.slice(1));
     } else {
