@@ -243,6 +243,83 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
   });
 
+  it('preserves a stream item while a nested iterator settles synchronously', async () => {
+    const item = {};
+    item.nested = {
+      [Symbol.asyncIterator]() {
+        let done = false;
+        return {
+          next() {
+            const result = {value: done ? undefined : {parent: item}, done};
+            done = true;
+            return {then: resolve => resolve(result)};
+          },
+        };
+      },
+    };
+    item.self = item;
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue(item);
+        controller.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const reader = result.getReader();
+    const received = (await reader.read()).value;
+    expect(received.self).toBe(received);
+    const iterator = received.nested[Symbol.asyncIterator]();
+    const nested = await iterator.next();
+    expect(nested.done).toBe(false);
+    expect(nested.value.parent).toBe(received);
+    expect(await iterator.next()).toEqual({value: undefined, done: true});
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  // Writing this cycle also requires the reader to fill the Map before delivery.
+  // eslint-disable-next-line jest/no-disabled-tests
+  it.skip('can pass a stream item that contains itself', async () => {
+    const item = ['first'];
+    item.push(item);
+    item.push({back: item});
+    const map = new Map();
+    map.set('self', map);
+    const inner = {};
+    inner.self = inner;
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.enqueue(map);
+        c.enqueue({inner});
+        c.enqueue({again: item});
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    expect(first[0]).toBe('first');
+    expect(first[1]).toBe(first);
+    expect(first[2].back).toBe(first);
+    const second = (await reader.read()).value;
+    expect(second.get('self')).toBe(second);
+    const third = (await reader.read()).value;
+    expect(third.inner.self).toBe(third.inner);
+    const fourth = (await reader.read()).value;
+    expect(fourth.again).toBe(first);
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('should cancel the transported ReadableStream when we are cancelled', async () => {
     const s = new ReadableStream({
       start(controller) {
@@ -531,5 +608,136 @@ describe('ReactFlightDOMReplyEdge', () => {
       // eslint-disable-next-line no-eval
       globalThis.eval = previousEval;
     }
+  });
+
+  it('keeps a stream item whose synchronous thenable resolves to one of its objects', async () => {
+    const X = {x: 1};
+    const item = {x: X, p: {then: resolve => resolve(X)}};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const received = (await result.getReader().read()).value;
+    const resolved = await received.p;
+    expect(resolved).toBe(received.x);
+  });
+
+  it('serializes a stream item whose asynchronous thenable resolves to one of its objects', async () => {
+    const X = {x: 1};
+    const item = {x: X, p: Promise.resolve().then(() => X)};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const received = (await result.getReader().read()).value;
+    const resolved = await received.p;
+    expect(resolved).toEqual({x: 1});
+    expect(received.x).toEqual({x: 1});
+  });
+
+  it('keeps a stream item whose Map value is one of its objects', async () => {
+    const X = {x: 1};
+    const item = {x: X, m: new Map([['k', X]])};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const received = (await result.getReader().read()).value;
+    expect(received.m.get('k')).toBe(received.x);
+  });
+
+  it('resolves a reference from a synchronously nested item up to an outer item', async () => {
+    function syncIterable(items) {
+      // An async iterable whose next() settles synchronously, so its items are
+      // serialized while the containing item is still on the stack.
+      return {
+        [Symbol.asyncIterator]() {
+          let i = 0;
+          return {
+            next() {
+              const result =
+                i < items.length
+                  ? {value: items[i++], done: false}
+                  : {value: undefined, done: true};
+              return {then: resolve => resolve(result)};
+            },
+          };
+        },
+      };
+    }
+    const X = {level: 'outer'};
+    const inner = {innerX: X};
+    const middle = {mid: true, nested: syncIterable([inner])};
+    const outer = {x: X, nested: syncIterable([middle])};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(outer);
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const receivedOuter = (await result.getReader().read()).value;
+    const receivedMiddle = (
+      await receivedOuter.nested[Symbol.asyncIterator]().next()
+    ).value;
+    const receivedInner = (
+      await receivedMiddle.nested[Symbol.asyncIterator]().next()
+    ).value;
+    expect(receivedInner.innerX).toBe(receivedOuter.x);
+  });
+
+  it('rejects a reply when a stream item throws partway through', async () => {
+    const X = {x: 1};
+    const S = new Set([X]);
+    const item = {x: X, s: S};
+    Object.defineProperty(item, 'boom', {
+      enumerable: true,
+      get() {
+        throw new Error('getter boom');
+      },
+    });
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.close();
+      },
+    });
+    await expect(ReactServerDOMClient.encodeReply(source)).rejects.toThrow(
+      'getter boom',
+    );
+
+    // The encoder's state is per call, so the same objects encode cleanly in a
+    // fresh call even though the previous one abandoned them partway through.
+    const body = await ReactServerDOMClient.encodeReply({x: X, s: S});
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    expect(Array.from(result.s)[0]).toBe(result.x);
   });
 });

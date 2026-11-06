@@ -1319,15 +1319,14 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
         }),
     );
 
-    (host === 'reply' ? it.skip : it)('streamed array containing itself', () =>
+    it('streamed array containing itself', () =>
       runGraph({
         nodes: {
           item: {array: ['item']},
           stream: {stream: ['item']},
         },
         roots: {entry: 'stream', other: 'stream'},
-      }),
-    );
+      }));
 
     (host === 'reply' ? it.skip : it)('stream item with a failing module', () =>
       runGraph({
