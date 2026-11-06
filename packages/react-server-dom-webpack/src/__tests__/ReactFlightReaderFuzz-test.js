@@ -121,206 +121,208 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
 
   // Ordinary source values establish the contract before references and
   // readiness vary: preserve contents and collection insertion order.
-  it.each([null, true, false, 0, 42, 'hello'])(
-    'round-trips the ordinary value %p',
-    value =>
+  if (host !== 'reply') {
+    it.each([null, true, false, 0, 42, 'hello'])(
+      'round-trips the ordinary value %p',
+      value =>
+        withFlightModules(async () => {
+          expect(await roundTrip(value)).toBe(value);
+        }),
+    );
+
+    it('round-trips an array containing an object', () =>
       withFlightModules(async () => {
-        expect(await roundTrip(value)).toBe(value);
-      }),
-  );
+        const received = await roundTrip([1, 'two', {active: true}]);
+        expect(received).toStrictEqual([1, 'two', {active: true}]);
+      }));
 
-  it('round-trips an array containing an object', () =>
-    withFlightModules(async () => {
-      const received = await roundTrip([1, 'two', {active: true}]);
-      expect(received).toStrictEqual([1, 'two', {active: true}]);
-    }));
+    it('round-trips an object containing arrays and objects', () =>
+      withFlightModules(async () => {
+        const received = await roundTrip({
+          count: 3,
+          items: [true, null],
+          nested: {label: 'ready'},
+        });
+        expect(received).toStrictEqual({
+          count: 3,
+          items: [true, null],
+          nested: {label: 'ready'},
+        });
+      }));
 
-  it('round-trips an object containing arrays and objects', () =>
-    withFlightModules(async () => {
-      const received = await roundTrip({
-        count: 3,
-        items: [true, null],
-        nested: {label: 'ready'},
-      });
-      expect(received).toStrictEqual({
-        count: 3,
-        items: [true, null],
-        nested: {label: 'ready'},
-      });
-    }));
+    it('round-trips Set entries in insertion order', () =>
+      withFlightModules(async () => {
+        const received = await roundTrip(
+          new Set([1, 'two', {items: [true, null]}]),
+        );
+        expect(received).toBeInstanceOf(Set);
+        expect(Array.from(received)).toStrictEqual([
+          1,
+          'two',
+          {items: [true, null]},
+        ]);
+      }));
 
-  it('round-trips Set entries in insertion order', () =>
-    withFlightModules(async () => {
-      const received = await roundTrip(
-        new Set([1, 'two', {items: [true, null]}]),
-      );
-      expect(received).toBeInstanceOf(Set);
-      expect(Array.from(received)).toStrictEqual([
-        1,
-        'two',
-        {items: [true, null]},
-      ]);
-    }));
-
-  it('round-trips Map keys and values in insertion order', () =>
-    withFlightModules(async () => {
-      const received = await roundTrip(
-        new Map([
+    it('round-trips Map keys and values in insertion order', () =>
+      withFlightModules(async () => {
+        const received = await roundTrip(
+          new Map([
+            ['first', {value: 1}],
+            [{key: 'second'}, [2, 3]],
+          ]),
+        );
+        expect(received).toBeInstanceOf(Map);
+        expect(Array.from(received)).toStrictEqual([
           ['first', {value: 1}],
           [{key: 'second'}, [2, 3]],
-        ]),
-      );
-      expect(received).toBeInstanceOf(Map);
-      expect(Array.from(received)).toStrictEqual([
-        ['first', {value: 1}],
-        [{key: 'second'}, [2, 3]],
-      ]);
-    }));
-
-  it('round-trips a Date', () =>
-    withFlightModules(async () => {
-      const received = await roundTrip(new Date(1700000000000));
-      expect(received).toBeInstanceOf(Date);
-      expect(received.getTime()).toBe(1700000000000);
-    }));
-
-  it('preserves negative zero and NaN', () =>
-    withFlightModules(async () => {
-      const received = await roundTrip({zero: -0, notANumber: NaN});
-      expect(received.zero).toBe(-0);
-      expect(received.notANumber).toBeNaN();
-    }));
-
-  it('round-trips the bytes of a typed array view', () =>
-    withFlightModules(async () => {
-      const received = await roundTrip(
-        new Uint8Array([0, 1, 2, 3]).subarray(1, 3),
-      );
-      expect(received).toBeInstanceOf(Uint8Array);
-      expect(Array.from(received)).toEqual([1, 2]);
-    }));
-
-  it('checks shared values without merging distinct source objects', () =>
-    withFlightModules(async () => {
-      const shared = {value: 'shared'};
-      const source = {
-        first: shared,
-        second: shared,
-        distinct: {value: 'shared'},
-      };
-      const received = await roundTrip(source);
-      const oracle = createOracle();
-      oracle.observeValue(source, received);
-      expect(received.first).not.toBe(received.distinct);
-      expect(received.second).not.toBe(received.distinct);
-
-      await roundTrip('another value');
-      await oracle.checkForMutations();
-    }));
-
-  it('checks values along object and array cycles', () =>
-    withFlightModules(async () => {
-      const source = {value: 'cycle', items: []};
-      source.items.push(source, source.items);
-      const received = await roundTrip(source);
-      const oracle = createOracle();
-      oracle.observeValue(source, received);
-      expect(received.value).toBe('cycle');
-      expect(received.items[0].value).toBe('cycle');
-      expect(Array.isArray(received.items[1])).toBe(true);
-
-      await roundTrip('another value');
-      await oracle.checkForMutations();
-    }));
-
-  it('delivers a Promise result before an independent pending Promise or EOF', () =>
-    withFlightModules(async () => {
-      let resolveValue;
-      const value = new Promise(resolve => {
-        resolveValue = resolve;
-      });
-      const source = {
-        label: 'containing object',
-        value,
-        independent: new Promise(() => {}),
-      };
-
-      await withResponse(source, async ({response, transport}) => {
-        const received = await readRoot(transport);
-        expect(received.label).toBe('containing object');
-        expect(Object.keys(received)).toEqual([
-          'label',
-          'value',
-          'independent',
         ]);
-        const results = [];
-        received.value.then(
-          result => results.push(result),
-          error => results.push({error}),
+      }));
+
+    it('round-trips a Date', () =>
+      withFlightModules(async () => {
+        const received = await roundTrip(new Date(1700000000000));
+        expect(received).toBeInstanceOf(Date);
+        expect(received.getTime()).toBe(1700000000000);
+      }));
+
+    it('preserves negative zero and NaN', () =>
+      withFlightModules(async () => {
+        const received = await roundTrip({zero: -0, notANumber: NaN});
+        expect(received.zero).toBe(-0);
+        expect(received.notANumber).toBeNaN();
+      }));
+
+    it('round-trips the bytes of a typed array view', () =>
+      withFlightModules(async () => {
+        const received = await roundTrip(
+          new Uint8Array([0, 1, 2, 3]).subarray(1, 3),
         );
-        const independentResults = [];
-        received.independent.then(
-          result => independentResults.push(result),
-          error => independentResults.push({error}),
-        );
-        await flushAction(transport, () => {});
-        expect(results).toEqual([]);
-        expect(independentResults).toEqual([]);
-        expect(transport.isClosed).toBe(false);
-        expect(transport.isServerDone).toBe(false);
+        expect(received).toBeInstanceOf(Uint8Array);
+        expect(Array.from(received)).toEqual([1, 2]);
+      }));
 
-        await flushAction(transport, () => resolveValue({message: 'ready'}));
-        await transport.drain(
-          () => results.length === 1,
-          () => 'literal Promise result',
-        );
-        expect(results).toStrictEqual([{message: 'ready'}]);
-        expect(await received.value).toStrictEqual({message: 'ready'});
-        expect(independentResults).toEqual([]);
-        expect(transport.isClosed).toBe(false);
-        expect(transport.isServerDone).toBe(false);
-      });
-    }));
+    it('checks shared values without merging distinct source objects', () =>
+      withFlightModules(async () => {
+        const shared = {value: 'shared'};
+        const source = {
+          first: shared,
+          second: shared,
+          distinct: {value: 'shared'},
+        };
+        const received = await roundTrip(source);
+        const oracle = createOracle();
+        oracle.observeValue(source, received);
+        expect(received.first).not.toBe(received.distinct);
+        expect(received.second).not.toBe(received.distinct);
 
-  it('waits for a held client module before delivering its containing model', () =>
-    withFlightModules(async () => {
-      let resolveModule;
-      const load = new Promise(resolve => {
-        resolveModule = resolve;
-      });
-      const {value} = WebpackMock.clientExports(
-        {value: 'ready'},
-        'basic',
-        'basic.js',
-        load,
-      );
+        await roundTrip('another value');
+        await oracle.checkForMutations();
+      }));
 
-      await withResponse(
-        {label: 'containing object', value},
-        async ({response, transport}) => {
-          const models = [];
-          response.then(
-            model => models.push(model),
-            error => models.push({error}),
-          );
-          // All bytes have arrived, but the containing model still needs its
-          // client export. Transport completion must not deliver a placeholder.
-          await transport.finish();
-          transport.close();
-          await flushAction(transport, () => {});
-          expect(models).toEqual([]);
+    it('checks values along object and array cycles', () =>
+      withFlightModules(async () => {
+        const source = {value: 'cycle', items: []};
+        source.items.push(source, source.items);
+        const received = await roundTrip(source);
+        const oracle = createOracle();
+        oracle.observeValue(source, received);
+        expect(received.value).toBe('cycle');
+        expect(received.items[0].value).toBe('cycle');
+        expect(Array.isArray(received.items[1])).toBe(true);
 
-          await flushAction(transport, () => resolveModule());
-          expect(models).toStrictEqual([
-            {label: 'containing object', value: 'ready'},
+        await roundTrip('another value');
+        await oracle.checkForMutations();
+      }));
+
+    it('delivers a Promise result before an independent pending Promise or EOF', () =>
+      withFlightModules(async () => {
+        let resolveValue;
+        const value = new Promise(resolve => {
+          resolveValue = resolve;
+        });
+        const source = {
+          label: 'containing object',
+          value,
+          independent: new Promise(() => {}),
+        };
+
+        await withResponse(source, async ({response, transport}) => {
+          const received = await readRoot(transport);
+          expect(received.label).toBe('containing object');
+          expect(Object.keys(received)).toEqual([
+            'label',
+            'value',
+            'independent',
           ]);
-          expect(await response).toStrictEqual({
-            label: 'containing object',
-            value: 'ready',
-          });
-        },
-      );
-    }));
+          const results = [];
+          received.value.then(
+            result => results.push(result),
+            error => results.push({error}),
+          );
+          const independentResults = [];
+          received.independent.then(
+            result => independentResults.push(result),
+            error => independentResults.push({error}),
+          );
+          await flushAction(transport, () => {});
+          expect(results).toEqual([]);
+          expect(independentResults).toEqual([]);
+          expect(transport.isClosed).toBe(false);
+          expect(transport.isServerDone).toBe(false);
+
+          await flushAction(transport, () => resolveValue({message: 'ready'}));
+          await transport.drain(
+            () => results.length === 1,
+            () => 'literal Promise result',
+          );
+          expect(results).toStrictEqual([{message: 'ready'}]);
+          expect(await received.value).toStrictEqual({message: 'ready'});
+          expect(independentResults).toEqual([]);
+          expect(transport.isClosed).toBe(false);
+          expect(transport.isServerDone).toBe(false);
+        });
+      }));
+
+    it('waits for a held client module before delivering its containing model', () =>
+      withFlightModules(async () => {
+        let resolveModule;
+        const load = new Promise(resolve => {
+          resolveModule = resolve;
+        });
+        const {value} = WebpackMock.clientExports(
+          {value: 'ready'},
+          'basic',
+          'basic.js',
+          load,
+        );
+
+        await withResponse(
+          {label: 'containing object', value},
+          async ({response, transport}) => {
+            const models = [];
+            response.then(
+              model => models.push(model),
+              error => models.push({error}),
+            );
+            // All bytes have arrived, but the containing model still needs its
+            // client export. Transport completion must not deliver a placeholder.
+            await transport.finish();
+            transport.close();
+            await flushAction(transport, () => {});
+            expect(models).toEqual([]);
+
+            await flushAction(transport, () => resolveModule());
+            expect(models).toStrictEqual([
+              {label: 'containing object', value: 'ready'},
+            ]);
+            expect(await response).toStrictEqual({
+              label: 'containing object',
+              value: 'ready',
+            });
+          },
+        );
+      }));
+  }
 
   async function flushAction(transport, action) {
     await runInIOCallback(action);
@@ -757,16 +759,18 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   }
 
   describe('Promise and client-module graphs', () => {
-    it('rejects a containing model when its module fails before another module loads', () =>
-      runGraph({
-        nodes: {
-          failed: {module: 'failed', fail: 'load'},
-          ready: {module: 'ready'},
-          object: {object: {failed: 'failed', ready: 'ready'}},
-        },
-        roots: {entry: 'object', other: 'object'},
-        events: ['reject failed', 'load ready'],
-      }));
+    if (host !== 'reply') {
+      it('rejects a containing model when its module fails before another module loads', () =>
+        runGraph({
+          nodes: {
+            failed: {module: 'failed', fail: 'load'},
+            ready: {module: 'ready'},
+            object: {object: {failed: 'failed', ready: 'ready'}},
+          },
+          roots: {entry: 'object', other: 'object'},
+          events: ['reject failed', 'load ready'],
+        }));
+    }
 
     it('shared object in two Promise results whose modules load and fail separately', () =>
       runGraph({
@@ -805,27 +809,29 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         }),
     );
 
-    it('server error through a rejected Promise', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          error: {error: 'expected failure'},
-          failing: {promise: 'error', reject: true},
-          fine: {object: {field0: 'ready'}},
-        },
-        roots: {entry: 'failing', other: 'fine'},
-      }));
+    if (host !== 'reply') {
+      it('server error through a rejected Promise', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            error: {error: 'expected failure'},
+            failing: {promise: 'error', reject: true},
+            fine: {object: {field0: 'ready'}},
+          },
+          roots: {entry: 'failing', other: 'fine'},
+        }));
 
-    it('waits for the root source Promise before accepting its model error', () =>
-      runGraph({
-        nodes: {
-          failed: {module: 'failed', fail: 'load'},
-          object: {object: {value: 'failed'}},
-        },
-        roots: {entry: 'object', other: 'object'},
-        rootPromise: true,
-        events: ['reject failed', 'resolve the root Promise'],
-      }));
+      it('waits for the root source Promise before accepting its model error', () =>
+        runGraph({
+          nodes: {
+            failed: {module: 'failed', fail: 'load'},
+            object: {object: {value: 'failed'}},
+          },
+          roots: {entry: 'object', other: 'object'},
+          rootPromise: true,
+          events: ['reject failed', 'resolve the root Promise'],
+        }));
+    }
 
     it('async module failing to evaluate after loading', () =>
       runGraph({
@@ -852,23 +858,25 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'first', other: 'second'},
       }));
 
-    it('Map keys and values wait for their client modules', () =>
-      runGraph({
-        nodes: {
-          key: {module: 'key'},
-          ready: {module: 'ready'},
-          literal: {value: 'literal'},
-          object: {object: {value: 'ready'}},
-          map: {
-            map: [
-              ['key', 'object'],
-              ['literal', 'ready'],
-            ],
+    if (host !== 'reply') {
+      it('Map keys and values wait for their client modules', () =>
+        runGraph({
+          nodes: {
+            key: {module: 'key'},
+            ready: {module: 'ready'},
+            literal: {value: 'literal'},
+            object: {object: {value: 'ready'}},
+            map: {
+              map: [
+                ['key', 'object'],
+                ['literal', 'ready'],
+              ],
+            },
+            later: {promise: 'map'},
           },
-          later: {promise: 'map'},
-        },
-        roots: {entry: 'map', other: 'later'},
-      }));
+          roots: {entry: 'map', other: 'later'},
+        }));
+    }
 
     it('Set containing itself', () =>
       runGraph({
@@ -907,51 +915,53 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   });
 
   describe('native graph values', () => {
-    it('native contents share a cycle while a client module is loading', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'loaded'},
-          bigint: {special: 'bigint'},
-          nan: {special: 'nan'},
-          negativeZero: {special: 'negative zero'},
-          infinity: {special: 'infinity'},
-          symbol: {special: 'symbol'},
-          escaped: {special: 'escaped'},
-          text: {text: 'text'},
-          date: {date: 1700000000000},
-          buffer: {special: 'buffer'},
-          binary: {binary: 3},
-          typed: {special: 'typed array'},
-          view: {special: 'data view'},
-          bigints: {special: 'bigint array'},
-          blob: {blob: 'blob'},
-          form: {special: 'form data'},
-          atoms: {
-            array: [
-              'bigint',
-              'nan',
-              'negativeZero',
-              'infinity',
-              'symbol',
-              'escaped',
-              'text',
-              'date',
-              'buffer',
-              'binary',
-              'typed',
-              'view',
-              'bigints',
-              'blob',
-              'form',
-              'ready',
-              'cycle',
-            ],
+    if (host !== 'reply') {
+      it('native contents share a cycle while a client module is loading', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'loaded'},
+            bigint: {special: 'bigint'},
+            nan: {special: 'nan'},
+            negativeZero: {special: 'negative zero'},
+            infinity: {special: 'infinity'},
+            symbol: {special: 'symbol'},
+            escaped: {special: 'escaped'},
+            text: {text: 'text'},
+            date: {date: 1700000000000},
+            buffer: {special: 'buffer'},
+            binary: {binary: 3},
+            typed: {special: 'typed array'},
+            view: {special: 'data view'},
+            bigints: {special: 'bigint array'},
+            blob: {blob: 'blob'},
+            form: {special: 'form data'},
+            atoms: {
+              array: [
+                'bigint',
+                'nan',
+                'negativeZero',
+                'infinity',
+                'symbol',
+                'escaped',
+                'text',
+                'date',
+                'buffer',
+                'binary',
+                'typed',
+                'view',
+                'bigints',
+                'blob',
+                'form',
+                'ready',
+                'cycle',
+              ],
+            },
+            cycle: {object: {values: 'atoms', self: 'cycle'}},
+            later: {promise: 'atoms'},
           },
-          cycle: {object: {values: 'atoms', self: 'cycle'}},
-          later: {promise: 'atoms'},
-        },
-        roots: {entry: 'cycle', other: 'later'},
-      }));
+          roots: {entry: 'cycle', other: 'later'},
+        }));
+    }
 
     // eslint-disable-next-line jest/no-disabled-tests
     it.skip('keeps undefined object properties', () =>
@@ -986,16 +996,20 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   });
 
   describe('synchronous iterator graphs', () => {
-    it('round-trips a synchronous iterator in order', () =>
-      withFlightModules(async () => {
-        const received = await roundTrip(['first', {value: 'second'}].values());
-        expect(received.next()).toStrictEqual({done: false, value: 'first'});
-        expect(received.next()).toStrictEqual({
-          done: false,
-          value: {value: 'second'},
-        });
-        expect(received.next()).toStrictEqual({done: true, value: undefined});
-      }));
+    if (host !== 'reply') {
+      it('round-trips a synchronous iterator in order', () =>
+        withFlightModules(async () => {
+          const received = await roundTrip(
+            ['first', {value: 'second'}].values(),
+          );
+          expect(received.next()).toStrictEqual({done: false, value: 'first'});
+          expect(received.next()).toStrictEqual({
+            done: false,
+            value: {value: 'second'},
+          });
+          expect(received.next()).toStrictEqual({done: true, value: undefined});
+        }));
+    }
 
     it('iterator over values still loading', () =>
       runGraph({
@@ -1019,160 +1033,164 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'later', other: 'shared'},
       }));
 
-    it('a synchronous iterator that yields itself', () =>
-      withFlightModules(async () => {
-        let next = 0;
-        const iterator = {
-          [Symbol.iterator]() {
-            return this;
-          },
-          next() {
-            return next++ === 0
-              ? {done: false, value: iterator}
-              : {done: true, value: undefined};
-          },
-        };
-        const model = iterator;
-        const transport = startFlightResponse({
-          ReactServerDOMServer,
-          ReactServerDOMClient,
-          WebpackMock,
-          host,
-          model,
-          packetSizes: [1, 21, 4096],
-          yieldBetweenPackets: true,
-          onError(error) {
-            throw error;
-          },
-        });
-        let result;
-        let failure;
-        transport.root.then(
-          value => (result = value),
-          error => (failure = error),
-        );
-        try {
-          await transport.finish();
-          await transport.drain(
-            () => result !== undefined || failure !== undefined,
-            () => 'the self-yielding iterator',
+    if (host !== 'reply') {
+      it('a synchronous iterator that yields itself', () =>
+        withFlightModules(async () => {
+          let next = 0;
+          const iterator = {
+            [Symbol.iterator]() {
+              return this;
+            },
+            next() {
+              return next++ === 0
+                ? {done: false, value: iterator}
+                : {done: true, value: undefined};
+            },
+          };
+          const model = iterator;
+          const transport = startFlightResponse({
+            ReactServerDOMServer,
+            ReactServerDOMClient,
+            WebpackMock,
+            host,
+            model,
+            packetSizes: [1, 21, 4096],
+            yieldBetweenPackets: true,
+            onError(error) {
+              throw error;
+            },
+          });
+          let result;
+          let failure;
+          transport.root.then(
+            value => (result = value),
+            error => (failure = error),
           );
-          if (failure !== undefined) {
-            throw failure;
+          try {
+            await transport.finish();
+            await transport.drain(
+              () => result !== undefined || failure !== undefined,
+              () => 'the self-yielding iterator',
+            );
+            if (failure !== undefined) {
+              throw failure;
+            }
+            expect(result[Symbol.iterator]()).toBe(result);
+            expect(result.next()).toEqual({
+              done: false,
+              value: result,
+            });
+            expect(result.next()).toEqual({
+              done: true,
+              value: undefined,
+            });
+          } finally {
+            await transport.dispose();
           }
-          expect(result[Symbol.iterator]()).toBe(result);
-          expect(result.next()).toEqual({
-            done: false,
-            value: result,
-          });
-          expect(result.next()).toEqual({
-            done: true,
-            value: undefined,
-          });
-        } finally {
-          await transport.dispose();
-        }
-      }));
+        }));
+    }
   });
 
   describe('data streams and shared sequences', () => {
-    it('delivers ordered data stream reads before source close and EOF', () =>
-      withFlightModules(async () => {
-        let controller;
-        const data = new ReadableStream({start: c => (controller = c)});
-        await withResponse(
-          {data, independent: new Promise(() => {})},
-          async ({response, transport}) => {
-            const received = await readRoot(transport);
-            const reader = received.data.getReader();
-            const results = [];
-            reader.read().then(
-              result => results.push(result),
-              error => results.push({error}),
-            );
-            await flushAction(transport, () => {});
-            expect(results).toEqual([]);
-            await flushAction(transport, () => controller.enqueue('first'));
-            await transport.drain(
-              () => results.length === 1,
-              () => 'first literal stream read',
-            );
-            expect(results).toStrictEqual([{done: false, value: 'first'}]);
-            reader.read().then(
-              result => results.push(result),
-              error => results.push({error}),
-            );
-            await flushAction(transport, () =>
-              controller.enqueue({value: 'second'}),
-            );
-            await transport.drain(
-              () => results.length === 2,
-              () => 'second literal stream read',
-            );
-            expect(results).toStrictEqual([
-              {done: false, value: 'first'},
-              {done: false, value: {value: 'second'}},
-            ]);
-            expect(transport.isClosed).toBe(false);
-            expect(transport.isServerDone).toBe(false);
-            reader.read().then(
-              result => results.push(result),
-              error => results.push({error}),
-            );
-            await flushAction(transport, () => controller.close());
-            await transport.drain(
-              () => results.length === 3,
-              () => 'literal stream end',
-            );
-            expect(results[2]).toStrictEqual({done: true, value: undefined});
-            expect(transport.isClosed).toBe(false);
-            expect(transport.isServerDone).toBe(false);
-          },
-        );
-      }));
-
-    it('keeps a Promise fulfilled when its delivered stream later fails', () =>
-      withFlightModules(async () => {
-        let controller;
-        const data = new ReadableStream({start: c => (controller = c)});
-        const error = new Error('source stream failed');
-        const reported = [];
-        await withResponse(
-          {data: Promise.resolve(data), unrelated: new Promise(() => {})},
-          async ({response, transport}) => {
-            const model = await readRoot(transport);
-            const received = await readRoot(transport, model.data);
-            let result;
-            const failedRead = received
-              .getReader()
-              .read()
-              .then(
-                value => (result = {value}),
-                reason => (result = {error: reason}),
+    if (host !== 'reply') {
+      it('delivers ordered data stream reads before source close and EOF', () =>
+        withFlightModules(async () => {
+          let controller;
+          const data = new ReadableStream({start: c => (controller = c)});
+          await withResponse(
+            {data, independent: new Promise(() => {})},
+            async ({response, transport}) => {
+              const received = await readRoot(transport);
+              const reader = received.data.getReader();
+              const results = [];
+              reader.read().then(
+                result => results.push(result),
+                error => results.push({error}),
               );
-            await flushAction(transport, () => controller.error(error));
-            await transport.drain(
-              () => result !== undefined,
-              () => 'literal stream failure',
-            );
-            await failedRead;
-            expect(result.error).toEqual(
-              expect.objectContaining({digest: 'stream failure'}),
-            );
-            expect(await model.data).toBe(received);
-            expect(reported).toEqual([error]);
-            expect(transport.isClosed).toBe(false);
-            expect(transport.isServerDone).toBe(false);
-          },
-          {
-            onError(reason) {
-              expect(reason).toBe(error);
-              reported.push(reason);
-              return 'stream failure';
+              await flushAction(transport, () => {});
+              expect(results).toEqual([]);
+              await flushAction(transport, () => controller.enqueue('first'));
+              await transport.drain(
+                () => results.length === 1,
+                () => 'first literal stream read',
+              );
+              expect(results).toStrictEqual([{done: false, value: 'first'}]);
+              reader.read().then(
+                result => results.push(result),
+                error => results.push({error}),
+              );
+              await flushAction(transport, () =>
+                controller.enqueue({value: 'second'}),
+              );
+              await transport.drain(
+                () => results.length === 2,
+                () => 'second literal stream read',
+              );
+              expect(results).toStrictEqual([
+                {done: false, value: 'first'},
+                {done: false, value: {value: 'second'}},
+              ]);
+              expect(transport.isClosed).toBe(false);
+              expect(transport.isServerDone).toBe(false);
+              reader.read().then(
+                result => results.push(result),
+                error => results.push({error}),
+              );
+              await flushAction(transport, () => controller.close());
+              await transport.drain(
+                () => results.length === 3,
+                () => 'literal stream end',
+              );
+              expect(results[2]).toStrictEqual({done: true, value: undefined});
+              expect(transport.isClosed).toBe(false);
+              expect(transport.isServerDone).toBe(false);
             },
-          },
-        );
-      }));
+          );
+        }));
+
+      it('keeps a Promise fulfilled when its delivered stream later fails', () =>
+        withFlightModules(async () => {
+          let controller;
+          const data = new ReadableStream({start: c => (controller = c)});
+          const error = new Error('source stream failed');
+          const reported = [];
+          await withResponse(
+            {data: Promise.resolve(data), unrelated: new Promise(() => {})},
+            async ({response, transport}) => {
+              const model = await readRoot(transport);
+              const received = await readRoot(transport, model.data);
+              let result;
+              const failedRead = received
+                .getReader()
+                .read()
+                .then(
+                  value => (result = {value}),
+                  reason => (result = {error: reason}),
+                );
+              await flushAction(transport, () => controller.error(error));
+              await transport.drain(
+                () => result !== undefined,
+                () => 'literal stream failure',
+              );
+              await failedRead;
+              expect(result.error).toEqual(
+                expect.objectContaining({digest: 'stream failure'}),
+              );
+              expect(await model.data).toBe(received);
+              expect(reported).toEqual([error]);
+              expect(transport.isClosed).toBe(false);
+              expect(transport.isServerDone).toBe(false);
+            },
+            {
+              onError(reason) {
+                expect(reason).toBe(error);
+                reported.push(reason);
+                return 'stream failure';
+              },
+            },
+          );
+        }));
+    }
 
     it.each(['stream', 'iterable'])('%s shared between two collections', type =>
       runGraph({
@@ -1215,18 +1233,20 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         }),
     );
 
-    it('source stream failure while another value is still loading', () =>
-      runGraph({
-        nodes: {
-          error: {error: 'stream failed'},
-          stream: {stream: [], fail: 'error'},
-          ready: {module: 'loaded'},
-          object: {object: {ready: 'ready'}},
-          later: {promise: 'object'},
-        },
-        roots: {entry: 'stream', other: 'later'},
-        events: ['resolve later to object', 'fail stream', 'load ready'],
-      }));
+    if (host !== 'reply') {
+      it('source stream failure while another value is still loading', () =>
+        runGraph({
+          nodes: {
+            error: {error: 'stream failed'},
+            stream: {stream: [], fail: 'error'},
+            ready: {module: 'loaded'},
+            object: {object: {ready: 'ready'}},
+            later: {promise: 'object'},
+          },
+          roots: {entry: 'stream', other: 'later'},
+          events: ['resolve later to object', 'fail stream', 'load ready'],
+        }));
+    }
 
     it('an iterator reused in later stream items', () =>
       runGraph({
@@ -1273,62 +1293,64 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   });
 
   describe('async iterable graphs', () => {
-    it.each([false, true])(
-      'round-trips an async iterable with single use %s',
-      single =>
-        withFlightModules(async () => {
-          const source = {
-            async *[Symbol.asyncIterator]() {
-              yield 'first';
-              yield {value: 'second'};
-              return 'end';
-            },
-          };
-          const received = await roundTrip(
-            single ? source[Symbol.asyncIterator]() : source,
-          );
-          const iterator = received[Symbol.asyncIterator]();
-          expect(iterator === received).toBe(single);
-          expect(await iterator.next()).toStrictEqual({
-            done: false,
-            value: 'first',
-          });
-          expect(await iterator.next()).toStrictEqual({
-            done: false,
-            value: {value: 'second'},
-          });
-          expect(await iterator.next()).toStrictEqual({
-            done: true,
-            value: 'end',
-          });
-          expect(await iterator.next()).toStrictEqual({
-            done: true,
-            value: undefined,
-          });
-        }),
-    );
+    if (host !== 'reply') {
+      it.each([false, true])(
+        'round-trips an async iterable with single use %s',
+        single =>
+          withFlightModules(async () => {
+            const source = {
+              async *[Symbol.asyncIterator]() {
+                yield 'first';
+                yield {value: 'second'};
+                return 'end';
+              },
+            };
+            const received = await roundTrip(
+              single ? source[Symbol.asyncIterator]() : source,
+            );
+            const iterator = received[Symbol.asyncIterator]();
+            expect(iterator === received).toBe(single);
+            expect(await iterator.next()).toStrictEqual({
+              done: false,
+              value: 'first',
+            });
+            expect(await iterator.next()).toStrictEqual({
+              done: false,
+              value: {value: 'second'},
+            });
+            expect(await iterator.next()).toStrictEqual({
+              done: true,
+              value: 'end',
+            });
+            expect(await iterator.next()).toStrictEqual({
+              done: true,
+              value: undefined,
+            });
+          }),
+      );
 
-    it('an async iterable produces independent results while its first module is loading', () =>
-      runGraph({
-        nodes: {
-          held: {module: 'loaded'},
-          first: {object: {value: 'held'}},
-          ready: {value: 'ready'},
-          end: {value: 'end'},
-          sequence: {
-            iterable: ['first', 'ready'],
-            returns: 'end',
-            single: true,
+      it('an async iterable produces independent results while its first module is loading', () =>
+        runGraph({
+          nodes: {
+            held: {module: 'loaded'},
+            first: {object: {value: 'held'}},
+            ready: {value: 'ready'},
+            end: {value: 'end'},
+            sequence: {
+              iterable: ['first', 'ready'],
+              returns: 'end',
+              single: true,
+            },
           },
-        },
-        roots: {entry: 'sequence', other: 'sequence'},
-        events: [
-          'start sequence',
-          'sequence item 1',
-          'return sequence',
-          'load held',
-        ],
-      }));
+          roots: {entry: 'sequence', other: 'sequence'},
+          events: [
+            'start sequence',
+            'sequence item 1',
+            'return sequence',
+            'load held',
+          ],
+        }));
+    }
 
     it('an async iterable returns a cycle that was already sent', () =>
       runGraph({
@@ -1422,26 +1444,28 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   });
 
   describe('bound Server Functions', () => {
-    it('calls a delivered Server Function with bound and supplied arguments', () =>
-      withFlightModules(async () => {
-        const {fn} = WebpackMock.serverExports({fn: (...args) => args});
-        const received = await roundTrip(fn.bind(null, 'bound'));
-        const first = received('argument');
-        expect(first).toEqual(['bound', 'argument']);
-        expect(received('argument')).toEqual(['bound', 'argument']);
-        expect(received('argument')).not.toBe(first);
-      }));
+    if (host !== 'reply') {
+      it('calls a delivered Server Function with bound and supplied arguments', () =>
+        withFlightModules(async () => {
+          const {fn} = WebpackMock.serverExports({fn: (...args) => args});
+          const received = await roundTrip(fn.bind(null, 'bound'));
+          const first = received('argument');
+          expect(first).toEqual(['bound', 'argument']);
+          expect(received('argument')).toEqual(['bound', 'argument']);
+          expect(received('argument')).not.toBe(first);
+        }));
 
-    it('a bound object finishes loading before the function is delivered', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'loaded'},
-          argument: {object: {value: 'ready'}},
-          fn: {bound: ['argument']},
-        },
-        roots: {entry: 'fn', other: 'fn'},
-        events: ['load fn', 'load ready'],
-      }));
+      it('a bound object finishes loading before the function is delivered', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'loaded'},
+            argument: {object: {value: 'ready'}},
+            fn: {bound: ['argument']},
+          },
+          roots: {entry: 'fn', other: 'fn'},
+          events: ['load fn', 'load ready'],
+        }));
+    }
 
     it('a bound argument first written inside a loading stream item', () =>
       runGraph({
@@ -1538,395 +1562,399 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         rootPromise: true,
       }));
 
-    it('a repeated Server Function bound to its loading container', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'loaded'},
-          argument: {object: {value: 'ready', fn: 'fn'}},
-          fn: {bound: ['argument']},
-          first: {promise: 'argument'},
-          result: {promise: 'fn'},
-        },
-        roots: {entry: 'first', other: 'result'},
-        events: [
-          'load fn',
-          'resolve first to argument',
-          'resolve result to fn',
-          'load ready',
-        ],
-        packetSizes: [1, 25, 2091],
-        yieldBetweenPackets: true,
-      }));
-  });
-  describe('elements and observed props', () => {
-    it('delivers an element before its client props finish loading', () =>
-      withFlightModules(async () => {
-        let load;
-        const ready = new Promise(resolve => (load = resolve));
-        const {value} = WebpackMock.clientExports(
-          {value: 'ready'},
-          'held prop',
-          'held-prop.js',
-          ready,
-        );
-        const seen = [];
-        const {Client} = WebpackMock.clientExports({
-          Client(props) {
-            seen.push(props.value);
-            return React.createElement('span', null, props.value);
-          },
-        });
-        const element = ReactServer.createElement(Client, {value});
-        await withResponse(
-          {element, unrelated: new Promise(() => {})},
-          async ({response, transport}) => {
-            const received = await readRoot(transport);
-            await flushAction(transport, () => {});
-            expect(received).toBeDefined();
-            let html;
-            const rendered = render(received.element).then(
-              result => (html = result),
-            );
-            rendered.catch(() => {});
-            await flushAction(transport, () => {});
-            expect(seen).toEqual([]);
-            expect(html).toBe(undefined);
-            await flushAction(transport, load);
-            expect(await rendered).toBe('<span>ready</span>');
-            expect(seen).toEqual(['ready']);
-            expect(transport.isClosed).toBe(false);
-            expect(transport.isServerDone).toBe(false);
-          },
-        );
-      }));
-
-    it('an element first written inside another loading value', () =>
-      runGraph({
-        nodes: {
-          element: {host: 'atom'},
-          ready: {module: 'loaded'},
-          array: {array: ['element', 'ready']},
-          first: {promise: 'array'},
-          second: {promise: 'element'},
-          root: {array: ['first', 'second']},
-        },
-        roots: {entry: 'root', other: 'root'},
-        events: [
-          'resolve first to array',
-          'resolve second to element',
-          'load ready',
-        ],
-      }));
-
-    it('a Fragment first received inside a stream item', () =>
-      runGraph({
-        nodes: {
-          fragment: {fragment: []},
-          item: {array: ['fragment']},
-          stream: {stream: ['item']},
-        },
-        roots: {entry: 'stream', other: 'stream'},
-      }));
-
-    it('props object referenced again while a prop is loading', () =>
-      runGraph({
-        nodes: {
-          payload: {module: 'export-0'},
-          data: {object: {field0: 'props'}},
-          value: {array: ['payload', 'data']},
-          element: {element: 'value'},
-          props: {props: 'element'},
-        },
-        roots: {entry: 'element', other: 'props'},
-      }));
-
-    it('props sub-object referenced while a sibling prop is loading', () =>
-      runGraph({
-        nodes: {
-          payload: {module: 'export-0'},
-          sibling: {module: 'export-1'},
-          selected: {object: {field0: 'payload'}},
-          value: {array: ['selected', 'sibling']},
-          element: {element: 'value'},
-        },
-        roots: {entry: 'element', other: 'selected'},
-      }));
-
-    it('element reaching itself through its props', () =>
-      runGraph({
-        nodes: {
-          payload: {module: 'export-0'},
-          data: {object: {field0: 'element'}},
-          value: {array: ['payload', 'data']},
-          element: {element: 'value'},
-        },
-        roots: {entry: 'element', other: 'data'},
-      }));
-
-    it('a shared element stays stable when a cyclic model finishes loading', () =>
-      runGraph({
-        nodes: {
-          value: {value: null},
-          ready: {module: 'loaded'},
-          shared: {array: []},
-          data: {object: {shared: 'shared'}},
-          entry: {array: ['ready', 'data']},
-          nested: {array: ['shared']},
-          map: {map: [['value', 'nested']]},
-          element: {element: ['value', 'map']},
-          holder: {object: {first: 'element', second: 'entry'}},
-          iterator: {iterator: ['holder']},
-          copy: {array: ['element']},
-          set: {set: ['iterator', 'copy']},
-        },
-        roots: {entry: 'entry', other: 'set'},
-        events: ['load element', 'load ready'],
-        packetSizes: [4, 106, 2367],
-        yieldBetweenPackets: false,
-      }));
-  });
-  describe('Server Component output', () => {
-    it('a rendered component can fail through an owner while another prop is loading', () =>
-      runGraph({
-        nodes: {
-          shared: {object: {}},
-          broken: {module: 'failed', fail: 'load'},
-          pending: {module: 'pending'},
-          owner: {object: {shared: 'shared', broken: 'broken'}},
-          result: {promise: 'owner'},
-          output: {object: {shared: 'shared', pending: 'pending'}},
-          component: {component: 'output'},
-        },
-        roots: {entry: 'component', other: 'result'},
-        events: [
-          'load component body',
-          'resolve result to owner',
-          'reject broken',
-          'render component',
-          'load pending',
-        ],
-      }));
-
-    it('server component rendering after the rest of the response', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          body: {value: 'body'},
-          component: {component: 'body'},
-          data: {object: {field0: 'ready'}},
-        },
-        roots: {entry: 'component', other: 'data'},
-      }));
-
-    it('failing server component', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          error: {error: 'component failed'},
-          component: {component: 'error', throw: true},
-          data: {object: {field0: 'ready'}},
-        },
-        roots: {entry: 'component', other: 'data'},
-      }));
-
-    it('suspended server component element used twice', () =>
-      runGraph({
-        nodes: {
-          body: {value: 'shared'},
-          component: {component: 'body'},
-          pair: {array: ['component', 'component']},
-        },
-        roots: {entry: 'pair', other: 'pair'},
-      }));
-  });
-  describe('Error properties and mixed graph values', () => {
-    it('exposes Error causes and AggregateError members in DEV', () =>
-      withFlightModules(async () => {
-        const cause = {detail: 'source'};
-        const received = await roundTrip({
-          error: new Error('single', {cause}),
-          aggregate: new AggregateError([cause], 'several', {cause}),
-        });
-        expect(received.error).toBeInstanceOf(Error);
-        expect(received.aggregate).toBeInstanceOf(Error);
-        if (__DEV__) {
-          expect(received.error.message).toBe('single');
-          expect(received.error.cause).toEqual({detail: 'source'});
-          expect(received.aggregate).toBeInstanceOf(AggregateError);
-          expect(received.aggregate.message).toBe('several');
-          expect(received.aggregate.cause).toEqual({detail: 'source'});
-          expect(received.aggregate.errors).toEqual([{detail: 'source'}]);
-        } else {
-          expect('cause' in received.error).toBe(false);
-          expect('cause' in received.aggregate).toBe(false);
-          expect('errors' in received.aggregate).toBe(false);
-        }
-      }));
-
-    it('an Error that is its own cause', () =>
-      runGraph({
-        nodes: {error: {error: 'self cause', cause: 'error'}},
-        roots: {entry: 'error', other: 'error'},
-      }));
-
-    it.each(['cause', 'errors'])(
-      'failing stream reachable only through Error.%s',
-      property =>
+    if (host !== 'reply') {
+      it('a repeated Server Function bound to its loading container', () =>
         runGraph({
           nodes: {
-            failure: {error: 'stream failed'},
-            stream: {stream: [], fail: 'failure'},
-            error: {
-              error: 'outer',
-              [property]: property === 'cause' ? 'stream' : ['stream'],
-            },
+            ready: {module: 'loaded'},
+            argument: {object: {value: 'ready', fn: 'fn'}},
+            fn: {bound: ['argument']},
+            first: {promise: 'argument'},
+            result: {promise: 'fn'},
           },
-          roots: {entry: 'error', other: 'error'},
-        }),
-    );
-
-    it('Error whose cause is still loading', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          error: {error: 'cause loading', cause: 'ready'},
-          set: {set: ['error']},
-        },
-        roots: {entry: 'set', other: 'set'},
-      }));
-
-    it('Error with cyclic cause', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          cell: {object: {field0: 'ready', field1: 'error'}},
-          error: {error: 'cyclic cause', cause: 'cell'},
-        },
-        roots: {entry: 'error', other: 'cell'},
-      }));
-
-    it('a cyclic Map with values that load independently', () =>
-      runGraph({
-        nodes: {
-          value1: {value: 'other value'},
-          value2: {value: ''},
-          value3: {value: 42},
-          text0: {text: 'text-898'},
-          blob0: {blob: 'blob-116'},
-          host0: {host: 'atom'},
-          module1: {module: 'export-1', async: true},
-          array0: {array: ['array0']},
-          set0: {set: ['map1']},
-          map0: {
-            map: [
-              ['blob0', 'bytes0'],
-              ['value3', 'props0'],
-              ['module1', 'iterable0'],
-              ['set0', 'value2'],
-              ['array0', 'value1'],
-            ],
-          },
-          map1: {
-            map: [
-              ['host0', 'host0'],
-              ['element0', 'host0'],
-              ['array0', 'host0'],
-              ['blob0', 'text0'],
-            ],
-          },
-          bytes0: {bytes: 2},
-          element0: {element: 'host0'},
-          props0: {props: 'element0'},
-          iterable0: {iterable: []},
-        },
-        roots: {entry: 'map0', other: 'array0'},
-        afterEof: true,
-        rootPromise: true,
-        events: [
-          'bytes0 chunk 1',
-          'load module1',
-          'bytes0 chunk 0',
-          'return iterable0',
-          'load element0',
-          'evaluate module1',
-          'resolve the root Promise',
-          'resolve an unrelated Promise',
-        ],
-        packetSizes: [3, 89, 2624],
-        yieldBetweenPackets: false,
-        readTiming: 'early',
-      }));
-
-    it('built-in values with a cycle and a loading module', () =>
-      runGraph({
-        nodes: {
-          ready: {module: 'export-0'},
-          nothing: {value: null},
-          flag: {value: true},
-          bigint: {special: 'bigint'},
-          nan: {special: 'nan'},
-          negativeZero: {special: 'negative zero'},
-          infinity: {special: 'infinity'},
-          symbol: {special: 'symbol'},
-          escaped: {special: 'escaped'},
-          text: {text: 'text'},
-          date: {date: 1700000000000},
-          buffer: {special: 'buffer'},
-          binary: {binary: 3},
-          typed: {special: 'typed array'},
-          view: {special: 'data view'},
-          bigints: {special: 'bigint array'},
-          blob: {blob: 'blob'},
-          form: {special: 'form data'},
-          host: {host: 'atom'},
-          atoms: {
-            array: [
-              'nothing',
-              'flag',
-              'bigint',
-              'nan',
-              'negativeZero',
-              'infinity',
-              'symbol',
-              'escaped',
-              'text',
-              'date',
-              'buffer',
-              'binary',
-              'typed',
-              'view',
-              'bigints',
-              'blob',
-              'form',
-              'host',
-              'ready',
-              'cycle',
-            ],
-          },
-          cycle: {object: {field0: 'atoms', field1: 'cycle'}},
-        },
-        roots: {entry: 'cycle', other: 'cycle'},
-      }));
-
-    it('a streamed Error that is its own cause', () =>
-      runGraph({
-        nodes: {
-          error: {error: 'self cause', cause: 'error'},
-          stream: {stream: ['error']},
-        },
-        roots: {entry: 'stream', other: 'stream'},
-      }));
-
-    it('a streamed object containing an Error whose cause is the object', () =>
-      runGraph({
-        nodes: {
-          error: {error: 'item cause', cause: 'item'},
-          item: {object: {error: 'error'}},
-          stream: {stream: ['item']},
-        },
-        roots: {entry: 'stream', other: 'stream'},
-      }));
+          roots: {entry: 'first', other: 'result'},
+          events: [
+            'load fn',
+            'resolve first to argument',
+            'resolve result to fn',
+            'load ready',
+          ],
+          packetSizes: [1, 25, 2091],
+          yieldBetweenPackets: true,
+        }));
+    }
   });
+  if (host !== 'reply') {
+    describe('elements and observed props', () => {
+      it('delivers an element before its client props finish loading', () =>
+        withFlightModules(async () => {
+          let load;
+          const ready = new Promise(resolve => (load = resolve));
+          const {value} = WebpackMock.clientExports(
+            {value: 'ready'},
+            'held prop',
+            'held-prop.js',
+            ready,
+          );
+          const seen = [];
+          const {Client} = WebpackMock.clientExports({
+            Client(props) {
+              seen.push(props.value);
+              return React.createElement('span', null, props.value);
+            },
+          });
+          const element = ReactServer.createElement(Client, {value});
+          await withResponse(
+            {element, unrelated: new Promise(() => {})},
+            async ({response, transport}) => {
+              const received = await readRoot(transport);
+              await flushAction(transport, () => {});
+              expect(received).toBeDefined();
+              let html;
+              const rendered = render(received.element).then(
+                result => (html = result),
+              );
+              rendered.catch(() => {});
+              await flushAction(transport, () => {});
+              expect(seen).toEqual([]);
+              expect(html).toBe(undefined);
+              await flushAction(transport, load);
+              expect(await rendered).toBe('<span>ready</span>');
+              expect(seen).toEqual(['ready']);
+              expect(transport.isClosed).toBe(false);
+              expect(transport.isServerDone).toBe(false);
+            },
+          );
+        }));
+
+      it('an element first written inside another loading value', () =>
+        runGraph({
+          nodes: {
+            element: {host: 'atom'},
+            ready: {module: 'loaded'},
+            array: {array: ['element', 'ready']},
+            first: {promise: 'array'},
+            second: {promise: 'element'},
+            root: {array: ['first', 'second']},
+          },
+          roots: {entry: 'root', other: 'root'},
+          events: [
+            'resolve first to array',
+            'resolve second to element',
+            'load ready',
+          ],
+        }));
+
+      it('a Fragment first received inside a stream item', () =>
+        runGraph({
+          nodes: {
+            fragment: {fragment: []},
+            item: {array: ['fragment']},
+            stream: {stream: ['item']},
+          },
+          roots: {entry: 'stream', other: 'stream'},
+        }));
+
+      it('props object referenced again while a prop is loading', () =>
+        runGraph({
+          nodes: {
+            payload: {module: 'export-0'},
+            data: {object: {field0: 'props'}},
+            value: {array: ['payload', 'data']},
+            element: {element: 'value'},
+            props: {props: 'element'},
+          },
+          roots: {entry: 'element', other: 'props'},
+        }));
+
+      it('props sub-object referenced while a sibling prop is loading', () =>
+        runGraph({
+          nodes: {
+            payload: {module: 'export-0'},
+            sibling: {module: 'export-1'},
+            selected: {object: {field0: 'payload'}},
+            value: {array: ['selected', 'sibling']},
+            element: {element: 'value'},
+          },
+          roots: {entry: 'element', other: 'selected'},
+        }));
+
+      it('element reaching itself through its props', () =>
+        runGraph({
+          nodes: {
+            payload: {module: 'export-0'},
+            data: {object: {field0: 'element'}},
+            value: {array: ['payload', 'data']},
+            element: {element: 'value'},
+          },
+          roots: {entry: 'element', other: 'data'},
+        }));
+
+      it('a shared element stays stable when a cyclic model finishes loading', () =>
+        runGraph({
+          nodes: {
+            value: {value: null},
+            ready: {module: 'loaded'},
+            shared: {array: []},
+            data: {object: {shared: 'shared'}},
+            entry: {array: ['ready', 'data']},
+            nested: {array: ['shared']},
+            map: {map: [['value', 'nested']]},
+            element: {element: ['value', 'map']},
+            holder: {object: {first: 'element', second: 'entry'}},
+            iterator: {iterator: ['holder']},
+            copy: {array: ['element']},
+            set: {set: ['iterator', 'copy']},
+          },
+          roots: {entry: 'entry', other: 'set'},
+          events: ['load element', 'load ready'],
+          packetSizes: [4, 106, 2367],
+          yieldBetweenPackets: false,
+        }));
+    });
+    describe('Server Component output', () => {
+      it('a rendered component can fail through an owner while another prop is loading', () =>
+        runGraph({
+          nodes: {
+            shared: {object: {}},
+            broken: {module: 'failed', fail: 'load'},
+            pending: {module: 'pending'},
+            owner: {object: {shared: 'shared', broken: 'broken'}},
+            result: {promise: 'owner'},
+            output: {object: {shared: 'shared', pending: 'pending'}},
+            component: {component: 'output'},
+          },
+          roots: {entry: 'component', other: 'result'},
+          events: [
+            'load component body',
+            'resolve result to owner',
+            'reject broken',
+            'render component',
+            'load pending',
+          ],
+        }));
+
+      it('server component rendering after the rest of the response', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            body: {value: 'body'},
+            component: {component: 'body'},
+            data: {object: {field0: 'ready'}},
+          },
+          roots: {entry: 'component', other: 'data'},
+        }));
+
+      it('failing server component', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            error: {error: 'component failed'},
+            component: {component: 'error', throw: true},
+            data: {object: {field0: 'ready'}},
+          },
+          roots: {entry: 'component', other: 'data'},
+        }));
+
+      it('suspended server component element used twice', () =>
+        runGraph({
+          nodes: {
+            body: {value: 'shared'},
+            component: {component: 'body'},
+            pair: {array: ['component', 'component']},
+          },
+          roots: {entry: 'pair', other: 'pair'},
+        }));
+    });
+    describe('Error properties and mixed graph values', () => {
+      it('exposes Error causes and AggregateError members in DEV', () =>
+        withFlightModules(async () => {
+          const cause = {detail: 'source'};
+          const received = await roundTrip({
+            error: new Error('single', {cause}),
+            aggregate: new AggregateError([cause], 'several', {cause}),
+          });
+          expect(received.error).toBeInstanceOf(Error);
+          expect(received.aggregate).toBeInstanceOf(Error);
+          if (__DEV__) {
+            expect(received.error.message).toBe('single');
+            expect(received.error.cause).toEqual({detail: 'source'});
+            expect(received.aggregate).toBeInstanceOf(AggregateError);
+            expect(received.aggregate.message).toBe('several');
+            expect(received.aggregate.cause).toEqual({detail: 'source'});
+            expect(received.aggregate.errors).toEqual([{detail: 'source'}]);
+          } else {
+            expect('cause' in received.error).toBe(false);
+            expect('cause' in received.aggregate).toBe(false);
+            expect('errors' in received.aggregate).toBe(false);
+          }
+        }));
+
+      it('an Error that is its own cause', () =>
+        runGraph({
+          nodes: {error: {error: 'self cause', cause: 'error'}},
+          roots: {entry: 'error', other: 'error'},
+        }));
+
+      it.each(['cause', 'errors'])(
+        'failing stream reachable only through Error.%s',
+        property =>
+          runGraph({
+            nodes: {
+              failure: {error: 'stream failed'},
+              stream: {stream: [], fail: 'failure'},
+              error: {
+                error: 'outer',
+                [property]: property === 'cause' ? 'stream' : ['stream'],
+              },
+            },
+            roots: {entry: 'error', other: 'error'},
+          }),
+      );
+
+      it('Error whose cause is still loading', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            error: {error: 'cause loading', cause: 'ready'},
+            set: {set: ['error']},
+          },
+          roots: {entry: 'set', other: 'set'},
+        }));
+
+      it('Error with cyclic cause', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            cell: {object: {field0: 'ready', field1: 'error'}},
+            error: {error: 'cyclic cause', cause: 'cell'},
+          },
+          roots: {entry: 'error', other: 'cell'},
+        }));
+
+      it('a cyclic Map with values that load independently', () =>
+        runGraph({
+          nodes: {
+            value1: {value: 'other value'},
+            value2: {value: ''},
+            value3: {value: 42},
+            text0: {text: 'text-898'},
+            blob0: {blob: 'blob-116'},
+            host0: {host: 'atom'},
+            module1: {module: 'export-1', async: true},
+            array0: {array: ['array0']},
+            set0: {set: ['map1']},
+            map0: {
+              map: [
+                ['blob0', 'bytes0'],
+                ['value3', 'props0'],
+                ['module1', 'iterable0'],
+                ['set0', 'value2'],
+                ['array0', 'value1'],
+              ],
+            },
+            map1: {
+              map: [
+                ['host0', 'host0'],
+                ['element0', 'host0'],
+                ['array0', 'host0'],
+                ['blob0', 'text0'],
+              ],
+            },
+            bytes0: {bytes: 2},
+            element0: {element: 'host0'},
+            props0: {props: 'element0'},
+            iterable0: {iterable: []},
+          },
+          roots: {entry: 'map0', other: 'array0'},
+          afterEof: true,
+          rootPromise: true,
+          events: [
+            'bytes0 chunk 1',
+            'load module1',
+            'bytes0 chunk 0',
+            'return iterable0',
+            'load element0',
+            'evaluate module1',
+            'resolve the root Promise',
+            'resolve an unrelated Promise',
+          ],
+          packetSizes: [3, 89, 2624],
+          yieldBetweenPackets: false,
+          readTiming: 'early',
+        }));
+
+      it('built-in values with a cycle and a loading module', () =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            nothing: {value: null},
+            flag: {value: true},
+            bigint: {special: 'bigint'},
+            nan: {special: 'nan'},
+            negativeZero: {special: 'negative zero'},
+            infinity: {special: 'infinity'},
+            symbol: {special: 'symbol'},
+            escaped: {special: 'escaped'},
+            text: {text: 'text'},
+            date: {date: 1700000000000},
+            buffer: {special: 'buffer'},
+            binary: {binary: 3},
+            typed: {special: 'typed array'},
+            view: {special: 'data view'},
+            bigints: {special: 'bigint array'},
+            blob: {blob: 'blob'},
+            form: {special: 'form data'},
+            host: {host: 'atom'},
+            atoms: {
+              array: [
+                'nothing',
+                'flag',
+                'bigint',
+                'nan',
+                'negativeZero',
+                'infinity',
+                'symbol',
+                'escaped',
+                'text',
+                'date',
+                'buffer',
+                'binary',
+                'typed',
+                'view',
+                'bigints',
+                'blob',
+                'form',
+                'host',
+                'ready',
+                'cycle',
+              ],
+            },
+            cycle: {object: {field0: 'atoms', field1: 'cycle'}},
+          },
+          roots: {entry: 'cycle', other: 'cycle'},
+        }));
+
+      it('a streamed Error that is its own cause', () =>
+        runGraph({
+          nodes: {
+            error: {error: 'self cause', cause: 'error'},
+            stream: {stream: ['error']},
+          },
+          roots: {entry: 'stream', other: 'stream'},
+        }));
+
+      it('a streamed object containing an Error whose cause is the object', () =>
+        runGraph({
+          nodes: {
+            error: {error: 'item cause', cause: 'item'},
+            item: {object: {error: 'error'}},
+            stream: {stream: ['item']},
+          },
+          roots: {entry: 'stream', other: 'stream'},
+        }));
+    });
+  }
   describe('source timing and response context', () => {
     // eslint-disable-next-line jest/no-disabled-tests
     it.skip.each([':', '%3A:', ':%25:'])(
@@ -1964,70 +1992,72 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         afterEof: true,
       }));
 
-    it('a Promise resolves before another value containing it finishes loading', () =>
-      runGraph({
-        nodes: {
-          value: {value: null},
-          data: {promise: 'value'},
-          ready: {module: 'loaded'},
-          section: {object: {data: 'data', ready: 'ready'}},
-          later: {promise: 'section'},
-          root: {object: {data: 'data', section: 'later'}},
-        },
-        roots: {entry: 'root', other: 'root'},
-        events: [
-          'resolve later to section',
-          'resolve data to value',
-          'load ready',
-        ],
-      }));
+    if (host !== 'reply') {
+      it('a Promise resolves before another value containing it finishes loading', () =>
+        runGraph({
+          nodes: {
+            value: {value: null},
+            data: {promise: 'value'},
+            ready: {module: 'loaded'},
+            section: {object: {data: 'data', ready: 'ready'}},
+            later: {promise: 'section'},
+            root: {object: {data: 'data', section: 'later'}},
+          },
+          roots: {entry: 'root', other: 'root'},
+          events: [
+            'resolve later to section',
+            'resolve data to value',
+            'load ready',
+          ],
+        }));
 
-    it.each([
-      ['stream', null],
-      ['stream', 'keyed'],
-      ['iterable', null],
-    ])(
-      'a shared %s first returned through element context with key %s',
-      async (type, key) => {
-        await withFlightModules(async () => {
-          const fixture = await createFixture(
-            {
-              nodes: {
-                a: {value: 'a'},
-                b: {value: 'b'},
-                shared:
-                  type === 'stream'
-                    ? {stream: ['a', 'b']}
-                    : {iterable: ['a', 'b'], single: true},
+      it.each([
+        ['stream', null],
+        ['stream', 'keyed'],
+        ['iterable', null],
+      ])(
+        'a shared %s first returned through element context with key %s',
+        async (type, key) => {
+          await withFlightModules(async () => {
+            const fixture = await createFixture(
+              {
+                nodes: {
+                  a: {value: 'a'},
+                  b: {value: 'b'},
+                  shared:
+                    type === 'stream'
+                      ? {stream: ['a', 'b']}
+                      : {iterable: ['a', 'b'], single: true},
+                },
+                roots: {entry: 'shared', other: 'shared'},
               },
-              roots: {entry: 'shared', other: 'shared'},
-            },
-            {React, ReactServer, WebpackMock},
-          );
-          const shared = fixture.model.entry;
-          function Body() {
-            return shared;
-          }
-          // Return the stream through an element first, then as an object property.
-          const first =
-            type === 'stream'
-              ? ReactServer.createElement(Body, {key})
-              : ReactServer.createElement(ReactServer.Fragment, null, shared);
-          const oracle = createOracle(fixture, {render});
-          await checkResponse(
-            fixture,
-            oracle,
-            {
-              readTiming: 'early',
-              events: fixture.events,
-              packetSizes: [1, 21, 4096],
-              yieldBetweenPackets: true,
-            },
-            {...fixture.model, entry: first},
-          );
-        });
-      },
-    );
+              {React, ReactServer, WebpackMock},
+            );
+            const shared = fixture.model.entry;
+            function Body() {
+              return shared;
+            }
+            // Return the stream through an element first, then as an object property.
+            const first =
+              type === 'stream'
+                ? ReactServer.createElement(Body, {key})
+                : ReactServer.createElement(ReactServer.Fragment, null, shared);
+            const oracle = createOracle(fixture, {render});
+            await checkResponse(
+              fixture,
+              oracle,
+              {
+                readTiming: 'early',
+                events: fixture.events,
+                packetSizes: [1, 21, 4096],
+                yieldBetweenPackets: true,
+              },
+              {...fixture.model, entry: first},
+            );
+          });
+        },
+      );
+    }
   });
 
   const formatCaseName = (label, seed, readTiming, scheduleIndex) =>
