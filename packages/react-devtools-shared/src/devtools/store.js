@@ -1675,18 +1675,21 @@ export default class Store extends EventEmitter<{
 
           for (let removeIndex = 0; removeIndex < removeLength; removeIndex++) {
             const id = operations[i];
+            i += 1;
+
             const element = this._idToElement.get(id);
 
             if (element === undefined) {
-              // We should never reach this. This is a bug in the backend renderer.
-              return this._throwAndEmitError(
-                Error(
-                  `Cannot remove node "${id}" because no matching node was found in the Store.`,
-                ),
-              );
+              // The backend can occasionally send a stale removal (for example,
+              // after reconnecting or profiling). Ignore it so the rest of this
+              // operations payload can still be applied.
+              if (__DEV__) {
+                console.warn(
+                  `Ignoring removal for node "${id}" because no matching node was found in the Store.`,
+                );
+              }
+              continue;
             }
-
-            i += 1;
 
             const {children, ownerID, parentID, weight} = element;
             if (children.length > 0) {
