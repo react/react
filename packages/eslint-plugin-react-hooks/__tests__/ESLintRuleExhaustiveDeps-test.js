@@ -8041,6 +8041,42 @@ const testsTypescript = {
     },
     {
       code: normalizeIndent`
+        function MyComponent() {
+          const [foo, setFoo] = React.useState<{ bar: number }>({ bar: 42 });
+
+          React.useEffect(() => {
+            const square = (x: typeof foo.bar) => x * x;
+            setFoo((previous) => ({ ...previous, bar: square(previous.bar) }));
+          }, []);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          const obj = { nested: { deep: { value: 1 } } };
+
+          React.useEffect(() => {
+            const val: typeof obj.nested.deep.value = 10;
+            console.log(val);
+          }, []);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function App() {
+          const foo = {x: {y: 1}};
+          React.useEffect(() => {
+            const bar = {y: 2};
+            const baz = bar as typeof foo.x;
+            console.log(baz);
+          }, []);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
         function App(props) {
           React.useEffect(() => {
             console.log(props.test);
