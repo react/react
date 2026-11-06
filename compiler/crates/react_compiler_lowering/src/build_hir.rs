@@ -1670,16 +1670,14 @@ fn lower_expression(
             );
             Ok(InstructionValue::LoadLocal { place, loc })
         }
-        Expression::ArrowFunctionExpression(_) => Ok(lower_function_to_value(
+        Expression::ArrowFunctionExpression(_) => lower_function_to_value(
             builder,
             expr,
             FunctionExpressionType::ArrowFunctionExpression,
-        )?),
-        Expression::FunctionExpression(_) => Ok(lower_function_to_value(
-            builder,
-            expr,
-            FunctionExpressionType::FunctionExpression,
-        )?),
+        ),
+        Expression::FunctionExpression(_) => {
+            lower_function_to_value(builder, expr, FunctionExpressionType::FunctionExpression)
+        }
         Expression::ObjectExpression(obj) => {
             let loc = convert_base_loc(&obj.base);
             let mut properties: Vec<ObjectPropertyOrSpread> = Vec::new();
@@ -2586,12 +2584,7 @@ fn lower_block_statement(
     block: &react_compiler_ast::statements::BlockStatement,
     parent_scope: Option<react_compiler_ast::scope::ScopeId>,
 ) -> Result<(), CompilerError> {
-    Ok(lower_block_statement_inner(
-        builder,
-        block,
-        None,
-        parent_scope,
-    )?)
+    lower_block_statement_inner(builder, block, None, parent_scope)
 }
 
 fn lower_block_statement_with_scope(
@@ -2599,12 +2592,7 @@ fn lower_block_statement_with_scope(
     block: &react_compiler_ast::statements::BlockStatement,
     scope_override: react_compiler_ast::scope::ScopeId,
 ) -> Result<(), CompilerError> {
-    Ok(lower_block_statement_inner(
-        builder,
-        block,
-        Some(scope_override),
-        None,
-    )?)
+    lower_block_statement_inner(builder, block, Some(scope_override), None)
 }
 
 fn lower_block_statement_inner(
@@ -2612,7 +2600,7 @@ fn lower_block_statement_inner(
     block: &react_compiler_ast::statements::BlockStatement,
     scope_override: Option<react_compiler_ast::scope::ScopeId>,
     parent_scope: Option<react_compiler_ast::scope::ScopeId>,
-) -> Result<(), CompilerDiagnostic> {
+) -> Result<(), CompilerError> {
     use react_compiler_ast::scope::BindingKind as AstBindingKind;
     use react_compiler_ast::statements::Statement;
 
@@ -2993,7 +2981,7 @@ fn lower_statement(
     stmt: &react_compiler_ast::statements::Statement,
     label: Option<&str>,
     parent_scope: Option<react_compiler_ast::scope::ScopeId>,
-) -> Result<(), CompilerDiagnostic> {
+) -> Result<(), CompilerError> {
     use react_compiler_ast::statements::Statement;
 
     match stmt {
@@ -5555,7 +5543,7 @@ fn lower_function_to_value(
     builder: &mut HirBuilder,
     expr: &react_compiler_ast::expressions::Expression,
     expr_type: FunctionExpressionType,
-) -> Result<InstructionValue, CompilerDiagnostic> {
+) -> Result<InstructionValue, CompilerError> {
     use react_compiler_ast::expressions::Expression;
     let loc = match expr {
         Expression::ArrowFunctionExpression(arrow) => convert_base_loc(&arrow.base),
@@ -5579,7 +5567,7 @@ fn lower_function_to_value(
 fn lower_function(
     builder: &mut HirBuilder,
     expr: &react_compiler_ast::expressions::Expression,
-) -> Result<LoweredFunction, CompilerDiagnostic> {
+) -> Result<LoweredFunction, CompilerError> {
     use react_compiler_ast::expressions::Expression;
 
     // Extract function parts from the AST node
@@ -5622,7 +5610,8 @@ fn lower_function(
                     ErrorCategory::Invariant,
                     "lower_function called with non-function expression",
                     None,
-                ));
+                )
+                .into());
             }
         };
 
