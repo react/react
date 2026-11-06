@@ -1438,7 +1438,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'first', other: 'second'},
       }));
 
-    (host === 'reply' ? it.skip : it)('bytes in repeated stream items', () =>
+    it('bytes in repeated stream items', () =>
       runGraph({
         nodes: {
           inner: {bytes: 2},
@@ -1446,22 +1446,18 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
           outer: {stream: ['item', 'item']},
         },
         roots: {entry: 'outer', other: 'outer'},
-      }),
-    );
+      }));
 
-    (host === 'reply' ? it.skip : it)(
-      'bytes shared between different stream items',
-      () =>
-        runGraph({
-          nodes: {
-            inner: {bytes: 2},
-            first: {array: ['inner']},
-            second: {object: {again: 'inner'}},
-            outer: {stream: ['first', 'second']},
-          },
-          roots: {entry: 'outer', other: 'outer'},
-        }),
-    );
+    it('bytes shared between different stream items', () =>
+      runGraph({
+        nodes: {
+          inner: {bytes: 2},
+          first: {array: ['inner']},
+          second: {object: {again: 'inner'}},
+          outer: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }));
   });
 
   describe('stream cancellation', () => {
