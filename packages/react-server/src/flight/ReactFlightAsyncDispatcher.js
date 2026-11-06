@@ -9,13 +9,13 @@
 
 import type {AsyncDispatcher} from 'react-reconciler/src/ReactInternalTypes';
 
-import {resolveRequest, getCache} from '../ReactFlightServer';
+import {resolveContext} from '../ReactFlightServer';
 import {resolveOwner} from './ReactFlightCurrentOwner';
 
 function resolveCache(): Map<Function, mixed> {
-  const request = resolveRequest();
-  if (request) {
-    return getCache(request);
+  const context = resolveContext();
+  if (context) {
+    return context.cache;
   }
   return new Map();
 }
@@ -32,9 +32,9 @@ export const DefaultAsyncDispatcher: AsyncDispatcher = {
     return entry;
   },
   cacheSignal(): null | AbortSignal {
-    const request = resolveRequest();
-    if (request) {
-      return request.cacheController.signal;
+    const context = resolveContext();
+    if (context) {
+      return context.cacheController.signal;
     }
     return null;
   },

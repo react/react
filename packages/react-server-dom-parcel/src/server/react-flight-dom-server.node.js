@@ -10,6 +10,7 @@
 export {
   renderToReadableStream,
   renderToPipeableStream,
+  renderToResult,
   prerender,
   prerenderToNodeStream,
   decodeReply,

@@ -162,6 +162,63 @@ describe('ReactFlightTurbopackDOMNode', () => {
     );
   });
 
+  it('renders a Result in process with an alternative module mapping for SSR', async () => {
+    function ClientComponent({label}) {
+      return <span>{label}</span>;
+    }
+    const ClientComponentOnTheClient = clientExports(
+      ClientComponent,
+      'path/to/chunk.js',
+    );
+    const ClientComponentOnTheServer = clientExports(ClientComponent);
+    const clientId = turbopackMap[ClientComponentOnTheClient.$$id].id;
+    delete turbopackModules[clientId];
+    const translationMap = {
+      [clientId]: {'*': turbopackMap[ClientComponentOnTheServer.$$id]},
+    };
+
+    let renders = 0;
+    async function App() {
+      renders++;
+      await 1;
+      return <ClientComponentOnTheClient label="Client Component" />;
+    }
+
+    const result = ReactServerDOMServer.renderToResult(<App />);
+    // The same Result serves the HTML render and the hydration stream.
+    let response;
+    function ClientRoot() {
+      if (!response) {
+        response = ReactServerDOMClient.createFromResult(result, {
+          clientManifest: turbopackMap,
+          serverConsumerManifest: {
+            moduleMap: translationMap,
+            moduleLoading: turbopackModuleLoading,
+          },
+        });
+      }
+      return use(response);
+    }
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToPipeableStream(<ClientRoot />),
+    );
+    const readable = new Stream.PassThrough();
+    await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(result, turbopackMap).pipe(
+        readable,
+      ),
+    );
+    expect(await readResult(ssrStream)).toEqual(
+      '<script src="/prefix/path/to/chunk.js" async=""></script><span>Client Component</span>',
+    );
+    const hydration = await ReactServerDOMClient.createFromNodeStream(
+      readable,
+      {moduleMap: translationMap, moduleLoading: turbopackModuleLoading},
+    );
+    expect(hydration.props.label).toBe('Client Component');
+    expect(renders).toBe(1);
+  });
+
   // @gate __DEV__
   it('can transport debug info through a separate debug channel', async () => {
     function Thrower() {

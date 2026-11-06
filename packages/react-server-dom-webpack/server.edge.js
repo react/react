@@ -8,6 +8,7 @@
  */
 
 export {
+  renderToResult,
   renderToReadableStream,
   decodeReply,
   decodeReplyFromAsyncIterable,

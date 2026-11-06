@@ -10,6 +10,7 @@
 import {AsyncLocalStorage} from 'async_hooks';
 
 import type {Request} from 'react-server/src/ReactFlightServer';
+import type {RenderContext} from 'shared/ReactFlightRenderContext';
 import type {ReactComponentInfo} from 'shared/ReactTypes';
 
 export * from 'react-server-dom-esm/src/server/ReactFlightServerConfigESMBundler';
@@ -17,6 +18,8 @@ export * from 'react-dom-bindings/src/server/ReactFlightServerConfigDOM';
 
 export const supportsRequestStorage = true;
 export const requestStorage: AsyncLocalStorage<Request | void> =
+  new AsyncLocalStorage();
+export const contextStorage: AsyncLocalStorage<RenderContext | void> =
   new AsyncLocalStorage();
 
 export const supportsComponentStorage = __DEV__;

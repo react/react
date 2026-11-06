@@ -8,6 +8,7 @@
  */
 
 import type {Request} from 'react-server/src/ReactFlightServer';
+import type {RenderContext} from 'shared/ReactFlightRenderContext';
 import type {ReactComponentInfo} from 'shared/ReactTypes';
 import type {ReactClientValue} from 'react-server/src/ReactFlightServer';
 
@@ -35,6 +36,8 @@ export function getChildFormatContext(
 
 export const supportsRequestStorage = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
+export const contextStorage: AsyncLocalStorage<RenderContext | void> =
+  null as any;
 
 export const supportsComponentStorage = false;
 export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =

@@ -8,7 +8,7 @@
  */
 
 import type {Dispatcher} from 'react-reconciler/src/ReactInternalTypes';
-import type {Request} from './ReactFlightServer';
+import type {RenderContext} from 'shared/ReactFlightRenderContext';
 import type {Thenable, Usable, ReactComponentInfo} from 'shared/ReactTypes';
 import type {ThenableState} from './ReactFlightThenable';
 import {
@@ -18,17 +18,17 @@ import {
 import {createThenableState, trackUsedThenable} from './ReactFlightThenable';
 import {isClientReference} from './ReactFlightServerConfig';
 
-let currentRequest = null;
+let currentContext: null | RenderContext = null;
 let thenableIndexCounter = 0;
 let thenableState = null;
 let currentComponentDebugInfo = null;
 
-export function prepareToUseHooksForRequest(request: Request) {
-  currentRequest = request;
+export function prepareToUseHooksForRequest(context: RenderContext) {
+  currentContext = context;
 }
 
 export function resetHooksForRequest() {
-  currentRequest = null;
+  currentContext = null;
 }
 
 export function prepareToUseHooksForComponent(
@@ -118,12 +118,12 @@ function unsupportedContext(): void {
 }
 
 function useId(): string {
-  if (currentRequest === null) {
+  if (currentContext === null) {
     throw new Error('useId can only be used while React is rendering');
   }
-  const id = currentRequest.identifierCount++;
+  const id = currentContext.identifierCount++;
   // use 'S' for Flight components to distinguish from 'R' and 'r' in Fizz/Client
-  return '_' + currentRequest.identifierPrefix + 'S_' + id.toString(32) + '_';
+  return '_' + currentContext.identifierPrefix + 'S_' + id.toString(32) + '_';
 }
 
 function use<T>(usable: Usable<T>): T {

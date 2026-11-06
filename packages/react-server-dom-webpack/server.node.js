@@ -10,6 +10,7 @@
 export {
   renderToPipeableStream,
   renderToReadableStream,
+  renderToResult,
   decodeReply,
   decodeReplyFromBusboy,
   decodeReplyFromAsyncIterable,
