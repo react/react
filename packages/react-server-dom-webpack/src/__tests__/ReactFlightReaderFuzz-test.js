@@ -918,8 +918,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
         }));
     }
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('keeps undefined object properties', () =>
+    it('keeps undefined object properties', () =>
       runGraph({
         nodes: {
           missing: {special: 'undefined'},
@@ -2059,7 +2058,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
                 without: (host === 'reply'
                   ? unsupportedReplyOperations
                   : []
-                ).concat(['undefined', 'colon']),
+                ).concat(['colon']),
               }),
               seed,
               readTiming,
