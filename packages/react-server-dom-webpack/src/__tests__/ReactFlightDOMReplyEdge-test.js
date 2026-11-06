@@ -293,6 +293,79 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(await resultBlob.arrayBuffer()).toEqual(await blob.arrayBuffer());
   });
 
+  it('hands out the entries of a referenced FormData once', async () => {
+    const body = new FormData();
+    body.append('_1_a', '1');
+    body.append('_1_b', '2');
+    body.set('0', JSON.stringify(['$K1', '$K1']));
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    expect(Array.from(result[0])).toEqual([
+      ['a', '1'],
+      ['b', '2'],
+    ]);
+    expect(Array.from(result[1])).toEqual([]);
+  });
+
+  it('reads a referenced FormData inside a stream item regardless of order', async () => {
+    // The outer FormData is written while the reply serializes synchronously, so
+    // its entries land in the body before the stream item's FormData, which is
+    // written when the stream produces it. The server resolves the stream, and
+    // the reference inside its item, before the sibling reference that appears
+    // later in the body. Each reference must still read its own entries.
+    const makeInner = () => {
+      const inner = new FormData();
+      inner.append('a', '1');
+      inner.append('b', '2');
+      inner.append('c', '3');
+      return inner;
+    };
+    const outer = new FormData();
+    outer.append('x', 'y');
+    outer.append('z', 'w');
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue([makeInner()]);
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply([stream, outer]);
+
+    const check = async result => {
+      const reader = result[0].getReader();
+      const item = (await reader.read()).value;
+      expect(Array.from(item[0].entries())).toEqual([
+        ['a', '1'],
+        ['b', '2'],
+        ['c', '3'],
+      ]);
+      expect(Array.from(result[1].entries())).toEqual([
+        ['x', 'y'],
+        ['z', 'w'],
+      ]);
+    };
+
+    await check(await ReactServerDOMServer.decodeReply(body, webpackServerMap));
+
+    const entries = Array.from(body.entries());
+    const asyncIterable = {
+      async *[Symbol.asyncIterator]() {
+        for (let i = 0; i < entries.length; i++) {
+          yield entries[i];
+        }
+      },
+    };
+    await check(
+      await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+        asyncIterable,
+        webpackServerMap,
+      ),
+    );
+  });
+
   it('should support ReadableStreams with typed arrays', async () => {
     const buffer = new Uint8Array([
       123, 4, 10, 5, 100, 255, 244, 45, 56, 67, 43, 124, 67, 89, 100, 20,
