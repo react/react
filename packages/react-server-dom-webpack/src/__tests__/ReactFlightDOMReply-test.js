@@ -372,7 +372,7 @@ describe('ReactFlightDOMReply', () => {
     );
   });
 
-  it('can pass JSX through a round trip using temporary references', async () => {
+  it('can pass JSX under an escaped property name using temporary references', async () => {
     function Component() {
       return <div />;
     }
@@ -382,7 +382,7 @@ describe('ReactFlightDOMReply', () => {
     const temporaryReferences =
       ReactServerDOMClient.createTemporaryReferenceSet();
     const body = await ReactServerDOMClient.encodeReply(
-      {children},
+      {'%3A:children': children},
       {
         temporaryReferences,
       },
@@ -396,9 +396,11 @@ describe('ReactFlightDOMReply', () => {
       {temporaryReferences: temporaryReferencesServer},
     );
     const stream = await serverAct(() =>
-      ReactServerDOMServer.renderToReadableStream(serverPayload, null, {
-        temporaryReferences: temporaryReferencesServer,
-      }),
+      ReactServerDOMServer.renderToReadableStream(
+        {children: serverPayload['%3A:children']},
+        null,
+        {temporaryReferences: temporaryReferencesServer},
+      ),
     );
     const response = await ReactServerDOMClient.createFromReadableStream(
       stream,

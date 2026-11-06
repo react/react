@@ -105,6 +105,7 @@ import getPrototypeOf from 'shared/getPrototypeOf';
 import {injectInternals} from './ReactFlightClientDevToolsHook';
 
 import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
+import {unescapePathSegment} from 'shared/ReactFlightReferencePath';
 
 import ReactVersion from 'shared/ReactVersion';
 
@@ -3214,6 +3215,16 @@ function transferReferencedDebugInfo(
 // It's never mutated because only paths with entries get spliced in place.
 const EMPTY_REFERENCE_PATH: Array<string> = [];
 
+// The property names of a path, with the escaping the writer applies to a
+// name that contains a colon undone.
+function splitReferencePath(reference: string): Array<string> {
+  const path = reference.split(':');
+  for (let i = 1; i < path.length; i++) {
+    path[i] = unescapePathSegment(path[i]);
+  }
+  return path;
+}
+
 function getOutlinedModel<T>(
   response: Response,
   reference: string,
@@ -3224,7 +3235,9 @@ function getOutlinedModel<T>(
   // parseInt stops at the ':' so we only need to split when there's a path.
   const id = parseInt(reference, 16);
   const path =
-    reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
+    reference.indexOf(':') === -1
+      ? EMPTY_REFERENCE_PATH
+      : splitReferencePath(reference);
   const chunk = getChunk(response, id);
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (initializingChunk !== null && isArray(initializingChunk._children)) {
