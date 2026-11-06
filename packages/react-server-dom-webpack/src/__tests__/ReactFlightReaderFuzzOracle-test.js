@@ -1016,4 +1016,50 @@ describe('FlightReaderOracle', () => {
       'root.byte0',
     ]);
   });
+
+  it('calls Server Functions again to check that their bound arguments are stable', async () => {
+    const source = () => {};
+    const {oracle, resolve} = createTestOracle(source, {
+      valueMetadata: new Map([
+        [
+          source,
+          {
+            type: 'function',
+            bound: ['bound'],
+            args: ['argument'],
+            result: ['bound', 'argument'],
+          },
+        ],
+      ]),
+    });
+    let bound = 'bound';
+    resolve(argument => [bound, argument]);
+    expect(oracle.isComplete()).toBe(true);
+    await expect(oracle.checkForMutations()).resolves.toBeUndefined();
+
+    bound = 'changed';
+    await expect(oracle.checkForMutations()).rejects.toThrow('changed');
+  });
+
+  // Equal replacement objects must not conceal a changed bound identity.
+  it('allows fresh function result arrays but rejects replaced bound objects', async () => {
+    const source = () => {};
+    const argument = {value: 'expected'};
+    const {oracle, resolve} = createTestOracle(source, {
+      valueMetadata: new Map([
+        [
+          source,
+          {type: 'function', bound: [argument], args: [], result: [argument]},
+        ],
+      ]),
+    });
+    let bound = {value: 'expected'};
+    resolve(() => [bound]);
+    expect(oracle.isComplete()).toBe(true);
+    await expect(oracle.checkForMutations()).resolves.toBeUndefined();
+    bound = {value: 'expected'};
+    await expect(oracle.checkForMutations()).rejects.toThrow(
+      'changed a bound argument',
+    );
+  });
 });

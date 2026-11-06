@@ -168,7 +168,8 @@ async function createFixture(graph, {WebpackMock}) {
       node.iterator === undefined &&
       node.stream === undefined &&
       node.iterable === undefined &&
-      node.bytes === undefined
+      node.bytes === undefined &&
+      node.bound === undefined
     ) {
       throw new Error('Unsupported node: ' + name);
     }
@@ -189,7 +190,16 @@ async function createFixture(graph, {WebpackMock}) {
     }
     buildingValues.add(name);
     const node = nodes[name];
-    if (node.iterator !== undefined) {
+    if (node.bound !== undefined) {
+      values[name] = createServerFunction((...args) => args, {
+        bound: node.bound.map(buildValue),
+        label: name,
+        loaded: node.loaded === true,
+        loadError: node.reject
+          ? new Error('module ' + name + ' failed to load')
+          : undefined,
+      });
+    } else if (node.iterator !== undefined) {
       const items = node.iterator.map(buildValue);
       const iterator = items[Symbol.iterator]();
       values[name] = iterator;
@@ -387,6 +397,34 @@ async function createFixture(graph, {WebpackMock}) {
       single,
     });
     return iterable;
+  }
+
+  function createServerFunction(
+    implementation,
+    {bound = [], label, loadError, loaded = false} = {},
+  ) {
+    const ready = loaded ? null : createResolvablePromise();
+    const exported = WebpackMock.serverExports(
+      {fn: implementation},
+      ready === null ? undefined : ready.promise,
+    );
+    const reference = exported.fn;
+    const fn = bound.length ? reference.bind(null, ...bound) : reference;
+    const result = implementation(...bound);
+    valueMetadata.set(fn, {type: 'function', bound, args: [], result});
+    if (ready === null) {
+      return fn;
+    }
+    const event = createEvent(
+      (loadError !== undefined ? 'reject ' : 'load ') +
+        (label || 'server function'),
+      () =>
+        loadError !== undefined ? ready.reject(loadError) : ready.resolve(),
+      {isClient: true, error: loadError},
+    );
+    events.push(event);
+    requiredEvents.set(fn, [event]);
+    return fn;
   }
 
   function saveBytes(value) {
