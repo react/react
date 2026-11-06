@@ -1091,4 +1091,104 @@ describe('FlightReaderOracle', () => {
       'changed a bound argument',
     );
   });
+
+  it('does not borrow errors from unrendered Server Component output', async () => {
+    const shared = {};
+    const module = {};
+    const element = {props: {}};
+    const promise = {};
+    const source = {element, promise};
+    const failure = new Error('future output failed');
+    const oracle = createOracle(
+      {
+        model: source,
+        valueMetadata: new Map([
+          [module, {type: 'module', value: 'failed'}],
+          [promise, {type: 'promise', state: 'fulfilled', value: shared}],
+          [
+            element,
+            {
+              type: 'element',
+              renderEvent: {released: false},
+              renderedElement: {props: {shared, module}},
+            },
+          ],
+        ]),
+        requiredEvents: new Map([[module, [{released: true, error: failure}]]]),
+      },
+      {render: () => new Promise(() => {})},
+    );
+    oracle.subscribeToRoot(
+      {
+        then(resolve) {
+          resolve({
+            element: {},
+            promise: {
+              then(onFulfill, reject) {
+                reject(failure);
+              },
+            },
+          });
+        },
+      },
+      source,
+    );
+    await tick();
+    expect(() => oracle.throwIfFailed()).toThrow('unexpected rejection');
+  });
+
+  it('waits for the consuming Server Component before accepting or requiring its error', async () => {
+    const module = {};
+    const props = {module};
+    const element = {props: {}};
+    const promise = {};
+    const source = {element, promise};
+    const failure = new Error('produced owner failed');
+    const renderEvent = {released: false};
+    const fixture = {
+      model: source,
+      valueMetadata: new Map([
+        [module, {type: 'module', value: 'failed'}],
+        [promise, {type: 'promise', state: 'fulfilled', value: props}],
+        [element, {type: 'element', renderEvent, renderedElement: {props}}],
+      ]),
+      requiredEvents: new Map([
+        [element, [renderEvent]],
+        [module, [{released: true, error: failure}]],
+      ]),
+    };
+    const root = {
+      then(resolve) {
+        resolve({
+          element: {},
+          promise: {
+            then(onFulfill, reject) {
+              reject(failure);
+            },
+          },
+        });
+      },
+    };
+    const early = createOracle(fixture, {
+      render: () => Promise.reject(failure),
+    });
+    early.subscribeToRoot(root, source);
+    await tick();
+    expect(() => early.throwIfFailed()).toThrow('unexpected rejection');
+
+    let rejectRender;
+    const oracle = createOracle(fixture, {
+      render: () => new Promise((resolve, reject) => (rejectRender = reject)),
+    });
+    oracle.subscribeToRoot(root, source);
+    await tick();
+    expect(oracle.getMissingResults()).toEqual([]);
+    renderEvent.released = true;
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root.element.render',
+    ]);
+    rejectRender(failure);
+    await tick();
+    expect(oracle.isComplete()).toBe(true);
+  });
 });

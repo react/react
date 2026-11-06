@@ -619,12 +619,29 @@ function observeElement(state, metadata, {expectedValue, received, path}) {
     findModels => {
       const events = (fixture.requiredEvents.get(expectedValue) || []).concat(
         getRequiredEvents(fixture, expectedValue.props),
+        metadata.renderedElement === undefined
+          ? []
+          : getRequiredEvents(fixture, metadata.renderedElement.props),
       );
+      const produced = isElementProduced(metadata);
       return getResultExpectation(
         metadata.html,
-        canSettle(events),
-        getReleasedErrors(events),
-        findModels(expectedValue).concat(findModels(expectedValue.props)),
+        produced && canSettle(events),
+        metadata.failure === undefined
+          ? getReleasedErrors(events)
+          : [fixture.valueMetadata.get(metadata.failure)],
+        // Output may already occur in another produced model. This consumer
+        // still cannot borrow that owner's errors before its own render.
+        produced
+          ? findModels(expectedValue).concat(
+              findModels(expectedValue.props),
+              metadata.renderedElement === undefined
+                ? []
+                : findModels(metadata.renderedElement).concat(
+                    findModels(metadata.renderedElement.props),
+                  ),
+            )
+          : [],
       );
     },
   );
@@ -638,6 +655,10 @@ function observeElement(state, metadata, {expectedValue, received, path}) {
     }
     handleResult(state, check, html);
   });
+}
+
+function isElementProduced(metadata) {
+  return metadata.renderEvent === undefined || metadata.renderEvent.released;
 }
 
 function observeCanceledStream(state, metadata, received, path) {
@@ -709,17 +730,29 @@ function observePromise(state, metadata, {expectedValue, received, path}) {
     expectedValue,
     path + '.then',
     findModels => {
-      const events = getRequiredEvents(state.fixture, metadata.value);
+      const {fixture} = state;
+      const valueMetadata = fixture.valueMetadata.get(metadata.value);
+      const events = getRequiredEvents(fixture, metadata.value);
+      const isElement =
+        valueMetadata !== undefined && valueMetadata.type === 'element';
+      if (isElement && valueMetadata.renderEvent !== undefined) {
+        // A Promise resolving to a Server Component waits for its output.
+        events.push(valueMetadata.renderEvent);
+      }
+      const produced =
+        metadata.state === 'fulfilled' &&
+        (!isElement || isElementProduced(valueMetadata));
       return getResultExpectation(
         metadata.value,
-        metadata.state === 'rejected' ||
-          (metadata.state === 'fulfilled' && canSettle(events)),
+        metadata.state === 'rejected' || (produced && canSettle(events)),
         metadata.state === 'rejected'
-          ? [state.fixture.valueMetadata.get(metadata.reason)]
-          : getReleasedErrors(events),
+          ? [fixture.valueMetadata.get(metadata.reason)]
+          : isElement && valueMetadata.failure !== undefined
+            ? [fixture.valueMetadata.get(valueMetadata.failure)]
+            : getReleasedErrors(events),
         // A consumer cannot borrow model errors until its source produces the
         // value, even if that value already occurs in another eligible model.
-        metadata.state === 'fulfilled' ? findModels(metadata.value) : [],
+        produced ? findModels(metadata.value) : [],
       );
     },
   );
@@ -931,7 +964,9 @@ function collectModels(fixture) {
       modelsByValue.set(value, (modelsByValue.get(value) || []).concat(model));
       const metadata = fixture.valueMetadata.get(value);
       if (metadata !== undefined && metadata.type === 'element') {
-        if (!visitedElements.has(value)) {
+        if (metadata.renderEvent !== undefined) {
+          asyncValues.add(value);
+        } else if (!visitedElements.has(value)) {
           // Props errors belong to the rendered element; they need not block
           // delivery of a containing model that can hold a lazy element.
           visitedElements.add(value);
@@ -975,7 +1010,12 @@ function collectModels(fixture) {
   // Only a produced prefix can have serialized an object and owned its errors.
   asyncValues.forEach(value => {
     const metadata = fixture.valueMetadata.get(value);
-    if (metadata.type === 'function') {
+    if (metadata.type === 'element') {
+      // Knowing a future output is not evidence the writer has produced it.
+      if (isElementProduced(metadata)) {
+        collectModel([metadata.renderedElement]);
+      }
+    } else if (metadata.type === 'function') {
       boundArgumentModels.set(value, collectModel(metadata.bound));
     } else if (metadata.type === 'promise') {
       if (metadata.state === 'fulfilled') {
