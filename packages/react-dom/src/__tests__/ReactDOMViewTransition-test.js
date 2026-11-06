@@ -16,6 +16,7 @@ let SuspenseList;
 let ViewTransition;
 let act;
 let assertLog;
+let assertConsoleErrorDev;
 let Scheduler;
 let textCache;
 let startTransition;
@@ -30,6 +31,8 @@ describe('ReactDOMViewTransition', () => {
     Scheduler = require('scheduler');
     act = require('internal-test-utils').act;
     assertLog = require('internal-test-utils').assertLog;
+    assertConsoleErrorDev =
+      require('internal-test-utils').assertConsoleErrorDev;
     Suspense = React.Suspense;
     ViewTransition = React.ViewTransition;
     startTransition = React.startTransition;
@@ -177,6 +180,80 @@ describe('ReactDOMViewTransition', () => {
     expect(container.textContent).toContain('Card 1');
     expect(container.textContent).toContain('Card 2');
     expect(container.textContent).toContain('Card 3');
+  });
+
+  // @gate enableViewTransition
+  it('does not warn about duplicate names after a ViewTransition drops its name', async () => {
+    function App({firstName, showSecond}) {
+      return (
+        <>
+          <ViewTransition name={firstName}>
+            <div>First</div>
+          </ViewTransition>
+          {showSecond ? (
+            <ViewTransition name="shared">
+              <div>Second</div>
+            </ViewTransition>
+          ) : null}
+        </>
+      );
+    }
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<App firstName="shared" showSecond={false} />);
+    });
+    await act(() => {
+      root.render(<App firstName={undefined} showSecond={false} />);
+    });
+    await act(() => {
+      root.render(<App firstName={undefined} showSecond={true} />);
+    });
+    expect(container.textContent).toBe('FirstSecond');
+  });
+
+  // @gate enableViewTransition
+  it('tracks the new name when a ViewTransition is renamed', async () => {
+    function App({firstName, secondName}) {
+      return (
+        <>
+          <ViewTransition name={firstName}>
+            <div>First</div>
+          </ViewTransition>
+          {secondName != null ? (
+            <ViewTransition name={secondName}>
+              <div>Second</div>
+            </ViewTransition>
+          ) : null}
+        </>
+      );
+    }
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<App firstName="shared" secondName={null} />);
+    });
+    await act(() => {
+      root.render(<App firstName="other" secondName={null} />);
+    });
+    // The old name is free again.
+    await act(() => {
+      root.render(<App firstName="other" secondName="shared" />);
+    });
+    // The new name is still tracked, and the second boundary's old name is
+    // released before its new name is checked.
+    await act(() => {
+      root.render(<App firstName="other" secondName="other" />);
+    });
+    assertConsoleErrorDev([
+      'There are two <ViewTransition name="other"> components with the same name mounted ' +
+        'at the same time. This is not supported and will cause View Transitions ' +
+        'to error. Try to use a more unique name e.g. by using a namespace prefix ' +
+        'and adding the id of an item to the name.\n' +
+        '    in ViewTransition (at **)\n' +
+        '    in App (at **)',
+      'The existing <ViewTransition name="other"> duplicate has this stack trace.\n' +
+        '    in ViewTransition (at **)\n' +
+        '    in App (at **)',
+    ]);
   });
 
   describe('ViewTransition event callbacks', () => {
