@@ -1015,6 +1015,124 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(called).toBe(false);
   });
 
+  describe('settles blocked reference groups once input and async work finish', () => {
+    const decode = chunks => {
+      const body = new FormData();
+      Object.keys(chunks).forEach(k => body.set(k, chunks[k]));
+      return settleReply(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap),
+      );
+    };
+
+    it('rejects a reference that only points at itself', async () => {
+      const r = await decode({0: '"$0"'});
+      expect(r.status).toBe('rejected');
+    });
+
+    it('rejects two references that only point at each other', async () => {
+      const r = await decode({0: '"$1"', 1: '"$0"'});
+      expect(r.status).toBe('rejected');
+    });
+
+    it('rejects a path that only leads back into itself', async () => {
+      const r = await decode({0: JSON.stringify({a: '$0:a'})});
+      expect(r.status).toBe('rejected');
+    });
+
+    it('rejects two paths that only lead into each other', async () => {
+      const r = await decode({
+        0: JSON.stringify({a: '$1:b'}),
+        1: JSON.stringify({b: '$0:a'}),
+      });
+      expect(r.status).toBe('rejected');
+    });
+
+    it('rejects a self path that cannot be followed', async () => {
+      const r = await decode({0: JSON.stringify({a: '$0:a:x'})});
+      expect(r.status).toBe('rejected');
+    });
+
+    it('resolves a well-founded cycle whose root is null to null', async () => {
+      const r = await decode({
+        0: '"$1:a"',
+        1: JSON.stringify({a: null, c: '$0'}),
+      });
+      expect(r.status).toBe('resolved');
+      expect(r.value).toBe(null);
+    });
+
+    it.each(['R', 'r', 'X', 'x'])(
+      'errors a %s stream reference that has no entries',
+      async tag => {
+        const body = new FormData();
+        body.set('0', '["$' + tag + '1"]');
+        const result = await ReactServerDOMServer.decodeReply(
+          body,
+          webpackServerMap,
+        );
+        const stream = result[0];
+        const read =
+          tag === 'R' || tag === 'r'
+            ? stream.getReader().read()
+            : stream[Symbol.asyncIterator]().next();
+        const settled = await settleReply(read);
+        expect(settled.status).toBe('rejected');
+      },
+    );
+
+    it('does not reject a blocked group while its module is still loading', async () => {
+      let loadModule;
+      const loading = new Promise(resolve => (loadModule = resolve));
+      const ServerModule = serverExports({fn: () => 'ok'}, loading);
+      const body = new FormData();
+      body.set('0', '"$h1"');
+      body.set('1', JSON.stringify({id: ServerModule.fn.$$id, bound: null}));
+      const pending = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+      const early = await settleReply(pending, 6);
+      expect(early.status).toBe('pending');
+      await serverAct(() => loadModule());
+      const result = await settleReply(pending);
+      expect(result.status).toBe('resolved');
+      expect(typeof result.value).toBe('function');
+    });
+
+    const streamEntries = entries => {
+      const iterable = {
+        async *[Symbol.asyncIterator]() {
+          // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+          for (const entry of entries) {
+            yield entry;
+          }
+        },
+      };
+      return settleReply(
+        ReactServerDOMServer.decodeReplyFromAsyncIterable(
+          iterable,
+          webpackServerMap,
+        ),
+      );
+    };
+
+    it('rejects a group still blocked when streaming input closes', async () => {
+      // The referenced chunk arrives first so the cycle is a resumed wait
+      // rather than a forward reference; it stays blocked until close.
+      const r = await streamEntries([
+        ['1', '"$0"'],
+        ['0', '"$1"'],
+      ]);
+      expect(r.status).toBe('rejected');
+    });
+
+    it('resolves a well-founded group that closes while blocked to its value', async () => {
+      const r = await streamEntries([
+        ['1', JSON.stringify({a: null, c: '$0'})],
+        ['0', '"$1:a"'],
+      ]);
+      expect(r.status).toBe('resolved');
+      expect(r.value).toBe(null);
+    });
+  });
+
   it.each(['fulfill', 'reject'])(
     'a module can %s all the Promises of objects that depend on it',
     async outcome => {

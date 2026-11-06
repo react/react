@@ -242,6 +242,21 @@ export type Response = {
   // The handler of each chunk that has parsed but is still waiting for
   // references, by chunk.
   _handlers: WeakMap<SomeChunk<any>, InitializationHandler>,
+  // The same chunks as `_handlers`, enumerable, so the quiescence backstop can
+  // find every chunk still blocked once no more input or asynchronous work can
+  // release it. A chunk is added when it blocks and removed when its handler is
+  // released or rejected.
+  _blockedChunks: Set<SomeChunk<any>>,
+  // Outstanding asynchronous leaves: module loads, Blob reads and the deferred
+  // bound-argument read. While any is pending the group it feeds can still
+  // complete, so the backstop must not reject.
+  _asyncLeaves: number,
+  // The stream controllers the decoder created. Once input is complete, any
+  // that a close row never closed are errored, so a stream reference with no
+  // entries does not stay open forever.
+  _openStreams: Set<FlightStreamController>,
+  // Guards the backstop against re-entering while it rejects a blocked group.
+  _rejectingBlocked: boolean,
   // Model parses in progress on the stack. A reference to an outlined chunk as
   // a model's first token parses that chunk while the referrer is still
   // parsing, so `flushCycleChecks` can run with no current handler mid-parse.
@@ -598,19 +613,28 @@ function loadServerReference<A: Iterable<any>, T>(
         triggerErrorOnChunk(response, blockedPromise, error);
       }
     } else {
+      response._asyncLeaves++;
       preloading.then(
         () => {
-          let value;
           try {
-            value = bindServerReference(null);
-          } catch (error) {
-            triggerErrorOnChunk(response, blockedPromise, error);
-            return;
+            let value;
+            try {
+              value = bindServerReference(null);
+            } catch (error) {
+              triggerErrorOnChunk(response, blockedPromise, error);
+              return;
+            }
+            resolveServerReferenceChunk(response, blockedPromise, value);
+          } finally {
+            settleAsyncLeaf(response);
           }
-          resolveServerReferenceChunk(response, blockedPromise, value);
         },
         error => {
-          triggerErrorOnChunk(response, blockedPromise, error);
+          try {
+            triggerErrorOnChunk(response, blockedPromise, error);
+          } finally {
+            settleAsyncLeaf(response);
+          }
         },
       );
     }
@@ -678,6 +702,7 @@ function loadServerReference<A: Iterable<any>, T>(
   // read boundary so one bound function can start reading another without
   // nesting model parses. Only starting the read is deferred: the explicit
   // reference still exposes cycles to the reader.
+  response._asyncLeaves++;
   Promise.resolve().then(() => {
     try {
       if (chunk.status === RESOLVED_MODEL) {
@@ -699,7 +724,9 @@ function loadServerReference<A: Iterable<any>, T>(
     } catch (error) {
       rejectReference(response, handler, error);
     }
-    flushCycleChecks(response);
+    // The read is only complete now; counting it outstanding until here keeps
+    // the backstop from rejecting the function's own group mid-read.
+    settleAsyncLeaf(response);
   });
 
   return readServerReference(
@@ -818,9 +845,23 @@ function loadServerObjectReference(
   if (serverReferencePromise === null) {
     fulfill();
   } else {
-    serverReferencePromise.then(fulfill, error => {
-      triggerErrorOnChunk(response, blockedPromise, error);
-    });
+    response._asyncLeaves++;
+    serverReferencePromise.then(
+      () => {
+        try {
+          fulfill();
+        } finally {
+          settleAsyncLeaf(response);
+        }
+      },
+      error => {
+        try {
+          triggerErrorOnChunk(response, blockedPromise, error);
+        } finally {
+          settleAsyncLeaf(response);
+        }
+      },
+    );
   }
   return readServerReference(response, blockedPromise, parentObject, key);
 }
@@ -1177,6 +1218,16 @@ export function reportGlobalError(response: Response, error: Error): void {
       }
     }
   });
+  // Blocked chunks are not in `_chunks` under their own status here, and a
+  // group that only waits on itself gets no other wake once input is done.
+  // Reject it now unless an asynchronous leaf might still complete it.
+  if (
+    response._parsing === 0 &&
+    response._asyncLeaves === 0 &&
+    response._blockedChunks.size > 0
+  ) {
+    rejectBlockedChunks(response);
+  }
 }
 
 function getChunk(response: Response, id: number): SomeChunk<any> {
@@ -1214,9 +1265,22 @@ function createModuleChunk(
   loading: Thenable<any>,
 ): BlockedChunk<any> {
   const chunk: BlockedChunk<any> = createBlockedChunk(response);
+  response._asyncLeaves++;
   loading.then(
-    () => initializeBlockedChunk(response, chunk, null, null),
-    error => triggerErrorOnChunk(response, chunk, error),
+    () => {
+      try {
+        initializeBlockedChunk(response, chunk, null, null);
+      } finally {
+        settleAsyncLeaf(response);
+      }
+    },
+    error => {
+      try {
+        triggerErrorOnChunk(response, chunk, error);
+      } finally {
+        settleAsyncLeaf(response);
+      }
+    },
   );
   return chunk;
 }
@@ -1805,11 +1869,116 @@ function flushCycleChecks(response: Response): void {
     queued.length = 0;
     response._flushingCycleChecks = false;
   }
+  // The backstop runs here, at the one point where the work that could still
+  // settle a chunk is done: the cycle checks have flushed and no reference is
+  // being fulfilled. It is skipped unless all input has arrived and no
+  // asynchronous leaf is outstanding, so it never pre-empts a group that a
+  // module load, Blob read or bound-argument read could still complete.
+  if (
+    response._closed &&
+    response._parsing === 0 &&
+    response._asyncLeaves === 0
+  ) {
+    if (response._blockedChunks.size > 0) {
+      rejectBlockedChunks(response);
+    }
+    if (response._openStreams.size > 0) {
+      errorOpenStreams(response);
+    }
+  }
   const listenerError = response._chunkListenerError;
   if (listenerError !== null) {
     response._chunkListenerError = null;
     throw listenerError.value;
   }
+}
+
+// Once all input has arrived and no asynchronous leaf is still outstanding, a
+// chunk that is still blocked waits only on other blocked chunks: an
+// ill-founded reference group that can never ground in a value. Rejecting one
+// member cascades to the rest through its failure listeners, so re-entry is
+// ignored and a single pass over the set settles every one.
+function rejectBlockedChunks(response: Response): void {
+  if (response._rejectingBlocked) {
+    return;
+  }
+  response._rejectingBlocked = true;
+  try {
+    const blocked = Array.from(response._blockedChunks);
+    let error: null | Error = null;
+    for (let i = 0; i < blocked.length; i++) {
+      const chunk = blocked[i];
+      if (chunk.status !== BLOCKED) {
+        // A cascade from an earlier member already settled this one.
+        continue;
+      }
+      if (error === null) {
+        error = new Error(
+          'A set of references in the reply only depend on each other and ' +
+            'never resolve to a value.',
+        );
+      }
+      const handler = response._handlers.get(chunk);
+      if (handler !== undefined) {
+        releaseHandler(response, handler);
+      } else {
+        response._blockedChunks.delete(chunk);
+      }
+      triggerErrorOnChunk(response, chunk, error);
+    }
+  } finally {
+    response._rejectingBlocked = false;
+  }
+}
+
+// Input is complete and no asynchronous leaf can add to a stream, so a stream
+// still open was never closed by a close row and never will be. Error it with
+// the same reason a truncated connection uses. A stream a close row already
+// closed ignores this.
+function errorOpenStreams(response: Response): void {
+  const streams = response._openStreams;
+  const open = Array.from(streams);
+  // Cleared before erroring so re-entry through a stream's own error handling
+  // finds nothing left to do.
+  streams.clear();
+  for (let i = 0; i < open.length; i++) {
+    // $FlowFixMe[incompatible-type] The reason is set once the response closed.
+    open[i].error(response._closedReason);
+  }
+}
+
+// A cycle merge found the forest path and the live wait chain out of step, a
+// state the bookkeeping should never reach. Reject every handler of the cycles
+// involved with a normal error routed to their chunks, so the group settles
+// instead of crashing or looping.
+function rejectCycleChain(
+  response: Response,
+  cycle: BlockedCycle,
+  chain: Array<BlockedCycle>,
+): void {
+  const error = new Error(
+    'A set of references in the reply only depend on each other and ' +
+      'never resolve to a value.',
+  );
+  const cycles = [cycle];
+  for (let i = 0; i < chain.length; i++) {
+    cycles.push(chain[i]);
+  }
+  for (let i = 0; i < cycles.length; i++) {
+    const handlers = cycles[i].handlers;
+    for (let j = 0; j < handlers.length; j++) {
+      rejectReference(response, handlers[j], error);
+    }
+  }
+}
+
+// An asynchronous leaf has finished. It is counted outstanding until here, so
+// that the cycle flushes its own work triggers see it as still pending and the
+// backstop never rejects a group this leaf was about to complete. The flush
+// here is where the backstop runs if the leaf was the last one.
+function settleAsyncLeaf(response: Response): void {
+  response._asyncLeaves--;
+  flushCycleChecks(response);
 }
 
 // The cycle the handler is in, which starts out as the handler alone. A
@@ -1898,16 +2067,36 @@ function checkBlockedCycle(response: Response, queued: BlockedCycle): void {
     // that is when a wait is recorded.
     const chain: Array<BlockedCycle> = [];
     let largest = cycle;
+    // The loop follows the live wait chain, which should retrace the forest
+    // path just walked back to `cycle`. If a recorded wait is missing or leads
+    // to a chunk with no handler, or the chain fails to close within the number
+    // of blocked chunks, that invariant is broken; reject the group instead of
+    // dereferencing nothing or looping forever.
+    let steps = response._blockedChunks.size + 1;
+    let broken = false;
     for (let current = other; current !== cycle; ) {
+      if (steps-- <= 0) {
+        broken = true;
+        break;
+      }
       chain.push(current);
       if (current.size > largest.size) {
         largest = current;
       }
-      const waitingFor: InitializationReference = current.waitingFor as any;
-      const next: InitializationHandler = response._handlers.get(
-        waitingFor.chunk,
-      ) as any;
+      const waitingFor = current.waitingFor;
+      const next =
+        waitingFor === null
+          ? undefined
+          : response._handlers.get(waitingFor.chunk);
+      if (next === undefined) {
+        broken = true;
+        break;
+      }
       current = getBlockedCycle(next);
+    }
+    if (broken) {
+      rejectCycleChain(response, cycle, chain);
+      return;
     }
     // The waits around the loop are cut before any member is linked to the
     // merged cycle, so that the forest never holds a loop.
@@ -2179,6 +2368,7 @@ function blockedOn(
 ): void {
   handler.chunk = chunk;
   response._handlers.set(chunk, handler);
+  response._blockedChunks.add(chunk);
 }
 
 // The chunk no longer waits for references.
@@ -2189,6 +2379,7 @@ function releaseHandler(
   const chunk = handler.chunk;
   if (chunk !== null) {
     response._handlers.delete(chunk);
+    response._blockedChunks.delete(chunk);
   }
   handler.references = null;
 }
@@ -2536,24 +2727,35 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
   // chunk. The buffer's bytes count against the array context of the model it
   // is read into.
   const chunk: BlockedChunk<T> = createBlockedChunk(response);
+  response._asyncLeaves++;
   promise.then(
     (buffer: ArrayBuffer) => {
-      let typedArray: T;
       try {
-        if (referenceArrayRoot !== null) {
-          bumpArrayCount(referenceArrayRoot, buffer.byteLength, response);
+        let typedArray: T;
+        try {
+          if (referenceArrayRoot !== null) {
+            bumpArrayCount(referenceArrayRoot, buffer.byteLength, response);
+          }
+          typedArray =
+            constructor === ArrayBuffer
+              ? (buffer as any)
+              : (new constructor(buffer) as any);
+        } catch (error) {
+          triggerErrorOnChunk(response, chunk, error);
+          return;
         }
-        typedArray =
-          constructor === ArrayBuffer
-            ? (buffer as any)
-            : (new constructor(buffer) as any);
-      } catch (error) {
-        triggerErrorOnChunk(response, chunk, error);
-        return;
+        initializeBlockedChunk(response, chunk, typedArray, null);
+      } finally {
+        settleAsyncLeaf(response);
       }
-      initializeBlockedChunk(response, chunk, typedArray, null);
     },
-    error => triggerErrorOnChunk(response, chunk, error),
+    error => {
+      try {
+        triggerErrorOnChunk(response, chunk, error);
+      } finally {
+        settleAsyncLeaf(response);
+      }
+    },
   );
   return waitForReference(
     response,
@@ -2575,6 +2777,7 @@ function resolveStream<T: ReadableStream | $AsyncIterable<any, any, void>>(
   const chunks = response._chunks;
   const chunk = createInitializedStreamChunk(response, stream, controller);
   chunks.set(id, chunk);
+  response._openStreams.add(controller);
 
   const prefix = response._prefix;
   // Stream chunks are written under a dedicated namespace so they can be
@@ -3200,6 +3403,10 @@ export function createResponse(
     _rootArrayContexts: new WeakMap(),
     _arraySizeLimit: arraySizeLimit,
     _handlers: new WeakMap(),
+    _blockedChunks: new Set(),
+    _asyncLeaves: 0,
+    _openStreams: new Set(),
+    _rejectingBlocked: false,
     _parsing: 0,
     _reservedCollections: new WeakMap(),
     _pendingSlots: new WeakMap(),
