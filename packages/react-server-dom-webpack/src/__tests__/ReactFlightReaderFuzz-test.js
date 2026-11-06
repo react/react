@@ -856,4 +856,67 @@ describe('ReactFlightReaderFuzz (node)', () => {
         roots: {entry: 'iterator', other: 'iterator'},
       }));
   });
+
+  describe('byte streams', () => {
+    it('byte stream read with a BYOB reader', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          bytes: {bytes: 2},
+          data: {object: {field0: 'ready'}},
+        },
+        roots: {entry: 'bytes', other: 'data'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('byte stream closed while a read is waiting', () =>
+      runGraph({
+        nodes: {array: {array: ['bytes']}, bytes: {bytes: 3}},
+        roots: {entry: 'array', other: 'array'},
+        packetSizes: [21, 100000],
+        yieldBetweenPackets: true,
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip.each(['bytes'])('%s shared between two collections', type =>
+      runGraph({
+        nodes: {
+          inner: {[type]: type === 'bytes' ? 2 : []},
+          first: {set: ['inner']},
+          second: {set: ['inner']},
+        },
+        roots: {entry: 'first', other: 'second'},
+      }),
+    );
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip.each(['bytes'])('%s in repeated stream items', type =>
+      runGraph({
+        nodes: {
+          inner: {[type]: type === 'bytes' ? 2 : []},
+          item: {array: ['inner']},
+          outer: {stream: ['item', 'item']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }),
+    );
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip.each(['bytes'])('%s shared between different stream items', type =>
+      runGraph({
+        nodes: {
+          inner:
+            type === 'bytes'
+              ? {bytes: 2}
+              : type === 'iterable'
+                ? {iterable: [], single: true}
+                : {stream: []},
+          first: {array: ['inner']},
+          second: {object: {again: 'inner'}},
+          outer: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }),
+    );
+  });
 });

@@ -128,13 +128,21 @@ function traverse(state, root, observe) {
       }
       if (
         metadata !== undefined &&
-        ['promise', 'stream', 'iterable'].includes(metadata.type)
+        ['promise', 'stream', 'iterable', 'bytes'].includes(metadata.type)
       ) {
         if (observe) {
           if (!state.observedAsyncValues.has(pair.received)) {
             state.observedAsyncValues.add(pair.received);
             if (metadata.type === 'promise') {
               observePromise(state, metadata, pair);
+            } else if (metadata.type === 'bytes') {
+              observeByteStream(
+                state,
+                metadata,
+                pair.expectedValue,
+                pair.received,
+                pair.path,
+              );
             } else if (metadata.type === 'iterable') {
               observeAsyncIterable(state, metadata, pair.received, pair.path);
             } else {
@@ -195,7 +203,7 @@ function compareValue(state, {expectedValue, received, path}, visited) {
       expect(typeof received.next).toBe('function');
     } else if (metadata.type === 'iterable') {
       expect(typeof received[Symbol.asyncIterator]).toBe('function');
-    } else if (metadata.type === 'stream') {
+    } else if (metadata.type === 'stream' || metadata.type === 'bytes') {
       expect(typeof received.getReader).toBe('function');
     } else if (metadata.type === 'promise') {
       expect(typeof received.then).toBe('function');
@@ -452,6 +460,67 @@ function observeAsyncIterable(state, metadata, received, path) {
   }
 }
 
+function observeByteStream(state, metadata, expectedValue, received, path) {
+  const expectedBytes = [].concat(...metadata.chunks.map(c => Array.from(c)));
+  const getProducedByteCount = () => {
+    let count = 0;
+    for (let i = 0; i < metadata.chunks.length; i++) {
+      if (!metadata.events[i].released) {
+        break;
+      }
+      count += metadata.chunks[i].length;
+    }
+    return count;
+  };
+  runAsyncTask(state, async () => {
+    const reader = received.getReader({mode: 'byob'});
+    const receivedBytes = [];
+    for (;;) {
+      const offset = receivedBytes.length;
+      // The default BYOB minimum is one byte. Don't wait for another
+      // chunk to fill the buffer.
+      const check = registerResultCheck(
+        state,
+        expectedValue,
+        path + '.byte' + offset,
+        () => {
+          const available =
+            getProducedByteCount() > offset ||
+            areAllEventsReleased(metadata.events);
+          return getResultExpectation(undefined, available, [], []);
+        },
+      );
+      let result;
+      try {
+        result = await reader.read(
+          new Uint8Array(1 + (receivedBytes.length % 3)),
+        );
+      } catch (error) {
+        handleResult(state, check, error, true);
+        return;
+      }
+      const {done, value} = result;
+      if (value) {
+        receivedBytes.push(...value);
+      }
+      expect(receivedBytes).toEqual(
+        expectedBytes.slice(
+          0,
+          Math.min(receivedBytes.length, getProducedByteCount()),
+        ),
+      );
+      if (done) {
+        expect(areAllEventsReleased(metadata.events)).toBe(true);
+        expect(receivedBytes).toEqual(expectedBytes);
+        handleResult(state, check, undefined);
+        break;
+      }
+      expect(receivedBytes.length).toBeGreaterThan(offset);
+      handleResult(state, check, undefined);
+    }
+  });
+}
+
 function observeIterator(state, metadata, received) {
   const items = [];
   for (let i = 0; i < metadata.items.length; i++) {
@@ -630,7 +699,7 @@ function getRequiredEvents(fixture, value) {
     // A containing object need not wait for its nested Promise's result.
     if (
       metadata !== undefined &&
-      ['promise', 'stream', 'iterable'].includes(metadata.type)
+      ['promise', 'stream', 'iterable', 'bytes'].includes(metadata.type)
     ) {
       continue;
     }
@@ -696,7 +765,7 @@ function collectModels(fixture) {
       const metadata = fixture.valueMetadata.get(value);
       if (
         metadata !== undefined &&
-        ['promise', 'stream', 'iterable'].includes(metadata.type)
+        ['promise', 'stream', 'iterable', 'bytes'].includes(metadata.type)
       ) {
         asyncValues.add(value);
         continue;
@@ -723,7 +792,7 @@ function collectModels(fixture) {
       if (metadata.state === 'fulfilled') {
         collectModel(metadata.value);
       }
-    } else {
+    } else if (metadata.type === 'stream' || metadata.type === 'iterable') {
       for (let i = 0; i < metadata.items.length; i++) {
         if (!metadata.events[i].released) {
           break;
