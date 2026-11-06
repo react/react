@@ -1019,7 +1019,10 @@ fn scope_resolution_rename() {
     let mut skipped = 0;
 
     let known_failures: &[&str] = &[
+        // Lone-surrogate fixtures need bridge sanitization, which this test bypasses.
         "lone-surrogate-string-values",
+        "lone-surrogate-after-backslashes",
+        "lone-surrogate-escape-controls",
         "component-in-object-method-body.flow",
         "error.todo-hoist-type-alias-before-declaration",
         "error.todo-round2_severity_diff",
