@@ -63,8 +63,20 @@ function createOracle(
       );
     },
     async checkForMutations() {
-      state.receivedValues.forEach(root => traverse(state, root, false));
-      throwIfFailed(state);
+      state.pendingTasks++;
+      try {
+        const blobs = state.receivedValues.flatMap(root =>
+          traverse(state, root, false),
+        );
+        await Promise.all(
+          blobs.map(({expectedValue, received}) =>
+            assertBlobContents(expectedValue, received),
+          ),
+        );
+        throwIfFailed(state);
+      } finally {
+        state.pendingTasks--;
+      }
     },
   };
 }
@@ -76,6 +88,7 @@ function observeValue(state, expectedValue, received, path) {
 }
 
 function traverse(state, root, observe) {
+  const blobs = [];
   const todo = [root];
   // One source object may have several received copies. Visit each copy,
   // including on a later check, rather than stopping at the source object.
@@ -88,6 +101,15 @@ function traverse(state, root, observe) {
         continue;
       }
       const metadata = state.fixture.valueMetadata.get(pair.expectedValue);
+      if (metadata === undefined && pair.expectedValue instanceof Blob) {
+        if (observe) {
+          runAsyncTask(state, () =>
+            assertBlobContents(pair.expectedValue, pair.received),
+          );
+        } else {
+          blobs.push(pair);
+        }
+      }
       if (metadata !== undefined && metadata.type === 'iterator') {
         if (observe && !state.iteratorItems.has(pair.received)) {
           observeIterator(state, metadata, pair.received);
@@ -140,6 +162,7 @@ function traverse(state, root, observe) {
       throw error;
     }
   }
+  return blobs;
 }
 
 // This is the same comparison for initial delivery and later mutation checks.
@@ -204,6 +227,41 @@ function compareValue(state, {expectedValue, received, path}, visited) {
       },
     ]);
   }
+  if (expectedValue instanceof Date) {
+    expect(received).toBeInstanceOf(Date);
+    expect(received.getTime()).toBe(expectedValue.getTime());
+    return [];
+  }
+  if (
+    expectedValue instanceof ArrayBuffer ||
+    ArrayBuffer.isView(expectedValue)
+  ) {
+    expect(Object.prototype.toString.call(received)).toBe(
+      Object.prototype.toString.call(expectedValue),
+    );
+    expect(getBytes(received)).toEqual(state.fixture.bytes.get(expectedValue));
+    return [];
+  }
+  if (expectedValue instanceof Blob) {
+    expect(received).toBeInstanceOf(Blob);
+    expect(received.type).toBe(expectedValue.type);
+    expect(received.size).toBe(expectedValue.size);
+    return [];
+  }
+  if (expectedValue instanceof FormData) {
+    expect(received).toBeInstanceOf(FormData);
+    const entries = Array.from(received.entries());
+    const expectedEntries = Array.from(expectedValue.entries());
+    expect(entries.length).toBe(expectedEntries.length);
+    return expectedEntries.map(([key, value], i) => {
+      expect(entries[i][0]).toBe(key);
+      return {
+        expectedValue: value,
+        received: entries[i][1],
+        path: path + '.form' + i,
+      };
+    });
+  }
   const isArray = Array.isArray(expectedValue);
   if (isArray) {
     expect(Array.isArray(received)).toBe(true);
@@ -219,6 +277,20 @@ function compareValue(state, {expectedValue, received, path}, visited) {
     received: received[key],
     path: isArray ? path + '[' + key + ']' : path + '.' + key,
   }));
+}
+
+function getBytes(value) {
+  return value instanceof ArrayBuffer
+    ? Array.from(new Uint8Array(value))
+    : Array.from(
+        new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+      );
+}
+
+async function assertBlobContents(expectedValue, received) {
+  expect(Array.from(new Uint8Array(await received.arrayBuffer()))).toEqual(
+    Array.from(new Uint8Array(await expectedValue.arrayBuffer())),
+  );
 }
 
 function observeStream(state, metadata, expectedValue, received, path) {
@@ -531,7 +603,13 @@ function getValueDependencies(fixture, value) {
   if (value instanceof Map) {
     return Array.from(value.entries()).flat();
   }
-  return Object.values(value);
+  if (value instanceof FormData) {
+    return Array.from(value.values());
+  }
+  return Array.isArray(value) ||
+    Object.getPrototypeOf(value) === Object.prototype
+    ? Object.values(value)
+    : [];
 }
 
 function getRequiredEvents(fixture, value) {

@@ -501,6 +501,87 @@ describe('ReactFlightReaderFuzz (node)', () => {
       }));
   });
 
+  describe('native graph values', () => {
+    it('native contents share a cycle while a client module is loading', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          bigint: {special: 'bigint'},
+          nan: {special: 'nan'},
+          negativeZero: {special: 'negative zero'},
+          infinity: {special: 'infinity'},
+          symbol: {special: 'symbol'},
+          escaped: {special: 'escaped'},
+          text: {text: 'text'},
+          date: {date: 1700000000000},
+          buffer: {special: 'buffer'},
+          binary: {binary: 3},
+          typed: {special: 'typed array'},
+          view: {special: 'data view'},
+          bigints: {special: 'bigint array'},
+          blob: {blob: 'blob'},
+          form: {special: 'form data'},
+          atoms: {
+            array: [
+              'bigint',
+              'nan',
+              'negativeZero',
+              'infinity',
+              'symbol',
+              'escaped',
+              'text',
+              'date',
+              'buffer',
+              'binary',
+              'typed',
+              'view',
+              'bigints',
+              'blob',
+              'form',
+              'ready',
+              'cycle',
+            ],
+          },
+          cycle: {object: {values: 'atoms', self: 'cycle'}},
+          later: {promise: 'atoms'},
+        },
+        roots: {entry: 'cycle', other: 'later'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('keeps undefined object properties', () =>
+      runGraph({
+        nodes: {
+          missing: {special: 'undefined'},
+          object: {object: {present: 'missing'}},
+        },
+        roots: {entry: 'object', other: 'object'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('a large binary value written in two places', () =>
+      runGraph({
+        nodes: {
+          binary: {special: 'large binary'},
+          first: {array: ['binary']},
+          second: {object: {again: 'binary'}},
+          stream: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('Blob beside a cycle', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          blob: {blob: 'blob'},
+          array: {array: ['blob', 'ready', 'array']},
+        },
+        roots: {entry: 'array', other: 'blob'},
+      }));
+  });
+
   describe('synchronous iterator graphs', () => {
     it('round-trips a synchronous iterator in order', async () => {
       const received = await roundTrip(['first', {value: 'second'}].values());
