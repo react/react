@@ -10,6 +10,9 @@
 import {encode} from '@jridgewell/sourcemap-codec';
 import {symbolicateSource} from 'react-devtools-shared/src/symbolicateSource';
 
+global.TextEncoder = require('util').TextEncoder;
+global.TextDecoder = require('util').TextDecoder;
+
 // Generated line 2, column 5 maps to original line 10, column 6 (all 1-based).
 function createSourceMap(sources: Array<string>) {
   return {
@@ -22,7 +25,8 @@ function createSourceMap(sources: Array<string>) {
 }
 
 function toDataURL(sourceMap: Object): string {
-  return 'data:application/json;base64,' + btoa(JSON.stringify(sourceMap));
+  const bytes = new TextEncoder().encode(JSON.stringify(sourceMap));
+  return 'data:application/json;base64,' + btoa(String.fromCharCode(...bytes));
 }
 
 function createScript(sourceMappingURL: string): string {
@@ -81,6 +85,50 @@ describe('symbolicateSource', () => {
       ),
     ).toEqual({
       location: ['', 'http://localhost:3000/src/App.tsx', 10, 6],
+      ignored: false,
+    });
+  });
+
+  it('should decode inline source maps instead of fetching them', async () => {
+    const fetchFileWithCaching = createFetchFileWithCaching({
+      'http://localhost:3000/src/App.tsx': createScript(
+        toDataURL(createSourceMap(['App.tsx'])),
+      ),
+    });
+
+    await symbolicateSource(
+      fetchFileWithCaching,
+      'http://localhost:3000/src/App.tsx',
+      2,
+      5,
+    );
+
+    expect(fetchFileWithCaching.mock.calls).toEqual([
+      ['http://localhost:3000/src/App.tsx'],
+    ]);
+  });
+
+  it('should decode UTF-8 in inline source maps', async () => {
+    const fetchFileWithCaching = createFetchFileWithCaching({
+      'http://localhost:3000/src/App.tsx': createScript(
+        toDataURL(createSourceMap(['Ünïcødé.tsx'])),
+      ),
+    });
+
+    expect(
+      await symbolicateSource(
+        fetchFileWithCaching,
+        'http://localhost:3000/src/App.tsx',
+        2,
+        5,
+      ),
+    ).toEqual({
+      location: [
+        '',
+        new URL('Ünïcødé.tsx', 'http://localhost:3000/src/').toString(),
+        10,
+        6,
+      ],
       ignored: false,
     });
   });
