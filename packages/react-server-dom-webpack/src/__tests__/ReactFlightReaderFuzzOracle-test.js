@@ -117,6 +117,41 @@ describe('FlightReaderOracle', () => {
     expect(oracle.isComplete()).toBe(true);
   });
 
+  // Waiting for all inputs hides an error wakeup. Matching only its message
+  // also accepts a different local error that the failed module never threw.
+  it('requires the actual input error without waiting for other inputs', () => {
+    const first = {};
+    const second = {};
+    const error = new Error('load failed');
+    const source = {first, second};
+    const options = {
+      valueMetadata: new Map([
+        [first, {type: 'module', value: 'first'}],
+        [second, {type: 'module', value: 'second'}],
+      ]),
+      requiredEvents: new Map([
+        [first, [{released: true, error}]],
+        [second, [{released: false}]],
+      ]),
+    };
+    const {oracle, reject} = createTestOracle(source, options);
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root',
+    ]);
+    reject(error);
+    expect(oracle.isComplete()).toBe(true);
+
+    const wrongError = createTestOracle(source, options);
+    wrongError.reject(new Error('load failed'));
+    expect(() => wrongError.oracle.throwIfFailed()).toThrow('root: rejected');
+
+    const fulfilled = createTestOracle(source, options);
+    fulfilled.resolve({first: 'first', second: 'second'});
+    expect(() => fulfilled.oracle.throwIfFailed()).toThrow(
+      'expected a rejection',
+    );
+  });
+
   // A reason of undefined must not be treated as a fulfilled undefined value.
   it('distinguishes rejection with undefined from fulfillment', () => {
     const valid = createTestOracle(undefined);

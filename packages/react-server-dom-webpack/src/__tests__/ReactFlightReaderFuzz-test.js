@@ -271,22 +271,27 @@ describe('ReactFlightReaderFuzz (node)', () => {
     });
   }
 
-  // This fixed graph reaches the same source object through an ordinary
-  // property, another property, and a later Promise result. Release the source
-  // Promise before its module, then require delivery before the unrelated EOF.
+  // Check progress before EOF after each source or client-load event. By
+  // default, resolve source Promises before loading their client modules.
   async function runGraph(graph) {
     const fixture = createFixture(graph, {WebpackMock});
     const oracle = createOracle(fixture);
-    const eventOrder = [
-      'resolve later to shared',
-      'load ready',
-      'resolve an unrelated Promise',
-    ];
-    const events = eventOrder.map(label => {
-      const event = fixture.events.find(candidate => candidate.label === label);
-      expect(event).toBeDefined();
-      return event;
-    });
+    const events = fixture.events.filter(
+      event => event !== fixture.unrelatedEvent,
+    );
+    if (graph.events === undefined) {
+      events.sort((a, b) => +a.isClient - +b.isClient);
+    } else {
+      graph.events.forEach(label => {
+        expect(events.some(event => event.label === label)).toBe(true);
+      });
+      const position = label => {
+        const index = graph.events.indexOf(label);
+        return index === -1 ? graph.events.length : index;
+      };
+      events.sort((a, b) => position(a.label) - position(b.label));
+    }
+    events.push(fixture.unrelatedEvent);
 
     await withResponse(fixture.model, async ({response, stream}) => {
       oracle.subscribeToRoot(response, fixture.model, {subscribeAgain: true});
@@ -313,6 +318,17 @@ describe('ReactFlightReaderFuzz (node)', () => {
   }
 
   describe('Promise and client-module graphs', () => {
+    it('rejects a containing model when its module fails before another module loads', () =>
+      runGraph({
+        nodes: {
+          failed: {module: 'failed', fail: 'load'},
+          ready: {module: 'ready'},
+          object: {object: {failed: 'failed', ready: 'ready'}},
+        },
+        roots: {entry: 'object', other: 'object'},
+        events: ['reject failed', 'load ready'],
+      }));
+
     it.each(['', ':', '%3A', '%25:', ':%3A:', 'constructor', '01', '0', '🙂'])(
       'references through the property name %j',
       key =>

@@ -37,6 +37,10 @@ function createFixture(graph, {WebpackMock}) {
     const node = nodes[name];
     if (node.module !== undefined) {
       const load = createResolvablePromise();
+      const error =
+        node.fail === 'load'
+          ? new Error('module ' + name + ' failed to load')
+          : undefined;
       const {value} = WebpackMock.clientExports(
         {value: node.module},
         name,
@@ -45,7 +49,11 @@ function createFixture(graph, {WebpackMock}) {
       );
       values[name] = value;
       valueMetadata.set(value, {type: 'module', value: node.module});
-      const event = createEvent('load ' + name, () => load.resolve());
+      const event = createEvent(
+        (error !== undefined ? 'reject ' : 'load ') + name,
+        () => (error !== undefined ? load.reject(error) : load.resolve()),
+        {error, isClient: true},
+      );
       events.push(event);
       requiredEvents.set(value, [event]);
     } else if (node.object !== undefined) {
@@ -99,16 +107,20 @@ function createFixture(graph, {WebpackMock}) {
   };
 }
 
-function createEvent(label, run) {
-  return {label, run, released: false};
+function createEvent(label, run, {error, isClient = false} = {}) {
+  return {label, run, released: false, error, isClient};
 }
 
 function createResolvablePromise() {
   let resolve;
-  const promise = new Promise(done => {
-    resolve = done;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return {promise, resolve};
+  // The source may fail before the reader has subscribed.
+  promise.then(undefined, () => {});
+  return {promise, resolve, reject};
 }
 
 module.exports = {createFixture};

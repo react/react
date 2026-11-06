@@ -27,8 +27,12 @@ function createOracle(
     },
     subscribeToRoot(root, expectedValue, {subscribeAgain = false} = {}) {
       const check = registerResultCheck(state, expectedValue, 'root', () => {
-        const ready = areInputsReady(fixture, expectedValue);
-        return {value: expectedValue, ready};
+        const events = getRequiredEvents(fixture, expectedValue);
+        return getResultExpectation(
+          expectedValue,
+          canSettle(events),
+          getReleasedErrors(events),
+        );
       });
       subscribe(state, root, check, subscribeAgain);
     },
@@ -38,7 +42,7 @@ function createOracle(
     getMissingResults() {
       throwIfFailed(state);
       return state.resultChecks.filter(
-        check => !check.done && check.getExpectation().ready,
+        check => !check.done && check.getExpectation().mustSettle,
       );
     },
     isComplete() {
@@ -148,17 +152,28 @@ function registerResultCheck(state, expectedValue, path, getExpectation) {
   return check;
 }
 
+function getResultExpectation(value, inputsReady, errors) {
+  return {
+    value,
+    canFulfill: inputsReady && errors.length === 0,
+    errors: inputsReady ? errors : [],
+    mustSettle: inputsReady,
+  };
+}
+
 function observePromise(state, metadata, {expectedValue, received, path}) {
   const check = registerResultCheck(
     state,
     expectedValue,
     path + '.then',
-    () => ({
-      value: metadata.value,
-      ready:
-        metadata.state === 'fulfilled' &&
-        areInputsReady(state.fixture, metadata.value),
-    }),
+    () => {
+      const events = getRequiredEvents(state.fixture, metadata.value);
+      return getResultExpectation(
+        metadata.value,
+        metadata.state === 'fulfilled' && canSettle(events),
+        getReleasedErrors(events),
+      );
+    },
   );
   subscribe(state, received, check, true);
 }
@@ -183,17 +198,22 @@ function subscribe(state, thenable, check, subscribeAgain) {
       expect(check.done).toBe(false);
       const expectation = check.getExpectation();
       if (rejected) {
-        // This slice has no expected source or module failures. In particular,
-        // rejection with undefined must not pass as fulfillment of undefined.
-        throw new Error(
-          check.path + ': unexpected rejection: ' + String(value),
-          {cause: value},
-        );
+        if (expectation.errors.length === 0) {
+          throw new Error(
+            check.path + ': unexpected rejection: ' + String(value),
+            {cause: value},
+          );
+        }
+        assertExpectedError(value, expectation.errors, check.path);
+      } else {
+        if (!expectation.canFulfill) {
+          if (expectation.mustSettle) {
+            throw new Error(check.path + ': expected a rejection');
+          }
+          throw new Error('Delivered before its inputs arrived: ' + check.path);
+        }
+        observeValue(state, expectation.value, value, check.path);
       }
-      if (!expectation.ready) {
-        throw new Error('Delivered before its inputs arrived: ' + check.path);
-      }
-      observeValue(state, expectation.value, value, check.path);
       check.done = true;
     });
     if (subscribeAgain) {
@@ -212,9 +232,23 @@ function subscribe(state, thenable, check, subscribeAgain) {
   );
 }
 
-function areInputsReady(fixture, value) {
+function assertExpectedError(error, expected, path) {
+  // A client module failure must preserve the exact local error object.
+  if (!expected.some(candidate => candidate === error)) {
+    throw new Error(
+      path +
+        ': rejected with "' +
+        String(error) +
+        '", expected ' +
+        expected.map(candidate => '"' + candidate.message + '"').join(' or '),
+    );
+  }
+}
+
+function getRequiredEvents(fixture, value) {
   const todo = [value];
   const seen = new Set();
+  const events = new Set();
   while (todo.length > 0) {
     const current = todo.pop();
     if (
@@ -230,15 +264,28 @@ function areInputsReady(fixture, value) {
     if (metadata !== undefined && metadata.type === 'promise') {
       continue;
     }
-    const events = fixture.requiredEvents.get(current) || [];
-    if (events.some(event => !event.released)) {
-      return false;
-    }
+    (fixture.requiredEvents.get(current) || []).forEach(event =>
+      events.add(event),
+    );
     if (metadata === undefined) {
       todo.push(...Object.values(current));
     }
   }
-  return true;
+  return Array.from(events);
+}
+
+function getReleasedErrors(events) {
+  return events
+    .filter(event => event.released && event.error !== undefined)
+    .map(event => event.error);
+}
+
+function canSettle(events) {
+  // One failed dependency rejects the result without waiting for other loads.
+  return (
+    events.every(event => event.released) ||
+    getReleasedErrors(events).length > 0
+  );
 }
 
 function guard(state, run) {
