@@ -115,8 +115,8 @@ export default function SearchInput({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      const {key, metaKey} = event;
-      if (key === 'f' && metaKey) {
+      const {key, ctrlKey, metaKey} = event;
+      if (key === 'f' && (ctrlKey || metaKey)) {
         input.focus();
         event.preventDefault();
         event.stopPropagation();
