@@ -3508,12 +3508,17 @@ function serializeIterator(
 function serializeTypedArray(
   request: Request,
   tag: string,
+  value: ArrayBuffer | $ArrayBufferView,
   typedArray: $ArrayBufferView,
 ): string {
   request.pendingChunks++;
   const bufferId = request.nextChunkId++;
   emitTypedArrayChunk(request, bufferId, tag, typedArray, false);
-  return serializeByValueID(bufferId);
+  const reference = serializeByValueID(bufferId);
+  // A destination may transfer the bytes rather than copy them, which detaches
+  // the buffer, so any other place that holds the value refers to this row.
+  request.writtenObjects.set(value, reference);
+  return reference;
 }
 
 function serializeDebugTypedArray(
@@ -4150,55 +4155,55 @@ function renderModelDestructive(
       return serializeErrorValue(request, value);
     }
     if (value instanceof ArrayBuffer) {
-      return serializeTypedArray(request, 'A', new Uint8Array(value));
+      return serializeTypedArray(request, 'A', value, new Uint8Array(value));
     }
     if (value instanceof Int8Array) {
       // char
-      return serializeTypedArray(request, 'O', value);
+      return serializeTypedArray(request, 'O', value, value);
     }
     if (value instanceof Uint8Array) {
       // unsigned char
-      return serializeTypedArray(request, 'o', value);
+      return serializeTypedArray(request, 'o', value, value);
     }
     if (value instanceof Uint8ClampedArray) {
       // unsigned clamped char
-      return serializeTypedArray(request, 'U', value);
+      return serializeTypedArray(request, 'U', value, value);
     }
     if (value instanceof Int16Array) {
       // sort
-      return serializeTypedArray(request, 'S', value);
+      return serializeTypedArray(request, 'S', value, value);
     }
     if (value instanceof Uint16Array) {
       // unsigned short
-      return serializeTypedArray(request, 's', value);
+      return serializeTypedArray(request, 's', value, value);
     }
     if (value instanceof Int32Array) {
       // long
-      return serializeTypedArray(request, 'L', value);
+      return serializeTypedArray(request, 'L', value, value);
     }
     if (value instanceof Uint32Array) {
       // unsigned long
-      return serializeTypedArray(request, 'l', value);
+      return serializeTypedArray(request, 'l', value, value);
     }
     if (value instanceof Float32Array) {
       // float
-      return serializeTypedArray(request, 'G', value);
+      return serializeTypedArray(request, 'G', value, value);
     }
     if (value instanceof Float64Array) {
       // double
-      return serializeTypedArray(request, 'g', value);
+      return serializeTypedArray(request, 'g', value, value);
     }
     if (value instanceof BigInt64Array) {
       // number
-      return serializeTypedArray(request, 'M', value);
+      return serializeTypedArray(request, 'M', value, value);
     }
     if (value instanceof BigUint64Array) {
       // unsigned number
       // We use "m" instead of "n" since JSON can start with "null"
-      return serializeTypedArray(request, 'm', value);
+      return serializeTypedArray(request, 'm', value, value);
     }
     if (value instanceof DataView) {
-      return serializeTypedArray(request, 'V', value);
+      return serializeTypedArray(request, 'V', value, value);
     }
     // TODO: Blob is not available in old Node. Remove the typeof check later.
     if (typeof Blob === 'function' && value instanceof Blob) {
@@ -6218,68 +6223,64 @@ function emitChunk(
     emitModelChunk(request, id, json);
     return;
   }
+  let typedArrayTag: void | string;
+  let typedArrayView: void | $ArrayBufferView;
   if (value instanceof ArrayBuffer) {
-    emitTypedArrayChunk(request, id, 'A', new Uint8Array(value), false);
-    return;
-  }
-  if (value instanceof Int8Array) {
-    // char
-    emitTypedArrayChunk(request, id, 'O', value, false);
-    return;
-  }
-  if (value instanceof Uint8Array) {
-    // unsigned char
-    emitTypedArrayChunk(request, id, 'o', value, false);
-    return;
-  }
-  if (value instanceof Uint8ClampedArray) {
-    // unsigned clamped char
-    emitTypedArrayChunk(request, id, 'U', value, false);
-    return;
-  }
-  if (value instanceof Int16Array) {
-    // sort
-    emitTypedArrayChunk(request, id, 'S', value, false);
-    return;
-  }
-  if (value instanceof Uint16Array) {
-    // unsigned short
-    emitTypedArrayChunk(request, id, 's', value, false);
-    return;
-  }
-  if (value instanceof Int32Array) {
-    // long
-    emitTypedArrayChunk(request, id, 'L', value, false);
-    return;
-  }
-  if (value instanceof Uint32Array) {
-    // unsigned long
-    emitTypedArrayChunk(request, id, 'l', value, false);
-    return;
-  }
-  if (value instanceof Float32Array) {
-    // float
-    emitTypedArrayChunk(request, id, 'G', value, false);
-    return;
-  }
-  if (value instanceof Float64Array) {
-    // double
-    emitTypedArrayChunk(request, id, 'g', value, false);
-    return;
-  }
-  if (value instanceof BigInt64Array) {
-    // number
-    emitTypedArrayChunk(request, id, 'M', value, false);
-    return;
-  }
-  if (value instanceof BigUint64Array) {
-    // unsigned number
+    typedArrayTag = 'A';
+    typedArrayView = new Uint8Array(value);
+  } else if (value instanceof Int8Array) {
+    typedArrayTag = 'O'; // char
+    typedArrayView = value;
+  } else if (value instanceof Uint8Array) {
+    typedArrayTag = 'o'; // unsigned char
+    typedArrayView = value;
+  } else if (value instanceof Uint8ClampedArray) {
+    typedArrayTag = 'U'; // unsigned clamped char
+    typedArrayView = value;
+  } else if (value instanceof Int16Array) {
+    typedArrayTag = 'S'; // sort
+    typedArrayView = value;
+  } else if (value instanceof Uint16Array) {
+    typedArrayTag = 's'; // unsigned short
+    typedArrayView = value;
+  } else if (value instanceof Int32Array) {
+    typedArrayTag = 'L'; // long
+    typedArrayView = value;
+  } else if (value instanceof Uint32Array) {
+    typedArrayTag = 'l'; // unsigned long
+    typedArrayView = value;
+  } else if (value instanceof Float32Array) {
+    typedArrayTag = 'G'; // float
+    typedArrayView = value;
+  } else if (value instanceof Float64Array) {
+    typedArrayTag = 'g'; // double
+    typedArrayView = value;
+  } else if (value instanceof BigInt64Array) {
+    typedArrayTag = 'M'; // number
+    typedArrayView = value;
+  } else if (value instanceof BigUint64Array) {
     // We use "m" instead of "n" since JSON can start with "null"
-    emitTypedArrayChunk(request, id, 'm', value, false);
-    return;
+    typedArrayTag = 'm'; // unsigned number
+    typedArrayView = value;
+  } else if (value instanceof DataView) {
+    typedArrayTag = 'V';
+    typedArrayView = value;
   }
-  if (value instanceof DataView) {
-    emitTypedArrayChunk(request, id, 'V', value, false);
+  if (typedArrayTag !== undefined && typedArrayView !== undefined) {
+    // A binary value is written straight into the stream item's row. The
+    // destination may transfer, and thereby detach, a view that spans its whole
+    // buffer. Copy such a view so the source stays intact for a later
+    // occurrence of the same value elsewhere in the stream.
+    let chunk: $ArrayBufferView = typedArrayView;
+    if (
+      typedArrayView.byteOffset === 0 &&
+      typedArrayView.byteLength === typedArrayView.buffer.byteLength
+    ) {
+      chunk = new Uint8Array(
+        typedArrayView.buffer.slice(0, typedArrayView.byteLength),
+      );
+    }
+    emitTypedArrayChunk(request, id, typedArrayTag, chunk, false);
     return;
   }
   // For anything else we need to try to serialize it using JSON.

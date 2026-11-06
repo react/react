@@ -966,8 +966,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'object', other: 'object'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a large binary value written in two places', () =>
+    it('a large binary value written in two places', () =>
       runGraph({
         nodes: {
           binary: {special: 'large binary'},
