@@ -393,6 +393,11 @@ type Response = {
   _encodeFormAction: void | EncodeFormActionCallback,
   _nonce: ?string,
   _chunks: Map<number, SomeChunk<any>>,
+  // A Set or Map that was referenced before its entries chunk had initialized,
+  // by that chunk. Every reference to the chunk receives the same collection,
+  // including a reference from inside its own entries. The entries are copied
+  // in when the chunk initializes.
+  _reservedCollections: WeakMap<SomeChunk<any>, Set<any> | Map<any, any>>,
   _stringDecoder: StringDecoder,
   _closed: boolean,
   _closedReason: mixed,
@@ -1030,6 +1035,10 @@ type InitializationReference = {
     key: string,
   ) => any,
   path: Array<string>,
+  // The collection reserved for the chunk this reference waits for, when it
+  // constructs a Set or Map. It already sits in the slot; it is the mapped
+  // value once the chunk initializes.
+  collection: null | Set<any> | Map<any, any>,
   isDebug?: boolean, // DEV-only
 };
 type PendingInitializationHandler = {
@@ -1751,10 +1760,29 @@ function initializeBlockedChunk<T>(
   initializedChunk.status = INITIALIZED;
   initializedChunk.value = value;
   initializedChunk.reason = reason;
+  const reservedCollection = response._reservedCollections.get(chunk);
+  if (reservedCollection !== undefined) {
+    fillReservedCollection(reservedCollection, value as any);
+  }
   if (resolveListeners !== null) {
     wakeChunk(response, resolveListeners, value, initializedChunk);
   } else if (__DEV__) {
     processChunkDebugInfo(response, initializedChunk, value);
+  }
+}
+
+function fillReservedCollection(
+  collection: Set<any> | Map<any, any>,
+  entries: Array<any>,
+): void {
+  if (collection instanceof Set) {
+    for (let i = 0; i < entries.length; i++) {
+      collection.add(entries[i]);
+    }
+  } else {
+    for (let i = 0; i < entries.length; i++) {
+      collection.set(entries[i][0], entries[i][1]);
+    }
   }
 }
 
@@ -1906,7 +1934,10 @@ function fulfillReference(
       break;
     }
 
-    const mappedValue = map(response, value, parentObject, key);
+    const mappedValue =
+      reference.collection !== null
+        ? reference.collection
+        : map(response, value, parentObject, key);
     installReference(response, reference, mappedValue, fulfilledChunk);
   } catch (error) {
     rejectReference(response, reference.handler, error);
@@ -2064,6 +2095,31 @@ function waitForReference<T>(
   );
   addReferenceListener(referencedChunk, reference);
 
+  if (
+    path.length === 0 &&
+    ((map as any) === createSet || (map as any) === createMap)
+  ) {
+    // The collection exists before its entries do, so that a reference to it
+    // from inside the entries, or from anywhere else before they arrive, is
+    // to the final object. Only a reference with no path reserves: a path
+    // leads to a value inside the row, not to the row's own collection, so it
+    // builds its own. The writer gives each collection its own row, and one
+    // row is only ever one kind.
+    const wantSet = (map as any) === createSet;
+    let collection = response._reservedCollections.get(referencedChunk);
+    if (collection === undefined) {
+      collection = wantSet ? new Set() : new Map();
+      response._reservedCollections.set(referencedChunk, collection);
+    } else if (wantSet !== collection instanceof Set) {
+      throw new Error(
+        'A referenced row was decoded as both a Set and a Map. This is not ' +
+          'a shape the React Server emits.',
+      );
+    }
+    reference.collection = collection;
+    return collection as any;
+  }
+
   // Return a place holder value for now.
   return null as any;
 }
@@ -2091,6 +2147,7 @@ function createInitializationReference<T>(
     key,
     map,
     path,
+    collection: null,
   };
   if (__DEV__) {
     reference.isDebug = isAwaitingDebugInfo;
@@ -2504,7 +2561,26 @@ function getOutlinedModel<T>(
         break;
       }
 
-      const chunkValue = map(response, value, parentObject, key);
+      let chunkValue;
+      const reservedCollection =
+        path.length === 0 &&
+        ((map as any) === createSet || (map as any) === createMap)
+          ? response._reservedCollections.get(chunk)
+          : undefined;
+      if (reservedCollection !== undefined) {
+        if (
+          ((map as any) === createSet) !==
+          reservedCollection instanceof Set
+        ) {
+          throw new Error(
+            'A referenced row was decoded as both a Set and a Map. This is ' +
+              'not a shape the React Server emits.',
+          );
+        }
+        chunkValue = reservedCollection as any;
+      } else {
+        chunkValue = map(response, value, parentObject, key);
+      }
       if (__DEV__) {
         if (
           parentObject[0] === REACT_ELEMENT_TYPE &&
@@ -3072,6 +3148,7 @@ function ResponseInstance(
   this._encodeFormAction = encodeFormAction;
   this._nonce = nonce;
   this._chunks = chunks;
+  this._reservedCollections = new WeakMap();
   // Preserve a leading U+FEFF instead of consuming it as an encoding signature.
   this._stringDecoder = createStringDecoder(true);
   this._closed = false;
