@@ -88,7 +88,9 @@ function getActiveElementDeep(containerInfo) {
  * and `selectionEnd` rows.
  */
 export function hasSelectionCapabilities(elem) {
-  const nodeName = elem && elem.nodeName && elem.nodeName.toLowerCase();
+  // `nodeName` isn't a string on a <form> with a control named "nodeName".
+  const nodeName =
+    elem && typeof elem.nodeName === 'string' && elem.nodeName.toLowerCase();
   return (
     nodeName &&
     ((nodeName === 'input' &&
