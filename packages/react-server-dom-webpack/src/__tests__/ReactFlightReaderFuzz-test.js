@@ -1304,8 +1304,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   });
 
   describe('stream cancellation', () => {
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('stream canceled while the writer is still producing', () =>
+    it('stream canceled while the writer is still producing', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
