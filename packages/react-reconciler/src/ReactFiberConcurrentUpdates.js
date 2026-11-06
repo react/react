@@ -133,6 +133,7 @@ export function enqueueConcurrentHookUpdateAndEagerlyBailout<S, A>(
   // only reason we queue it is in case there's a subsequent higher priority
   // update that causes it to be rebased.
   const lane = NoLane;
+  update.lane = NoLane;
   const concurrentQueue: ConcurrentQueue = queue as any;
   const concurrentUpdate: ConcurrentUpdate = update as any;
   enqueueUpdate(fiber, concurrentQueue, concurrentUpdate, lane);
