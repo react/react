@@ -308,6 +308,28 @@ function getOwnerDocumentFromRootContainer(
     : rootContainerElement.ownerDocument;
 }
 
+export function waitForHydrationIfBlocked(
+  rootContainerElement: Element | Document | DocumentFragment,
+): null | Promise<void> {
+  if (rootContainerElement.nodeType !== DOCUMENT_NODE) {
+    return null;
+  }
+  const ownerDocument = getOwnerDocumentFromRootContainer(rootContainerElement);
+  if (
+    ownerDocument.defaultView === null ||
+    ownerDocument.readyState !== DOCUMENT_READY_STATE_LOADING
+  ) {
+    return null;
+  }
+  return new Promise(resolve => {
+    const listener = () => {
+      ownerDocument.removeEventListener('DOMContentLoaded', listener);
+      resolve();
+    };
+    ownerDocument.addEventListener('DOMContentLoaded', listener);
+  });
+}
+
 export function getRootHostContext(
   rootContainerInstance: Container,
 ): HostContext {
