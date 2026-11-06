@@ -143,6 +143,10 @@ export function resolveOptions(
     }
   } else if (rawOpts.sources != null && filename == null) {
     shouldCompile = false; // sources specified but no filename
+  } else if (filename != null) {
+    // Match the TypeScript plugin's default `sources` filter (Options.ts):
+    // skip node_modules when the caller didn't provide an explicit filter.
+    shouldCompile = filename.indexOf('node_modules') === -1;
   }
 
   // Resolve reanimated check
