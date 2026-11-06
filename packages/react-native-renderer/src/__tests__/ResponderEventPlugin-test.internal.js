@@ -1377,6 +1377,40 @@ describe('ResponderEventPlugin', () => {
     expect(ResponderEventPlugin._getResponder()).toBe(null);
   });
 
+  it('should reset tracked touches when one end event lifts several touches', () => {
+    const onSelectionChangeShouldSetResponder = jest.fn();
+    putListener(
+      getInstanceFromNode(three.child),
+      'onSelectionChangeShouldSetResponder',
+      onSelectionChangeShouldSetResponder,
+    );
+
+    const dispatch = cfg =>
+      ResponderEventPlugin.extractEvents(
+        cfg.topLevelType,
+        cfg.targetInst,
+        cfg.nativeEvent,
+        cfg.nativeEvent.target,
+        0,
+      );
+
+    // Two fingers go down one after the other on the same view.
+    dispatch(startConfig(three.child, [three.child], [0]));
+    dispatch(startConfig(three.child, [three.child, three.child], [1]));
+    // Both lift in ONE event (how Fabric coalesces them).
+    dispatch(endConfig(three.child, [three.child, three.child], [0, 1]));
+
+    // No fingers are down now, so a selection change must not start
+    // a responder negotiation.
+    dispatch({
+      topLevelType: 'topSelectionChange',
+      targetInst: getInstanceFromNode(three.child),
+      nativeEvent: {target: three.child, touches: [], changedTouches: []},
+    });
+
+    expect(onSelectionChangeShouldSetResponder).not.toHaveBeenCalled();
+  });
+
   it(
     'should determine the first common ancestor correctly',
     async () => {
