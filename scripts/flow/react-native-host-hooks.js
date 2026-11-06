@@ -110,7 +110,7 @@ declare module 'react-native/react-private-interface' {
     publicInstance: PublicInstance,
   ): ?Object;
   declare export function dispatchNativeEvent(
-    target: EventTarget,
+    target: ?EventTarget,
     type: string,
     eventData: {[string]: mixed},
   ): void;

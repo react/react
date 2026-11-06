@@ -195,8 +195,11 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
           loc: GeneratedSource,
         });
 
-        // different constant values, can't constant propogate
-        if (operandValue.value !== value.value) {
+        // Distinguish signed zeros while preserving NaN rejection.
+        if (
+          operandValue.value !== value.value ||
+          !Object.is(operandValue.value, value.value)
+        ) {
           return null;
         }
         break;
