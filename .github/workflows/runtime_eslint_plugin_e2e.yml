@@ -43,7 +43,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-eslint_e2e-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock', 'fixtures/eslint-v*/yarn.lock') }}
+          key: runtime-and-compiler-eslint_e2e-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'compiler/yarn.lock', 'fixtures/eslint-v*/yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile
