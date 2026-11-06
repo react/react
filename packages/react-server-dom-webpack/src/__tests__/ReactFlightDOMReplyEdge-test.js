@@ -45,6 +45,32 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(decoded).toEqual({some: 'object'});
   });
 
+  it('can reuse an iterator in later stream items', async () => {
+    const iterator = ['first', 'second'].values();
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue({iterator});
+        controller.enqueue({iterator});
+        controller.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const reader = result.getReader();
+    const first = await reader.read();
+    const second = await reader.read();
+    expect(first.done).toBe(false);
+    expect(second.done).toBe(false);
+    // Either occurrence can be a copy, but each iterator must have all its items.
+    new Set([first.value.iterator, second.value.iterator]).forEach(received => {
+      expect(Array.from(received)).toEqual(['first', 'second']);
+    });
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('should be able to serialize any kind of typed array', async () => {
     const buffer = new Uint8Array([
       123, 4, 10, 5, 100, 255, 244, 45, 56, 67, 43, 124, 67, 89, 100, 20,
@@ -318,6 +344,35 @@ describe('ReactFlightDOMReplyEdge', () => {
     const fourth = (await reader.read()).value;
     expect(fourth.again).toBe(first);
     expect((await reader.read()).done).toBe(true);
+  });
+
+  it('can refer to a stream inside an iterable item from a later Promise', async () => {
+    const inner = new ReadableStream({
+      start(c) {
+        c.enqueue('inner');
+        c.close();
+      },
+    });
+    const holder = {inner};
+    let resolveLater;
+    const later = new Promise(resolve => (resolveLater = resolve));
+    async function* items() {
+      yield {holder};
+      // The writer asks for another item only after serializing this one.
+      // The Promise must refer to the stream through the item already sent.
+      resolveLater(holder);
+    }
+    const body = await ReactServerDOMClient.encodeReply({s: items(), later});
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    const item = (await result.s.next()).value;
+    const laterValue = await result.later;
+    expect(laterValue).toBe(item.holder);
+    const read = await laterValue.inner.getReader().read();
+    expect(read.value).toBe('inner');
   });
 
   it('should cancel the transported ReadableStream when we are cancelled', async () => {
