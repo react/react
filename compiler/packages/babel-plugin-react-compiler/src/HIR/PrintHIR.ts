@@ -570,7 +570,12 @@ export function printInstructionValue(instrValue: ReactiveValue): string {
       break;
     }
     case 'TaggedTemplateExpression': {
-      value = `${printPlace(instrValue.tag)}\`${instrValue.value.raw}\``;
+      value = printPlace(instrValue.tag) + '`';
+      for (let i = 0; i < instrValue.subexprs.length; i++) {
+        value += instrValue.quasis[i].raw;
+        value += `\${${printPlace(instrValue.subexprs[i])}}`;
+      }
+      value += instrValue.quasis.at(-1)!.raw + '`';
       break;
     }
     case 'LogicalExpression': {

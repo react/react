@@ -60,7 +60,7 @@ function mergeMacroArguments(
   const macroValues = new Set<IdentifierId>();
 
   for (const instr of allInstructions(fn)) {
-    if (isCall(instr) || isMethodCall(instr) || isJSX(instr)) {
+    if (isCall(instr) || isMethodCall(instr) || isTaggedTemplate(instr) || isJSX(instr)) {
       const callee = getCallee(instr);
       const macroDef = macroTags.get(callee.id);
 

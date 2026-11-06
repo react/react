@@ -1914,10 +1914,19 @@ function codegenInstructionValue(
       break;
     }
     case 'TaggedTemplateExpression': {
+      let tag = codegenPlaceToExpression(cx, instrValue.tag);
+      if (instrValue.receiver !== null && !t.isMemberExpression(tag)) {
+        tag = t.callExpression(t.memberExpression(tag, t.identifier('bind')), [
+          codegenPlaceToExpression(cx, instrValue.receiver),
+        ]);
+      }
       value = createTaggedTemplateExpression(
         instrValue.loc,
-        codegenPlaceToExpression(cx, instrValue.tag),
-        t.templateLiteral([t.templateElement(instrValue.value)], []),
+        tag,
+        t.templateLiteral(
+          instrValue.quasis.map(q => t.templateElement(q)),
+          instrValue.subexprs.map(p => codegenPlaceToExpression(cx, p)),
+        ),
       );
       break;
     }

@@ -185,13 +185,18 @@ function mergeMacroArguments(
           break;
         }
         case 'CallExpression':
-        case 'MethodCall': {
+        case 'MethodCall':
+        case 'TaggedTemplateExpression': {
           const scope = lvalue.identifier.scope;
           if (scope == null) {
             continue;
           }
           const callee =
-            value.kind === 'CallExpression' ? value.callee : value.property;
+            value.kind === 'CallExpression'
+              ? value.callee
+              : value.kind === 'MethodCall'
+                ? value.property
+                : value.tag;
           const macroDefinition =
             macroTags.get(callee.identifier.id) ??
             macroTags.get(lvalue.identifier.id);
