@@ -359,4 +359,65 @@ describe('isomorphic act()', () => {
     });
     expect(root).toMatchRenderedOutput('Async');
   });
+
+  // @gate __DEV__
+  it('restores act queue when callback throws synchronously', async () => {
+    let setCounter;
+    function Counter() {
+      const [count, setCount] = React.useState(0);
+      setCounter = setCount;
+      return count;
+    }
+    const root = ReactNoop.createRoot();
+    act(() => {
+      root.render(<Counter />);
+    });
+    expect(root).toMatchRenderedOutput('0');
+
+    expect(() => {
+      act(() => {
+        throw new Error('boom');
+      });
+    }).toThrow('boom');
+
+    global.IS_REACT_ACT_ENVIRONMENT = false;
+    ReactNoop.unstable_runWithPriority(DiscreteEventPriority, () => {
+      setCounter(1);
+    });
+    await waitForMicrotasks();
+    expect(root).toMatchRenderedOutput('1');
+  });
+
+  // @gate __DEV__
+  it('restores act queue when callback rejects asynchronously', async () => {
+    let setCounter;
+    function Counter() {
+      const [count, setCount] = React.useState(0);
+      setCounter = setCount;
+      return count;
+    }
+    const root = ReactNoop.createRoot();
+    act(() => {
+      root.render(<Counter />);
+    });
+    expect(root).toMatchRenderedOutput('0');
+
+    let didCatch = false;
+    try {
+      await act(async () => {
+        throw new Error('boom async');
+      });
+    } catch (error) {
+      didCatch = true;
+      expect(error.message).toBe('boom async');
+    }
+    expect(didCatch).toBe(true);
+
+    global.IS_REACT_ACT_ENVIRONMENT = false;
+    ReactNoop.unstable_runWithPriority(DiscreteEventPriority, () => {
+      setCounter(1);
+    });
+    await waitForMicrotasks();
+    expect(root).toMatchRenderedOutput('1');
+  });
 });
