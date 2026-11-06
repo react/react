@@ -281,9 +281,9 @@ if (!window.__REACT_DEVTOOLS_BACKEND_MANAGER_INJECTED__) {
   window.addEventListener('message', welcome);
   window.addEventListener('pagehide', handlePageHide);
 
-  // The content script stops saying hello once the first backend in this document is initialized.
-  // If this document already had a backend that was shut down, for example because DevTools were
-  // remounted without a page reload, ask the content script to say hello again.
+  // The content script only says hello once, when it's injected. If it was injected before the
+  // backend manager, or this document already had a backend that was shut down, for example
+  // because DevTools were remounted without a page reload, ask the content script to say hello again.
   window.postMessage(
     {
       source: 'react-devtools-backend-manager',
