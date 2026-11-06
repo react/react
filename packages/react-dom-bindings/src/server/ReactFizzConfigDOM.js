@@ -272,6 +272,7 @@ export type ResumableState = {
   bootstrapScriptContent?: string | void,
   bootstrapScripts?: $ReadOnlyArray<string | BootstrapScriptDescriptor> | void,
   bootstrapModules?: $ReadOnlyArray<string | BootstrapScriptDescriptor> | void,
+  importMap?: ImportMap | void,
 
   // state for script streaming format, unused if using external runtime / data
   instructions: InstructionState,
@@ -474,6 +475,7 @@ export function createRenderState(
     );
     importMapChunks.push(importMapScriptEnd);
   }
+  resumableState.importMap = importMap;
   if (__DEV__) {
     if (onHeaders && typeof maxHeadersLength === 'number') {
       if (maxHeadersLength <= 0) {
@@ -682,7 +684,7 @@ export function resumeRenderState(
     resumableState,
     nonce,
     resumableState.externalRuntimeConfig,
-    undefined,
+    resumableState.importMap,
     undefined,
     undefined,
   );
@@ -760,6 +762,7 @@ export function completeResumableState(resumableState: ResumableState): void {
   resumableState.bootstrapScriptContent = undefined;
   resumableState.bootstrapScripts = undefined;
   resumableState.bootstrapModules = undefined;
+  resumableState.importMap = undefined;
 }
 
 export type PreambleState = {

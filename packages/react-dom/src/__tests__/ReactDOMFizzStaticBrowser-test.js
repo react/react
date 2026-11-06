@@ -699,6 +699,110 @@ describe('ReactDOMFizzStaticBrowser', () => {
     expect(scripts[0].getAttribute('nonce')).toBe('resume-nonce');
   });
 
+  it('preserves the import map when resuming an empty prelude', async () => {
+    let prerendering = true;
+
+    function Document() {
+      if (prerendering) {
+        React.use(theInfinitePromise);
+      }
+      return (
+        <html>
+          <body>hello</body>
+        </html>
+      );
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={null}>
+          <Document />
+        </Suspense>
+      );
+    }
+
+    const importMap = {imports: {lib: '/lib.js'}};
+    const controller = new AbortController();
+    let pendingPrerender;
+    await serverAct(() => {
+      pendingPrerender = ReactDOMFizzStatic.prerender(<App />, {
+        signal: controller.signal,
+        onError() {},
+        importMap,
+        bootstrapModules: ['/main.js'],
+      });
+    });
+    await serverAct(() => controller.abort());
+    const prerendered = await pendingPrerender;
+    expect(prerendered.postponed).not.toBe(null);
+    expect(await readContent(prerendered.prelude)).toBe('');
+
+    prerendering = false;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(prerendered.postponed)),
+      ),
+    );
+    const html = await readContent(resumed);
+
+    const doc = new JSDOM(html).window.document;
+    const importMaps = doc.querySelectorAll('script[type="importmap"]');
+    expect(importMaps).toHaveLength(1);
+    expect(JSON.parse(importMaps[0].textContent)).toEqual(importMap);
+    expect(doc.querySelectorAll('script[src="/main.js"]')).toHaveLength(1);
+  });
+
+  it('does not carry the import map over when the shell completed', async () => {
+    function App() {
+      return (
+        <html>
+          <body>
+            <Suspense fallback="Loading">
+              <Postpone />
+            </Suspense>
+          </body>
+        </html>
+      );
+    }
+
+    let prerendering = true;
+    function Postpone() {
+      if (prerendering) {
+        React.use(theInfinitePromise);
+      }
+      return 'Hello';
+    }
+
+    const importMap = {imports: {lib: '/lib.js'}};
+    const controller = new AbortController();
+    let pendingPrerender;
+    await serverAct(() => {
+      pendingPrerender = ReactDOMFizzStatic.prerender(<App />, {
+        signal: controller.signal,
+        onError() {},
+        importMap,
+      });
+    });
+    await serverAct(() => controller.abort());
+    const prerendered = await pendingPrerender;
+    expect(prerendered.postponed).not.toBe(null);
+    expect(JSON.stringify(prerendered.postponed)).not.toContain('/lib.js');
+    const prelude = await readContent(prerendered.prelude);
+
+    prerendering = false;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(prerendered.postponed)),
+      ),
+    );
+    const html = prelude + (await readContent(resumed));
+
+    const doc = new JSDOM(html).window.document;
+    expect(doc.querySelectorAll('script[type="importmap"]')).toHaveLength(1);
+  });
+
   it('can resume render of a prerender', async () => {
     const errors = [];
 
