@@ -1376,7 +1376,11 @@ function serializeReadableStream(
 
   request.cacheController.signal.addEventListener('abort', abortStream);
   reader.read().then(progress, error);
-  return serializeByValueID(streamTask.id);
+  const reference = serializeByValueID(streamTask.id);
+  // The stream is read once, so any other place that holds it gets the row
+  // it was already written to.
+  request.writtenObjects.set(stream, reference);
+  return reference;
 }
 
 function serializeAsyncIterable(
@@ -1515,7 +1519,11 @@ function serializeAsyncIterable(
   } else {
     iterator.next().then(progress, error);
   }
-  return serializeByValueID(streamTask.id);
+  const reference = serializeByValueID(streamTask.id);
+  // The iterator is read once, so any other place that holds the iterable
+  // gets the row it was already written to.
+  request.writtenObjects.set(iterable, reference);
+  return reference;
 }
 
 export function emitHint<Code: HintCode>(

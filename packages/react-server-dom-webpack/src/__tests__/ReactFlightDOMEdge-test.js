@@ -1896,6 +1896,45 @@ describe('ReactFlightDOMEdge', () => {
     ).toEqual(expectedBytes);
   });
 
+  it('can pass a stream a second time after a stream item held it', async () => {
+    const inner = new ReadableStream({
+      start(c) {
+        c.enqueue('a');
+        c.enqueue('b');
+        c.close();
+      },
+    });
+    const outer = new ReadableStream({
+      start(c) {
+        c.enqueue([inner]);
+        c.enqueue({again: inner});
+        c.close();
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(outer, {}),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    const second = (await reader.read()).value;
+    expect(second.again).toBe(first[0]);
+    expect((await reader.read()).done).toBe(true);
+
+    const innerReader = first[0].getReader();
+    expect((await innerReader.read()).value).toBe('a');
+    expect((await innerReader.read()).value).toBe('b');
+    expect((await innerReader.read()).done).toBe(true);
+  });
+
   it('keeps a typed array intact when its transport also carries a byte stream', async () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const s = new ReadableStream({
