@@ -2511,6 +2511,40 @@ describe('ReactFlight', () => {
   });
 
   // @gate enableTaint
+  it('errors when a large tainted binary value is serialized', async () => {
+    function UserClient({user}) {
+      return <span>{user.name}</span>;
+    }
+    const User = clientReference(UserClient);
+
+    // 256 KB is large enough that converting the bytes to a string in a
+    // single String.fromCharCode.apply call would exceed the engine's
+    // argument limit.
+    const token = new Uint32Array(64 * 1024);
+    token.fill(1);
+    const currentUser = {name: 'Seb', token};
+    ReactServer.experimental_taintUniqueValue(
+      'Cannot pass a secret token to the client',
+      currentUser,
+      currentUser.token,
+    );
+
+    function App({user}) {
+      const clone = user.token.slice();
+      return <User token={clone} />;
+    }
+
+    const errors = [];
+    ReactNoopFlightServer.render(<App user={currentUser} />, {
+      onError(x) {
+        errors.push(x.message);
+      },
+    });
+
+    expect(errors).toEqual(['Cannot pass a secret token to the client']);
+  });
+
+  // @gate enableTaint
   it('keep a tainted value tainted until the end of any pending requests', async () => {
     function UserClient({user}) {
       return <span>{user.name}</span>;
