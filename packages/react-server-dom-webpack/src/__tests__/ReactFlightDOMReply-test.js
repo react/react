@@ -376,13 +376,95 @@ describe('ReactFlightDOMReply', () => {
     }
     expect(error).toEqual(
       expect.objectContaining({
-        message: __DEV__
-          ? expect.stringContaining(
-              'Classes or null prototypes are not supported.',
-            )
-          : expect.stringContaining(''),
+        // The error message is not DEV-only, so assert it in both modes.
+        message: expect.stringContaining(
+          'Classes or null prototypes are not supported.',
+        ),
       }),
     );
+  });
+
+  it('errors when passing null-prototype objects through a round trip with temporary references', async () => {
+    const attrs = Object.create(null);
+    attrs.src = 'https://example.com/a.jpg';
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+    const temporaryReferencesServer =
+      ReactServerDOMServer.createTemporaryReferenceSet();
+
+    let error;
+    try {
+      const body = await ReactServerDOMClient.encodeReply(
+        {attrs},
+        {
+          temporaryReferences,
+        },
+      );
+      const serverPayload = await ReactServerDOMServer.decodeReply(
+        body,
+        webpackServerMap,
+        {temporaryReferences: temporaryReferencesServer},
+      );
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(serverPayload, null, {
+          temporaryReferences: temporaryReferencesServer,
+        }),
+      );
+      await ReactServerDOMClient.createFromReadableStream(stream, {
+        temporaryReferences,
+      });
+    } catch (x) {
+      error = x;
+    }
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'Classes or null prototypes are not supported.',
+        ),
+      }),
+    );
+  });
+
+  it('can pass class instances through a round trip using temporary references', async () => {
+    class Point {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+      }
+    }
+    const point = new Point(1, 2);
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+    const body = await ReactServerDOMClient.encodeReply(
+      {point},
+      {
+        temporaryReferences,
+      },
+    );
+
+    const temporaryReferencesServer =
+      ReactServerDOMServer.createTemporaryReferenceSet();
+    const serverPayload = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+      {temporaryReferences: temporaryReferencesServer},
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(serverPayload, null, {
+        temporaryReferences: temporaryReferencesServer,
+      }),
+    );
+    const response = await ReactServerDOMClient.createFromReadableStream(
+      stream,
+      {
+        temporaryReferences,
+      },
+    );
+
+    // Class instances are passed by reference, unlike null-prototype objects.
+    expect(response.point).toBe(point);
   });
 
   it('can pass JSX through a round trip using temporary references', async () => {
