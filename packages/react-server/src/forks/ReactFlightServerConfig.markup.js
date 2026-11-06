@@ -33,7 +33,7 @@ export function getChildFormatContext(
   return parentContext;
 }
 
-export const supportsRequestStorage = false;
+export const supportsRequestStorage: boolean = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;

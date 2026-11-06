@@ -880,7 +880,6 @@ function clientHookNotSupported() {
   );
 }
 
-// $FlowFixMe[constant-condition]
 export const HooksDispatcher: Dispatcher = supportsClientAPIs
   ? {
       readContext,

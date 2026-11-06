@@ -84,7 +84,6 @@ export function pushProvider<T>(
   context: ReactContext<T>,
   nextValue: T,
 ): void {
-  // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     push(valueCursor, context._currentValue, providerFiber);
 
@@ -132,7 +131,6 @@ export function popProvider(
 ): void {
   const currentValue = valueCursor.current;
 
-  // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     context._currentValue = currentValue;
     if (__DEV__) {
@@ -523,7 +521,6 @@ export function checkIfContextChanged(
   let dependency = currentDependencies.firstContext;
   while (dependency !== null) {
     const context = dependency.context;
-    // $FlowFixMe[constant-condition]
     const newValue = isPrimaryRenderer
       ? context._currentValue
       : context._currentValue2;
@@ -581,7 +578,6 @@ function readContextForConsumer<T>(
   consumer: Fiber | null,
   context: ReactContext<T>,
 ): T {
-  // $FlowFixMe[constant-condition]
   const value = isPrimaryRenderer
     ? context._currentValue
     : context._currentValue2;
