@@ -10,6 +10,21 @@
 
 'use strict';
 
+// Round-trip generated JavaScript values through the Flight server and client.
+// Vary when Promises resolve, modules load, and stream items are produced.
+// Check the results against the source values after each event.
+//
+// Set FUZZ_TEST_SEED to replay a run and FLIGHT_FUZZ_CASES to change its size.
+// FLIGHT_FUZZ_SHRINK limits the number of replays used to reduce a failure.
+// FLIGHT_FUZZ_TIMEOUT sets the per-test timeout in milliseconds; raise it for
+// long reduction sessions, since an in-file timeout overrides Jest's
+// --testTimeout.
+// FLIGHT_FUZZ_STRICT_IDENTITY=1 requires every aliased source object to decode
+// to one object. This is stricter than Flight guarantees, which may split a
+// shared object into copies across rows, so it is for hunting only; by default
+// the oracle requires identity only where it must hold (cycles, and under that
+// flag collection members and keys).
+
 const {createOracle} = require('./fuzz/FlightReaderOracle');
 const {createFixture} = require('./fuzz/FlightReaderFuzzFixture');
 const {
@@ -21,15 +36,30 @@ const {
   createRandom,
   generateGraph,
   generateScaleGraph,
+  shrinkGraph,
+  formatGraphTest,
+  formatReplayCommand,
 } = require('./fuzz/FlightReaderFuzzGraph');
 
 const SEED = process.env.FUZZ_TEST_SEED || 'default';
 const caseCount = +(process.env.FLIGHT_FUZZ_CASES ?? 4);
+const shrinkBudget = +(process.env.FLIGHT_FUZZ_SHRINK ?? 0);
+const TEST_TIMEOUT = +(process.env.FLIGHT_FUZZ_TIMEOUT ?? 15000);
 if (!Number.isSafeInteger(caseCount) || caseCount < 1) {
   throw new Error('FLIGHT_FUZZ_CASES must be a positive integer.');
 }
-// Generated graph checks can exceed Jest's default timeout on CI.
-jest.setTimeout(15000);
+if (!Number.isSafeInteger(shrinkBudget) || shrinkBudget < 0) {
+  throw new Error('FLIGHT_FUZZ_SHRINK must be a nonnegative replay budget.');
+}
+if (!Number.isSafeInteger(TEST_TIMEOUT) || TEST_TIMEOUT < 1) {
+  throw new Error('FLIGHT_FUZZ_TIMEOUT must be a positive number of ms.');
+}
+// Generated graph checks can exceed Jest's default timeout on CI. An in-file
+// timeout overrides --testTimeout, so expose it through FLIGHT_FUZZ_TIMEOUT.
+jest.setTimeout(TEST_TIMEOUT);
+// A case that stops short of the Jest timeout can still throw its own report.
+// Leave room below the timeout to build and emit it before Jest intervenes.
+const CASE_DEADLINE_MARGIN = Math.min(2000, Math.floor(TEST_TIMEOUT / 4));
 // Keep the first seed unchanged so the printed command replays that case.
 const seeds = Array.from({length: caseCount}, (_, i) =>
   i === 0 ? SEED : SEED + ':' + i,
@@ -60,6 +90,13 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
       ([, descriptor]) => typeof descriptor.value === 'function',
     ),
   );
+
+  // The per-case deadline and the shrinker's wall-clock budget both measure
+  // from when the test started, so a report is thrown before the Jest timeout.
+  let testStartTime = Date.now();
+  beforeEach(() => {
+    testStartTime = Date.now();
+  });
 
   // Reset caches so each case starts with unloaded client modules.
   function loadModules() {
@@ -349,7 +386,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
     });
   }
 
-  // Reset the consuming module context before building each graph's proxies.
+  // Run a pasted case at every read timing unless one was specified.
   async function runGraph({
     readTiming,
     seed = SEED,
@@ -358,7 +395,107 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   }) {
     const timings = readTiming === undefined ? readTimings : [readTiming];
     for (let i = 0; i < timings.length; i++) {
-      await withFlightModules(async () => {
+      await runCaseWithReproduction({
+        seed,
+        readTiming: timings[i],
+        scheduleIndex,
+        graph,
+      });
+    }
+  }
+
+  async function runCaseWithReproduction(args) {
+    const {seed, readTiming, graph} = args;
+    const original = await runCase(args);
+    if (original === null) {
+      return;
+    }
+    const testName = expect.getState().currentTestName;
+    const replayOptions = {
+      build: !!process.env.IS_BUILD,
+      releaseChannel: process.env.RELEASE_CHANNEL || 'experimental',
+    };
+    const buildReport = (failure, reduction) =>
+      'Replay the original with:\n' +
+      formatReplayCommand(seed, testName, __DEV__, replayOptions) +
+      '\n' +
+      reduction +
+      '\nPaste this case next to the generated graphs and run with:\n' +
+      formatReplayCommand(
+        seed,
+        'ReactFlightReaderFuzz (' + host + ') pasted',
+        __DEV__,
+        replayOptions,
+      ) +
+      '\n\n' +
+      formatGraphTest(failure.graph, readTiming);
+    let failure = original;
+    let reduction = '';
+    if (shrinkBudget > 0) {
+      // Reduction can run longer than the test. Emit the unreduced report now,
+      // on stderr so it bypasses the console checks, so a timeout while
+      // reducing still leaves a reproducible failure behind.
+      const unreducedReport = buildReport(original, '');
+      process.stderr.write('\n' + unreducedReport + '\n');
+      // Stop reducing once less than a third of the timeout remains, leaving
+      // time to throw the reduced report before Jest's timeout fires.
+      const shrinkDeadline = testStartTime + Math.floor((TEST_TIMEOUT * 2) / 3);
+      const signature = error => error.fuzzFailure || error.message;
+      const reduced = await shrinkGraph(
+        original.graph,
+        async candidate => {
+          if (Date.now() >= shrinkDeadline) {
+            return false;
+          }
+          let result;
+          try {
+            result = await runCase({...args, graph: candidate});
+          } catch (error) {
+            // A reduction can invalidate the graph, e.g. by replacing
+            // an element that still has a props reference. Skip that reduction.
+            return false;
+          }
+          return result !== null &&
+            signature(result.error) === signature(original.error)
+            ? result
+            : false;
+        },
+        shrinkBudget,
+      );
+      if (reduced.reproduction !== null) {
+        failure = reduced.reproduction;
+      }
+      reduction =
+        '\nReduced from ' +
+        Object.keys(graph.nodes).length +
+        ' to ' +
+        Object.keys(failure.graph.nodes).length +
+        ' nodes in ' +
+        reduced.attempts +
+        ' replays. Each accepted reduction failed twice.\n';
+    }
+    throw new Error(buildReport(failure, reduction), {cause: failure.error});
+  }
+
+  async function runCase({seed, readTiming, scheduleIndex, graph}) {
+    let replayGraph;
+    let settleTimer;
+    // A case that never settles must fail with its report before Jest's bare
+    // timeout, so race the run against a deadline below the test timeout.
+    const deadline = new Promise((_, reject) => {
+      const remaining =
+        testStartTime + TEST_TIMEOUT - CASE_DEADLINE_MARGIN - Date.now();
+      settleTimer = setTimeout(
+        () => {
+          const error = new Error('did not settle');
+          error.fuzzFailure = 'liveness';
+          reject(error);
+        },
+        Math.max(0, remaining),
+      );
+    });
+    try {
+      const run = withFlightModules(async () => {
         const fixture = await createFixture(graph, {
           React,
           ReactServer,
@@ -369,11 +506,27 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         });
         const oracle = createOracle(fixture, {render});
         const schedule = createSchedule(fixture, graph, seed, scheduleIndex);
-        await checkResponse(fixture, oracle, {
-          ...schedule,
-          readTiming: timings[i],
-        });
+        replayGraph = {
+          ...graph,
+          events: schedule.events.map(event => event.label),
+          packetSizes: schedule.packetSizes,
+          yieldBetweenPackets: schedule.yieldBetweenPackets,
+        };
+        await checkResponse(fixture, oracle, {...schedule, readTiming});
       });
+      // If the deadline wins the race, keep the run's own settlement handled so
+      // it cannot resurface as an unhandled rejection.
+      run.then(undefined, () => {});
+      await Promise.race([run, deadline]);
+      return null;
+    } catch (error) {
+      // Invalid graphs are rejected before attempting a replay.
+      if (replayGraph === undefined) {
+        throw error;
+      }
+      return {error, graph: replayGraph};
+    } finally {
+      clearTimeout(settleTimer);
     }
   }
 
