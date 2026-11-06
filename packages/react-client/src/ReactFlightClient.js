@@ -1843,17 +1843,7 @@ function fulfillReference(
               // If we're not yet initialized we need to skip what we've already drilled
               // through and then wait for the next value to become available.
               path.splice(0, i - 1);
-              // Add "listener" to our new chunk dependency.
-              if (referencedChunk.value === null) {
-                referencedChunk.value = [reference];
-              } else {
-                referencedChunk.value.push(reference);
-              }
-              if (referencedChunk.reason === null) {
-                referencedChunk.reason = [reference];
-              } else {
-                referencedChunk.reason.push(reference);
-              }
+              addReferenceListener(referencedChunk, reference);
               return;
             }
             case HALTED: {
@@ -1917,54 +1907,7 @@ function fulfillReference(
     }
 
     const mappedValue = map(response, value, parentObject, key);
-    if (key !== __PROTO__) {
-      parentObject[key] = mappedValue;
-    }
-
-    // If this is the root object for a model reference, where `handler.value`
-    // is a stale `null`, the resolved value can be used directly.
-    if (key === '' && handler.value === null) {
-      handler.value = mappedValue;
-    }
-
-    // If the parent object is an unparsed React element tuple, we also need to
-    // update the props and owner of the parsed element object (i.e.
-    // handler.value).
-    if (
-      parentObject[0] === REACT_ELEMENT_TYPE &&
-      typeof handler.value === 'object' &&
-      handler.value !== null &&
-      handler.value.$$typeof === REACT_ELEMENT_TYPE
-    ) {
-      const element: any = handler.value;
-      switch (key) {
-        case '3':
-          if (__DEV__ && !reference.isDebug) {
-            transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-          }
-          element.props = mappedValue;
-          break;
-        case '4':
-          // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
-          if (__DEV__) {
-            element._owner = mappedValue;
-          }
-          break;
-        case '5':
-          // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
-          if (__DEV__) {
-            element._debugStack = mappedValue;
-          }
-          break;
-        default:
-          if (__DEV__ && !reference.isDebug) {
-            transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-          }
-          break;
-      }
-    } else if (__DEV__ && !reference.isDebug) {
-      transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-    }
+    installReference(response, reference, mappedValue, fulfilledChunk);
   } catch (error) {
     rejectReference(response, reference.handler, error);
     return;
@@ -1972,6 +1915,64 @@ function fulfillReference(
 
   handler.deps--;
   initializeChunkIfUnblocked(response, handler);
+}
+
+// Writes the resolved value into the field the reference fills.
+function installReference(
+  response: Response,
+  reference: InitializationReference,
+  value: any,
+  fulfilledChunk: SomeChunk<any>,
+): void {
+  const {handler, parentObject, key} = reference;
+  if (key !== __PROTO__) {
+    parentObject[key] = value;
+  }
+
+  // If this is the root object for a model reference, where `handler.value`
+  // is a stale `null`, the resolved value can be used directly.
+  if (key === '' && handler.value === null) {
+    handler.value = value;
+  }
+
+  // If the parent object is an unparsed React element tuple, we also need to
+  // update the props and owner of the parsed element object (i.e.
+  // handler.value).
+  if (
+    parentObject[0] === REACT_ELEMENT_TYPE &&
+    typeof handler.value === 'object' &&
+    handler.value !== null &&
+    handler.value.$$typeof === REACT_ELEMENT_TYPE
+  ) {
+    const element: any = handler.value;
+    switch (key) {
+      case '3':
+        if (__DEV__ && !reference.isDebug) {
+          transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
+        }
+        element.props = value;
+        break;
+      case '4':
+        // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
+        if (__DEV__) {
+          element._owner = value;
+        }
+        break;
+      case '5':
+        // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
+        if (__DEV__) {
+          element._debugStack = value;
+        }
+        break;
+      default:
+        if (__DEV__ && !reference.isDebug) {
+          transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
+        }
+        break;
+    }
+  } else if (__DEV__ && !reference.isDebug) {
+    transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
+  }
 }
 
 function rejectReference(
@@ -2054,6 +2055,28 @@ function waitForReference<T>(
     }
   }
 
+  const reference = createInitializationReference(
+    parentObject,
+    key,
+    map,
+    path,
+    isAwaitingDebugInfo,
+  );
+  addReferenceListener(referencedChunk, reference);
+
+  // Return a place holder value for now.
+  return null as any;
+}
+
+// Creates a reference that fills `parentObject[key]` once it resolves, and
+// counts it against the handler of the model being initialized.
+function createInitializationReference<T>(
+  parentObject: Object,
+  key: string,
+  map: (response: Response, model: any, parentObject: Object, key: string) => T,
+  path: Array<string>,
+  isAwaitingDebugInfo: boolean, // DEV-only
+): InitializationReference {
   let handler: InitializationHandler;
   if (initializingHandler) {
     handler = initializingHandler;
@@ -2072,21 +2095,25 @@ function waitForReference<T>(
   if (__DEV__) {
     reference.isDebug = isAwaitingDebugInfo;
   }
+  return reference;
+}
 
-  // Add "listener".
-  if (referencedChunk.value === null) {
-    referencedChunk.value = [reference];
+// Queues the reference on a chunk that has not initialized yet. It is fulfilled
+// or rejected with the chunk.
+function addReferenceListener(
+  chunk: PendingChunk<any> | PendingWeakChunk<any> | BlockedChunk<any>,
+  reference: InitializationReference,
+): void {
+  if (chunk.value === null) {
+    chunk.value = [reference];
   } else {
-    referencedChunk.value.push(reference);
+    chunk.value.push(reference);
   }
-  if (referencedChunk.reason === null) {
-    referencedChunk.reason = [reference];
+  if (chunk.reason === null) {
+    chunk.reason = [reference];
   } else {
-    referencedChunk.reason.push(reference);
+    chunk.reason.push(reference);
   }
-
-  // Return a place holder value for now.
-  return null as any;
 }
 
 function loadServerReference<A: Iterable<any>, T>(
