@@ -43,17 +43,19 @@ export function checkConditions(
         }
       }
     } else {
-      filePath = sourceURL;
+      // A file system path isn't URL-encoded, so these would end the URL's path
+      filePath = sourceURL.replace(/[#?]/g, char => encodeURIComponent(char));
     }
 
     const lineNumberAsString = String(line);
     const columnNumberAsString = String(column);
 
+    // Use replacer functions because `$` is special in a replacement string
     url.href = url.href
-      .replace('{path}', filePath)
+      .replace('{path}', () => filePath)
       .replace('{line}', lineNumberAsString)
       .replace('{column}', columnNumberAsString)
-      .replace('%7Bpath%7D', filePath)
+      .replace('%7Bpath%7D', () => filePath)
       .replace('%7Bline%7D', lineNumberAsString)
       .replace('%7Bcolumn%7D', columnNumberAsString);
 
