@@ -11,30 +11,243 @@
 'use strict';
 
 // These controls exercise the shared checker without running React.
-const {createObjectCheck} = require('./fuzz/FlightReaderOracle');
+const {createOracle} = require('./fuzz/FlightReaderOracle');
 
-describe('Flight reader object checks', () => {
-  it('rechecks every received copy of a source cycle', () => {
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+// Control client delivery independently of source readiness so a broken reader
+// can be reproduced even when the real reader handles the graph correctly.
+function createTestOracle(source, options = {}) {
+  const oracle = createOracle({
+    valueMetadata: new Map(),
+    requiredEvents: new Map(),
+    ...options,
+  });
+  let resolve;
+  let reject;
+  oracle.subscribeToRoot(
+    {
+      then(onFulfill, onReject) {
+        resolve = onFulfill;
+        reject = onReject;
+      },
+    },
+    source,
+  );
+  return {oracle, resolve, reject};
+}
+
+describe('FlightReaderOracle', () => {
+  beforeEach(() => {
+    jest.useRealTimers();
+  });
+
+  // Visiting source identities only would miss corruption in a later copy.
+  it('rechecks every received copy of a source cycle', async () => {
     const source = {value: 'expected'};
     source.next = source;
     const copy = {value: 'expected'};
     copy.next = copy;
     const received = {value: 'expected', next: copy};
-    const check = createObjectCheck(source, received);
-    check();
+    const oracle = createOracle();
+    oracle.observeValue(source, received);
+    await oracle.checkForMutations();
 
     copy.value = 'changed';
-    expect(check).toThrow();
-    expect(() => createObjectCheck(source, received)()).toThrow();
+    await expect(oracle.checkForMutations()).rejects.toThrow('.next.value');
+    expect(() => createOracle().observeValue(source, received)).toThrow();
   });
 
+  // Equal contents must not allow one received identity to merge two sources.
   it('rejects merging equal but distinct source objects', () => {
     const source = {a: {value: 1}, b: {value: 1}};
-    createObjectCheck(source, {a: {value: 1}, b: {value: 1}})();
+    createOracle().observeValue(source, {a: {value: 1}, b: {value: 1}});
 
     const merged = {value: 1};
-    expect(() => createObjectCheck(source, {a: merged, b: merged})()).toThrow(
-      'two distinct source objects',
+    expect(() =>
+      createOracle().observeValue(source, {a: merged, b: merged}),
+    ).toThrow('two distinct source objects');
+  });
+
+  // Eventual value equality alone accepts both early delivery and missing
+  // wakeups. Two inputs distinguish partial readiness from full readiness.
+  it('requires delivery only after all inputs arrive', () => {
+    const first = {};
+    const second = {};
+    const firstLoad = {released: false};
+    const secondLoad = {released: false};
+    const source = {first, second};
+    const options = {
+      valueMetadata: new Map([
+        [first, {type: 'module', value: 'first'}],
+        [second, {type: 'module', value: 'second'}],
+      ]),
+      requiredEvents: new Map([
+        [first, [firstLoad]],
+        [second, [secondLoad]],
+      ]),
+    };
+    const {oracle, resolve} = createTestOracle(source, options);
+    expect(oracle.getMissingResults()).toEqual([]);
+    expect(oracle.isComplete()).toBe(false);
+    firstLoad.released = true;
+    expect(oracle.getMissingResults()).toEqual([]);
+
+    const early = createTestOracle(source, options);
+    early.resolve({first: 'first', second: 'second'});
+    expect(() => early.oracle.throwIfFailed()).toThrow(
+      'Delivered before its inputs arrived',
     );
+
+    const rejected = createTestOracle(source, options);
+    const reason = new TypeError('decoding failed');
+    rejected.reject(reason);
+    expect(() => rejected.oracle.throwIfFailed()).toThrow(
+      'unexpected rejection: TypeError: decoding failed',
+    );
+    expect(() => rejected.oracle.throwIfFailed()).toThrow(
+      expect.objectContaining({cause: reason}),
+    );
+
+    secondLoad.released = true;
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root',
+    ]);
+    resolve({first: 'first', second: 'second'});
+    expect(oracle.isComplete()).toBe(true);
+  });
+
+  // A reason of undefined must not be treated as a fulfilled undefined value.
+  it('distinguishes rejection with undefined from fulfillment', () => {
+    const valid = createTestOracle(undefined);
+    valid.resolve(undefined);
+    expect(valid.oracle.isComplete()).toBe(true);
+
+    const invalid = createTestOracle(undefined);
+    invalid.reject(undefined);
+    expect(() => invalid.oracle.throwIfFailed()).toThrow(
+      'unexpected rejection: undefined',
+    );
+  });
+
+  // A single subscription cannot deliver twice, even with the same value.
+  it('rejects a second call to a settlement callback', () => {
+    const {oracle, resolve} = createTestOracle('value');
+    resolve('value');
+    expect(oracle.isComplete()).toBe(true);
+    resolve('value');
+    expect(() => oracle.throwIfFailed()).toThrow();
+  });
+
+  // Structural equality would miss a thenable returning a new object later.
+  it('requires repeated subscriptions to receive the same object', () => {
+    const source = {value: 'expected'};
+    let result = {value: 'expected'};
+    const thenable = {then: onFulfill => onFulfill(result)};
+    const {oracle, resolve} = createTestOracle(source);
+    resolve(result);
+    oracle.subscribeToRoot(thenable, source, {subscribeAgain: true});
+    expect(oracle.isComplete()).toBe(true);
+
+    result = {value: 'expected'};
+    oracle.subscribeToRoot(thenable, source);
+    expect(() => oracle.throwIfFailed()).toThrow('changed its settlement');
+  });
+
+  // A root can be correct while its nested Promise never wakes up, resolves
+  // too early, or hands out an object that is corrupted after delivery.
+  it('requires a Promise result when ready and rechecks it after delivery', async () => {
+    const source = {};
+    const metadata = {
+      type: 'promise',
+      state: 'pending',
+      value: {value: 'expected'},
+    };
+    const options = {valueMetadata: new Map([[source, metadata]])};
+    const {oracle, resolve} = createTestOracle(source, options);
+    let resolvePromise;
+    resolve(new Promise(done => (resolvePromise = done)));
+    expect(oracle.getMissingResults()).toEqual([]);
+    expect(oracle.isComplete()).toBe(false);
+
+    const early = createTestOracle(source, options);
+    early.resolve(Promise.resolve({value: 'expected'}));
+    await tick();
+    expect(() => early.oracle.throwIfFailed()).toThrow(
+      'Delivered before its inputs arrived: root.then',
+    );
+
+    metadata.state = 'fulfilled';
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root.then',
+    ]);
+    const received = {value: 'expected'};
+    resolvePromise(received);
+    await tick();
+    expect(oracle.isComplete()).toBe(true);
+
+    received.value = 'changed';
+    await expect(oracle.checkForMutations()).rejects.toThrow('root.then');
+  });
+
+  // The graph's root also waits for its module, which can hide a checker that
+  // ignores a nested module after the containing object has already arrived.
+  it('waits for a fulfilled Promise result to finish loading its nested module', async () => {
+    const promise = {};
+    const module = {};
+    const load = {released: false};
+    const source = {promise};
+    const options = {
+      valueMetadata: new Map([
+        [promise, {type: 'promise', state: 'fulfilled', value: {module}}],
+        [module, {type: 'module', value: 'ready'}],
+      ]),
+      requiredEvents: new Map([[module, [load]]]),
+    };
+    const {oracle, resolve} = createTestOracle(source, options);
+    let resolvePromise;
+    resolve({promise: new Promise(done => (resolvePromise = done))});
+    expect(oracle.getMissingResults()).toEqual([]);
+    expect(oracle.isComplete()).toBe(false);
+
+    const early = createTestOracle(source, options);
+    early.resolve({promise: Promise.resolve({module: 'ready'})});
+    await tick();
+    expect(() => early.oracle.throwIfFailed()).toThrow(
+      'Delivered before its inputs arrived: root.promise.then',
+    );
+
+    load.released = true;
+    expect(oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root.promise.then',
+    ]);
+    resolvePromise({module: 'ready'});
+    await tick();
+    expect(oracle.isComplete()).toBe(true);
+    await expect(oracle.checkForMutations()).resolves.toBeUndefined();
+  });
+
+  // Rechecking must reject a replacement instead of silently subscribing and
+  // accepting the replacement's eventual equal result.
+  it('rejects replacing an observed Promise without subscribing to the replacement', async () => {
+    const promise = {};
+    const {oracle, resolve} = createTestOracle(
+      {promise},
+      {
+        valueMetadata: new Map([
+          [promise, {type: 'promise', state: 'fulfilled', value: 'value'}],
+        ]),
+      },
+    );
+    const received = {promise: Promise.resolve('value')};
+    resolve(received);
+    await tick();
+    expect(oracle.isComplete()).toBe(true);
+    await expect(oracle.checkForMutations()).resolves.toBeUndefined();
+
+    received.promise = Promise.resolve('value');
+    const then = jest.spyOn(received.promise, 'then');
+    await expect(oracle.checkForMutations()).rejects.toThrow('was replaced');
+    expect(then).not.toHaveBeenCalled();
   });
 });

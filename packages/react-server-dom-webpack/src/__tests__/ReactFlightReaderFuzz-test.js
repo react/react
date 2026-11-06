@@ -12,7 +12,8 @@
 
 const {PassThrough} = require('stream');
 const {finished} = require('stream/promises');
-const {createObjectCheck} = require('./fuzz/FlightReaderOracle');
+const {createOracle} = require('./fuzz/FlightReaderOracle');
+const {createFixture} = require('./fuzz/FlightReaderFuzzFixture');
 const {
   patchSetImmediate,
 } = require('../../../../scripts/jest/patchSetImmediate');
@@ -121,27 +122,27 @@ describe('ReactFlightReaderFuzz (node)', () => {
       distinct: {value: 'shared'},
     };
     const received = await roundTrip(source);
-    const check = createObjectCheck(source, received);
-    check();
+    const oracle = createOracle();
+    oracle.observeValue(source, received);
     expect(received.first).not.toBe(received.distinct);
     expect(received.second).not.toBe(received.distinct);
 
     await roundTrip('another value');
-    check();
+    await oracle.checkForMutations();
   });
 
   it('checks values along object and array cycles', async () => {
     const source = {value: 'cycle', items: []};
     source.items.push(source, source.items);
     const received = await roundTrip(source);
-    const check = createObjectCheck(source, received);
-    check();
+    const oracle = createOracle();
+    oracle.observeValue(source, received);
     expect(received.value).toBe('cycle');
     expect(received.items[0].value).toBe('cycle');
     expect(Array.isArray(received.items[1])).toBe(true);
 
     await roundTrip('another value');
-    check();
+    await oracle.checkForMutations();
   });
 
   it('delivers a Promise result before an independent pending Promise or EOF', async () => {
@@ -269,4 +270,61 @@ describe('ReactFlightReaderFuzz (node)', () => {
       return value;
     });
   }
+
+  // This fixed graph reaches the same source object through an ordinary
+  // property, another property, and a later Promise result. Release the source
+  // Promise before its module, then require delivery before the unrelated EOF.
+  async function runGraph(graph) {
+    const fixture = createFixture(graph, {WebpackMock});
+    const oracle = createOracle(fixture);
+    const eventOrder = [
+      'resolve later to shared',
+      'load ready',
+      'resolve an unrelated Promise',
+    ];
+    const events = eventOrder.map(label => {
+      const event = fixture.events.find(candidate => candidate.label === label);
+      expect(event).toBeDefined();
+      return event;
+    });
+
+    await withResponse(fixture.model, async ({response, stream}) => {
+      oracle.subscribeToRoot(response, fixture.model, {subscribeAgain: true});
+      async function checkProgress() {
+        await actOnStream(() => {});
+        oracle.throwIfFailed();
+        expect(oracle.getMissingResults().map(check => check.path)).toEqual([]);
+        await oracle.checkForMutations();
+      }
+      await checkProgress();
+      for (let i = 0; i < events.length; i++) {
+        const event = events[i];
+        await actOnStream(() => {
+          event.released = true;
+          event.run();
+        });
+        await checkProgress();
+        if (event !== fixture.unrelatedEvent) {
+          expect(stream.readableEnded).toBe(false);
+        }
+      }
+      expect(oracle.isComplete()).toBe(true);
+    });
+  }
+
+  describe('Promise and client-module graphs', () => {
+    it.each(['', ':', '%3A', '%25:', ':%3A:', 'constructor', '01', '0', '🙂'])(
+      'references through the property name %j',
+      key =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            shared: {object: {ready: 'ready'}},
+            object: {object: {[key]: 'shared', repeat: 'shared'}},
+            later: {promise: 'shared'},
+          },
+          roots: {entry: 'object', other: 'later'},
+        }),
+    );
+  });
 });
