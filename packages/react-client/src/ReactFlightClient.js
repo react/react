@@ -322,7 +322,10 @@ function reactPromiseThen<T>(
         rej(reason);
       };
     });
-    wrapperPromise.then(resolveCallback, rejectCallback);
+    wrapperPromise.then(
+      resolveCallback,
+      typeof rejectCallback === 'function' ? rejectCallback : ignoreReject,
+    );
   }
   // The status might have changed after initialization.
   switch (chunk.status) {
@@ -658,6 +661,8 @@ function processChunkDebugInfo<T>(
   filterDebugInfo(response, chunk);
   moveDebugInfoFromChunkToInnerValue(chunk, value);
 }
+
+function ignoreReject() {}
 
 function wakeChunk<T>(
   response: Response,
