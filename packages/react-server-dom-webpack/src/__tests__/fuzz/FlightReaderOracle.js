@@ -214,11 +214,7 @@ function traverse(state, root, observe) {
         todo.push(children[i]);
       }
     } catch (error) {
-      if (error.path === undefined) {
-        error.message = pair.path + ': ' + error.message;
-        error.path = pair.path;
-      }
-      throw error;
+      throwValueError(error, pair.path);
     }
   }
   return blobs;
@@ -1135,7 +1131,7 @@ function runAsyncTask(state, run) {
   state.pendingTasks++;
   Promise.resolve()
     .then(run)
-    .catch(error => state.failures.push(error))
+    .catch(error => recordFailure(state, error))
     .then(() => state.pendingTasks--);
 }
 
@@ -1143,7 +1139,7 @@ function guard(state, run) {
   try {
     run();
   } catch (error) {
-    state.failures.push(error);
+    recordFailure(state, error);
   }
 }
 
@@ -1151,6 +1147,24 @@ function throwIfFailed(state) {
   if (state.failures.length > 0) {
     throw state.failures[0];
   }
+}
+
+function recordFailure(state, error) {
+  if (error.fuzzFailure === undefined) {
+    error.fuzzFailure = 'observation: ' + error.message;
+  }
+  state.failures.push(error);
+}
+
+function throwValueError(error, path) {
+  if (error.fuzzFailure === undefined) {
+    error.fuzzFailure = 'value: ' + error.message;
+  }
+  if (error.path === undefined) {
+    error.message = path + ': ' + error.message;
+    error.path = path;
+  }
+  throw error;
 }
 
 module.exports = {createOracle};

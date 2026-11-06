@@ -10,21 +10,35 @@
 
 'use strict';
 
+// Round-trip generated JavaScript values through the Flight server and client.
+// Vary when Promises resolve, modules load, and stream items are produced.
+// Check the results against the source values after each event.
+//
+// Set FUZZ_TEST_SEED to replay a run and FLIGHT_FUZZ_CASES to change its size.
+// FLIGHT_FUZZ_SHRINK limits the number of replays used to reduce a failure.
+
 const {createOracle} = require('./fuzz/FlightReaderOracle');
 const {createFixture} = require('./fuzz/FlightReaderFuzzFixture');
 const {
   createRandom,
   generateGraph,
   generateScaleGraph,
+  shrinkGraph,
+  formatGraphTest,
+  formatReplayCommand,
 } = require('./fuzz/FlightReaderFuzzGraph');
 
 const SEED = process.env.FUZZ_TEST_SEED || 'default';
 const caseCount = +(process.env.FLIGHT_FUZZ_CASES ?? 4);
+const shrinkBudget = +(process.env.FLIGHT_FUZZ_SHRINK ?? 0);
 if (!Number.isSafeInteger(caseCount) || caseCount < 1) {
   throw new Error('FLIGHT_FUZZ_CASES must be a positive integer.');
 }
+if (!Number.isSafeInteger(shrinkBudget) || shrinkBudget < 0) {
+  throw new Error('FLIGHT_FUZZ_SHRINK must be a nonnegative replay budget.');
+}
 // Generated graphs perform real I/O and can exceed Jest's default timeout.
-jest.setTimeout(15000);
+jest.setTimeout(shrinkBudget > 0 ? 120000 : 15000);
 // Keep the first seed unchanged so the printed command replays that case.
 const seeds = Array.from({length: caseCount}, (_, i) =>
   i === 0 ? SEED : SEED + ':' + i,
@@ -344,7 +358,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
     });
   }
 
-  // Reset the consuming module context before building each graph's proxies.
+  // Run a pasted case at every read timing unless one was specified.
   async function runGraph({
     readTiming,
     seed = SEED,
@@ -353,6 +367,80 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   }) {
     const timings = readTiming === undefined ? readTimings : [readTiming];
     for (let i = 0; i < timings.length; i++) {
+      await runCaseWithReproduction({
+        seed,
+        readTiming: timings[i],
+        scheduleIndex,
+        graph,
+      });
+    }
+  }
+
+  async function runCaseWithReproduction(args) {
+    const {seed, readTiming, graph} = args;
+    const original = await runCase(args);
+    if (original === null) {
+      return;
+    }
+    let failure = original;
+    let reduction = '';
+    if (shrinkBudget > 0) {
+      const signature = error => error.fuzzFailure || error.message;
+      const reduced = await shrinkGraph(
+        original.graph,
+        async candidate => {
+          let result;
+          try {
+            result = await runCase({...args, graph: candidate});
+          } catch (error) {
+            // A reduction can invalidate the graph, e.g. by replacing
+            // an element that still has a props reference. Skip that reduction.
+            return false;
+          }
+          return result !== null &&
+            signature(result.error) === signature(original.error)
+            ? result
+            : false;
+        },
+        shrinkBudget,
+      );
+      if (reduced.reproduction !== null) {
+        failure = reduced.reproduction;
+      }
+      reduction =
+        '\nReduced from ' +
+        Object.keys(graph.nodes).length +
+        ' to ' +
+        Object.keys(failure.graph.nodes).length +
+        ' nodes in ' +
+        reduced.attempts +
+        ' replays. Each accepted reduction failed twice.\n';
+    }
+    const testName = expect.getState().currentTestName;
+    const replayOptions = {
+      build: !!process.env.IS_BUILD,
+      releaseChannel: process.env.RELEASE_CHANNEL || 'experimental',
+    };
+    const report =
+      'Replay the original with:\n' +
+      formatReplayCommand(seed, testName, __DEV__, replayOptions) +
+      '\n' +
+      reduction +
+      '\nPaste this case next to the generated graphs and run with:\n' +
+      formatReplayCommand(
+        seed,
+        'ReactFlightReaderFuzz (' + host + ') pasted',
+        __DEV__,
+        replayOptions,
+      ) +
+      '\n\n' +
+      formatGraphTest(failure.graph, readTiming);
+    throw new Error(report, {cause: failure.error});
+  }
+
+  async function runCase({seed, readTiming, scheduleIndex, graph}) {
+    let replayGraph;
+    try {
       await withFlightModules(async () => {
         const fixture = await createFixture(graph, {
           React,
@@ -364,11 +452,21 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         });
         const oracle = createOracle(fixture, {render});
         const schedule = createSchedule(fixture, graph, seed, scheduleIndex);
-        await checkResponse(fixture, oracle, {
-          ...schedule,
-          readTiming: timings[i],
-        });
+        replayGraph = {
+          ...graph,
+          events: schedule.events.map(event => event.label),
+          packetSizes: schedule.packetSizes,
+          yieldBetweenPackets: schedule.yieldBetweenPackets,
+        };
+        await checkResponse(fixture, oracle, {...schedule, readTiming});
       });
+      return null;
+    } catch (error) {
+      // Invalid graphs are rejected before attempting a replay.
+      if (replayGraph === undefined) {
+        throw error;
+      }
+      return {error, graph: replayGraph};
     }
   }
 
