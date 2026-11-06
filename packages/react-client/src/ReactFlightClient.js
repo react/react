@@ -3621,16 +3621,18 @@ function startReadableStream<T>(
         const blockedChunk = previousBlockedChunk;
         const chunk: SomeChunk<T> = createPendingChunk(response);
         chunk.then(
-          v => controller.enqueue(v),
+          v => {
+            if (previousBlockedChunk === chunk) {
+              // We were still the last chunk so we can now clear the queue and return
+              // to synchronous emitting.
+              previousBlockedChunk = null;
+            }
+            controller.enqueue(v);
+          },
           e => controller.error(e as any),
         );
         previousBlockedChunk = chunk;
         blockedChunk.then(function () {
-          if (previousBlockedChunk === chunk) {
-            // We were still the last chunk so we can now clear the queue and return
-            // to synchronous emitting.
-            previousBlockedChunk = null;
-          }
           resolveModelChunk(response, chunk, json);
         });
       }

@@ -1213,8 +1213,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('two stream items each waiting on a module', () =>
+    it('two stream items each waiting on a module', () =>
       runGraph({
         nodes: {
           first: {module: 'export-0'},
