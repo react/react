@@ -35,7 +35,7 @@ function Component(t0) {
     const x = { a };
     y = {};
     const f0 = function () {
-      y.x = x;
+      y["x"] = x;
     };
 
     f0();
