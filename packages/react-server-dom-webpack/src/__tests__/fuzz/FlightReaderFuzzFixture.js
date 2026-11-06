@@ -83,6 +83,23 @@ async function createFixture(
           '<span title="' + node.host + '"></span>',
         );
         break;
+      case 'opaqueElement':
+        // A plain client element. With a temporary reference set it round-trips
+        // as an opaque marker and comes back as the original object by identity.
+        values[name] = React.createElement('div', {'data-fuzz': name});
+        valueMetadata.set(values[name], {type: 'opaque'});
+        break;
+      case 'opaqueFunction': {
+        const fn = () => {};
+        Object.defineProperty(fn, 'name', {value: 'opaque_' + name});
+        values[name] = fn;
+        valueMetadata.set(fn, {type: 'opaque'});
+        break;
+      }
+      case 'opaqueSymbol':
+        values[name] = Symbol('opaque_' + name);
+        valueMetadata.set(values[name], {type: 'opaque'});
+        break;
       case 'module': {
         if (createServerReference !== undefined) {
           // Replies cannot carry client references. Use a Server Function
@@ -193,6 +210,14 @@ async function createFixture(
       case 'iterator':
         values[name] = createIterator(node.iterator.map(buildValue));
         break;
+      case 'syncThenable': {
+        // A thenable that settles synchronously during serialization.
+        const target = buildValue(node.syncThenable);
+        const thenable = {then: resolve => resolve(target)};
+        values[name] = thenable;
+        valueMetadata.set(thenable, {type: 'thenable', value: target});
+        break;
+      }
       case 'error':
         values[name] = createAggregateError(
           node.error,

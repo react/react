@@ -10,10 +10,15 @@
 
 'use strict';
 
+import {patchMessageChannel} from '../../../../scripts/jest/patchMessageChannel';
+
 // Round-trip generated JavaScript values through the Flight server and client.
 // Vary when Promises resolve, modules load, and stream items are produced.
 // Check the results against the source values after each event.
 // The reply host encodes on the client and decodes on the server instead.
+// The reply-temporary host (a separate describe block below) adds the second
+// leg: it re-serializes the decoded reply with a temporary reference set so the
+// encoder's temporary-reference and stream-item handling is generated too.
 //
 // Set FUZZ_TEST_SEED to replay a run and FLIGHT_FUZZ_CASES to change its size.
 // FLIGHT_FUZZ_SHRINK limits the number of replays used to reduce a failure.
@@ -41,6 +46,10 @@ const {
   formatGraphTest,
   formatReplayCommand,
 } = require('./fuzz/FlightReaderFuzzGraph');
+const {
+  roundTripTemporaryReferences,
+  compareTemporaryReferences,
+} = require('./fuzz/FlightReaderTemporaryReferenceHost');
 
 const SEED = process.env.FUZZ_TEST_SEED || 'default';
 const caseCount = +(process.env.FLIGHT_FUZZ_CASES ?? 4);
@@ -2156,6 +2165,412 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightReaderFuzz (%s)', host => {
           0,
         ),
         () => runGraph({...scaled.graph, seed, readTiming}),
+      );
+    });
+  });
+
+  // Paste a failing graph's test here.
+});
+
+// The reply-temporary host does not render the source graph directly; it encodes
+// it as a reply, decodes it, drains it, and renders the drained container back.
+// All writer timing has already resolved by then, so this host does not share
+// the event scheduler, readTimings, transport or the event-based oracle above.
+// It reuses the graph generator, fixture builder, shrinker and replay-report
+// helpers, and adds the operations that are only legal with a temporary
+// reference set (opaque leaves and a synchronously settling thenable).
+//
+// Operations the double round trip does not model: client modules and server
+// functions (the encoder passes opaque leaves back instead), rendered elements,
+// Errors and rejections, canceled and byte streams, and the response-scheduling
+// options. Symbols and FormData are generated through the opaque leaves and left
+// out of the special values.
+const REPLY_TEMPORARY_WITHOUT = [
+  'module',
+  'failing module',
+  'bound function',
+  'element',
+  'props',
+  'component',
+  'failing component',
+  'fragment',
+  'host',
+  'error',
+  'aggregate error',
+  'rejected promise',
+  'failing stream',
+  'canceled stream',
+  'byte stream',
+  'after eof',
+  'root promise',
+  'symbol',
+  'form data',
+];
+const REPLY_TEMPORARY_EXTRA = [
+  'opaque leaf',
+  'opaque item',
+  'shared item',
+  'thenable item',
+];
+
+describe('ReactFlightReaderFuzz (reply-temporary)', () => {
+  let React;
+  let ReactServer;
+  let ReactServerDOMServer;
+  let ReactServerDOMClient;
+  let WebpackMock;
+  let serverAct;
+  let assertConsoleErrorDev;
+  let assertConsoleLogsCleared;
+
+  const consoleMethods = Object.fromEntries(
+    Object.entries(Object.getOwnPropertyDescriptors(console)).filter(
+      ([, descriptor]) => typeof descriptor.value === 'function',
+    ),
+  );
+
+  // Counts how non-opaque objects came back: by identity vs. as a structural
+  // copy. Identity here is incidental to whether an item was outlined, so both
+  // are allowed; the totals let the split rate be compared against base.
+  const identityStats = {identical: 0, structural: 0};
+
+  function loadModules() {
+    Object.defineProperties(console, consoleMethods);
+    jest.resetModules();
+    // serverAct flushes the server scheduler through Jest's timer mocks, so this
+    // host uses them rather than the real timers the other hosts switch to.
+    jest.useFakeTimers();
+    patchMessageChannel(require('scheduler'));
+    serverAct = require('internal-test-utils').serverAct;
+    jest.mock('react', () => require('react/react.react-server'));
+    jest.doMock('react-server-dom-webpack/server', () =>
+      require('react-server-dom-webpack/server.edge'),
+    );
+    WebpackMock = require('./utils/WebpackMock');
+    ReactServerDOMServer = require('react-server-dom-webpack/server.edge');
+    ReactServer = require('react');
+    jest.resetModules();
+    __unmockReact();
+    React = require('react');
+    ReactServerDOMClient = require('react-server-dom-webpack/client.edge');
+    ({assertConsoleErrorDev} = require('internal-test-utils'));
+    ({assertConsoleLogsCleared} = require('internal-test-utils/consoleMock'));
+  }
+
+  async function withFlightModules(run) {
+    let failure = null;
+    let loaded = false;
+    try {
+      loadModules();
+      loaded = true;
+      await run();
+    } catch (error) {
+      failure = error;
+    } finally {
+      try {
+        if (loaded) {
+          const checks = [
+            () =>
+              assertConsoleErrorDev(
+                global.__loggedErrors
+                  .map(entry => entry[0])
+                  .filter(
+                    message =>
+                      typeof message === 'string' &&
+                      message.includes('ArrayBuffer.prototype.detached'),
+                  ),
+                {withoutStack: true},
+              ),
+            assertConsoleLogsCleared,
+          ];
+          for (let i = 0; i < checks.length; i++) {
+            try {
+              checks[i]();
+            } catch (error) {
+              if (failure === null) {
+                failure = error;
+              }
+            }
+          }
+        }
+      } finally {
+        Object.defineProperties(console, consoleMethods);
+      }
+    }
+    if (failure !== null) {
+      throw failure;
+    }
+  }
+
+  // Run one graph through the round trip. Returns null on success or
+  // {error, graph} so the reproduction and shrinker can replay it.
+  async function runCase(graph) {
+    let ran = false;
+    try {
+      await withFlightModules(async () => {
+        const fixture = await createFixture(graph, {
+          React,
+          ReactServer,
+          WebpackMock,
+          observeProps() {},
+        });
+        // encodeReply waits for the source Promises, streams and iterables, so
+        // every writer event is released before encoding begins.
+        fixture.events.forEach(event => {
+          event.released = true;
+          event.run();
+        });
+        ran = true;
+        const sourceRoot = {
+          entry: fixture.model.entry,
+          other: fixture.model.other,
+        };
+        const received = await roundTripTemporaryReferences(
+          {ReactServerDOMServer, ReactServerDOMClient, WebpackMock, serverAct},
+          sourceRoot,
+        );
+        const stats = await compareTemporaryReferences(
+          fixture,
+          sourceRoot,
+          received,
+        );
+        identityStats.identical += stats.identical;
+        identityStats.structural += stats.structural;
+      });
+      return null;
+    } catch (error) {
+      // An invalid graph (bad reduction) is reported, not replayed.
+      if (!ran) {
+        throw error;
+      }
+      return {error, graph};
+    }
+  }
+
+  async function runCaseWithReproduction(seed, graph) {
+    const original = await runCase(graph);
+    if (original === null) {
+      return;
+    }
+    const testName = expect.getState().currentTestName;
+    const replayOptions = {
+      build: !!process.env.IS_BUILD,
+      releaseChannel: process.env.RELEASE_CHANNEL || 'experimental',
+    };
+    const buildReport = (failure, reduction) =>
+      'Replay the original with:\n' +
+      formatReplayCommand(seed, testName, __DEV__, replayOptions) +
+      '\n' +
+      reduction +
+      '\nPaste this case next to the generated graphs and run with:\n' +
+      formatReplayCommand(
+        seed,
+        'ReactFlightReaderFuzz (reply-temporary) pasted',
+        __DEV__,
+        replayOptions,
+      ) +
+      '\n\n' +
+      formatGraphTest(failure.graph, 'after-events');
+    let failure = original;
+    let reduction = '';
+    if (shrinkBudget > 0) {
+      const signature = error => error.fuzzFailure || error.message;
+      const reduced = await shrinkGraph(
+        original.graph,
+        async candidate => {
+          let result;
+          try {
+            result = await runCase(candidate);
+          } catch (error) {
+            return false;
+          }
+          return result !== null &&
+            signature(result.error) === signature(original.error)
+            ? result
+            : false;
+        },
+        shrinkBudget,
+      );
+      if (reduced.reproduction !== null) {
+        failure = reduced.reproduction;
+      }
+      reduction =
+        '\nReduced from ' +
+        Object.keys(graph.nodes).length +
+        ' to ' +
+        Object.keys(failure.graph.nodes).length +
+        ' nodes in ' +
+        reduced.attempts +
+        ' replays. Each accepted reduction failed twice.\n';
+    }
+    throw new Error(buildReport(failure, reduction), {cause: failure.error});
+  }
+
+  function runGraph(graph) {
+    return runCaseWithReproduction(SEED, graph);
+  }
+
+  afterAll(() => {
+    process.stderr.write(
+      '\nreply-temporary identity: ' +
+        identityStats.identical +
+        ' by identity, ' +
+        identityStats.structural +
+        ' as structural copies.\n',
+    );
+  });
+
+  describe('named regression cases', () => {
+    // Register an outlined reply stream item as a temporary reference: a stream
+    // item outlined by a shared sub-object must round trip by identity instead
+    // of decoding to undefined.
+    it('outlined stream item with a shared sub-object', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          item: {object: {a: 'shared', b: 'shared'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('outlined async iterable item with a shared sub-object', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          item: {object: {a: 'shared', b: 'shared'}},
+          iterable: {iterable: ['item'], single: true},
+        },
+        roots: {entry: 'iterable', other: 'iterable'},
+      }));
+
+    // Keep a reply stream item that holds opaque temporary references: an
+    // element, function or symbol inside an item must not leave an unresolvable
+    // marker.
+    it('opaque leaves inside a stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'plain'},
+          plain: {object: {value: 'value'}},
+          el: {opaqueElement: true},
+          fn: {opaqueFunction: true},
+          sym: {opaqueSymbol: true},
+          item: {object: {el: 'el', fn: 'fn', sym: 'sym', plain: 'plain'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('opaque leaf inside an async iterable return value', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'first'},
+          first: {object: {value: 'value'}},
+          el: {opaqueElement: true},
+          returned: {object: {el: 'el'}},
+          iterable: {iterable: ['first'], returns: 'returned', single: true},
+        },
+        roots: {entry: 'iterable', other: 'iterable'},
+      }));
+
+    // Keep a reply stream item referenced by a synchronous thenable: a thenable
+    // that settles synchronously to another object of the item must not leave a
+    // reference to a part that is never written.
+    it('synchronous thenable resolving to an object of its stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          thenable: {syncThenable: 'shared'},
+          item: {object: {x: 'shared', p: 'thenable'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('asynchronous thenable resolving to an object of its stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          thenable: {promise: 'shared'},
+          item: {object: {x: 'shared', p: 'thenable'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+  });
+
+  describe('temporary reference graphs', () => {
+    it('opaque leaves in ordinary containers', () =>
+      runGraph({
+        nodes: {
+          el: {opaqueElement: true},
+          fn: {opaqueFunction: true},
+          sym: {opaqueSymbol: true},
+          holder: {object: {el: 'el', fn: 'fn', sym: 'sym'}},
+          repeat: {array: ['el', 'fn', 'sym']},
+          root: {object: {holder: 'holder', repeat: 'repeat'}},
+        },
+        roots: {entry: 'root', other: 'holder'},
+      }));
+
+    it('a shared sub-object across a Map, a Set and the item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          key: {value: 'key'},
+          map: {map: [['key', 'shared']]},
+          set: {set: ['shared']},
+          item: {object: {map: 'map', set: 'set', direct: 'shared'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('a nested stream inside a stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'leaf'},
+          leaf: {object: {value: 'value'}},
+          innerItem: {object: {leaf: 'leaf'}},
+          inner: {stream: ['innerItem']},
+          item: {object: {inner: 'inner'}},
+          outer: {stream: ['item']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }));
+
+    it('a self cycle carried through a stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'leaf'},
+          leaf: {object: {value: 'value'}},
+          item: {object: {leaf: 'leaf'}},
+          stream: {stream: ['item']},
+          root: {object: {stream: 'stream', self: 'root'}},
+        },
+        roots: {entry: 'root', other: 'root'},
+      }));
+  });
+
+  // A value reused under a colon-containing property key is referenced only once
+  // the reply encoder escapes path segments; until then it re-serializes a
+  // shared stream and locks it.
+  // eslint-disable-next-line jest/no-disabled-tests
+  describe.skip('generated graphs', () => {
+    seeds.forEach(seed => {
+      it('graph seed=' + seed, () =>
+        runCaseWithReproduction(
+          seed,
+          generateGraph(seed, {
+            without: REPLY_TEMPORARY_WITHOUT,
+            extra: REPLY_TEMPORARY_EXTRA,
+          }),
+        ),
       );
     });
   });

@@ -40,6 +40,12 @@ const nodeTypes = [
   'bytes',
   'iterable',
   'component',
+  // Reply temporary-reference host only: opaque leaves the encoder writes as a
+  // temporary reference marker, and a synchronously settling thenable.
+  'opaqueElement',
+  'opaqueFunction',
+  'opaqueSymbol',
+  'syncThenable',
 ];
 
 function getNodeType(node) {
@@ -75,6 +81,7 @@ function getReferencedNodes(node) {
     case 'props':
     case 'promise':
     case 'component':
+    case 'syncThenable':
       return [node[getNodeType(node)]];
     case 'error':
       return (node.cause === undefined ? [] : [node.cause]).concat(
@@ -165,12 +172,12 @@ const graphOperations = [
   'root promise',
 ];
 
-function generateGraph(seed, {without = []} = {}) {
+function generateGraph(seed, {without = [], extra = []} = {}) {
   const pick = createRandom(seed + '/graph');
   const pickFrom = list => list[pick(list.length)];
-  const allowedOperations = graphOperations.filter(
-    operation => !without.includes(operation),
-  );
+  const allowedOperations = graphOperations
+    .filter(operation => !without.includes(operation))
+    .concat(extra);
   const names = [];
   const nodes = {};
   const referenceTargets = [];
@@ -272,6 +279,36 @@ function generateGraph(seed, {without = []} = {}) {
     streamItemNodes.push(name);
     return name;
   };
+  const opaqueKinds = ['opaqueElement', 'opaqueFunction', 'opaqueSymbol'];
+  const addOpaqueLeaf = target =>
+    add({[pickFrom(opaqueKinds)]: true}, {target});
+  // A value serialized as the root of its own part must not be an opaque leaf:
+  // it would be written as a bare temporary reference marker with no path, which
+  // the server cannot resolve. An opaque leaf only round trips as a property of
+  // a container that has a reference of its own. A module reference throws on the
+  // .then read a Promise performs.
+  const canBeModelRoot = name =>
+    !('module' in nodes[name]) &&
+    !('opaqueElement' in nodes[name]) &&
+    !('opaqueFunction' in nodes[name]) &&
+    !('opaqueSymbol' in nodes[name]);
+  // A Promise or thenable resolved value is awaited, which flattens a nested
+  // thenable; its target is kept to a single settlement so the expected
+  // resolved value stays well defined.
+  const canBeThenableTarget = name =>
+    canBeModelRoot(name) &&
+    !('promise' in nodes[name]) &&
+    !('syncThenable' in nodes[name]);
+  // Carry an item node in a stream or single-use async iterable, as either an
+  // item or the iterable's return value, so item-keeping is exercised on both.
+  const addItemCarrier = item => {
+    if (pick(2) === 0) {
+      return add({stream: [item]});
+    }
+    return pick(2) === 0
+      ? add({iterable: [item], single: true})
+      : add({iterable: [], returns: item, single: true});
+  };
 
   add({value: 'value'});
   add({value: 'other value'});
@@ -294,6 +331,8 @@ function generateGraph(seed, {without = []} = {}) {
   if (!without.includes('host')) {
     add({host: 'atom'});
   }
+  // The reply temporary-reference host passes opaque leaves back instead of
+  // client references, so it suppresses module nodes.
   const moduleCount = without.includes('module') ? 0 : 2 + pick(2);
   for (let i = 0; i < moduleCount; i++) {
     const node = {module: 'export-' + i};
@@ -355,11 +394,10 @@ function generateGraph(seed, {without = []} = {}) {
       }
       case 'promise': {
         // Promise resolution reads .then, which throws on a client reference.
-        add({
-          promise: pickFrom(
-            referenceTargets.filter(name => !('module' in nodes[name])),
-          ),
-        });
+        // An opaque leaf cannot be the root of a part, so it is never a
+        // Promise's resolved value. For hosts without opaque leaves this is the
+        // same set as before (every non-module reference target).
+        add({promise: pickFrom(referenceTargets.filter(canBeModelRoot))});
         break;
       }
       case 'rejected promise': {
@@ -509,6 +547,50 @@ function generateGraph(seed, {without = []} = {}) {
       }
       case 'root promise': {
         options.rootPromise = true;
+        break;
+      }
+      case 'opaque leaf': {
+        addOpaqueLeaf(true);
+        break;
+      }
+      case 'opaque item': {
+        // An opaque leaf inside a stream item forces the item to keep its part
+        // so the marker's path through that part resolves on the server.
+        const item = add(
+          {
+            object: {
+              op: addOpaqueLeaf(false),
+              plain: pickFrom(referenceTargets),
+            },
+          },
+          {type: 'item', target: false},
+        );
+        addItemCarrier(item);
+        break;
+      }
+      case 'shared item': {
+        // A sub-object shared within a stream item outlines the item itself.
+        const shared = pickFrom(referenceTargets);
+        const item = add(
+          {object: {a: shared, b: shared}},
+          {type: 'item', target: false},
+        );
+        addItemCarrier(item);
+        break;
+      }
+      case 'thenable item': {
+        // A thenable whose resolved value is another object of the same stream
+        // item embeds a reference into the item while it is still serializing.
+        const shared = pickFrom(referenceTargets.filter(canBeThenableTarget));
+        const thenable = add(
+          pick(2) === 0 ? {syncThenable: shared} : {promise: shared},
+          {target: false},
+        );
+        const item = add(
+          {object: {x: shared, p: thenable}},
+          {type: 'item', target: false},
+        );
+        addItemCarrier(item);
         break;
       }
       default:
