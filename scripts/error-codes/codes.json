@@ -598,5 +598,7 @@
   "610": "Cannot assign to a Server Reference to an object on the client.",
   "611": "Expected a Server Reference to an object to resolve to an object.",
   "612": "Cannot transport a detached buffer. This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.",
-  "616": "A referenced row was decoded as both a Set and a Map. This is not a shape the React Server emits."
+  "615": "A reference in the RSC payload never resolved to a value before the stream closed. This is not a shape the React Server emits.",
+  "616": "A referenced row was decoded as both a Set and a Map. This is not a shape the React Server emits.",
+  "617": "A cyclic group in the RSC payload could not be resolved because its recorded waits are inconsistent."
 }
