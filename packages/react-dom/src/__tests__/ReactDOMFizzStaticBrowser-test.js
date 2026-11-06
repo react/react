@@ -1993,6 +1993,210 @@ describe('ReactDOMFizzStaticBrowser', () => {
     expect(container.querySelector('template')).toBe(null);
   });
 
+  it('preserves postponed state when a resumed boundary aborts asynchronously while replay walk is stalled above the resumable slot', async () => {
+    let resolveStall;
+    const stallPromise = new Promise(resolve => {
+      resolveStall = resolve;
+    });
+    const never = new Promise(() => {});
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    let stage = 0;
+    const errors = [];
+
+    function InnerSlot() {
+      if (stage < 2) {
+        React.use(never);
+      }
+      return 'Inner Content';
+    }
+
+    function StalledWrapper({children}) {
+      if (stage === 1) {
+        React.use(stallPromise);
+      }
+      return <div className="stalled-wrapper">{children}</div>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Loading...">
+            <StalledWrapper>
+              <InnerSlot />
+            </StalledWrapper>
+          </Suspense>
+        </div>
+      );
+    }
+
+    let pendingResult;
+    await serverAct(async () => {
+      pendingResult = ReactDOMFizzStatic.prerender(<App />, {
+        signal: firstController.signal,
+        onError(error) {
+          errors.push(error);
+        },
+      });
+    });
+    await serverAct(() => {
+      firstController.abort('first abort');
+    });
+    const first = await pendingResult;
+    expect(first.postponed).not.toBe(null);
+    await readIntoContainer(first.prelude);
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+
+    stage = 1;
+    errors.length = 0;
+    let resumedResult;
+    await serverAct(async () => {
+      resumedResult = ReactDOMFizzStatic.resumeAndPrerender(
+        <App />,
+        JSON.parse(JSON.stringify(first.postponed)),
+        {
+          signal: secondController.signal,
+          onError(error) {
+            errors.push(error);
+          },
+        },
+      );
+    });
+    await serverAct(() => {
+      secondController.abort('second abort');
+    });
+    const second = await resumedResult;
+    expect(errors).toContain('second abort');
+    expect(second.postponed).not.toBe(null);
+    await readIntoContainer(second.prelude);
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+    expect(container.innerHTML).not.toContain('$RX');
+
+    resolveStall();
+
+    stage = 2;
+    errors.length = 0;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(second.postponed)),
+        {
+          onError(error) {
+            errors.push(error);
+          },
+        },
+      ),
+    );
+    await readIntoContainer(resumed);
+    expect(errors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div class="stalled-wrapper">Inner Content</div>
+      </div>,
+    );
+  });
+
+  it('preserves postponed state when a resumed boundary aborts synchronously while replay walk is above the resumable slot', async () => {
+    let resolveStall;
+    const stallPromise = new Promise(resolve => {
+      resolveStall = resolve;
+    });
+    const never = new Promise(() => {});
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    let stage = 0;
+    const errors = [];
+
+    function InnerSlot() {
+      if (stage < 2) {
+        React.use(never);
+      }
+      return 'Inner Content';
+    }
+
+    function AbortDuringReplay({children}) {
+      if (stage === 1) {
+        secondController.abort('sync replay abort');
+        React.use(stallPromise);
+      }
+      return <div className="replay-wrapper">{children}</div>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Loading...">
+            <AbortDuringReplay>
+              <InnerSlot />
+            </AbortDuringReplay>
+          </Suspense>
+        </div>
+      );
+    }
+
+    let pendingResult;
+    await serverAct(async () => {
+      pendingResult = ReactDOMFizzStatic.prerender(<App />, {
+        signal: firstController.signal,
+        onError(error) {
+          errors.push(error);
+        },
+      });
+    });
+    await serverAct(() => {
+      firstController.abort('first abort');
+    });
+    const first = await pendingResult;
+    expect(first.postponed).not.toBe(null);
+    await readIntoContainer(first.prelude);
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+
+    stage = 1;
+    errors.length = 0;
+    let resumedResult;
+    await serverAct(async () => {
+      resumedResult = ReactDOMFizzStatic.resumeAndPrerender(
+        <App />,
+        JSON.parse(JSON.stringify(first.postponed)),
+        {
+          signal: secondController.signal,
+          onError(error) {
+            errors.push(error);
+          },
+        },
+      );
+    });
+    const second = await resumedResult;
+    expect(errors).toContain('sync replay abort');
+    expect(second.postponed).not.toBe(null);
+    await readIntoContainer(second.prelude);
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+    expect(container.innerHTML).not.toContain('$RX');
+
+    resolveStall();
+
+    stage = 2;
+    errors.length = 0;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(second.postponed)),
+        {
+          onError(error) {
+            errors.push(error);
+          },
+        },
+      ),
+    );
+    await readIntoContainer(resumed);
+    expect(errors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div class="replay-wrapper">Inner Content</div>
+      </div>,
+    );
+  });
+
   ['forwards', 'backwards', 'together'].forEach(revealOrder => {
     [true, false].forEach(abortBeforeList => {
       // @gate enableSuspenseList
