@@ -1751,6 +1751,24 @@ function initializeBlockedChunk<T>(
   value: T,
   reason: InitializedChunk<T>['reason'],
 ): void {
+  const resolveListeners = markChunkInitialized(response, chunk, value, reason);
+  const reservedCollection = response._reservedCollections.get(chunk);
+  if (reservedCollection !== undefined) {
+    fillReservedCollection(reservedCollection, value as any);
+  }
+  wakeInitializedChunk(response, chunk as any, resolveListeners);
+}
+
+// Moves a blocked chunk to INITIALIZED and returns the listeners that were
+// waiting on it, for the caller to wake. A set of chunks that completes
+// together is marked in full before any of its listeners wakes, so that
+// none of them finds a chunk of the set still blocked.
+function markChunkInitialized<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: InitializedChunk<T>['reason'],
+): null | Array<InitializationReference | (T => mixed)> {
   const resolveListeners = chunk.value;
   if (__DEV__) {
     // Only a blocked chunk receives debug info, so release the set here.
@@ -1760,14 +1778,18 @@ function initializeBlockedChunk<T>(
   initializedChunk.status = INITIALIZED;
   initializedChunk.value = value;
   initializedChunk.reason = reason;
-  const reservedCollection = response._reservedCollections.get(chunk);
-  if (reservedCollection !== undefined) {
-    fillReservedCollection(reservedCollection, value as any);
-  }
+  return resolveListeners;
+}
+
+function wakeInitializedChunk<T>(
+  response: Response,
+  chunk: InitializedChunk<T>,
+  resolveListeners: null | Array<InitializationReference | (T => mixed)>,
+): void {
   if (resolveListeners !== null) {
-    wakeChunk(response, resolveListeners, value, initializedChunk);
+    wakeChunk(response, resolveListeners, chunk.value, chunk);
   } else if (__DEV__) {
-    processChunkDebugInfo(response, initializedChunk, value);
+    processChunkDebugInfo(response, chunk, chunk.value);
   }
 }
 
