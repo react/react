@@ -69,7 +69,7 @@ export function deadCodeElimination(fn: HIRFunction): void {
   );
 }
 
-class State {
+export class State {
   env: Environment;
   named: Set<string> = new Set();
   identifiers: Set<IdentifierId> = new Set();
@@ -111,7 +111,10 @@ class State {
   }
 }
 
-function findReferencedIdentifiers(fn: HIRFunction): State {
+/**
+ * Finds the identifiers read by code that dead code elimination keeps, without modifying `fn`.
+ */
+export function findReferencedIdentifiers(fn: HIRFunction): State {
   /*
    * If there are no back-edges the algorithm can terminate after a single iteration
    * of the blocks
@@ -329,10 +332,13 @@ function pruneableValue(value: InstructionValue, state: State): boolean {
         const hookKind = getHookKind(state.env, calleee.identifier);
         switch (hookKind) {
           case 'useState':
-          case 'useReducer':
           case 'useRef': {
             // unused refs can be removed
             return true;
+          }
+          case 'useReducer': {
+            // React calls the initializer, `init(arg)`, on mount, so keep a call that has one
+            return value.args.length < 3;
           }
         }
       }
