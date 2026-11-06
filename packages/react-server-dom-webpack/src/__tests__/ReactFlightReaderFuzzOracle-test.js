@@ -465,6 +465,32 @@ describe('FlightReaderOracle', () => {
     expect(valid.oracle.isComplete()).toBe(true);
   });
 
+  // An early evaluation release must not lend its error through either local
+  // inputs or owner models until chunk loading makes that module observable.
+  it('waits for module loading before accepting an evaluation error', () => {
+    const module = {};
+    const source = {module};
+    const error = new Error('evaluation failed');
+    const load = {released: false};
+    const evaluate = {released: true, error, after: load};
+    const options = {
+      valueMetadata: new Map([[module, {type: 'module', value: 'ready'}]]),
+      requiredEvents: new Map([[module, [load, evaluate]]]),
+    };
+    const early = createTestOracle(source, options);
+    expect(early.oracle.getMissingResults()).toEqual([]);
+    early.reject(error);
+    expect(() => early.oracle.throwIfFailed()).toThrow('unexpected rejection');
+
+    load.released = true;
+    const valid = createTestOracle(source, options);
+    expect(valid.oracle.getMissingResults().map(check => check.path)).toEqual([
+      'root',
+    ]);
+    valid.reject(error);
+    expect(valid.oracle.isComplete()).toBe(true);
+  });
+
   // Requiring every locally ready result would hide the writer's valid choice
   // to reference a shared object from another still-loading result.
   it('keeps a shared value blocked while one possible containing model is loading', () => {

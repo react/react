@@ -433,7 +433,13 @@ function getRequiredEvents(fixture, value) {
 
 function getReleasedErrors(events) {
   return events
-    .filter(event => event.released && event.error !== undefined)
+    .filter(
+      event =>
+        event.released &&
+        event.error !== undefined &&
+        // Evaluation can finish early, but its error needs the loaded module.
+        (event.after === undefined || event.after.released),
+    )
     .map(event => event.error);
 }
 

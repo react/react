@@ -7,7 +7,7 @@
 
 'use strict';
 
-function createFixture(graph, {WebpackMock}) {
+async function createFixture(graph, {WebpackMock}) {
   const {nodes} = graph;
   const values = {};
   const events = [];
@@ -49,25 +49,52 @@ function createFixture(graph, {WebpackMock}) {
     const node = nodes[name];
     if (node.module !== undefined) {
       const load = createResolvablePromise();
-      const error =
+      const evaluate = node.async === true ? createResolvablePromise() : null;
+      const loadError =
         node.fail === 'load'
           ? new Error('module ' + name + ' failed to load')
           : undefined;
-      const {value} = WebpackMock.clientExports(
-        {value: node.module},
+      const evaluationError =
+        node.fail === 'evaluate'
+          ? new Error('module ' + name + ' failed to evaluate')
+          : undefined;
+      let exports = WebpackMock.clientExports(
+        evaluate === null ? {value: node.module} : evaluate.promise,
         name,
         name + '.js',
         load.promise,
       );
-      values[name] = value;
-      valueMetadata.set(value, {type: 'module', value: node.module});
-      const event = createEvent(
-        (error !== undefined ? 'reject ' : 'load ') + name,
-        () => (error !== undefined ? load.reject(error) : load.resolve()),
-        {error, isClient: true},
+      let evaluateEvent = null;
+      if (evaluate !== null) {
+        // Awaiting the module proxy marks this as an async import.
+        exports = await exports;
+        evaluateEvent = createEvent(
+          'evaluate ' + name,
+          () =>
+            evaluationError !== undefined
+              ? evaluate.reject(evaluationError)
+              : evaluate.resolve({value: node.module}),
+          {error: evaluationError, isClient: true},
+        );
+        events.push(evaluateEvent);
+      }
+      const reference = exports.value;
+      values[name] = reference;
+      valueMetadata.set(reference, {type: 'module', value: node.module});
+      const loadEvent = createEvent(
+        (loadError !== undefined ? 'reject ' : 'load ') + name,
+        () =>
+          loadError !== undefined ? load.reject(loadError) : load.resolve(),
+        {error: loadError, isClient: true},
       );
-      events.push(event);
-      requiredEvents.set(value, [event]);
+      events.push(loadEvent);
+      if (evaluateEvent !== null) {
+        evaluateEvent.after = loadEvent;
+      }
+      requiredEvents.set(
+        reference,
+        evaluateEvent === null ? [loadEvent] : [loadEvent, evaluateEvent],
+      );
     } else if (node.error !== undefined) {
       const error = new Error(node.error);
       values[name] = error;
@@ -157,7 +184,7 @@ function createFixture(graph, {WebpackMock}) {
 }
 
 function createEvent(label, run, {error, isClient = false} = {}) {
-  return {label, run, released: false, error, isClient};
+  return {label, run, released: false, error, isClient, after: undefined};
 }
 
 function createResolvablePromise() {
