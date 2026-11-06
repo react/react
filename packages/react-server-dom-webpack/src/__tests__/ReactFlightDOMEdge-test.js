@@ -1073,6 +1073,54 @@ describe('ReactFlightDOMEdge', () => {
     expect(await reader.read()).toEqual({value: undefined, done: true});
   });
 
+  it('waits for a queued stream item to initialize before closing', async () => {
+    let resolveFirst;
+    let resolveSecond;
+    const first = await clientExports(
+      new Promise(resolve => (resolveFirst = resolve)),
+    );
+    const second = await clientExports(
+      new Promise(resolve => (resolveSecond = resolve)),
+    );
+    let controller;
+    const source = new ReadableStream({
+      start(c) {
+        controller = c;
+        c.enqueue(new Set([first]));
+        c.enqueue(new Set([second]));
+      },
+    });
+
+    // Deliver both items while their imports are still pending.
+    const result = await serverAct(() =>
+      ReactServerDOMClient.createFromReadableStream(
+        ReactServerDOMServer.renderToReadableStream(source, webpackMap),
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      ),
+    );
+    const reader = result.getReader();
+    const firstRead = reader.read();
+    await serverAct(() => resolveFirst('first'));
+    expect(await firstRead).toEqual({value: new Set(['first']), done: false});
+
+    // The second item has started initializing, but its import still blocks
+    // delivery. Closing the source must wait for that item to finish.
+    const received = [];
+    const secondRead = reader.read();
+    secondRead.then(value => received.push(value));
+    await serverAct(() => controller.close());
+    expect(received).toEqual([]);
+
+    await serverAct(() => resolveSecond('second'));
+    expect(await secondRead).toEqual({value: new Set(['second']), done: false});
+    expect(await reader.read()).toEqual({value: undefined, done: true});
+  });
+
   it('can pass an async import a AsyncIterable while allowing peaking at future values', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
