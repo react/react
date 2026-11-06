@@ -3998,33 +3998,10 @@ function resolveErrorDev(
   }
 
   let error;
-  const errorOptions =
-    // We don't serialize Error.cause in prod so we never need to deserialize
-    // $FlowFixMe[constant-condition]
-    __DEV__ && 'cause' in errorInfo
-      ? {
-          cause: reviveModel(
-            response,
-            // $FlowFixMe[incompatible-type] -- Flow thinks `cause` in `cause?: JSONValue` can be undefined after `in` check.
-            errorInfo.cause as JSONValue,
-            errorInfo,
-            'cause',
-          ),
-        }
-      : undefined;
   const isAggregateError =
     typeof AggregateError !== 'undefined' && 'errors' in errorInfo;
-  const revivedErrors =
-    // We don't serialize AggregateError.errors in prod so we never need to deserialize
-    __DEV__ && isAggregateError
-      ? reviveModel(
-          response,
-          // $FlowFixMe[incompatible-type]
-          errorInfo.errors as JSONValue,
-          errorInfo,
-          'errors',
-        )
-      : null;
+  // The cause and the errors are revived into the Error once it exists, so
+  // that one that has not arrived yet fills the Error in when it does.
   const callStack = buildFakeCallStack(
     response,
     stack,
@@ -4034,17 +4011,15 @@ function resolveErrorDev(
       ? // $FlowFixMe[incompatible-use]
         AggregateError.bind(
           null,
-          revivedErrors,
+          [],
           message ||
             'An error occurred in the Server Components render but no message was provided',
-          errorOptions,
         )
       : // $FlowFixMe[incompatible-use]
         Error.bind(
           null,
           message ||
             'An error occurred in the Server Components render but no message was provided',
-          errorOptions,
         ),
   );
 
@@ -4072,6 +4047,33 @@ function resolveErrorDev(
 
   (error as any).name = name;
   (error as any).environmentName = env;
+  // We don't serialize Error.cause or AggregateError.errors in prod so we
+  // never need to deserialize them there.
+  // $FlowFixMe[constant-condition]
+  if (__DEV__ && 'cause' in errorInfo) {
+    // Like the Error constructor's `cause` option.
+    Object.defineProperty(error, 'cause', {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: reviveModel(
+        response,
+        // $FlowFixMe[incompatible-type] -- Flow thinks `cause` in `cause?: JSONValue` can be undefined after `in` check.
+        errorInfo.cause as JSONValue,
+        error,
+        'cause',
+      ),
+    });
+  }
+  if (__DEV__ && isAggregateError) {
+    (error as any).errors = reviveModel(
+      response,
+      // $FlowFixMe[incompatible-type]
+      errorInfo.errors as JSONValue,
+      error,
+      'errors',
+    );
+  }
   return error;
 }
 

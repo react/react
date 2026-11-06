@@ -491,6 +491,44 @@ describe('ReactFlightDOMEdge', () => {
     expect(observed).toEqual([[1, 1]]);
   });
 
+  // @gate __DEV__
+  it('fills in the cause of an Error that loads after the Error', async () => {
+    let resolveCause;
+    const {value: cause} = clientExports(
+      {value: 'cause'},
+      'cause',
+      '/cause.js',
+      new Promise(resolve => (resolveCause = resolve)),
+    );
+    const error = new Error('failed', {cause});
+    const aggregate = new AggregateError([cause], 'all failed');
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {error, aggregate},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => observed.push(value));
+    });
+    // The Errors wait for their cause and errors like any other field.
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveCause());
+    expect(observed.length).toBe(1);
+    expect(observed[0].error.cause).toBe('cause');
+    expect(observed[0].aggregate.errors).toEqual(['cause']);
+  });
+
   it('should load a server reference on a consuming server and pass it back', async () => {
     function greet(name) {
       return 'hi, ' + name;
@@ -2079,36 +2117,29 @@ describe('ReactFlightDOMEdge', () => {
     expect((await reader.read()).done).toBe(true);
   });
 
-  // DEV Error causes also need the client completion fix.
-  (__DEV__ ? it.skip : it)(
-    'can pass an Error whose cause is itself',
-    async () => {
-      const error = new Error('self-caused');
-      error.cause = error;
+  it('can pass an Error whose cause is itself', async () => {
+    const error = new Error('self-caused');
+    error.cause = error;
 
-      const stream = await serverAct(() =>
-        ReactServerDOMServer.renderToReadableStream({error}, {}),
-      );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({error}, {}),
+    );
 
-      const result = await ReactServerDOMClient.createFromReadableStream(
-        stream,
-        {
-          serverConsumerManifest: {
-            moduleMap: null,
-            moduleLoading: null,
-          },
-        },
-      );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
 
-      expect(result.error).toBeInstanceOf(Error);
-      if (__DEV__) {
-        expect(result.error.message).toBe('self-caused');
-        expect(result.error.cause).toBe(result.error);
-      } else {
-        expect(result.error.cause).toBe(undefined);
-      }
-    },
-  );
+    expect(result.error).toBeInstanceOf(Error);
+    if (__DEV__) {
+      expect(result.error.message).toBe('self-caused');
+      expect(result.error.cause).toBe(result.error);
+    } else {
+      expect(result.error.cause).toBe(undefined);
+    }
+  });
 
   it('can pass a stream a second time after a stream item held it', async () => {
     const inner = new ReadableStream({
