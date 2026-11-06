@@ -202,7 +202,7 @@ function Row({
   };
 
   const resetValue = () => {
-    setLocalValue(value);
+    setLocalValue(JSON.stringify(value));
   };
 
   const submitValueChange = () => {
