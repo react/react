@@ -1977,8 +1977,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
     ' schedule=' +
     scheduleIndex;
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  describe.skip('generated graphs', () => {
+  describe('generated graphs', () => {
     seeds.forEach(seed => {
       for (let scheduleIndex = 0; scheduleIndex < 2; scheduleIndex++) {
         readTimings.forEach(readTiming => {
