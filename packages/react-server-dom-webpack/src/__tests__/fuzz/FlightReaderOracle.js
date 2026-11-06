@@ -380,6 +380,37 @@ function compareValue(
     } else if (metadata.type === 'element') {
       // Flight may deliver a lazy element before its props are ready.
       // Rendering and the component's props callback check its contents.
+    } else if (metadata.type === 'error') {
+      assertOracle(
+        received instanceof Error,
+        'expected an Error but received ' + describeValue(received),
+      );
+      const children = [];
+      if (__DEV__) {
+        assertSame(received.name, expectedValue.name);
+        assertSame(received.message, expectedValue.message);
+        assertSame('cause' in received, 'cause' in expectedValue);
+        if ('cause' in expectedValue) {
+          children.push({
+            expectedValue: expectedValue.cause,
+            received: received.cause,
+            path: path + '.cause',
+          });
+        }
+        if (expectedValue instanceof AggregateError) {
+          assertOracle(
+            received instanceof AggregateError,
+            'expected an AggregateError but received ' +
+              describeValue(received),
+          );
+          children.push({
+            expectedValue: expectedValue.errors,
+            received: received.errors,
+            path: path + '.errors',
+          });
+        }
+      }
+      return children;
     } else if (metadata.type === 'promise') {
       assertOracle(
         typeof received.then === 'function',
@@ -1037,6 +1068,14 @@ function assertExpectedError(error, expected, path) {
 function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
   if (metadata !== undefined) {
+    if (metadata.type === 'error') {
+      return __DEV__
+        ? [
+            value.cause,
+            value instanceof AggregateError ? value.errors : undefined,
+          ]
+        : [];
+    }
     return metadata.type === 'function'
       ? metadata.bound
       : metadata.type === 'iterator'

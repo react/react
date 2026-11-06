@@ -7,6 +7,94 @@
 
 'use strict';
 
+const nodeTypes = [
+  'value',
+  'date',
+  'binary',
+  'text',
+  'blob',
+  'special',
+  'host',
+  'module',
+  'error',
+  'array',
+  'object',
+  'set',
+  'map',
+  'iterator',
+  'bound',
+  'element',
+  'props',
+  'fragment',
+  'promise',
+  'stream',
+  'bytes',
+  'iterable',
+  'component',
+];
+
+function getNodeType(node) {
+  const type = nodeTypes.find(candidate => candidate in node);
+  if (type === undefined) {
+    throw new Error('A graph node has none of: ' + nodeTypes.join(', '));
+  }
+  return type;
+}
+
+function getReferencedNodes(node) {
+  switch (getNodeType(node)) {
+    case 'array':
+    case 'set':
+    case 'iterator':
+    case 'bound':
+    case 'stream':
+      return node[getNodeType(node)]
+        .concat('returns' in node ? [node.returns] : [])
+        .concat(typeof node.fail === 'string' ? [node.fail] : []);
+    case 'object':
+      return Object.values(node.object);
+    case 'iterable':
+      return node.iterable.concat(
+        node.returns === undefined ? [] : [node.returns],
+      );
+    case 'map':
+      return node.map.flat();
+    case 'fragment':
+      return node.fragment;
+    case 'element':
+      return [].concat(node.element);
+    case 'props':
+    case 'promise':
+    case 'component':
+      return [node[getNodeType(node)]];
+    case 'error':
+      return (node.cause === undefined ? [] : [node.cause]).concat(
+        node.errors === undefined ? [] : node.errors,
+      );
+    default:
+      return [];
+  }
+}
+
+function getReachableNodes(
+  graph,
+  {roots = Object.values(graph.roots), includeErrorProperties = true} = {},
+) {
+  const reached = new Set();
+  const todo = roots.slice();
+  while (todo.length > 0) {
+    const name = todo.pop();
+    const node = graph.nodes[name];
+    if (!reached.has(name) && node !== undefined) {
+      reached.add(name);
+      if (includeErrorProperties || getNodeType(node) !== 'error') {
+        todo.push(...getReferencedNodes(node));
+      }
+    }
+  }
+  return reached;
+}
+
 const specialValueFactories = {
   bigint: () => 1234567890123456789n,
   nan: () => NaN,
@@ -18,9 +106,13 @@ const specialValueFactories = {
   'typed array': () => new Int16Array([1, -2, 3]),
   'data view': () => new DataView(new ArrayBuffer(7), 1, 5),
   'bigint array': () => new BigInt64Array([42n, -1n]),
+  'float array': () => new Float64Array([1.5, -2.25, 0]),
+  'clamped array': () => new Uint8ClampedArray([0, 128, 255]),
   undefined: () => undefined,
+  'positive infinity': () => Infinity,
   // Larger than a packet, to exercise fragmented binary data.
   'large binary': () => Uint8Array.from({length: 6000}, (_, i) => i % 251),
+  'large blob': () => new Blob(['blob-'.repeat(1200)], {type: 'text/plain'}),
   'form data': () => {
     const form = new FormData();
     form.append('repeated', 'first');
@@ -34,7 +126,14 @@ async function createFixture(
   graph,
   {React, ReactServer, WebpackMock, observeProps},
 ) {
+  checkReachability(graph);
   const {nodes} = graph;
+  const serializedNodes = getReachableNodes(graph, {
+    roots: Object.values(graph.roots).concat(
+      Object.keys(nodes).filter(name => getNodeType(nodes[name]) === 'promise'),
+    ),
+    includeErrorProperties: __DEV__,
+  });
   const values = {};
   const events = [];
   const valueMetadata = new Map();
@@ -157,9 +256,9 @@ async function createFixture(
         evaluateEvent === null ? [loadEvent] : [loadEvent, evaluateEvent],
       );
     } else if (node.error !== undefined) {
-      const error = new Error(node.error);
-      values[name] = error;
-      valueMetadata.set(error, {type: 'error', digest: 'digest:' + node.error});
+      if (node.errors === undefined) {
+        values[name] = createError(node.error);
+      }
     } else if (node.object !== undefined) {
       values[name] = {};
     } else if (node.array !== undefined) {
@@ -203,7 +302,12 @@ async function createFixture(
     }
     buildingValues.add(name);
     const node = nodes[name];
-    if (node.component !== undefined) {
+    if (node.errors !== undefined) {
+      values[name] = createAggregateError(
+        node.error,
+        node.errors.map(buildValue),
+      );
+    } else if (node.component !== undefined) {
       if (node.throw) {
         const error = buildValue(node.component);
         if (!(error instanceof Error)) {
@@ -309,6 +413,8 @@ async function createFixture(
         }
         values[name].set(getValue(key), getValue(value));
       });
+    } else if (node.error !== undefined && node.cause !== undefined) {
+      values[name].cause = getValue(node.cause);
     } else if (node.promise !== undefined) {
       const deferred = deferredPromises.get(name);
       if (node.reject) {
@@ -476,7 +582,9 @@ async function createFixture(
         if (failure === undefined) {
           controller.close();
         } else {
-          expectedErrors.set(failure, 'failing ' + label);
+          if (serializedNodes.has(label)) {
+            expectedErrors.set(failure, 'failing ' + label);
+          }
           controller.error(failure);
         }
       }
@@ -567,6 +675,23 @@ async function createFixture(
     return fn;
   }
 
+  function createError(message, options) {
+    const error = new Error(message, options);
+    // Server rejections are matched by digest in both modes.
+    const digest = 'digest:' + message;
+    valueMetadata.set(error, {type: 'error', digest});
+    return error;
+  }
+
+  function createAggregateError(message, errors) {
+    const error = new AggregateError(errors, message);
+    valueMetadata.set(error, {
+      type: 'error',
+      digest: 'digest:' + message,
+    });
+    return error;
+  }
+
   function saveBytes(value) {
     // The writer may detach source buffers. Save only the exposed view bytes.
     const view =
@@ -612,6 +737,17 @@ async function createFixture(
     expectedErrors,
     bytes,
   };
+}
+
+function checkReachability(graph) {
+  const {nodes} = graph;
+  // Keep source references valid even when production omits Error properties.
+  const reached = getReachableNodes(graph);
+  Object.keys(nodes).forEach(name => {
+    if (!reached.has(name)) {
+      throw new Error(name + ' is not reachable from the roots');
+    }
+  });
 }
 
 function createEvent(label, run, {error, isClient = false} = {}) {

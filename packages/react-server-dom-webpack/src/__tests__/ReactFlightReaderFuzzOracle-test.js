@@ -76,6 +76,21 @@ describe('FlightReaderOracle', () => {
     ).toThrow('two distinct source objects');
   });
 
+  // The class name is part of a DEV Error's identity, not just its message.
+  it('rejects an Error whose class name changed', () => {
+    if (!__DEV__) {
+      return;
+    }
+    const source = new TypeError('boom');
+    const received = new Error('boom');
+    const oracle = createOracle({
+      model: source,
+      valueMetadata: new Map([[source, {type: 'error', digest: 'd'}]]),
+      requiredEvents: new Map(),
+    });
+    expect(() => oracle.observeValue(source, received)).toThrow();
+  });
+
   // Compare entries in iteration order; membership equality misses reordering.
   it('checks collection iteration order', () => {
     expect(() =>
