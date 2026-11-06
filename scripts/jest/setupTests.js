@@ -310,12 +310,19 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
   });
 }
 
-// We mock createHook so that we can automatically clean it up.
+// Track hooks and storages across module resets so each test can clean them up.
 let installedHook = null;
+const asyncLocalStorages = [];
 jest.mock('async_hooks', () => {
   const actual = jest.requireActual('async_hooks');
   return {
     ...actual,
+    AsyncLocalStorage: class extends actual.AsyncLocalStorage {
+      constructor(...args) {
+        super(...args);
+        asyncLocalStorages.push(this);
+      }
+    },
     createHook(config) {
       if (installedHook) {
         installedHook.disable();
@@ -334,4 +341,8 @@ afterEach(() => {
     installedHook.disable();
     installedHook = null;
   }
+  // Module resets create new storages. Node retains activated instances until
+  // they are disabled, even after their modules are discarded.
+  asyncLocalStorages.forEach(storage => storage.disable());
+  asyncLocalStorages.length = 0;
 });
