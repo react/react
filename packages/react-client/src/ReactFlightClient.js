@@ -402,6 +402,7 @@ type Response = {
   _debugRootOwner?: null | ReactComponentInfo, // DEV-only
   _debugRootStack?: null | Error, // DEV-only
   _debugRootTask?: null | ConsoleTask, // DEV-only
+  _debugPerformanceId?: string, // DEV-only
   _debugStartTime: number, // DEV-only
   _debugEndTime: null | number, // DEV-only
   _debugIOStarted: boolean, // DEV-only
@@ -3045,6 +3046,7 @@ function ResponseInstance(
   debugStartTime: void | number, // DEV-only
   debugEndTime: void | number, // DEV-only
   debugChannel: void | DebugChannel, // DEV-only
+  debugPerformanceId?: string, // DEV-only
 ) {
   const chunks: Map<number, SomeChunk<any>> = new Map();
   this._bundlerConfig = bundlerConfig;
@@ -3111,6 +3113,7 @@ function ResponseInstance(
     // and is not considered I/O required to load the stream.
     setTimeout(markIOStarted.bind(this), 0);
     this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
+    this._debugPerformanceId = debugPerformanceId;
     this._debugFindSourceMapURL = findSourceMapURL;
     this._debugChannel = debugChannel;
     this._blockedConsole = null;
@@ -3154,6 +3157,7 @@ export function createResponse(
   debugStartTime: void | number, // DEV-only
   debugEndTime: void | number, // DEV-only
   debugChannel: void | DebugChannel, // DEV-only
+  debugPerformanceId?: string, // DEV-only
 ): WeakResponse {
   if (__DEV__) {
     // We use eval to create fake function stacks which includes Component stacks.
@@ -3180,6 +3184,7 @@ export function createResponse(
       debugStartTime,
       debugEndTime,
       debugChannel,
+      debugPerformanceId,
     ),
   );
 }
@@ -4803,6 +4808,7 @@ function logComponentInfo(
       childrenEndTime,
       response._rootEnvironmentName,
       root.reason,
+      response._debugPerformanceId,
     );
   } else {
     logComponentRender(
@@ -4812,6 +4818,7 @@ function logComponentInfo(
       componentEndTime,
       childrenEndTime,
       response._rootEnvironmentName,
+      response._debugPerformanceId,
     );
   }
 }
@@ -5004,6 +5011,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     thenable.value,
+                    response._debugPerformanceId,
                   );
                   break;
                 case ERRORED:
@@ -5014,6 +5022,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     thenable.reason,
+                    response._debugPerformanceId,
                   );
                   break;
                 default:
@@ -5027,6 +5036,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     undefined,
+                    response._debugPerformanceId,
                   );
                   break;
               }
@@ -5038,6 +5048,7 @@ function flushComponentPerformance(
                 endTime,
                 env,
                 undefined,
+                response._debugPerformanceId,
               );
             }
           }
@@ -5062,6 +5073,7 @@ function flushComponentPerformance(
               componentEndTime,
               childrenEndTime,
               env,
+              response._debugPerformanceId,
             );
             componentEndTime = time; // The end time of previous component is the start time of the next.
             // Track the root most component of the result for deduping logging.
@@ -5081,7 +5093,14 @@ function flushComponentPerformance(
             if (endTime > childrenEndTime) {
               childrenEndTime = endTime;
             }
-            logComponentAwaitAborted(asyncInfo, trackIdx, time, endTime, env);
+            logComponentAwaitAborted(
+              asyncInfo,
+              trackIdx,
+              time,
+              endTime,
+              env,
+              response._debugPerformanceId,
+            );
           }
         }
       }
