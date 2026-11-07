@@ -137,6 +137,7 @@ function createResponseFromOptions(options: void | Options) {
       : undefined,
     __DEV__ && options && options.endTime != null ? options.endTime : undefined,
     debugChannel,
+    __DEV__ && options ? options.unstable_performanceId : undefined,
   );
 }
 
@@ -213,6 +214,7 @@ export type Options = {
   unstable_allowPartialStream?: boolean,
   replayConsoleLogs?: boolean,
   environmentName?: string,
+  unstable_performanceId?: string,
   startTime?: number,
   endTime?: number,
 };
