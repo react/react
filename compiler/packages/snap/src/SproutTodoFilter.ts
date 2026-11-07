@@ -484,8 +484,6 @@ const skipFilter = new Set([
   'bug-functiondecl-hoisting',
   'bug-type-inference-control-flow',
   'bug-invalid-phi-as-dependency',
-  'bug-ref-prefix-postfix-operator',
-
   // 'react-compiler-runtime' not yet supported
   'flag-enable-emit-hook-guards',
   'fast-refresh-refresh-on-const-changes-dev',
