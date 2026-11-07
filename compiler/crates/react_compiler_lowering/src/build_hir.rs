@@ -844,39 +844,24 @@ fn lower_expression(
                     let loc = convert_base_loc(&unary.base);
                     match &*unary.argument {
                         Expression::MemberExpression(member) => {
-                            let object = lower_expression_to_temporary(builder, &member.object)?;
-                            if !member.computed {
-                                match &*member.property {
-                                    Expression::Identifier(prop_id) => {
-                                        Ok(InstructionValue::PropertyDelete {
-                                            object,
-                                            property: PropertyLiteral::String(prop_id.name.clone()),
-                                            loc,
-                                        })
-                                    }
-                                    _ => {
-                                        builder.record_error(CompilerErrorDetail {
-                                            reason: "Unsupported delete target".to_string(),
-                                            category: ErrorCategory::Todo,
-                                            loc: loc.clone(),
-                                            description: None,
-                                            suggestions: None,
-                                        })?;
-                                        Ok(InstructionValue::UnsupportedNode {
-                                            node_type: Some("UnaryExpression".to_string()),
-                                            original_node: serialize_expression(expr),
-                                            loc,
-                                        })
-                                    }
+                            // Match TS lowerMemberExpression: `a[0]` is a property
+                            // delete, not a computed delete of a temporary.
+                            let lowered = lower_member_expression(builder, member)?;
+                            match lowered.property {
+                                MemberProperty::Literal(property) => {
+                                    Ok(InstructionValue::PropertyDelete {
+                                        object: lowered.object,
+                                        property,
+                                        loc,
+                                    })
                                 }
-                            } else {
-                                let property =
-                                    lower_expression_to_temporary(builder, &member.property)?;
-                                Ok(InstructionValue::ComputedDelete {
-                                    object,
-                                    property,
-                                    loc,
-                                })
+                                MemberProperty::Computed(property) => {
+                                    Ok(InstructionValue::ComputedDelete {
+                                        object: lowered.object,
+                                        property,
+                                        loc,
+                                    })
+                                }
                             }
                         }
                         _ => {
