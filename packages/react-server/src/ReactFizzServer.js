@@ -1828,6 +1828,26 @@ function replaySuspenseBoundary(
   // We restore the same id of this boundary as was used during prerender.
   resumedBoundary.rootSegmentID = id;
 
+  const fallbackKeyPath: KeyNode = [
+    keyPath[0],
+    'Suspense Fallback',
+    keyPath[2],
+  ];
+  const trackedPostpones = request.trackedPostpones;
+  if (trackedPostpones !== null) {
+    const fallbackReplayNode: ReplayNode = [
+      fallbackKeyPath[1],
+      fallbackKeyPath[2],
+      [] as Array<ReplayNode>,
+      null,
+    ];
+    trackedPostpones.workingMap.set(fallbackKeyPath, fallbackReplayNode);
+    resumedBoundary.tracked = {
+      contentKeyPath: keyPath,
+      fallbackNode: fallbackReplayNode,
+    };
+  }
+
   // We can reuse the current context and task to render the content immediately without
   // context switching. We just need to temporarily switch which boundary and replay node
   // we're writing to. If something suspends, it'll spawn new suspended task with that context.
@@ -1900,12 +1920,6 @@ function replaySuspenseBoundary(
     task.formatContext = prevContext;
     task.row = prevRow;
   }
-
-  const fallbackKeyPath: KeyNode = [
-    keyPath[0],
-    'Suspense Fallback',
-    keyPath[2],
-  ];
 
   // We create suspended task for the fallback because we don't want to actually work
   // on it yet in case we finish the main content, so we queue for later.
@@ -2262,6 +2276,10 @@ function renderSuspenseList(
     const iteratorFn = getIteratorFn(children);
     if (iteratorFn) {
       const iterator = iteratorFn.call(children);
+      if (request.aborted) {
+        // eslint-disable-next-line no-throw-literal
+        throw null;
+      }
       if (iterator) {
         if (__DEV__) {
           validateIterable(task, children, -1, iterator, iteratorFn);
@@ -2271,12 +2289,20 @@ function renderSuspenseList(
         // a full set to be loaded up front to support Async Iterable.
         // When we have that, we shouldn't buffer anymore.
         let step = iterator.next();
+        if (request.aborted) {
+          // eslint-disable-next-line no-throw-literal
+          throw null;
+        }
         if (!step.done) {
           const rows = [];
           do {
             rows.push(step.value);
             step = iterator.next();
           } while (!step.done);
+          if (request.aborted) {
+            // eslint-disable-next-line no-throw-literal
+            throw null;
+          }
           renderSuspenseListRows(request, task, keyPath, children, revealOrder);
         }
         return;
@@ -2289,6 +2315,10 @@ function renderSuspenseList(
       const iterator: AsyncIterator<ReactNodeList> = (children as any)[
         ASYNC_ITERATOR
       ]();
+      if (request.aborted) {
+        // eslint-disable-next-line no-throw-literal
+        throw null;
+      }
       if (iterator) {
         if (__DEV__) {
           validateAsyncIterable(task, children as any, -1, iterator);
@@ -2335,6 +2365,10 @@ function renderSuspenseList(
             rows.push(step.value);
             step = unwrapThenable(iterator.next());
           }
+        }
+        if (request.aborted) {
+          // eslint-disable-next-line no-throw-literal
+          throw null;
         }
         renderSuspenseListRows(request, task, keyPath, rows, revealOrder);
         return;
@@ -2851,6 +2885,10 @@ function renderForwardRef(
     propsWithoutRef,
     ref,
   );
+  if (request.aborted) {
+    // eslint-disable-next-line no-throw-literal
+    throw null;
+  }
   const hasId = checkDidRenderIdHook();
   const actionStateCount = getActionStateCount();
   const actionStateMatchingIndex = getActionStateMatchingIndex();
@@ -2899,6 +2937,10 @@ function renderContextConsumer(
 
   const newValue = readContext(context);
   const newChildren = render(newValue);
+  if (request.aborted) {
+    // eslint-disable-next-line no-throw-literal
+    throw null;
+  }
 
   const prevKeyPath = task.keyPath;
   task.keyPath = keyPath;
@@ -3619,6 +3661,10 @@ function retryNode(request: Request, task: Task): void {
     const iteratorFn = getIteratorFn(node);
     if (iteratorFn) {
       const iterator = iteratorFn.call(node);
+      if (request.aborted) {
+        // eslint-disable-next-line no-throw-literal
+        throw null;
+      }
       if (iterator) {
         if (__DEV__) {
           validateIterable(task, node, childIndex, iterator, iteratorFn);
@@ -3629,11 +3675,19 @@ function retryNode(request: Request, task: Task): void {
         // TODO: This is not great but I think it's inherent to the id
         // generation algorithm.
         let step = iterator.next();
+        if (request.aborted) {
+          // eslint-disable-next-line no-throw-literal
+          throw null;
+        }
         if (!step.done) {
           const children = [];
           do {
             children.push(step.value);
             step = iterator.next();
+            if (request.aborted) {
+              // eslint-disable-next-line no-throw-literal
+              throw null;
+            }
           } while (!step.done);
           renderChildrenArray(request, task, children, childIndex);
         }
@@ -3648,6 +3702,10 @@ function retryNode(request: Request, task: Task): void {
       const iterator: AsyncIterator<ReactNodeList> = (node as any)[
         ASYNC_ITERATOR
       ]();
+      if (request.aborted) {
+        // eslint-disable-next-line no-throw-literal
+        throw null;
+      }
       if (iterator) {
         if (__DEV__) {
           validateAsyncIterable(task, node as any, childIndex, iterator);
@@ -3689,9 +3747,17 @@ function retryNode(request: Request, task: Task): void {
 
         if (!done) {
           let step = unwrapThenable(iterator.next());
+          if (request.aborted) {
+            // eslint-disable-next-line no-throw-literal
+            throw null;
+          }
           while (!step.done) {
             children.push(step.value);
             step = unwrapThenable(iterator.next());
+            if (request.aborted) {
+              // eslint-disable-next-line no-throw-literal
+              throw null;
+            }
           }
         }
         renderChildrenArray(request, task, children, childIndex);
@@ -3713,10 +3779,15 @@ function retryNode(request: Request, task: Task): void {
       // Clear any previous thenable state that was created by the unwrapping.
       task.thenableState = null;
       const thenable: Thenable<ReactNodeList> = maybeUsable as any;
+      const resolvedNode = unwrapThenable(thenable);
+      if (request.aborted) {
+        // eslint-disable-next-line no-throw-literal
+        throw null;
+      }
       const result = renderNodeDestructive(
         request,
         task,
-        unwrapThenable(thenable),
+        resolvedNode,
         childIndex,
       );
       return result;
@@ -4040,9 +4111,11 @@ function trackPostponedBoundary(
   boundary: SuspenseBoundary,
 ): ReplaySuspenseBoundary {
   boundary.status = POSTPONED;
-  // We need to eagerly assign it an ID because we'll need to refer to
-  // it before flushing and we know that we can't inline it.
-  boundary.rootSegmentID = request.nextSegmentId++;
+  if (boundary.rootSegmentID === -1) {
+    // Assign an ID before flushing. Resumed boundaries keep the ID already
+    // referenced by the previous prerender's HTML.
+    boundary.rootSegmentID = request.nextSegmentId++;
+  }
 
   const tracked = boundary.tracked;
   if (tracked === null) {
@@ -4306,6 +4379,32 @@ function spawnNewSuspendedRenderTask(
   );
 }
 
+function postponeNewSuspendedRenderTask(
+  request: Request,
+  task: RenderTask,
+  thenableState: ThenableState | null,
+): void {
+  // Preserve the segment rendered so far and leave a hole at this node. The
+  // request has already been aborted, so this new task must be finished now
+  // rather than scheduled for another attempt.
+  const postponedTask = spawnNewSuspendedRenderTask(
+    request,
+    task,
+    thenableState,
+  );
+  if (__DEV__) {
+    abortTaskDEV(postponedTask, request);
+  } else {
+    abortTask(postponedTask, request);
+  }
+  postponedTask.abortSet.delete(postponedTask);
+  if (__DEV__) {
+    finishAbortedTaskDEV(postponedTask, request, request.fatalError);
+  } else {
+    finishAbortedTask(postponedTask, request, request.fatalError);
+  }
+}
+
 // This is a non-destructive form of rendering a node. If it suspends it spawns
 // a new task and restores the context of this task to what it was before.
 function renderNode(
@@ -4451,9 +4550,45 @@ function renderNode(
           : thrownValue;
 
       if (request.aborted) {
-        // We are aborting so we can just bubble up to the task by falling through
+        // A postponed root cannot flush any shell and must be rendered again in
+        // full, so let it unwind instead of preserving individual holes.
+        if (
+          request.trackedPostpones !== null &&
+          task.blockedBoundary !== null
+        ) {
+          const thenableState =
+            thrownValue === SuspenseException
+              ? getThenableStateAfterSuspending()
+              : null;
+          postponeNewSuspendedRenderTask(
+            request,
+            // $FlowFixMe[incompatible-type]: Refined.
+            task,
+            thenableState,
+          );
+
+          // Restore the context. We assume that this will be restored by the inner
+          // functions in case nothing throws so we don't use "finally" here.
+          task.formatContext = previousFormatContext;
+          if (!disableLegacyContext) {
+            task.legacyContext = previousLegacyContext;
+          }
+          task.context = previousContext;
+          task.keyPath = previousKeyPath;
+          task.treeContext = previousTreeContext;
+          task.componentStack = previousComponentStack;
+          if (__DEV__) {
+            task.debugTask = previousDebugTask;
+          }
+          // Restore all active ReactContexts to what they were before.
+          switchContext(previousContext);
+          return;
+        }
+      } else if (
+        typeof x === 'object' &&
         // $FlowFixMe[invalid-compare]
-      } else if (typeof x === 'object' && x !== null) {
+        x !== null
+      ) {
         // $FlowFixMe[method-unbinding]
         if (typeof x.then === 'function') {
           const wakeable: Wakeable = x as any;
@@ -5223,7 +5358,12 @@ function finishedTask(
       if (boundary.parentFlushed) {
         // The segment might be part of a segment that didn't flush yet, but if the boundary's
         // parent flushed, we need to schedule the boundary to be emitted.
-        request.completedBoundaries.push(boundary);
+        if (boundary.status === POSTPONED) {
+          // All tasks finished, but postponed holes still block revealing this boundary.
+          request.partialBoundaries.push(boundary);
+        } else {
+          request.completedBoundaries.push(boundary);
+        }
       }
 
       // We can now cancel any pending task on the fallback since we won't need to show it anymore.
@@ -6335,9 +6475,8 @@ function flushCompletedQueues(
     if (
       request.allPendingTasks === 0 &&
       request.clientRenderedBoundaries.length === 0 &&
-      request.completedBoundaries.length === 0
-      // We don't need to check any partially completed segments because
-      // either they have pending task or they're complete.
+      request.completedBoundaries.length === 0 &&
+      request.partialBoundaries.length === 0
     ) {
       request.flushScheduled = false;
       // We write the trailing tags but only if don't have any data to resume.

@@ -4107,4 +4107,57 @@ describe('ReactFlightAsyncDebugInfo', () => {
       expect(lastPage._debugInfo.length).toBeLessThan(100);
     }
   });
+
+  it('strips the type name from the name of the I/O', async () => {
+    // V8 derives the type name of a method call from the receiver. For an
+    // object that reports its type through Symbol.toStringTag as
+    // "<anonymous>", the frame of the method is named "<anonymous>.getData".
+    // We strip that prefix so that the I/O is just labeled "getData".
+    const client = {
+      [Symbol.toStringTag]: '<anonymous>',
+      getData(text) {
+        return new Promise(resolve => {
+          setTimeout(() => resolve(text.toUpperCase()), 1);
+        });
+      },
+    };
+
+    async function Component() {
+      return await client.getData('hi');
+    }
+
+    const stream = ReactServerDOMServer.renderToPipeableStream(
+      <Component />,
+      {},
+      {filterStackFrame},
+    );
+
+    const readable = new Stream.PassThrough(streamOptions);
+
+    const result = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: {},
+    });
+    stream.pipe(readable);
+
+    expect(await result).toBe('HI');
+
+    await finishLoadingStream(readable);
+    if (__DEV__ && gate(flags => flags.enableComponentPerformanceTrack)) {
+      const debugInfo = getDebugInfo(result);
+      const ioEntry = debugInfo.find(
+        entry =>
+          entry.awaited != null &&
+          entry.awaited.stack != null &&
+          entry.awaited.stack.length > 0 &&
+          entry.awaited.stack[0][0] === '<anonymous>.getData',
+      );
+      // Sanity check that we actually reproduced a frame whose name has the
+      // "<anonymous>" type name prefix that we want to strip.
+      expect(ioEntry).not.toBeUndefined();
+      // The name we report for the I/O should not include the type name that
+      // it was called on.
+      expect(ioEntry.awaited.name).toBe('getData');
+    }
+  });
 });

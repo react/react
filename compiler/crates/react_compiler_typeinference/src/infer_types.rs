@@ -246,7 +246,7 @@ fn is_ref_like_name(object_name: &str, property_name: &PropertyNameKind) -> bool
     object_name == "ref"
         || (object_name.len() > 3
             && object_name.ends_with("Ref")
-            && object_name[..1]
+            && object_name
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_alphabetic() || c == '$' || c == '_'))

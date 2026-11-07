@@ -234,6 +234,53 @@ const refsTests: CompilerTestCases = {
         }
       `,
     },
+    {
+      name: 'Allows deferred ref access in React Native PanResponder callbacks',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useRef} from 'react';
+        import {PanResponder, View} from 'react-native';
+
+        function SwipeableCard() {
+          const swipeAxisRef = useRef<'x' | 'y' | undefined>(undefined);
+
+          const panResponder = PanResponder.create({
+            onMoveShouldSetPanResponder: (_event, gestureState) => {
+              swipeAxisRef.current = Math.abs(gestureState.dx) > 10 ? 'x' : 'y';
+              return true;
+            },
+            onPanResponderRelease: () => {
+              swipeAxisRef.current = undefined;
+            },
+          });
+
+          return <View {...panResponder.panHandlers} />;
+        }
+      `,
+    },
+    {
+      name: 'Allows deferred ref access in memoized React Native PanResponder config',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useMemo, useRef} from 'react';
+        import {PanResponder, View} from 'react-native';
+
+        function SwipeableCard() {
+          const ref = useRef(0);
+          const config = useMemo(
+            () => ({
+              onPanResponderRelease: () => {
+                ref.current = 0;
+              },
+            }),
+            [],
+          );
+          const panResponder = PanResponder.create(config);
+
+          return <View {...panResponder.panHandlers} />;
+        }
+      `,
+    },
   ],
   invalid: [
     {
