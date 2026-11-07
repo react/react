@@ -596,5 +596,6 @@
   "608": "A client reference was blocked on a row that has not been received yet. This is a bug in React.",
   "609": "Cannot access %s on the client. You cannot read a Server Reference to an object on the client. You can only pass it back to the server.",
   "610": "Cannot assign to a Server Reference to an object on the client.",
-  "611": "Expected a Server Reference to an object to resolve to an object."
+  "611": "Expected a Server Reference to an object to resolve to an object.",
+  "612": "Cannot transport a detached buffer. This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`."
 }
