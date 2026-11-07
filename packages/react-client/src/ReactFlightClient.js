@@ -322,7 +322,10 @@ function reactPromiseThen<T>(
         rej(reason);
       };
     });
-    wrapperPromise.then(resolveCallback, rejectCallback);
+    wrapperPromise.then(
+      resolveCallback,
+      typeof rejectCallback === 'function' ? rejectCallback : ignoreReject,
+    );
   }
   // The status might have changed after initialization.
   switch (chunk.status) {
@@ -658,6 +661,8 @@ function processChunkDebugInfo<T>(
   filterDebugInfo(response, chunk);
   moveDebugInfoFromChunkToInnerValue(chunk, value);
 }
+
+function ignoreReject() {}
 
 function wakeChunk<T>(
   response: Response,
@@ -3579,25 +3584,68 @@ function startReadableStream<T>(
 ): void {
   let controller: ReadableStreamController = null as any;
   let closed = false;
+  let canceled = false;
   const stream = new ReadableStream({
     type: type,
     start(c) {
       controller = c;
     },
+    cancel() {
+      // The consumer is done with the stream. Rows that are still arriving
+      // for it are dropped.
+      canceled = true;
+      closed = true;
+    },
   });
   let previousBlockedChunk: SomeChunk<T> | null = null;
+  function enqueue(value: T): void {
+    if (!canceled) {
+      if (type === 'bytes') {
+        // Byte stream controllers transfer the backing buffer. It may still
+        // be shared with another transport chunk, decoded value, or tee reader.
+        const view: $ArrayBufferView = value as any;
+        controller.enqueue(
+          new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice(),
+        );
+      } else {
+        controller.enqueue(value);
+      }
+    }
+  }
+  function fail(error: mixed): void {
+    if (!canceled) {
+      // $FlowFixMe[incompatible-type]
+      controller.error(error);
+    }
+  }
+  function closeStream(): void {
+    if (canceled) {
+      return;
+    }
+    controller.close();
+    // Closing a byte stream leaves a BYOB read that is already waiting
+    // pending. Only responding to its request settles it.
+    // $FlowFixMe[prop-missing]
+    const byobRequest = type === 'bytes' ? controller.byobRequest : null;
+    if (byobRequest != null) {
+      byobRequest.respond(0);
+    }
+  }
   const flightController = {
     enqueueValue(value: T): void {
       if (previousBlockedChunk === null) {
-        controller.enqueue(value);
+        enqueue(value);
       } else {
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         previousBlockedChunk.then(function () {
-          controller.enqueue(value);
+          enqueue(value);
         });
       }
     },
     enqueueModel(json: UninitializedModel): void {
+      if (canceled) {
+        return;
+      }
       if (previousBlockedChunk === null) {
         // If we're not blocked on any other chunks, we can try to eagerly initialize
         // this as a fast-path to avoid awaiting them.
@@ -3608,29 +3656,25 @@ function startReadableStream<T>(
         initializeModelChunk(chunk);
         const initializedChunk: SomeChunk<T> = chunk;
         if (initializedChunk.status === INITIALIZED) {
-          controller.enqueue(initializedChunk.value);
+          enqueue(initializedChunk.value);
         } else {
-          chunk.then(
-            v => controller.enqueue(v),
-            e => controller.error(e as any),
-          );
+          chunk.then(enqueue, fail);
           previousBlockedChunk = chunk;
         }
       } else {
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         const blockedChunk = previousBlockedChunk;
         const chunk: SomeChunk<T> = createPendingChunk(response);
-        chunk.then(
-          v => controller.enqueue(v),
-          e => controller.error(e as any),
-        );
-        previousBlockedChunk = chunk;
-        blockedChunk.then(function () {
+        chunk.then(v => {
           if (previousBlockedChunk === chunk) {
             // We were still the last chunk so we can now clear the queue and return
             // to synchronous emitting.
             previousBlockedChunk = null;
           }
+          enqueue(v);
+        }, fail);
+        previousBlockedChunk = chunk;
+        blockedChunk.then(function () {
           resolveModelChunk(response, chunk, json);
         });
       }
@@ -3641,12 +3685,12 @@ function startReadableStream<T>(
       }
       closed = true;
       if (previousBlockedChunk === null) {
-        controller.close();
+        closeStream();
       } else {
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.close());
+        blockedChunk.then(closeStream);
       }
     },
     error(error: mixed): void {
@@ -3661,7 +3705,7 @@ function startReadableStream<T>(
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.error(error as any));
+        blockedChunk.then(() => fail(error));
       }
     },
   };
@@ -5448,18 +5492,9 @@ export function processBinaryChunk(
       const length = lastIdx - i;
       const lastChunk = new Uint8Array(chunk.buffer, offset, length);
 
-      // Check if this is a Uint8Array for a byte stream. We enqueue it
-      // immediately but need to determine if we can use zero-copy or must copy.
+      // A byte stream can receive this slice without waiting for a full row.
       if (rowTag === 98 /* "b" */) {
-        resolveBuffer(
-          response,
-          rowID,
-          // If we're at the end of the RSC chunk, no more parsing will access
-          // this buffer and we don't need to copy the chunk to allow detaching
-          // the buffer, otherwise we need to copy.
-          lastIdx === chunkLength ? lastChunk : lastChunk.slice(),
-          streamState,
-        );
+        resolveBuffer(response, rowID, lastChunk, streamState);
       } else {
         // Process all other row types.
         processFullBinaryRow(
@@ -5488,13 +5523,8 @@ export function processBinaryChunk(
       const length = chunk.byteLength - i;
       const remainingSlice = new Uint8Array(chunk.buffer, offset, length);
 
-      // For byte streams, we can enqueue the partial row immediately without
-      // copying since we're at the end of the RSC chunk and no more parsing
-      // will access this buffer.
+      // Byte streams can receive partial rows as soon as their bytes arrive.
       if (rowTag === 98 /* "b" */) {
-        // Update how many bytes we're still waiting for. We need to do this
-        // before enqueueing, as enqueue will detach the buffer and byteLength
-        // will become 0.
         rowLength -= remainingSlice.byteLength;
         resolveBuffer(response, rowID, remainingSlice, streamState);
       } else {

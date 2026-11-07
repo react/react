@@ -1139,8 +1139,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('stream item with a failing module', () =>
+    it('stream item with a failing module', () =>
       runGraph({
         nodes: {
           broken: {module: 'export-0', fail: 'load'},
@@ -1150,8 +1149,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('two stream items each waiting on a module', () =>
+    it('two stream items each waiting on a module', () =>
       runGraph({
         nodes: {
           first: {module: 'export-0'},
@@ -1255,8 +1253,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'bytes', other: 'data'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('byte stream closed while a read is waiting', () =>
+    it('byte stream closed while a read is waiting', () =>
       runGraph({
         nodes: {array: {array: ['bytes']}, bytes: {bytes: 3}},
         roots: {entry: 'array', other: 'array'},
@@ -1264,8 +1261,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         yieldBetweenPackets: true,
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip.each(['bytes'])('%s shared between two collections', type =>
+    it.each(['bytes'])('%s shared between two collections', type =>
       runGraph({
         nodes: {
           inner: {[type]: type === 'bytes' ? 2 : []},
@@ -1276,8 +1272,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
       }),
     );
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip.each(['bytes'])('%s in repeated stream items', type =>
+    it.each(['bytes'])('%s in repeated stream items', type =>
       runGraph({
         nodes: {
           inner: {[type]: type === 'bytes' ? 2 : []},
@@ -1288,8 +1283,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
       }),
     );
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip.each(['bytes'])('%s shared between different stream items', type =>
+    it.each(['bytes'])('%s shared between different stream items', type =>
       runGraph({
         nodes: {
           inner:
@@ -1308,8 +1302,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
   });
 
   describe('stream cancellation', () => {
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('stream canceled while the writer is still producing', () =>
+    it('stream canceled while the writer is still producing', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1427,8 +1420,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'exposure', other: 'exposure'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('FormData bound to a function in a larger graph', () =>
+    it('FormData bound to a function in a larger graph', () =>
       runGraph({
         nodes: {
           form: {special: 'form data'},
