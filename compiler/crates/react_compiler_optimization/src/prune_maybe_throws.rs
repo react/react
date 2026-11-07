@@ -10,15 +10,17 @@
 //!
 //! Analogous to TS `Optimization/PruneMaybeThrows.ts`.
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, GENERATED_SOURCE,
 };
-use react_compiler_hir::{BlockId, HirFunction, Instruction, InstructionValue, Terminal};
+use react_compiler_hir::{
+    BlockId, HirFunction, Instruction, InstructionValue, Terminal, environment::Environment,
+};
 use react_compiler_lowering::{
-    get_reverse_postordered_blocks, mark_instruction_ids, remove_dead_do_while_statements,
-    remove_unnecessary_try_catch, remove_unreachable_for_updates,
+    get_reverse_postordered_blocks, mark_instruction_ids, mark_predecessors,
+    remove_dead_do_while_statements, remove_unnecessary_try_catch, remove_unreachable_for_updates,
 };
 
 use crate::merge_consecutive_blocks::merge_consecutive_blocks;
@@ -26,7 +28,7 @@ use crate::merge_consecutive_blocks::merge_consecutive_blocks;
 /// Prune `MaybeThrow` terminals for blocks that cannot throw, then clean up the CFG.
 pub fn prune_maybe_throws(
     func: &mut HirFunction,
-    functions: &mut [HirFunction],
+    env: &mut Environment,
 ) -> Result<(), CompilerDiagnostic> {
     let terminal_mapping = prune_maybe_throws_impl(func);
     if let Some(terminal_mapping) = terminal_mapping {
@@ -37,19 +39,24 @@ pub fn prune_maybe_throws(
         remove_dead_do_while_statements(&mut func.body);
         remove_unnecessary_try_catch(&mut func.body);
         mark_instruction_ids(&mut func.body, &mut func.instructions);
-        merge_consecutive_blocks(func, functions);
+        mark_predecessors(&mut func.body);
+        let live_blocks: FxHashSet<_> = func.body.blocks.keys().copied().collect();
 
-        // Rewrite phi operands to reference the updated predecessor blocks
+        // Repair phi operands before merging blocks, which requires one operand per predecessor.
         for block in func.body.blocks.values_mut() {
             let preds = &block.preds;
-            let mut phi_updates: Vec<(usize, Vec<(BlockId, BlockId)>)> = Vec::new();
+            let mut phi_updates = Vec::new();
 
             for (phi_idx, phi) in block.phis.iter().enumerate() {
                 let mut updates = Vec::new();
                 for (predecessor, _) in &phi.operands {
                     if !preds.contains(predecessor) {
-                        let mapped_terminal =
-                            terminal_mapping.get(predecessor).copied().ok_or_else(|| {
+                        let mapped_terminal = terminal_mapping.get(predecessor).copied();
+                        if mapped_terminal.is_none() && !live_blocks.contains(predecessor) {
+                            updates.push((*predecessor, None));
+                            continue;
+                        }
+                        let mapped_terminal = mapped_terminal.ok_or_else(|| {
                                 CompilerDiagnostic::new(
                                     ErrorCategory::Invariant,
                                     "Expected non-existing phi operand's predecessor to have been mapped to a new terminal",
@@ -64,7 +71,7 @@ pub fn prune_maybe_throws(
                                     identifier_name: None,
                                 })
                             })?;
-                        updates.push((*predecessor, mapped_terminal));
+                        updates.push((*predecessor, Some(mapped_terminal)));
                     }
                 }
                 if !updates.is_empty() {
@@ -78,10 +85,14 @@ pub fn prune_maybe_throws(
                         .operands
                         .shift_remove(&old_pred)
                         .unwrap();
-                    block.phis[phi_idx].operands.insert(new_pred, operand);
+                    if let Some(new_pred) = new_pred {
+                        block.phis[phi_idx].operands.insert(new_pred, operand);
+                    }
                 }
             }
         }
+        react_compiler_ssa::eliminate_redundant_phi(func, env);
+        merge_consecutive_blocks(func, &mut env.functions);
     }
     Ok(())
 }

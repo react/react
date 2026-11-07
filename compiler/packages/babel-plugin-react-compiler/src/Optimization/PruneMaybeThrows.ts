@@ -18,11 +18,13 @@ import {
 } from '../HIR';
 import {
   markInstructionIds,
+  markPredecessors,
   removeDeadDoWhileStatements,
   removeUnnecessaryTryCatch,
   removeUnreachableForUpdates,
 } from '../HIR/HIRBuilder';
 import {printPlace} from '../HIR/PrintHIR';
+import {eliminateRedundantPhi} from '../SSA';
 
 /**
  * This pass updates `maybe-throw` terminals for blocks that can provably *never* throw,
@@ -47,14 +49,18 @@ export function pruneMaybeThrows(fn: HIRFunction): void {
     removeDeadDoWhileStatements(fn.body);
     removeUnnecessaryTryCatch(fn.body);
     markInstructionIds(fn.body);
-    mergeConsecutiveBlocks(fn);
+    markPredecessors(fn.body);
 
-    // Rewrite phi operands to reference the updated predecessor blocks
+    // Repair phi operands before merging blocks, which requires one operand per predecessor.
     for (const [, block] of fn.body.blocks) {
       for (const phi of block.phis) {
         for (const [predecessor, operand] of phi.operands) {
           if (!block.preds.has(predecessor)) {
             const mappedTerminal = terminalMapping.get(predecessor);
+            if (mappedTerminal == null && !fn.body.blocks.has(predecessor)) {
+              phi.operands.delete(predecessor);
+              continue;
+            }
             CompilerError.invariant(mappedTerminal != null, {
               reason: `Expected non-existing phi operand's predecessor to have been mapped to a new terminal`,
               description: `Could not find mapping for predecessor bb${predecessor} in block bb${
@@ -69,6 +75,8 @@ export function pruneMaybeThrows(fn: HIRFunction): void {
       }
     }
 
+    eliminateRedundantPhi(fn);
+    mergeConsecutiveBlocks(fn);
     assertConsistentIdentifiers(fn);
     assertTerminalSuccessorsExist(fn);
   }
