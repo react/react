@@ -898,12 +898,7 @@ export function removeUnnecessaryTryCatch(fn: HIR): void {
       };
 
       if (fallthrough != null) {
-        if (fallthrough.preds.size === 1 && fallthrough.preds.has(handlerId)) {
-          // delete fallthrough
-          fn.blocks.delete(fallthroughId);
-        } else {
-          fallthrough.preds.delete(handlerId);
-        }
+        fallthrough.preds.delete(handlerId);
       }
     }
   }
