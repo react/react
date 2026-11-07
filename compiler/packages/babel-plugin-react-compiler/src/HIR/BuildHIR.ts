@@ -1752,8 +1752,10 @@ function lowerExpression(
     }
     case 'ArrayExpression': {
       const expr = exprPath as NodePath<t.ArrayExpression>;
+      const elementPaths = expr.get('elements');
       let elements: ArrayExpression['elements'] = [];
-      for (const element of expr.get('elements')) {
+      for (let i = 0; i < elementPaths.length; i++) {
+        const element = elementPaths[i]!;
         if (element.node == null) {
           elements.push({
             kind: 'Hole',
@@ -1766,7 +1768,30 @@ function lowerExpression(
             builder,
             element.get('argument'),
           );
-          elements.push({kind: 'Spread', place});
+          /*
+           * JS evaluates `...expr` by iterating `expr` before evaluating any
+           * subsequent array elements. HIR normally defers that iteration to
+           * the outer ArrayExpression, which can observe mutations from later
+           * elements (e.g. `[...a, a.push(1)]`). When a later element may have
+           * side effects, materialize the spread into a temporary array
+           * immediately. Pure trailing elements (literals, identifiers, etc.)
+           * do not need this.
+           *
+           * See https://github.com/facebook/react/issues/38140
+           */
+          const subsequentMayHaveSideEffects = elementPaths
+            .slice(i + 1)
+            .some(el => arrayElementMayHaveSideEffects(el.node));
+          if (subsequentMayHaveSideEffects) {
+            const materialized = lowerValueToTemporary(builder, {
+              kind: 'ArrayExpression',
+              elements: [{kind: 'Spread', place}],
+              loc: getSourceLocation(element.node),
+            });
+            elements.push({kind: 'Spread', place: materialized});
+          } else {
+            elements.push({kind: 'Spread', place});
+          }
         } else {
           builder.recordError(
             new CompilerErrorDetail({
@@ -3687,6 +3712,132 @@ function lowerExpressionToTemporary(
 ): Place {
   const value = lowerExpression(builder, exprPath);
   return lowerValueToTemporary(builder, value);
+}
+
+/**
+ * Whether an array element (expression, spread, or hole) may evaluate with
+ * side effects that could mutate values observed by an earlier spread in the
+ * same array literal.
+ */
+function arrayElementMayHaveSideEffects(
+  node: t.Expression | t.SpreadElement | null | undefined,
+): boolean {
+  if (node == null) {
+    return false;
+  }
+  return expressionMayHaveSideEffects(node);
+}
+
+function expressionMayHaveSideEffects(node: t.Node): boolean {
+  switch (node.type) {
+    case 'CallExpression':
+    case 'OptionalCallExpression':
+    case 'NewExpression':
+    case 'AssignmentExpression':
+    case 'UpdateExpression':
+    case 'TaggedTemplateExpression':
+    case 'YieldExpression':
+    case 'AwaitExpression':
+    case 'JSXElement':
+    case 'JSXFragment':
+      return true;
+    case 'Identifier':
+    case 'PrivateName':
+    case 'Super':
+    case 'ThisExpression':
+    case 'MetaProperty':
+    case 'BooleanLiteral':
+    case 'NumericLiteral':
+    case 'StringLiteral':
+    case 'NullLiteral':
+    case 'BigIntLiteral':
+    case 'RegExpLiteral':
+    case 'JSXText':
+    case 'JSXIdentifier':
+    case 'JSXEmptyExpression':
+    case 'Import':
+    case 'ArgumentPlaceholder':
+    case 'ArrowFunctionExpression':
+    case 'FunctionExpression':
+      // Creating a function does not execute its body.
+      return false;
+    case 'ClassExpression':
+      // Class evaluation can run extends, computed keys, static fields/blocks,
+      // and decorators — treat as effectful.
+      return true;
+    case 'ImportExpression':
+      // Dynamic import() always has effects; source may also mutate.
+      return true;
+    case 'SequenceExpression':
+      return node.expressions.some(expressionMayHaveSideEffects);
+    case 'ConditionalExpression':
+      return (
+        expressionMayHaveSideEffects(node.test) ||
+        expressionMayHaveSideEffects(node.consequent) ||
+        expressionMayHaveSideEffects(node.alternate)
+      );
+    case 'LogicalExpression':
+    case 'BinaryExpression':
+      return (
+        expressionMayHaveSideEffects(node.left) ||
+        expressionMayHaveSideEffects(node.right)
+      );
+    case 'UnaryExpression':
+      // `delete` mutates its argument; do not treat it as a pure load of the member.
+      if (node.operator === 'delete') {
+        return true;
+      }
+      return expressionMayHaveSideEffects(node.argument);
+    case 'MemberExpression':
+    case 'OptionalMemberExpression': {
+      if (expressionMayHaveSideEffects(node.object)) {
+        return true;
+      }
+      if (
+        node.computed &&
+        expressionMayHaveSideEffects(node.property as t.Node)
+      ) {
+        return true;
+      }
+      return false;
+    }
+    case 'ArrayExpression':
+      return node.elements.some(
+        el => el != null && expressionMayHaveSideEffects(el),
+      );
+    case 'ObjectExpression':
+      return node.properties.some(prop => {
+        if (t.isSpreadElement(prop)) {
+          return expressionMayHaveSideEffects(prop.argument);
+        }
+        if (t.isObjectMethod(prop)) {
+          return (
+            prop.computed && expressionMayHaveSideEffects(prop.key as t.Node)
+          );
+        }
+        return (
+          expressionMayHaveSideEffects(prop.value) ||
+          (prop.computed && expressionMayHaveSideEffects(prop.key as t.Node))
+        );
+      });
+    case 'SpreadElement':
+      return expressionMayHaveSideEffects(node.argument);
+    case 'TemplateLiteral':
+      return node.expressions.some(expressionMayHaveSideEffects);
+    case 'ParenthesizedExpression':
+    case 'TSAsExpression':
+    case 'TSSatisfiesExpression':
+    case 'TSNonNullExpression':
+    case 'TSTypeAssertion':
+    case 'TypeCastExpression':
+    case 'TSInstantiationExpression':
+      return expressionMayHaveSideEffects(
+        (node as t.ParenthesizedExpression).expression,
+      );
+    default:
+      // Unknown syntax: snapshot. Prefer false negatives over missing a mutation.
+      return true;
+}
 }
 
 export function lowerValueToTemporary(
