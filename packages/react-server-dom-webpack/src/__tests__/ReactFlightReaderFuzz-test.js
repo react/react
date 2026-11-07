@@ -903,8 +903,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'object', other: 'object'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a large binary value written in two places', () =>
+    it('a large binary value written in two places', () =>
       runGraph({
         nodes: {
           binary: {special: 'large binary'},
@@ -950,8 +949,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'object', other: 'object'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('iterator resolved by a Promise', () =>
+    it('iterator resolved by a Promise', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1116,8 +1114,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         events: ['resolve later to object', 'fail stream', 'load ready'],
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('an iterator reused in later stream items', () =>
+    it('an iterator reused in later stream items', () =>
       runGraph({
         nodes: {
           value: {value: 'first'},
@@ -1129,8 +1126,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('streamed array containing itself', () =>
+    it('streamed array containing itself', () =>
       runGraph({
         nodes: {
           item: {array: ['item']},
@@ -1230,8 +1226,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'array', other: 'array'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('async iterator with cyclic items and a return value', () =>
+    it('async iterator with cyclic items and a return value', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1607,8 +1602,7 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         roots: {entry: 'component', other: 'data'},
       }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('suspended server component element used twice', () =>
+    it('suspended server component element used twice', () =>
       runGraph({
         nodes: {
           body: {value: 'shared'},
@@ -1828,29 +1822,25 @@ describe.each(['node', 'edge'])('ReactFlightReaderFuzz (%s)', host => {
         afterEof: true,
       }));
 
-    (__DEV__ && host === 'node' ? it.skip : it)(
-      'a Promise resolves before another value containing it finishes loading',
-      () =>
-        runGraph({
-          nodes: {
-            value: {value: null},
-            data: {promise: 'value'},
-            ready: {module: 'loaded'},
-            section: {object: {data: 'data', ready: 'ready'}},
-            later: {promise: 'section'},
-            root: {object: {data: 'data', section: 'later'}},
-          },
-          roots: {entry: 'root', other: 'root'},
-          events: [
-            'resolve later to section',
-            'resolve data to value',
-            'load ready',
-          ],
-        }),
-    );
+    it('a Promise resolves before another value containing it finishes loading', () =>
+      runGraph({
+        nodes: {
+          value: {value: null},
+          data: {promise: 'value'},
+          ready: {module: 'loaded'},
+          section: {object: {data: 'data', ready: 'ready'}},
+          later: {promise: 'section'},
+          root: {object: {data: 'data', section: 'later'}},
+        },
+        roots: {entry: 'root', other: 'root'},
+        events: [
+          'resolve later to section',
+          'resolve data to value',
+          'load ready',
+        ],
+      }));
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip.each([
+    it.each([
       ['stream', null],
       ['stream', 'keyed'],
       ['iterable', null],

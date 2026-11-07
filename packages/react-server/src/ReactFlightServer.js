@@ -1394,7 +1394,11 @@ function serializeReadableStream(
 
   request.cacheController.signal.addEventListener('abort', abortStream);
   reader.read().then(progress, error);
-  return serializeByValueID(streamTask.id);
+  const reference = serializeByValueID(streamTask.id);
+  // The stream is read once, so any other place that holds it gets the row
+  // it was already written to.
+  request.writtenObjects.set(stream, reference);
+  return reference;
 }
 
 function serializeAsyncIterable(
@@ -1533,7 +1537,11 @@ function serializeAsyncIterable(
   } else {
     iterator.next().then(progress, error);
   }
-  return serializeByValueID(streamTask.id);
+  const reference = serializeByValueID(streamTask.id);
+  // The iterator is read once, so any other place that holds the iterable
+  // gets the row it was already written to.
+  request.writtenObjects.set(iterable, reference);
+  return reference;
 }
 
 export function emitHint<Code: HintCode>(
@@ -2274,7 +2282,19 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
   );
 
   pingTask(request, newTask);
-  return serializeLazyID(newTask.id);
+  const lazyReference = serializeLazyID(newTask.id);
+  const model = task.model;
+  const writtenObjects = request.writtenObjects;
+  if (
+    typeof model === 'object' &&
+    model !== null &&
+    writtenObjects.get(model) === serializeByValueID(newTask.id)
+  ) {
+    // Like outlineTask: later occurrences of the deferred element are lazy
+    // too, or the model holding them would wait for it to render.
+    writtenObjects.set(model, lazyReference);
+  }
+  return lazyReference;
 }
 
 function outlineTask(request: Request, task: Task): ReactJSONValue {
@@ -2299,7 +2319,20 @@ function outlineTask(request: Request, task: Task): ReactJSONValue {
   }
   // This didn't complete synchronously so it wouldn't have even if we didn't
   // outline it, so this would reduce to a lazy reference even in prod.
-  return serializeLazyID(newTask.id);
+  const lazyReference = serializeLazyID(newTask.id);
+  const model = task.model;
+  const writtenObjects = request.writtenObjects;
+  if (
+    typeof model === 'object' &&
+    model !== null &&
+    writtenObjects.get(model) === serializeByValueID(newTask.id)
+  ) {
+    // createTask registered the element by the new task's ID. Later
+    // occurrences of the same element would then wait for the component to
+    // render before the model holding them can resolve. They are lazy too.
+    writtenObjects.set(model, lazyReference);
+  }
+  return lazyReference;
 }
 
 function outlineHaltedTask(
@@ -3285,6 +3318,18 @@ function outlineModelWithFormatContext(
     null, // have any context on the server but can on the client.
   );
   retryTask(request, newTask);
+  if (
+    newTask.status !== COMPLETED &&
+    typeof value === 'object' &&
+    value !== null &&
+    ((value as any).$$typeof === REACT_ELEMENT_TYPE ||
+      (value as any).$$typeof === REACT_LAZY_TYPE) &&
+    request.writtenObjects.get(value) === serializeByValueID(newTask.id)
+  ) {
+    // Like outlineTask: an element that did not render synchronously is lazy
+    // for later occurrences, or the model holding them would wait for it.
+    request.writtenObjects.set(value, serializeLazyID(newTask.id));
+  }
   return newTask.id;
 }
 
@@ -3469,18 +3514,27 @@ function serializeIterator(
   iterator: Iterator<ReactClientValue>,
 ): string {
   const id = outlineModel(request, Array.from(iterator));
-  return '$i' + id.toString(16);
+  const reference = '$i' + id.toString(16);
+  // The source iterator is exhausted. Later occurrences must reuse its
+  // contents even if the stream item that first held it was written inline.
+  request.writtenObjects.set(iterator, reference);
+  return reference;
 }
 
 function serializeTypedArray(
   request: Request,
   tag: string,
+  value: ArrayBuffer | $ArrayBufferView,
   typedArray: $ArrayBufferView,
 ): string {
   request.pendingChunks++;
   const bufferId = request.nextChunkId++;
   emitTypedArrayChunk(request, bufferId, tag, typedArray, false);
-  return serializeByValueID(bufferId);
+  const reference = serializeByValueID(bufferId);
+  // A destination may transfer the bytes rather than copy them, which detaches
+  // the buffer, so any other place that holds the value refers to this row.
+  request.writtenObjects.set(value, reference);
+  return reference;
 }
 
 function serializeDebugTypedArray(
@@ -3654,6 +3708,72 @@ function serializeImportString(request: Request, value: string): string {
 
 let modelRoot: null | ReactClientValue = false;
 
+// A stream item is written straight into its stream's row and has no id of
+// its own, so it is given one before it is written, in case it or anything
+// below it comes up a second time. The id becomes a row of its own only when
+// something referred to the item or to a path under it; otherwise those
+// references are dropped again, since no row will ever be emitted for them.
+type StreamItemContext = {
+  task: Task,
+  id: number,
+  referenced: boolean,
+  objects: Set<Reference>,
+  previousOwners?: Map<Reference, StreamItemContext>,
+};
+let streamItemContext: null | StreamItemContext = null;
+let streamItemOwners: null | WeakMap<Reference, StreamItemContext> = null;
+
+function registerStreamItemObject(
+  context: StreamItemContext,
+  value: Reference,
+): void {
+  context.objects.add(value);
+  const owners = streamItemOwners;
+  if (owners !== null) {
+    const previousOwner = owners.get(value);
+    if (previousOwner !== undefined && previousOwner !== context) {
+      // A host can synchronously start another request with the same object.
+      // Its item shadows the outer owner only until this context completes.
+      let previousOwners = context.previousOwners;
+      if (previousOwners === undefined) {
+        previousOwners = context.previousOwners = new Map();
+      }
+      previousOwners.set(value, previousOwner);
+    }
+    owners.set(value, context);
+  }
+}
+
+function registerByPath(
+  request: Request,
+  task: Task,
+  value: Reference,
+  reference: string,
+): void {
+  request.writtenObjects.set(value, reference);
+  if (streamItemContext !== null && task === streamItemContext.task) {
+    registerStreamItemObject(streamItemContext, value);
+  }
+}
+
+function referTo(value: Reference, reference: string): string {
+  // A synchronously settling iterator can refer back to an item whose
+  // serialization is still on the stack.
+  const owners = streamItemOwners;
+  if (owners === null) {
+    const context = streamItemContext;
+    if (context !== null && context.objects.has(value)) {
+      context.referenced = true;
+    }
+  } else {
+    const owner = owners.get(value);
+    if (owner !== undefined) {
+      owner.referenced = true;
+    }
+  }
+  return reference;
+}
+
 function renderModel(
   request: Request,
   task: Task,
@@ -3821,7 +3941,7 @@ function renderModelDestructive(
               // detect whether this already was emitted and synchronously available. In that
               // case we can refer to it synchronously and only make it lazy otherwise.
               // We currently don't have a data structure that lets us see that though.
-              return existingReference;
+              return referTo(value, existingReference);
             }
           } else if (parentPropertyName.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
@@ -3830,7 +3950,7 @@ function renderModelDestructive(
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
               elementReference = parentReference + ':' + parentPropertyName;
-              writtenObjects.set(value, elementReference);
+              registerByPath(request, task, value, elementReference);
             }
           }
         }
@@ -3914,7 +4034,7 @@ function renderModelDestructive(
           // If this element renders another object, we can now refer to that object through
           // the same location as this element.
           if (!writtenObjects.has(newChild)) {
-            writtenObjects.set(newChild, elementReference);
+            registerByPath(request, task, newChild, elementReference);
           }
         }
         return newChild;
@@ -4052,10 +4172,17 @@ function renderModelDestructive(
 
     if (existingReference !== undefined) {
       if (modelRoot === value) {
-        if (existingReference !== serializeByValueID(task.id)) {
+        if (
+          existingReference !== serializeByValueID(task.id) &&
+          !(
+            streamItemContext !== null &&
+            task === streamItemContext.task &&
+            existingReference === serializeByValueID(streamItemContext.id)
+          )
+        ) {
           // Turns out that we already have this root at a different reference.
           // Use that after all.
-          return existingReference;
+          return referTo(value, existingReference);
         }
         // This is the ID we're currently emitting so we need to write it
         // once but if we discover it again, we refer to it by id.
@@ -4063,7 +4190,7 @@ function renderModelDestructive(
       } else {
         // We've already emitted this as an outlined object, so we can
         // just refer to that by its existing ID.
-        return existingReference;
+        return referTo(value, existingReference);
       }
     } else if (parentPropertyName.indexOf(':') === -1) {
       // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
@@ -4091,7 +4218,12 @@ function renderModelDestructive(
               break;
           }
         }
-        writtenObjects.set(value, parentReference + ':' + propertyName);
+        registerByPath(
+          request,
+          task,
+          value,
+          parentReference + ':' + propertyName,
+        );
       }
     }
 
@@ -4113,55 +4245,55 @@ function renderModelDestructive(
       return serializeErrorValue(request, value);
     }
     if (value instanceof ArrayBuffer) {
-      return serializeTypedArray(request, 'A', new Uint8Array(value));
+      return serializeTypedArray(request, 'A', value, new Uint8Array(value));
     }
     if (value instanceof Int8Array) {
       // char
-      return serializeTypedArray(request, 'O', value);
+      return serializeTypedArray(request, 'O', value, value);
     }
     if (value instanceof Uint8Array) {
       // unsigned char
-      return serializeTypedArray(request, 'o', value);
+      return serializeTypedArray(request, 'o', value, value);
     }
     if (value instanceof Uint8ClampedArray) {
       // unsigned clamped char
-      return serializeTypedArray(request, 'U', value);
+      return serializeTypedArray(request, 'U', value, value);
     }
     if (value instanceof Int16Array) {
       // sort
-      return serializeTypedArray(request, 'S', value);
+      return serializeTypedArray(request, 'S', value, value);
     }
     if (value instanceof Uint16Array) {
       // unsigned short
-      return serializeTypedArray(request, 's', value);
+      return serializeTypedArray(request, 's', value, value);
     }
     if (value instanceof Int32Array) {
       // long
-      return serializeTypedArray(request, 'L', value);
+      return serializeTypedArray(request, 'L', value, value);
     }
     if (value instanceof Uint32Array) {
       // unsigned long
-      return serializeTypedArray(request, 'l', value);
+      return serializeTypedArray(request, 'l', value, value);
     }
     if (value instanceof Float32Array) {
       // float
-      return serializeTypedArray(request, 'G', value);
+      return serializeTypedArray(request, 'G', value, value);
     }
     if (value instanceof Float64Array) {
       // double
-      return serializeTypedArray(request, 'g', value);
+      return serializeTypedArray(request, 'g', value, value);
     }
     if (value instanceof BigInt64Array) {
       // number
-      return serializeTypedArray(request, 'M', value);
+      return serializeTypedArray(request, 'M', value, value);
     }
     if (value instanceof BigUint64Array) {
       // unsigned number
       // We use "m" instead of "n" since JSON can start with "null"
-      return serializeTypedArray(request, 'm', value);
+      return serializeTypedArray(request, 'm', value, value);
     }
     if (value instanceof DataView) {
-      return serializeTypedArray(request, 'V', value);
+      return serializeTypedArray(request, 'V', value, value);
     }
     // TODO: Blob is not available in old Node. Remove the typeof check later.
     if (typeof Blob === 'function' && value instanceof Blob) {
@@ -4492,8 +4624,27 @@ function serializeErrorValue(request: Request, error: Error): string {
     const errorInfo: ReactErrorInfoDev = {name, message, stack, env};
     if ('cause' in error) {
       const cause: ReactClientValue = error.cause as any;
-      const causeId = outlineModel(request, cause);
-      errorInfo.cause = serializeByValueID(causeId);
+      // The cause may be an object that was written already, including this
+      // very Error, so refer to that instead of outlining it again.
+      let causeReference =
+        typeof cause === 'object' && cause !== null
+          ? request.writtenObjects.get(cause)
+          : undefined;
+      if (causeReference === undefined) {
+        const causeId = outlineModel(request, cause);
+        // Outlining registers the cause; an element that suspended is lazy.
+        causeReference =
+          typeof cause === 'object' && cause !== null
+            ? request.writtenObjects.get(cause)
+            : undefined;
+        if (causeReference === undefined) {
+          causeReference = serializeByValueID(causeId);
+        }
+      }
+      errorInfo.cause =
+        typeof cause === 'object' && cause !== null
+          ? referTo(cause, causeReference)
+          : causeReference;
     }
     if (
       typeof AggregateError !== 'undefined' &&
@@ -5337,7 +5488,11 @@ function renderDebugModel(
     if (existingReference !== undefined) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
-      return existingReference;
+      // Remember the reference we actually emit. Referring through the debug
+      // parent instead would make later uses wait for that parent's other
+      // dependencies, even when this value is already available.
+      writtenDebugObjects.set(value, existingReference);
+      return referTo(value, existingReference);
     }
 
     if (counter.objectLimit <= 0 && !doNotLimit.has(value)) {
@@ -5558,7 +5713,12 @@ function renderDebugModel(
 
     const iteratorFn = getIteratorFn(value);
     if (iteratorFn) {
-      return Array.from(value as any);
+      const iterator = iteratorFn.call(value);
+      if (iterator !== value) {
+        return Array.from(iterator as any);
+      }
+      // An iterator can only be read once, and the model that holds it will
+      // read it. Describe it by its shape below instead of consuming it.
     }
 
     const proto = getPrototypeOf(value);
@@ -6246,6 +6406,15 @@ function emitChunk(
   const resolvedModel = resolveModel(request, task, {'': value}, '', value);
   // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
   const json: string = stringify(resolvedModel);
+  const context = streamItemContext;
+  if (context !== null && task === context.task && context.referenced) {
+    const reference = serializeByValueID(context.id);
+    request.pendingChunks++;
+    emitModelChunk(request, context.id, json);
+    context.id = -1;
+    emitModelChunk(request, task.id, stringify(reference));
+    return;
+  }
   emitModelChunk(request, task.id, json);
 }
 
@@ -6420,9 +6589,66 @@ function tryStreamTaskWithRequest(request: Request, task: Task): void {
     canEmitDebugInfo = false;
   }
   const parentSerializedSize = serializedSize;
+  const item = task.model;
+  const writtenObjects = request.writtenObjects;
+  const previousModelRoot = modelRoot;
+  const parent = streamItemContext;
+  if (parent !== null && streamItemOwners === null) {
+    // Ordinary asynchronous items have only one active context. Index owners
+    // only when a synchronously settling iterator nests another item.
+    const owners = new WeakMap<Reference, StreamItemContext>();
+    parent.objects.forEach(object => owners.set(object, parent));
+    streamItemOwners = owners;
+  }
+  const context: StreamItemContext = {
+    task,
+    id: -1,
+    referenced: false,
+    objects: new Set(),
+  };
+  modelRoot = item;
+  streamItemContext = context;
+  if (typeof item === 'object' && item !== null && !writtenObjects.has(item)) {
+    context.id = request.nextChunkId++;
+    writtenObjects.set(item, serializeByValueID(context.id));
+    registerStreamItemObject(context, item);
+  }
   try {
-    emitChunk(request, task, task.model);
+    emitChunk(request, task, item);
   } finally {
+    if (context.id !== -1) {
+      // The item was written inline after all. A value that got a row of
+      // its own in the meantime, like a stream, keeps that reference.
+      const itemReference = serializeByValueID(context.id);
+      context.objects.forEach(object => {
+        const reference = writtenObjects.get(object);
+        if (
+          reference !== undefined &&
+          (reference === itemReference ||
+            reference.indexOf(itemReference + ':') === 0)
+        ) {
+          writtenObjects.delete(object);
+        }
+      });
+    }
+    const owners = streamItemOwners;
+    if (owners !== null) {
+      const previousOwners = context.previousOwners;
+      context.objects.forEach(object => {
+        const previousOwner =
+          previousOwners === undefined ? undefined : previousOwners.get(object);
+        if (previousOwner === undefined) {
+          owners.delete(object);
+        } else {
+          owners.set(object, previousOwner);
+        }
+      });
+      if (parent === null) {
+        streamItemOwners = null;
+      }
+    }
+    streamItemContext = parent;
+    modelRoot = previousModelRoot;
     serializedSize = parentSerializedSize;
     if (__DEV__) {
       canEmitDebugInfo = prevCanEmitDebugInfo;
