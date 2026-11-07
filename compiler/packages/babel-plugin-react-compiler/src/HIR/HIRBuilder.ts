@@ -886,7 +886,6 @@ export function removeUnnecessaryTryCatch(fn: HIR): void {
       block.terminal.kind === 'try' &&
       !fn.blocks.has(block.terminal.handler)
     ) {
-      const handlerId = block.terminal.handler;
       const fallthroughId = block.terminal.fallthrough;
       const fallthrough = fn.blocks.get(fallthroughId);
       block.terminal = {
@@ -898,11 +897,28 @@ export function removeUnnecessaryTryCatch(fn: HIR): void {
       };
 
       if (fallthrough != null) {
-        if (fallthrough.preds.size === 1 && fallthrough.preds.has(handlerId)) {
+        /*
+         * The handler (and any nested blocks reachable only through it, e.g. an
+         * `if` inside the catch) may still appear in fallthrough.preds after
+         * reversePostorderBlocks drops those blocks. Scrub all dead preds so
+         * mergeConsecutiveBlocks can absorb the try-exit GotoVariant.Try into
+         * the fallthrough; otherwise BuildReactiveFunction ignores that goto
+         * and drops code after the try/catch.
+         *
+         * Only delete the fallthrough when it previously had predecessors that
+         * are all now gone. An empty preds set can also mean markPredecessors
+         * has not run yet (e.g. during HIRBuilder.build), in which case the
+         * fallthrough may still be reachable via the try body.
+         */
+        const hadPreds = fallthrough.preds.size > 0;
+        for (const pred of [...fallthrough.preds]) {
+          if (!fn.blocks.has(pred)) {
+            fallthrough.preds.delete(pred);
+          }
+        }
+        if (hadPreds && fallthrough.preds.size === 0) {
           // delete fallthrough
           fn.blocks.delete(fallthroughId);
-        } else {
-          fallthrough.preds.delete(handlerId);
         }
       }
     }
