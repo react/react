@@ -105,6 +105,7 @@ import getPrototypeOf from 'shared/getPrototypeOf';
 import {injectInternals} from './ReactFlightClientDevToolsHook';
 
 import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
+import {unescapePathSegment} from 'shared/ReactFlightReferencePath';
 
 import ReactVersion from 'shared/ReactVersion';
 
@@ -2285,7 +2286,11 @@ function installReference(
   reference.fulfilled = true;
   if (parentObject !== null) {
     if (key !== __PROTO__) {
-      parentObject[key] = value;
+      if (__DEV__ && value === REMOVED_PROPERTY) {
+        delete parentObject[key];
+      } else {
+        parentObject[key] = value;
+      }
     }
 
     // If this is the root object for a model reference, where `handler.value`
@@ -3210,6 +3215,16 @@ function transferReferencedDebugInfo(
 // It's never mutated because only paths with entries get spliced in place.
 const EMPTY_REFERENCE_PATH: Array<string> = [];
 
+// The property names of a path, with the escaping the writer applies to a
+// name that contains a colon undone.
+function splitReferencePath(reference: string): Array<string> {
+  const path = reference.split(':');
+  for (let i = 1; i < path.length; i++) {
+    path[i] = unescapePathSegment(path[i]);
+  }
+  return path;
+}
+
 function getOutlinedModel<T>(
   response: Response,
   reference: string,
@@ -3220,7 +3235,9 @@ function getOutlinedModel<T>(
   // parseInt stops at the ':' so we only need to split when there's a path.
   const id = parseInt(reference, 16);
   const path =
-    reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
+    reference.indexOf(':') === -1
+      ? EMPTY_REFERENCE_PATH
+      : splitReferencePath(reference);
   const chunk = getChunk(response, id);
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (initializingChunk !== null && isArray(initializingChunk._children)) {
@@ -3439,15 +3456,18 @@ function createFormData(
   return formData;
 }
 
+// Debug constructor metadata occupies a property that must be removed after
+// decoding. An ordinary undefined value still occupies its property.
+const REMOVED_PROPERTY: symbol = __DEV__ ? Symbol() : (null as any);
+
 function applyConstructor(
   response: Response,
   model: Function,
   parentObject: Object,
   key: string,
-): void {
+): symbol {
   Object.setPrototypeOf(parentObject, model.prototype);
-  // Delete the property. It was just a placeholder.
-  return undefined;
+  return REMOVED_PROPERTY;
 }
 
 function defineLazyGetter<T>(
@@ -6616,10 +6636,10 @@ function reviveModel(
         delete (value as any)[k];
       } else {
         const walked = reviveModel(response, (value as any)[k], value, k);
-        if (walked !== undefined) {
-          (value as any)[k] = walked;
-        } else {
+        if (__DEV__ && walked === REMOVED_PROPERTY) {
           delete (value as any)[k];
+        } else {
+          (value as any)[k] = walked;
         }
       }
     }

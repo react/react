@@ -2550,6 +2550,29 @@ describe('ReactFlightDOMEdge', () => {
     }
   });
 
+  it('can pass a cyclic object under a property name with a colon', async () => {
+    const cyclic = {};
+    cyclic.self = cyclic;
+    // Property names join into path references with colons, so these two
+    // have to be escaped on the way.
+    const model = {'https://a/b': cyclic, '%3A': cyclic, again: cyclic};
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, {}),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    expect(result['https://a/b'].self).toBe(result['https://a/b']);
+    expect(result['%3A']).toBe(result['https://a/b']);
+    expect(result.again).toBe(result['https://a/b']);
+  });
+
   it('ends a BYOB read that is waiting when the byte stream closes', async () => {
     let close;
     const source = new ReadableStream({
@@ -4386,5 +4409,17 @@ describe('ReactFlightDOMEdge', () => {
     expect(readError.stack).toMatch(
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
+  });
+
+  it('keeps properties whose client module exports undefined', async () => {
+    const {value} = clientExports({value: undefined});
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({value}, webpackMap),
+    );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    expect(Object.keys(result)).toEqual(['value']);
+    expect(result.value).toBeUndefined();
   });
 });
