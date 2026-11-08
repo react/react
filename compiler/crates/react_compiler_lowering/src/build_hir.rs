@@ -5773,6 +5773,78 @@ fn lower_function_declaration(
         .resolve_scope_for_node(func_decl.base.node_id)
         .unwrap_or(builder.scope_info().program_scope);
 
+    // Function declarations are instantiated at function entry, overriding a
+    // parameter or earlier function declaration of the same name. Such a
+    // redeclaration is recorded as a constant violation of the existing binding
+    // (not as a new binding), and we lower it as a reassignment at its source
+    // position. That is only equivalent if nothing reads or writes the binding
+    // before this point — otherwise those accesses would observe the parameter
+    // or the earlier function instead of this one. Bail out in that case.
+    if let Some(id_node) = &func_decl.id {
+        let scope_info = builder.scope_info();
+        let enclosing_scope = scope_info.scopes[function_scope.0 as usize].parent;
+        if let Some(binding_id) =
+            enclosing_scope.and_then(|scope| scope_info.get_binding(scope, &id_node.name))
+        {
+            let binding = &scope_info.bindings[binding_id.0 as usize];
+            let is_redeclaration = match (binding.declaration_node_id, id_node.base.node_id) {
+                (Some(declaration), Some(this)) => declaration != this,
+                _ => {
+                    binding.declaration_start.is_some()
+                        && binding.declaration_start != id_node.base.start
+                }
+            };
+            if is_redeclaration {
+                let identifier_locs = builder.identifier_locs();
+                let declaration_start = func_decl.base.start;
+                // `ref_node_id_to_binding` also maps declaration sites; skip the
+                // binding's own declaration and this redeclaration's name, which
+                // are not in Babel's referencePaths/constantViolations.
+                let is_observed_before_declaration = scope_info.ref_node_id_to_binding.iter().any(
+                    |(&ref_node_id, &ref_binding_id)| {
+                        if ref_binding_id != binding_id
+                            || Some(ref_node_id) == id_node.base.node_id
+                            || Some(ref_node_id) == binding.declaration_node_id
+                        {
+                            return false;
+                        }
+                        match (
+                            identifier_locs.get(&ref_node_id).map(|entry| entry.start),
+                            declaration_start,
+                        ) {
+                            (Some(ref_start), Some(decl_start)) => ref_start < decl_start,
+                            _ => true,
+                        }
+                    },
+                );
+                if is_observed_before_declaration {
+                    use react_compiler_ast::scope::BindingKind as ScopeBindingKind;
+                    let kind = match binding.kind {
+                        ScopeBindingKind::Hoisted => "function",
+                        ScopeBindingKind::Var => "var",
+                        ScopeBindingKind::Let => "let",
+                        ScopeBindingKind::Const => "const",
+                        ScopeBindingKind::Param => "param",
+                        ScopeBindingKind::Module => "module",
+                        ScopeBindingKind::Local => "local",
+                        ScopeBindingKind::Unknown => "unknown",
+                    };
+                    builder.record_error(CompilerErrorDetail {
+                        category: ErrorCategory::Todo,
+                        reason: "(BuildHIR::lowerStatement) Handle function declarations that redeclare a binding referenced earlier in the function".to_string(),
+                        description: Some(format!(
+                            "`{}` is already declared as a {} and is referenced before this declaration",
+                            id_node.name, kind
+                        )),
+                        loc: loc.clone(),
+                        suggestions: None,
+                    })?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+
     let component_scope = builder.component_scope();
     let scope_info = builder.scope_info();
 
