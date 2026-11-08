@@ -22,7 +22,7 @@ function Component() {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     const Inner = function Inner() {
-      return <div onClick={_temp} />;
+      return <div onClick={() => null} />;
     };
     t0 = <Inner />;
     $[0] = t0;
@@ -30,9 +30,6 @@ function Component() {
     t0 = $[0];
   }
   return t0;
-}
-function _temp() {
-  return null;
 }
 
 ```

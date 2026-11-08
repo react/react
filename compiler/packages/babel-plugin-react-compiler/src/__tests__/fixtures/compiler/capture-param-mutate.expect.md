@@ -56,7 +56,11 @@ function getNativeLogFunction(level) {
       if (args.length === 1 && typeof args[0] === "string") {
         str = args[0];
       } else {
-        str = Array.prototype.map.call(args, _temp).join(", ");
+        str = Array.prototype.map
+          .call(args, function (arg) {
+            return inspect(arg, { depth: 10 });
+          })
+          .join(", ");
       }
 
       const firstArg = args[0];
@@ -90,9 +94,6 @@ function getNativeLogFunction(level) {
     t0 = $[1];
   }
   return t0;
-}
-function _temp(arg) {
-  return inspect(arg, { depth: 10 });
 }
 
 ```

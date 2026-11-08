@@ -30,7 +30,7 @@ function Foo() {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t0 = function a(t1) {
-      const x_0 = t1 === undefined ? _temp : t1;
+      const x_0 = t1 === undefined ? () => {} : t1;
       return (function b(t2) {
         const y_0 = t2 === undefined ? [] : t2;
         return [x_0, y_0];
@@ -42,7 +42,6 @@ function Foo() {
   }
   return t0;
 }
-function _temp() {}
 
 export const FIXTURE_ENTRYPOINT = {
   fn: Foo,
