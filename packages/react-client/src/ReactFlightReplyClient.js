@@ -1446,7 +1446,7 @@ function bind(this: Function): Function {
   if (parentBound === null || parentBound.status === 'fulfilled') {
     const boundArgs =
       parentBound === null ? args : parentBound.value.concat(args);
-    // The bound arguments are already known, so mark the promise as resolved.
+    // The bound arguments are already known, so mark the promise as fulfilled.
     // Otherwise isSignatureEqual would suspend on every render that calls bind.
     const fulfilledThenable: FulfilledThenable<Array<any>> = Promise.resolve(
       boundArgs,
