@@ -1441,13 +1441,23 @@ function bind(this: Function): Function {
   }
 
   const args = ArraySlice.call(arguments, 1);
+  const parentBound = referenceClosure.bound;
   let boundPromise = null;
-  if (referenceClosure.bound !== null) {
-    boundPromise = Promise.resolve(referenceClosure.bound as any).then(
-      boundArgs => boundArgs.concat(args),
-    );
+  if (parentBound === null || parentBound.status === 'fulfilled') {
+    const boundArgs =
+      parentBound === null ? args : parentBound.value.concat(args);
+    // The bound arguments are already known, so mark the promise as resolved.
+    // Otherwise isSignatureEqual would suspend on every render that calls bind.
+    const fulfilledThenable: FulfilledThenable<Array<any>> = Promise.resolve(
+      boundArgs,
+    ) as any;
+    fulfilledThenable.status = 'fulfilled';
+    fulfilledThenable.value = boundArgs;
+    boundPromise = fulfilledThenable;
   } else {
-    boundPromise = Promise.resolve(args);
+    boundPromise = Promise.resolve(parentBound as any).then(boundArgs =>
+      boundArgs.concat(args),
+    );
   }
 
   knownServerReferences.set(newFn, {

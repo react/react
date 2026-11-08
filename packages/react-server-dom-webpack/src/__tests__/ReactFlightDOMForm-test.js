@@ -670,6 +670,52 @@ describe('ReactFlightDOMForm', () => {
     },
   );
 
+  it('useActionState can reuse state during MPA form submission if the action is bound during render', async () => {
+    const ServerModule = serverExports(
+      async function action(stepSize, prevState, formData) {
+        return prevState + stepSize;
+      },
+    );
+    const serverAction = ReactServerDOMClient.createServerReference(
+      ServerModule.$$id,
+    );
+
+    function Form({stepSize}) {
+      const [count, dispatch] = useActionState(
+        serverAction.bind(null, stepSize),
+        1,
+      );
+      return <form action={dispatch}>{count}</form>;
+    }
+
+    const ssrStream = await ReactDOMServer.renderToReadableStream(
+      <Form stepSize={1} />,
+    );
+    await readIntoContainer(ssrStream);
+
+    expect(container.textContent).toBe('1');
+
+    const form = container.getElementsByTagName('form')[0];
+    const {formState} = await submit(form);
+
+    container.innerHTML = '';
+
+    const postbackSsrStream = await ReactDOMServer.renderToReadableStream(
+      <Form stepSize={1} />,
+      {formState: formState},
+    );
+    await readIntoContainer(postbackSsrStream);
+
+    expect(container.textContent).toBe('2');
+    if (!ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      assertConsoleErrorDev([
+        'React encountered an empty buffer when writing in an environment that does not support ArrayBuffer.prototype.detached. ' +
+          'This could be a security issue if the buffer was not actually empty. ' +
+          'Please use a modern Edge runtime that supports ArrayBuffer.prototype.detached.',
+      ]);
+    }
+  });
+
   it('useActionState does not reuse state if action signatures are different', async () => {
     // This is the same as the previous test, except instead of using bind to
     // configure the server action (i.e. a closure), it swaps the action.
