@@ -846,11 +846,26 @@ function setProp(
       }
       break;
     }
-    case 'popover':
+    case 'popover': {
       listenToNonDelegatedEvent('beforetoggle', domElement);
       listenToNonDelegatedEvent('toggle', domElement);
-      setValueForAttribute(domElement, 'popover', value);
+      if (value === true) {
+        domElement.setAttribute(key, '');
+      } else if (
+        value !== false &&
+        value != null &&
+        typeof value !== 'function' &&
+        typeof value !== 'symbol'
+      ) {
+        if (__DEV__) {
+          checkAttributeStringCoercion(value, key);
+        }
+        domElement.setAttribute(key, value as any);
+      } else {
+        domElement.removeAttribute(key);
+      }
       break;
+    }
     case 'xlinkActuate':
       setValueForNamespacedAttribute(
         domElement,
@@ -2911,6 +2926,7 @@ function diffHydratedGenericElement(
         );
         continue;
       }
+      case 'popover':
       case 'capture':
       case 'download': {
         hydrateOverloadedBooleanAttribute(

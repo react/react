@@ -1805,6 +1805,7 @@ function pushAttribute(
       }
       return;
     }
+    case 'popover':
     case 'capture':
     case 'download': {
       // Overloaded Boolean
