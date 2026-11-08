@@ -878,9 +878,16 @@ function getTargetIfIndirection(block: BasicBlock): number | null {
 
 /*
  * Finds try terminals where the handler is unreachable, and converts the try
- * to a goto(terminal.block)
+ * to a goto(terminal.block).
+ *
+ * The try block ends with a goto(Try) to the try's fallthrough. BuildReactiveFunction
+ * treats that variant as a no-op, relying on the enclosing `try` terminal to visit
+ * the fallthrough. Once the try is gone those gotos are rewritten to regular breaks,
+ * so that if the fallthrough is ever *not* merged into the end of the try block the
+ * result is a missing-break-target invariant rather than silently dropped code.
  */
 export function removeUnnecessaryTryCatch(fn: HIR): void {
+  const prunedFallthroughs = new Set<BlockId>();
   for (const [, block] of fn.blocks) {
     if (
       block.terminal.kind === 'try' &&
@@ -919,7 +926,21 @@ export function removeUnnecessaryTryCatch(fn: HIR): void {
         if (hadPreds && fallthrough.preds.size === 0) {
           // delete fallthrough
           fn.blocks.delete(fallthroughId);
+        } else {
+          prunedFallthroughs.add(fallthroughId);
         }
+      }
+    }
+  }
+  if (prunedFallthroughs.size !== 0) {
+    for (const [, block] of fn.blocks) {
+      const terminal = block.terminal;
+      if (
+        terminal.kind === 'goto' &&
+        terminal.variant === GotoVariant.Try &&
+        prunedFallthroughs.has(terminal.block)
+      ) {
+        terminal.variant = GotoVariant.Break;
       }
     }
   }

@@ -1318,6 +1318,13 @@ pub fn remove_dead_do_while_statements(hir: &mut HIR) {
 ///
 /// Also cleans up the fallthrough block's predecessors if the handler
 /// was the only path to it.
+///
+/// The try block ends with a `Goto(Try)` to the try's fallthrough, which
+/// `build_reactive_function` treats as a no-op (the enclosing `Try` terminal
+/// is responsible for visiting the fallthrough). Once the try is gone those
+/// gotos are rewritten to regular breaks, so that if the fallthrough is ever
+/// *not* merged into the end of the try block the result is a missing
+/// break-target invariant rather than silently dropped code.
 pub fn remove_unnecessary_try_catch(hir: &mut HIR) {
     let block_ids: IndexSet<BlockId, FxBuildHasher> = hir.blocks.keys().copied().collect();
 
@@ -1342,6 +1349,7 @@ pub fn remove_unnecessary_try_catch(hir: &mut HIR) {
         })
         .collect();
 
+    let mut pruned_fallthroughs: IndexSet<BlockId, FxBuildHasher> = IndexSet::default();
     for (block_id, try_block, fallthrough_id, loc) in replacements {
         // Replace the terminal
         if let Some(block) = hir.blocks.get_mut(&block_id) {
@@ -1358,24 +1366,41 @@ pub fn remove_unnecessary_try_catch(hir: &mut HIR) {
         // those blocks — scrub all dead preds so merge can absorb the try-exit.
         // Only delete when preds were populated and are all now gone; an empty
         // set can mean mark_predecessors has not run yet.
-        let should_delete_fallthrough = if let Some(fallthrough) = hir.blocks.get_mut(&fallthrough_id)
-        {
-            let had_preds = !fallthrough.preds.is_empty();
-            let dead_preds: Vec<BlockId> = fallthrough
-                .preds
-                .iter()
-                .copied()
-                .filter(|pred| !block_ids.contains(pred))
-                .collect();
-            for pred in dead_preds {
-                fallthrough.preds.shift_remove(&pred);
-            }
-            had_preds && fallthrough.preds.is_empty()
-        } else {
-            false
-        };
+        let should_delete_fallthrough =
+            if let Some(fallthrough) = hir.blocks.get_mut(&fallthrough_id) {
+                let had_preds = !fallthrough.preds.is_empty();
+                let dead_preds: Vec<BlockId> = fallthrough
+                    .preds
+                    .iter()
+                    .copied()
+                    .filter(|pred| !block_ids.contains(pred))
+                    .collect();
+                for pred in dead_preds {
+                    fallthrough.preds.shift_remove(&pred);
+                }
+                had_preds && fallthrough.preds.is_empty()
+            } else {
+                false
+            };
         if should_delete_fallthrough {
             hir.blocks.shift_remove(&fallthrough_id);
+        } else if hir.blocks.contains_key(&fallthrough_id) {
+            pruned_fallthroughs.insert(fallthrough_id);
+        }
+    }
+
+    if !pruned_fallthroughs.is_empty() {
+        for block in hir.blocks.values_mut() {
+            if let Terminal::Goto {
+                block: target,
+                variant: variant @ GotoVariant::Try,
+                ..
+            } = &mut block.terminal
+            {
+                if pruned_fallthroughs.contains(target) {
+                    *variant = GotoVariant::Break;
+                }
+            }
         }
     }
 }
