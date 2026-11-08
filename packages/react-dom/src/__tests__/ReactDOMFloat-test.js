@@ -9451,14 +9451,12 @@ background-color: green;
       );
 
       // Changing the key deletes the dehydrated boundary and mounts a new
-      // title on the client. The server title is left behind.
-      // TODO: this pins the current behavior; there should be a single title.
+      // title on the client. The server title must not be left behind.
       root.render(<App isClient={true} view={1} />);
       await waitForAll([]);
       expect(getMeaningfulChildren(document)).toEqual(
         <html>
           <head>
-            <title>Minimal title</title>
             <title>Minimal title</title>
           </head>
           <body>
@@ -9476,9 +9474,7 @@ background-color: green;
         </html>,
       );
       await waitForAll([]);
-      expect(getMeaningfulChildren(document.head)).toEqual(
-        <title>Minimal title</title>,
-      );
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
     });
 
     it('can hoist title tags on the client', async () => {
