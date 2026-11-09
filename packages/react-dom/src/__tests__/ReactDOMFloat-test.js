@@ -9611,15 +9611,15 @@ background-color: green;
             <link rel="rel4" href="linkhref" />
             <meta name="name3" content="metacontent" />
             <meta name="name4" content="metacontent" />
+            <link rel="rel5" href="linkhref" />
+            <link rel="rel6" href="linkhref" />
+            <meta name="name5" content="metacontent" />
+            <meta name="name6" content="metacontent" />
           </head>
           <body>
             <meta name="3rdparty" content="metacontent" />
             <link rel="3rdparty" href="linkhref" />
             <div>hello world</div>
-            <link rel="rel5" href="linkhref" />
-            <link rel="rel6" href="linkhref" />
-            <meta name="name5" content="metacontent" />
-            <meta name="name6" content="metacontent" />
           </body>
         </html>,
       );
@@ -9631,6 +9631,59 @@ background-color: green;
           <body>
             <meta name="3rdparty" content="metacontent" />
             <link rel="3rdparty" href="linkhref" />
+          </body>
+        </html>,
+      );
+    });
+
+    it('moves hoistables streamed after the shell into the head on hydration', async () => {
+      function App() {
+        return (
+          <html>
+            <head />
+            <body>
+              <Suspense fallback="loading...">
+                <BlockedOn value="release">
+                  <title>a title</title>
+                  <meta name="description" content="a description" />
+                  <link rel="canonical" href="/canonical" />
+                  <div>hello world</div>
+                </BlockedOn>
+              </Suspense>
+            </body>
+          </html>
+        );
+      }
+      await act(() => {
+        renderToPipeableStream(<App />).pipe(writable);
+      });
+      await act(() => {
+        resolveText('release');
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head />
+          <body>
+            <div>hello world</div>
+            <title>a title</title>
+            <meta name="description" content="a description" />
+            <link rel="canonical" href="/canonical" />
+          </body>
+        </html>,
+      );
+
+      ReactDOMClient.hydrateRoot(document, <App />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <title>a title</title>
+            <meta name="description" content="a description" />
+            <link rel="canonical" href="/canonical" />
+          </head>
+          <body>
+            <div>hello world</div>
           </body>
         </html>,
       );

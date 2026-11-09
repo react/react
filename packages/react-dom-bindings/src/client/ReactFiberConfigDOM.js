@@ -6188,9 +6188,7 @@ export function hydrateHoistable(
         );
       }
       setInitialProperties(instance, type, props);
-      precacheFiberNode(internalInstanceHandle, instance);
-      markNodeAsHoistable(instance);
-      return instance;
+      break;
     }
     case 'link': {
       const cache = getHydratableHoistableCache('link', 'href', ownerDocument);
@@ -6220,7 +6218,6 @@ export function hydrateHoistable(
       }
       instance = ownerDocument.createElement(type);
       setInitialProperties(instance, type, props);
-      (ownerDocument.head as any).appendChild(instance);
       break;
     }
     case 'meta': {
@@ -6264,13 +6261,17 @@ export function hydrateHoistable(
       }
       instance = ownerDocument.createElement(type);
       setInitialProperties(instance, type, props);
-      (ownerDocument.head as any).appendChild(instance);
       break;
     }
     default:
       throw new Error(
         `getNodesForType encountered a type it did not expect: "${type}". This is a bug in React.`,
       );
+  }
+
+  // Hoistables that flush after the shell are streamed into the body.
+  if (instance.parentNode !== ownerDocument.head) {
+    (ownerDocument.head as any).appendChild(instance);
   }
 
   // This node is a match
