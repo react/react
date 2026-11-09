@@ -22,6 +22,7 @@ let assertLog;
 
 describe('isomorphic act()', () => {
   beforeEach(() => {
+    jest.resetModules();
     React = require('react');
     Scheduler = require('scheduler');
 
@@ -87,6 +88,136 @@ describe('isomorphic act()', () => {
       });
     });
     expect(root).toMatchRenderedOutput('B');
+  });
+
+  function mockBatchedMicrotasks() {
+    const tasks = [];
+    let scheduled = false;
+    spyOnDevAndProd(global, 'queueMicrotask').mockImplementation(callback => {
+      tasks.push(callback);
+      if (!scheduled) {
+        scheduled = true;
+        Promise.resolve().then(() => {
+          try {
+            // Zone.js drains nested microtasks in the same host microtask.
+            while (tasks.length > 0) {
+              tasks.shift()();
+            }
+          } finally {
+            scheduled = false;
+          }
+        });
+      }
+    });
+  }
+
+  // @gate __DEV__
+  it('does not warn for awaited async act with batched microtasks', async () => {
+    mockBatchedMicrotasks();
+    spyOnDevAndProd(console, 'error').mockImplementation(() => {});
+    expect(await act(async () => 'result')).toBe('result');
+    await waitForMicrotasks();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  // @gate __DEV__
+  it('does not warn when an async function returns act with batched microtasks', async () => {
+    mockBatchedMicrotasks();
+    spyOnDevAndProd(console, 'error').mockImplementation(() => {});
+    async function runAct() {
+      return act(async () => 'result');
+    }
+    expect(await runAct()).toBe('result');
+    await waitForMicrotasks();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  // @gate __DEV__
+  it('does not warn for awaited synchronous act that suspends with batched microtasks', async () => {
+    mockBatchedMicrotasks();
+    spyOnDevAndProd(console, 'error').mockImplementation(() => {});
+    const root = ReactNoop.createRoot();
+    let resolvePromise;
+    const promise = new Promise(resolve => {
+      resolvePromise = resolve;
+    });
+    function App() {
+      return use(promise);
+    }
+    await act(() => {
+      startTransition(() =>
+        root.render(
+          <Suspense fallback="pending">
+            <App />
+          </Suspense>,
+        ),
+      );
+      waitForMicrotasks().then(() => resolvePromise('resolved'));
+    });
+    expect(root).toMatchRenderedOutput('resolved');
+    await waitForMicrotasks();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  // @gate __DEV__
+  it('still warns for unawaited async act with batched microtasks', async () => {
+    mockBatchedMicrotasks();
+    spyOnDevAndProd(console, 'error').mockImplementation(() => {});
+    const result = act(async () => {});
+    await waitForMicrotasks();
+    await waitForMicrotasks();
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error.mock.calls[0][0]).toMatch(
+      'You called act(async () => ...) without await.',
+    );
+    await result;
+  });
+
+  // @gate __DEV__
+  it('still warns if then is inspected without awaiting act', async () => {
+    mockBatchedMicrotasks();
+    spyOnDevAndProd(console, 'error').mockImplementation(() => {});
+    const result = act(async () => {});
+    expect(typeof result.then).toBe('function');
+    await waitForMicrotasks();
+    await waitForMicrotasks();
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error.mock.calls[0][0]).toMatch(
+      'You called act(async () => ...) without await.',
+    );
+    await result;
+  });
+
+  // @gate __DEV__
+  it('still warns for unawaited synchronous act that suspends with batched microtasks', async () => {
+    mockBatchedMicrotasks();
+    spyOnDevAndProd(console, 'error').mockImplementation(() => {});
+    const root = ReactNoop.createRoot();
+    let resolvePromise;
+    const promise = new Promise(resolve => {
+      resolvePromise = resolve;
+    });
+    function App() {
+      return use(promise);
+    }
+    const result = act(() => {
+      startTransition(() =>
+        root.render(
+          <Suspense fallback="pending">
+            <App />
+          </Suspense>,
+        ),
+      );
+    });
+    await waitForMicrotasks();
+    await waitForMicrotasks();
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error.mock.calls[0][0]).toMatch(
+      'A component suspended inside an `act` scope, but the `act` call was not awaited.',
+    );
+    waitForMicrotasks().then(() => resolvePromise('resolved'));
+    await result;
+    expect(root).toMatchRenderedOutput('resolved');
   });
 
   // @gate __DEV__
