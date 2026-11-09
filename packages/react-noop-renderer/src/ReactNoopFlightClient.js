@@ -29,8 +29,8 @@ const {createResponse, createStreamState, processBinaryChunk, getRoot, close} =
   // $FlowFixMe[prop-missing]
   // $FlowFixMe[incompatible-type]
   ReactFlightClient({
-    createStringDecoder() {
-      return new TextDecoder();
+    createStringDecoder(preserveByteOrderMark: boolean = false) {
+      return new TextDecoder('utf-8', {ignoreBOM: preserveByteOrderMark});
     },
     readPartialStringChunk(decoder: TextDecoder, buffer: Uint8Array): string {
       return decoder.decode(buffer, decoderOptions);

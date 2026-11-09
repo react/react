@@ -27,7 +27,6 @@ import {
   enableProfilerNestedUpdatePhase,
   enableSchedulingProfiler,
   enableViewTransition,
-  enableFragmentRefs,
 } from 'shared/ReactFeatureFlags';
 import {
   ClassComponent,
@@ -778,16 +777,14 @@ function commitAttachRef(finishedWork: Fiber) {
         instanceToUse = finishedWork.stateNode;
         break;
       }
-      case Fragment:
-        if (enableFragmentRefs) {
-          const instance: null | FragmentInstanceType = finishedWork.stateNode;
-          if (instance === null) {
-            finishedWork.stateNode = createFragmentInstance(finishedWork);
-          }
-          instanceToUse = finishedWork.stateNode;
-          break;
+      case Fragment: {
+        const instance: null | FragmentInstanceType = finishedWork.stateNode;
+        if (instance === null) {
+          finishedWork.stateNode = createFragmentInstance(finishedWork);
         }
-      // Fallthrough
+        instanceToUse = finishedWork.stateNode;
+        break;
+      }
       default:
         instanceToUse = finishedWork.stateNode;
     }

@@ -200,8 +200,10 @@ fn merge_macro_arguments(
                 | InstructionValue::Destructure { .. }
                 | InstructionValue::LoadContext { .. }
                 | InstructionValue::LoadLocal { .. }
-                | InstructionValue::PostfixUpdate { .. }
-                | InstructionValue::PrefixUpdate { .. }
+                | InstructionValue::PostfixUpdateLocal { .. }
+                | InstructionValue::PostfixUpdateContext { .. }
+                | InstructionValue::PrefixUpdateContext { .. }
+                | InstructionValue::PrefixUpdateLocal { .. }
                 | InstructionValue::StoreContext { .. }
                 | InstructionValue::StoreLocal { .. } => {
                     // Skip these

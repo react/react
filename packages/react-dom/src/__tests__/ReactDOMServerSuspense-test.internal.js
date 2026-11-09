@@ -100,7 +100,6 @@ describe('ReactDOMServerSuspense', () => {
     expect(getVisibleChildren(container)).toEqual(<div>Fallback</div>);
   });
 
-  // @gate enableBrowserAPI
   it('hydrates browser-only content rendered with renderToString', async () => {
     function BrowserOnly() {
       React.use(ReactDOM.browser('Only render this content in the browser'));
@@ -129,7 +128,6 @@ describe('ReactDOMServerSuspense', () => {
     expect(getVisibleChildren(container)).toEqual(<div>Children</div>);
   });
 
-  // @gate enableBrowserAPI
   it('renders only the browser-only fallback with renderToStaticMarkup', () => {
     function BrowserOnly() {
       React.use(ReactDOM.browser('Only render this content in the browser'));

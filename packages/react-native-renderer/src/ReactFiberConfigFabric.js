@@ -36,14 +36,11 @@ import {
   createPublicTextInstance,
   createAttributePayload,
   diffAttributePayloads,
+  fabricUIManager,
   type PublicInstance as ReactNativePublicInstance,
   type PublicTextInstance,
   type PublicRootInstance,
 } from 'react-native/react-private-interface';
-import {
-  enableFragmentRefsInstanceHandles,
-  enableFragmentRefsTextNodes,
-} from 'shared/ReactFeatureFlags';
 
 const {
   createNode,
@@ -61,7 +58,7 @@ const {
   unstable_IdleEventPriority: FabricIdlePriority,
   unstable_getCurrentEventPriority: fabricGetCurrentEventPriority,
   suspendOnActiveViewTransition: fabricSuspendOnActiveViewTransition,
-} = nativeFabricUIManager;
+} = fabricUIManager;
 
 import {getClosestInstanceFromNode} from './ReactFabricComponentTree';
 import {compareDocumentPositionForEmptyFragment} from 'shared/ReactDOMFragmentRefShared';
@@ -375,7 +372,7 @@ export function shouldSetTextContent(type: string, props: Props): boolean {
   // But creates an additional child Fiber for raw text children.
   // No additional native views are created though.
   // It's not clear to me which is better so I'm deferring for now.
-  // More context @ github.com/facebook/react/pull/8560#discussion_r92111303
+  // More context @ github.com/react/react/pull/8560#discussion_r92111303
   return false;
 }
 
@@ -477,7 +474,7 @@ export const noTimeout: -1 = -1;
 //     Persistence
 // -------------------
 
-export const supportsPersistence = true;
+export const supportsPersistence: boolean = true;
 
 export function cloneInstance(
   instance: Instance,
@@ -859,13 +856,11 @@ function addFragmentHandleToFiber(
   child: Fiber,
   fragmentInstance: FragmentInstanceType,
 ): boolean {
-  if (enableFragmentRefsInstanceHandles) {
-    const instance = getPublicInstanceFromHostFiber(
-      child,
-    ) as any as PublicInstanceWithFragmentHandles;
-    if (instance != null) {
-      addFragmentHandleToInstance(instance, fragmentInstance);
-    }
+  const instance = getPublicInstanceFromHostFiber(
+    child,
+  ) as any as PublicInstanceWithFragmentHandles;
+  if (instance != null) {
+    addFragmentHandleToInstance(instance, fragmentInstance);
   }
   return false;
 }
@@ -874,25 +869,21 @@ function addFragmentHandleToInstance(
   instance: PublicInstanceWithFragmentHandles,
   fragmentInstance: FragmentInstanceType,
 ): void {
-  if (enableFragmentRefsInstanceHandles) {
-    if (instance.reactFragments == null) {
-      instance.reactFragments = new Set();
-    }
-    instance.reactFragments.add(fragmentInstance);
+  if (instance.reactFragments == null) {
+    instance.reactFragments = new Set();
   }
+  instance.reactFragments.add(fragmentInstance);
 }
 
 export function createFragmentInstance(
   fragmentFiber: Fiber,
 ): FragmentInstanceType {
   const fragmentInstance = new (FragmentInstance as any)(fragmentFiber);
-  if (enableFragmentRefsInstanceHandles) {
-    traverseFragmentInstancesAndTextInstances(
-      fragmentFiber,
-      addFragmentHandleToFiber,
-      fragmentInstance,
-    );
-  }
+  traverseFragmentInstancesAndTextInstances(
+    fragmentFiber,
+    addFragmentHandleToFiber,
+    fragmentInstance,
+  );
   return fragmentInstance;
 }
 
@@ -908,7 +899,7 @@ export function commitNewChildToFragmentInstance(
   fragmentInstance: FragmentInstanceType,
 ): void {
   // Text nodes are not observable
-  if (enableFragmentRefsTextNodes && childInstance.canonical == null) {
+  if (childInstance.canonical == null) {
     return;
   }
   const instance: Instance = childInstance as any;
@@ -923,12 +914,10 @@ export function commitNewChildToFragmentInstance(
       observer.observe(publicInstance);
     });
   }
-  if (enableFragmentRefsInstanceHandles) {
-    addFragmentHandleToInstance(
-      publicInstance as any as PublicInstanceWithFragmentHandles,
-      fragmentInstance,
-    );
-  }
+  addFragmentHandleToInstance(
+    publicInstance as any as PublicInstanceWithFragmentHandles,
+    fragmentInstance,
+  );
 }
 
 export function deleteChildFromFragmentInstance(
@@ -936,17 +925,15 @@ export function deleteChildFromFragmentInstance(
   fragmentInstance: FragmentInstanceType,
 ): void {
   // Text nodes are not observable
-  if (enableFragmentRefsTextNodes && childInstance.canonical == null) {
+  if (childInstance.canonical == null) {
     return;
   }
   const instance: Instance = childInstance as any;
   const publicInstance = getPublicInstance(
     instance,
   ) as any as PublicInstanceWithFragmentHandles;
-  if (enableFragmentRefsInstanceHandles) {
-    if (publicInstance.reactFragments != null) {
-      publicInstance.reactFragments.delete(fragmentInstance);
-    }
+  if (publicInstance.reactFragments != null) {
+    publicInstance.reactFragments.delete(fragmentInstance);
   }
 }
 

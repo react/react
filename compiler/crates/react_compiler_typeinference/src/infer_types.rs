@@ -246,7 +246,7 @@ fn is_ref_like_name(object_name: &str, property_name: &PropertyNameKind) -> bool
     object_name == "ref"
         || (object_name.len() > 3
             && object_name.ends_with("Ref")
-            && object_name[..1]
+            && object_name
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_alphabetic() || c == '$' || c == '_'))
@@ -588,8 +588,10 @@ fn generate_instruction_types(
             unifier.unify(left, Type::Primitive, shapes)?;
         }
 
-        InstructionValue::PostfixUpdate { value, lvalue, .. }
-        | InstructionValue::PrefixUpdate { value, lvalue, .. } => {
+        InstructionValue::PostfixUpdateLocal { value, lvalue, .. }
+        | InstructionValue::PostfixUpdateContext { value, lvalue, .. }
+        | InstructionValue::PrefixUpdateContext { value, lvalue, .. }
+        | InstructionValue::PrefixUpdateLocal { value, lvalue, .. } => {
             let value_type = get_type(value.identifier, identifiers);
             unifier.unify(value_type, Type::Primitive, shapes)?;
             let lvalue_type = get_type(lvalue.identifier, identifiers);
@@ -1245,10 +1247,16 @@ fn apply_instruction_operands(
                 resolve_identifier(sub.identifier, identifiers, types, unifier);
             }
         }
-        InstructionValue::PrefixUpdate {
+        InstructionValue::PrefixUpdateLocal {
             value: val, lvalue, ..
         }
-        | InstructionValue::PostfixUpdate {
+        | InstructionValue::PrefixUpdateContext {
+            value: val, lvalue, ..
+        }
+        | InstructionValue::PostfixUpdateContext {
+            value: val, lvalue, ..
+        }
+        | InstructionValue::PostfixUpdateLocal {
             value: val, lvalue, ..
         } => {
             resolve_identifier(val.identifier, identifiers, types, unifier);

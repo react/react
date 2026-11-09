@@ -61,7 +61,6 @@ import {captureCommitPhaseError} from './ReactFiberWorkLoop';
 import {trackHostMutation} from './ReactFiberMutationTracking';
 
 import {runWithFiberInDEV} from './ReactCurrentFiber';
-import {enableFragmentRefs} from 'shared/ReactFeatureFlags';
 import {
   commitNewChildToFragmentInstances,
   getParentFragmentInstances,
@@ -258,9 +257,7 @@ function isHostParent(fiber: Fiber): boolean {
   return (
     fiber.tag === HostComponent ||
     fiber.tag === HostRoot ||
-    // $FlowFixMe[constant-condition]
     (supportsResources ? fiber.tag === HostHoistable : false) ||
-    // $FlowFixMe[constant-condition]
     (supportsSingletons
       ? fiber.tag === HostSingleton && isSingletonScope(fiber.type)
       : false) ||
@@ -296,7 +293,6 @@ function getHostSibling(fiber: Fiber): ?Instance {
       // singleton scope. If it is a singleton scope we skip over it because
       // you only insert against this scope when you are already inside of it
       if (
-        // $FlowFixMe[constant-condition]
         supportsSingletons &&
         node.tag === HostSingleton &&
         isSingletonScope(node.type)
@@ -342,9 +338,7 @@ function insertOrAppendPlacementNodeIntoContainer(
     } else {
       appendChildToContainer(parent, stateNode);
     }
-    if (enableFragmentRefs) {
-      commitNewChildToFragmentInstances(node, parentFragmentInstances);
-    }
+    commitNewChildToFragmentInstances(node, parentFragmentInstances);
     trackHostMutation();
     return;
   } else if (tag === HostPortal) {
@@ -354,14 +348,11 @@ function insertOrAppendPlacementNodeIntoContainer(
     return;
   }
 
-  // $FlowFixMe[constant-condition]
   if (supportsSingletons ? tag === HostSingleton : false) {
-    if (enableFragmentRefs) {
-      // The singleton is the fragment child. Its own children are not
-      // attributed to the fragment instances above it.
-      commitNewChildToFragmentInstances(node, parentFragmentInstances);
-      parentFragmentInstances = null;
-    }
+    // The singleton is the fragment child. Its own children are not
+    // attributed to the fragment instances above it.
+    commitNewChildToFragmentInstances(node, parentFragmentInstances);
+    parentFragmentInstances = null;
     if (isSingletonScope(node.type)) {
       // This singleton is the parent of deeper nodes and needs to become
       // the parent for child insertions and appends
@@ -406,9 +397,7 @@ function insertOrAppendPlacementNode(
     } else {
       appendChild(parent, stateNode);
     }
-    if (enableFragmentRefs) {
-      commitNewChildToFragmentInstances(node, parentFragmentInstances);
-    }
+    commitNewChildToFragmentInstances(node, parentFragmentInstances);
     trackHostMutation();
     return;
   } else if (tag === HostPortal) {
@@ -418,14 +407,11 @@ function insertOrAppendPlacementNode(
     return;
   }
 
-  // $FlowFixMe[constant-condition]
   if (supportsSingletons ? tag === HostSingleton : false) {
-    if (enableFragmentRefs) {
-      // The singleton is the fragment child. Its own children are not
-      // attributed to the fragment instances above it.
-      commitNewChildToFragmentInstances(node, parentFragmentInstances);
-      parentFragmentInstances = null;
-    }
+    // The singleton is the fragment child. Its own children are not
+    // attributed to the fragment instances above it.
+    commitNewChildToFragmentInstances(node, parentFragmentInstances);
+    parentFragmentInstances = null;
     if (isSingletonScope(node.type)) {
       // This singleton is the parent of deeper nodes and needs to become
       // the parent for child insertions and appends
@@ -462,18 +448,13 @@ function commitPlacement(finishedWork: Fiber): void {
   }
   // Fragment ancestry is collected separately so portals remain placement
   // parents while fragment bookkeeping still walks past them to ancestors.
-  const parentFragmentInstances = enableFragmentRefs
-    ? getParentFragmentInstances(finishedWork)
-    : null;
+  const parentFragmentInstances = getParentFragmentInstances(finishedWork);
 
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
-    if (enableFragmentRefs) {
-      commitImmutablePlacementNodeToFragmentInstances(
-        finishedWork,
-        parentFragmentInstances,
-      );
-    }
+    commitImmutablePlacementNodeToFragmentInstances(
+      finishedWork,
+      parentFragmentInstances,
+    );
     return;
   }
 
@@ -486,7 +467,6 @@ function commitPlacement(finishedWork: Fiber): void {
 
   switch (hostParentFiber.tag) {
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         const parent: Instance = hostParentFiber.stateNode;
         const before = getHostSibling(finishedWork);
@@ -546,12 +526,8 @@ function commitImmutablePlacementNodeToFragmentInstances(
   finishedWork: Fiber,
   parentFragmentInstances: null | Array<FragmentInstanceType>,
 ): void {
-  if (!enableFragmentRefs) {
-    return;
-  }
   const isHost =
     finishedWork.tag === HostComponent ||
-    // $FlowFixMe[constant-condition]
     (supportsSingletons ? finishedWork.tag === HostSingleton : false);
   if (isHost) {
     // A singleton is the fragment child itself, so its own children are

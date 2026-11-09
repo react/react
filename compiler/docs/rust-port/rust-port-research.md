@@ -69,7 +69,7 @@ Porting the React Compiler from TypeScript to Rust is **feasible and the Rust co
 
 **Error handling**: Two categories — errors that would have thrown in TypeScript (invariants, todo errors, short-circuiting) return `Err(CompilerDiagnostic)` via `Result`, while non-throwing accumulated diagnostics are recorded directly on `Environment`. TypeScript non-null assertions become `.unwrap()` panics.
 
-**Note on InferMutationAliasingEffects**: Previously categorized as "significant redesign" due to maps using JS reference identity with `InstructionValue` keys. An upstream refactor ([PR #33650](https://github.com/facebook/react/pull/33650)) replaces `InstructionValue` with interned `AliasingEffect` as allocation-site keys, eliminating synthetic InstructionValues and the `effectInstructionValueCache`. Since effects are already interned by content hash, they map directly to a copyable `EffectId` index in Rust. Additionally, `AliasingEffect` variants share `Place` references with `InstructionValue` fields — in Rust, Places are cloned cheaply (with arena-based `IdentifierId`). The `CreateFunction` variant's `FunctionExpression` reference is replaced with a `FunctionId` referencing the function arena on `Environment`. See [§AliasingEffect section](#aliasingeffect-shared-references-and-rust-ownership) for the full analysis. This is "moderate refactoring" — no algorithmic redesign needed.
+**Note on InferMutationAliasingEffects**: Previously categorized as "significant redesign" due to maps using JS reference identity with `InstructionValue` keys. An upstream refactor ([PR #33650](https://github.com/react/react/pull/33650)) replaces `InstructionValue` with interned `AliasingEffect` as allocation-site keys, eliminating synthetic InstructionValues and the `effectInstructionValueCache`. Since effects are already interned by content hash, they map directly to a copyable `EffectId` index in Rust. Additionally, `AliasingEffect` variants share `Place` references with `InstructionValue` fields — in Rust, Places are cloned cheaply (with arena-based `IdentifierId`). The `CreateFunction` variant's `FunctionExpression` reference is replaced with a `FunctionId` referencing the function arena on `Environment`. See [§AliasingEffect section](#aliasingeffect-shared-references-and-rust-ownership) for the full analysis. This is "moderate refactoring" — no algorithmic redesign needed.
 
 ---
 
@@ -349,7 +349,7 @@ Maps that store references to actual `Instruction`, `FunctionExpression`, or `In
 
 **Passes**: InferMutationAliasingEffects (`Map<Instruction, InstructionSignature>`, `Map<FunctionExpression, AliasingSignature>`), DropManualMemoization (`Map<IdentifierId, TInstruction<FunctionExpression>>`, `ManualMemoCallee.loadInstr`), InlineIIFEs (`Map<IdentifierId, FunctionExpression>`), NameAnonymousFunctions (`Node.fn: FunctionExpression`).
 
-**Note**: InferMutationAliasingEffects currently uses `Map<InstructionValue, AbstractValue>` and `Map<IdentifierId, Set<InstructionValue>>` with `InstructionValue` objects as allocation-site identity tokens (JS reference identity), including both real InstructionValues from the HIR (for `CreateFunction`) and synthetic objects fabricated as allocation-site markers. An upstream refactor ([PR #33650](https://github.com/facebook/react/pull/33650)) replaces all `InstructionValue` keys with interned `AliasingEffect` objects, eliminating the synthetic InstructionValues and `effectInstructionValueCache` entirely. Since effects are already interned by content hash, reference identity equals content identity — exactly what's needed for Rust. In Rust, the `EffectId` (index into the interning table) serves as the allocation-site key directly. See [§AliasingEffect section](#aliasingeffect-shared-references-and-rust-ownership) for the full analysis.
+**Note**: InferMutationAliasingEffects currently uses `Map<InstructionValue, AbstractValue>` and `Map<IdentifierId, Set<InstructionValue>>` with `InstructionValue` objects as allocation-site identity tokens (JS reference identity), including both real InstructionValues from the HIR (for `CreateFunction`) and synthetic objects fabricated as allocation-site markers. An upstream refactor ([PR #33650](https://github.com/react/react/pull/33650)) replaces all `InstructionValue` keys with interned `AliasingEffect` objects, eliminating the synthetic InstructionValues and `effectInstructionValueCache` entirely. Since effects are already interned by content hash, reference identity equals content identity — exactly what's needed for Rust. In Rust, the `EffectId` (index into the interning table) serves as the allocation-site key directly. See [§AliasingEffect section](#aliasingeffect-shared-references-and-rust-ownership) for the full analysis.
 
 **Rust approach**: Store only what is actually needed:
 - If the map is for existence checking: use `HashSet<IdentifierId>`
@@ -482,7 +482,7 @@ Allocation sites are created from:
 - **`Create`/`CreateFrom` effects**: Synthetic InstructionValues via `effectInstructionValueCache` (maps interned effect → synthetic InstructionValue)
 - **`CreateFunction` effects**: The actual `FunctionExpression` InstructionValue from the HIR
 
-**Upstream simplification** ([facebook/react#33650](https://github.com/facebook/react/pull/33650)): This PR replaces `InstructionValue` with the interned `AliasingEffect` itself as the allocation-site key:
+**Upstream simplification** ([react/react#33650](https://github.com/react/react/pull/33650)): This PR replaces `InstructionValue` with the interned `AliasingEffect` itself as the allocation-site key:
 
 ```
 #values: Map<AliasingEffect, AbstractValue>     // interned AliasingEffect as KEY
@@ -996,7 +996,7 @@ Most passes consist of these patterns that translate almost line-for-line:
 
 **Moderately similar (70-85%)**: AnalyseFunctions, InferReactiveScopeVariables, AlignReactiveScopesToBlockScopesHIR, MergeOverlappingReactiveScopesHIR, OutlineJSX, BuildReactiveFunction, PruneNonEscapingScopes, OptimizeForSSR, PruneUnusedLValues
 
-**Moderately similar (70-85%)** *(additional)*: InferMutationAliasingEffects (after [PR #33650](https://github.com/facebook/react/pull/33650): allocation-site keys → `EffectId` via interning, Place sharing → Clone, CreateFunction → FunctionId arena access — see [§AliasingEffect section](#aliasingeffect-shared-references-and-rust-ownership))
+**Moderately similar (70-85%)** *(additional)*: InferMutationAliasingEffects (after [PR #33650](https://github.com/react/react/pull/33650): allocation-site keys → `EffectId` via interning, Place sharing → Clone, CreateFunction → FunctionId arena access — see [§AliasingEffect section](#aliasingeffect-shared-references-and-rust-ownership))
 
 **Requires redesign (50-70%)**: InferMutationAliasingRanges (graph-through-HIR mutation), BuildHIR (Babel AST coupling), CodegenReactiveFunction (Babel AST output)
 
@@ -1183,7 +1183,7 @@ The recursive `lowerWithMutationAliasing` pattern works with `&mut` because it i
 
 **Shared references in AliasingEffect** (see [§AliasingEffect: Shared References and Rust Ownership](#aliasingeffect-shared-references-and-rust-ownership) for full analysis): `computeSignatureForInstruction` creates effects that share Place objects with the Instruction's `lvalue` and `InstructionValue` fields. The `Apply` effect shares the args array reference. The `CreateFunction` effect stores the actual `FunctionExpression`/`ObjectMethod` InstructionValue. In Rust, Places are cloned (cheap with `IdentifierId`) and `CreateFunction` stores a `FunctionId` for function arena access.
 
-**Allocation-site identity**: Currently uses `InstructionValue` as reference-identity keys. PR [#33650](https://github.com/facebook/react/pull/33650) replaces this with interned `AliasingEffect` objects — since effects are already interned by content hash, the interned effect IS the allocation-site key. In Rust, this maps to `EffectId` (index into the interning table). No separate `AllocationSiteId` is needed.
+**Allocation-site identity**: Currently uses `InstructionValue` as reference-identity keys. PR [#33650](https://github.com/react/react/pull/33650) replaces this with interned `AliasingEffect` objects — since effects are already interned by content hash, the interned effect IS the allocation-site key. In Rust, this maps to `EffectId` (index into the interning table). No separate `AllocationSiteId` is needed.
 
 **Reference-identity maps and their Rust equivalents** (after PR #33650):
 - `instructionSignatureCache: Map<Instruction, ...>` → `HashMap<InstructionId, InstructionSignature>`
@@ -1404,7 +1404,7 @@ This approach decouples the Rust compiler from any specific JS parser — the JS
 - Reactive function transforms — Visitor/MutVisitor trait design with Transformed enum
 
 ### Medium Risk *(additional)*
-- **InferMutationAliasingEffects**: After [PR #33650](https://github.com/facebook/react/pull/33650), allocation-site identity uses interned `AliasingEffect` (→ `EffectId`), eliminating `InstructionValue` keys and `effectInstructionValueCache`. Remaining reference-identity maps use Instructions (→ `InstructionId`) and FunctionExpressions (→ `FunctionId`). All become copyable ID-keyed maps. Place sharing between effects and instructions is resolved by cloning (cheap with arena-based identifiers). `CreateFunction`'s FunctionExpression reference becomes a `FunctionId` referencing the function arena. Fixpoint loop and abstract interpretation structure port directly. See [§AliasingEffect section](#aliasingeffect-shared-references-and-rust-ownership) for full analysis.
+- **InferMutationAliasingEffects**: After [PR #33650](https://github.com/react/react/pull/33650), allocation-site identity uses interned `AliasingEffect` (→ `EffectId`), eliminating `InstructionValue` keys and `effectInstructionValueCache`. Remaining reference-identity maps use Instructions (→ `InstructionId`) and FunctionExpressions (→ `FunctionId`). All become copyable ID-keyed maps. Place sharing between effects and instructions is resolved by cloning (cheap with arena-based identifiers). `CreateFunction`'s FunctionExpression reference becomes a `FunctionId` referencing the function arena. Fixpoint loop and abstract interpretation structure port directly. See [§AliasingEffect section](#aliasingeffect-shared-references-and-rust-ownership) for full analysis.
 
 ### High Risk (significant redesign)
 - **BuildHIR**: JSON AST deserialization, scope tree integration, closure-heavy builder patterns

@@ -316,6 +316,12 @@ export function createNewFunctionNode(
       );
     }
   }
+  if (originalFn.node.start !== undefined) {
+    transformedFn.start = originalFn.node.start;
+  }
+  if (originalFn.node.end !== undefined) {
+    transformedFn.end = originalFn.node.end;
+  }
   // Avoid visiting the new transformed version
   return transformedFn;
 }
@@ -1091,7 +1097,7 @@ function isValidComponentParams(
 
 /*
  * Adapted from the ESLint rule at
- * https://github.com/facebook/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js#L90-L103
+ * https://github.com/react/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js#L90-L103
  */
 function getComponentOrHookLike(
   node: NodePath<

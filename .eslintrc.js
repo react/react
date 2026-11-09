@@ -459,13 +459,6 @@ module.exports = {
       },
     },
     {
-      files: ['packages/react-native-renderer/**/*.js'],
-      globals: {
-        nativeFabricUIManager: 'readonly',
-        RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
-      },
-    },
-    {
       files: ['packages/react-server-dom-webpack/**/*.js'],
       globals: {
         __webpack_chunk_load__: 'readonly',
@@ -615,11 +608,13 @@ module.exports = {
     React$Portal: 'readonly',
     React$Ref: 'readonly',
     React$RefSetter: 'readonly',
+    ReadableByteStreamController: 'readonly',
     ReadableStreamController: 'readonly',
     ReadableStreamReader: 'readonly',
     RequestInfo: 'readonly',
     RequestOptions: 'readonly',
     Required: 'readonly',
+    SharedArrayBuffer: 'readonly',
     StoreAsGlobal: 'readonly',
     symbol: 'readonly',
     SyntheticEvent: 'readonly',
