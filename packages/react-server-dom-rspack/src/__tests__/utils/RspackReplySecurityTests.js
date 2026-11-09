@@ -8,6 +8,9 @@
 'use strict';
 
 const {installRspackTestManifest} = require('./RspackTestManifest');
+const {
+  patchMessageChannel,
+} = require('../../../../../scripts/jest/patchMessageChannel');
 
 function describeRspackReplySecurityTests(
   loadServer,
@@ -21,8 +24,10 @@ function describeRspackReplySecurityTests(
   describe('ReactFlightRspackReply security behavior', () => {
     beforeEach(() => {
       jest.resetModules();
+      patchMessageChannel();
       jest.mock('react', () => require('react/react.react-server'));
       rspack = installRspackTestManifest();
+      require('react-dom');
       ReactServerDOMServer = loadServer();
 
       jest.resetModules();
@@ -112,6 +117,91 @@ function describeRspackReplySecurityTests(
           message: expect.stringContaining('Referenced Blob is not a Blob.'),
         }),
       );
+    });
+
+    it('detaches the abort listener once the reply is encoded', async () => {
+      const controller = new AbortController();
+      const signal = controller.signal;
+
+      // Collects the lifetime signal that React bounds each abort listener with.
+      // React passes that signal to addEventListener instead of calling
+      // removeEventListener, so the runtime performs the removal and nothing here
+      // observes it directly. An aborted lifetime is what shows the listener is
+      // gone.
+      const lifetimes = [];
+      const add = signal.addEventListener.bind(signal);
+      signal.addEventListener = (type, listener, options) => {
+        if (type === 'abort') {
+          lifetimes.push(options.signal);
+        }
+        return add(type, listener, options);
+      };
+
+      let resolvePart;
+      const part = new Promise(r => (resolvePart = r));
+      const bodyPromise = ReactServerDOMClient.encodeReply(
+        {part, hello: 'world'},
+        {signal},
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      resolvePart('done');
+      await bodyPromise;
+
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('resolves with the partial result when the signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const neverResolves = new Promise(() => {});
+      const body = await ReactServerDOMClient.encodeReply(
+        {promise: neverResolves, hello: 'world'},
+        {signal: controller.signal},
+      );
+      const result = await ReactServerDOMServer.decodeReply(body);
+      expect(result.hello).toBe('world');
+    });
+
+    it('does not mutate the body when decoding referenced FormData', async () => {
+      const body = new FormData();
+      body.set('0', JSON.stringify(['$K1']));
+      body.append('_1_field', 'x');
+
+      const root = await ReactServerDOMServer.decodeReply(body);
+      expect(root[0].get('field')).toBe('x');
+      expect(body.get('_1_field')).toBe('x');
+      expect(body.get('0')).toBe(JSON.stringify(['$K1']));
+    });
+
+    it('can reference the same blob twice', async () => {
+      const body = new FormData();
+      body.set('0', JSON.stringify(['$B1', '$B1']));
+      body.append('1', new Blob(['hi'], {type: 'text/plain'}));
+
+      const root = await ReactServerDOMServer.decodeReply(body);
+      expect(await root[0].text()).toBe('hi');
+      expect(await root[1].text()).toBe('hi');
+    });
+
+    it('uses separate stream fields when encoding a reply', async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue('first');
+          controller.enqueue('second');
+          controller.close();
+        },
+      });
+      const body = await ReactServerDOMClient.encodeReply({stream});
+      expect(body.getAll('S1')).toEqual(['"first"', '"second"', 'C']);
+      expect(body.has('1')).toBe(false);
+
+      const decoded = await ReactServerDOMServer.decodeReply(body);
+      const reader = decoded.stream.getReader();
+      expect(await reader.read()).toEqual({value: 'first', done: false});
+      expect(await reader.read()).toEqual({value: 'second', done: false});
+      expect(await reader.read()).toEqual({value: undefined, done: true});
     });
 
     it('round trips cyclic objects and arrays without duplicating them', async () => {

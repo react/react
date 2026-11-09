@@ -11,6 +11,9 @@
 'use strict';
 
 const {installRspackTestManifest} = require('./utils/RspackTestManifest');
+const {
+  patchMessageChannel,
+} = require('../../../../scripts/jest/patchMessageChannel');
 
 let busboy;
 let ReactServerDOMServer;
@@ -20,8 +23,10 @@ let rspack;
 describe('ReactFlightDOMRspackReplyNode', () => {
   beforeEach(() => {
     jest.resetModules();
+    patchMessageChannel();
     jest.mock('react', () => require('react/react.react-server'));
     rspack = installRspackTestManifest();
+    require('react-dom');
     ReactServerDOMServer = require('react-server-dom-rspack/server.node');
 
     jest.resetModules();

@@ -60,6 +60,7 @@ function runNode(specifier, nodeEnv, conditions, source, expectation) {
       cwd: getConsumerDirectory(),
       encoding: 'utf8',
       env: {...process.env, NODE_ENV: nodeEnv},
+      timeout: 30000,
     },
   );
 
@@ -70,7 +71,100 @@ function runNode(specifier, nodeEnv, conditions, source, expectation) {
       }`,
     );
   }
+  return result.stdout;
 }
+
+const renderBinaryTransport = `
+  const assert = require('node:assert/strict');
+  global.__webpack_require__ = id => require(id);
+  global.__webpack_require__.u = id => String(id);
+  global.__webpack_chunk_load__ = () => Promise.resolve();
+  global.__rspack_rsc_manifest__ = {
+    clientManifest: {}, serverManifest: {}, moduleLoading: null,
+  };
+  const server = require(process.argv[1]);
+  async function collect(stream) {
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks);
+  }
+  async function main() {
+    const backing = new ArrayBuffer(10000);
+    const first = new Uint8Array(backing, 0, 5000).fill(1);
+    const second = new Uint8Array(backing, 5000, 5000).fill(2);
+    const payload = await collect(server.renderToReadableStream({
+      first: Promise.resolve(first), second: Promise.resolve(second),
+    }));
+    assert.equal(backing.byteLength, 10000);
+    if (Object.hasOwn(ArrayBuffer.prototype, 'detached')) {
+      const shared = new ArrayBuffer(10000);
+      await assert.rejects(collect(server.renderToReadableStream({
+        first: new Uint8Array(shared), second: new Uint8Array(shared),
+      }, {onError() {}})), /Cannot transport a detached buffer|Minified React error #612/);
+    }
+    process.stdout.write(payload.toString('base64'));
+  }
+  main().then(() => process.exit(0), error => {
+    console.error(error);
+    process.exit(1);
+  });
+`;
+
+const decodeBinaryTransport = `
+  const assert = require('node:assert/strict');
+  global.__rspack_rsc_manifest__ = {
+    serverConsumerModuleMap: {}, serverManifest: {}, moduleLoading: null,
+  };
+  const client = require(process.argv[1]);
+  const {payload} = JSON.parse(process.argv[2]);
+  async function main() {
+    const stream = new ReadableStream({start(controller) {
+      controller.enqueue(Buffer.from(payload, 'base64'));
+      controller.close();
+    }});
+    const result = await client.createFromReadableStream(stream);
+    assert.deepEqual(await result.first, new Uint8Array(5000).fill(1));
+    assert.deepEqual(await result.second, new Uint8Array(5000).fill(2));
+  }
+  main().then(() => process.exit(0), error => {
+    console.error(error);
+    process.exit(1);
+  });
+`;
+
+const encodeReplyWithSignal = `
+  const assert = require('node:assert/strict');
+  const {getEventListeners} = require('node:events');
+  global.__webpack_require__ = id => require(id);
+  global.__webpack_require__.u = String;
+  global.__webpack_chunk_load__ = () => Promise.resolve();
+  global.__rspack_rsc_manifest__ = {
+    serverConsumerModuleMap: {}, serverManifest: {}, moduleLoading: null,
+  };
+  const client = require(process.argv[1]);
+  async function main() {
+    const aborted = new AbortController();
+    aborted.abort();
+    const partial = await client.encodeReply({
+      pending: new Promise(() => {}), hello: 'world',
+    }, {signal: aborted.signal});
+    const json = typeof partial === 'string' ? partial : partial.get('0');
+    assert.equal(JSON.parse(json).hello, 'world');
+
+    const controller = new AbortController();
+    let resolvePart;
+    const part = new Promise(resolve => {resolvePart = resolve;});
+    const encoded = client.encodeReply({part}, {signal: controller.signal});
+    assert.equal(getEventListeners(controller.signal, 'abort').length, 1);
+    resolvePart('done');
+    await encoded;
+    assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
+  }
+  main().then(() => process.exit(0), error => {
+    console.error(error);
+    process.exit(1);
+  });
+`;
 
 const requireExport = `
   global.__webpack_require__ = id => require(id);
@@ -155,6 +249,44 @@ describe('react-server-dom-rspack npm package', () => {
   });
 
   const itBuilt = process.env.IS_BUILD ? it : it.skip;
+
+  ['node', 'edge', 'browser'].forEach(runtime => {
+    itBuilt(
+      `handles encodeReply AbortSignal in packed ${runtime} bundles`,
+      () => {
+        ['development', 'production'].forEach(nodeEnv => {
+          runNode(
+            `${packageName}/client.${runtime}`,
+            nodeEnv,
+            [],
+            encodeReplyWithSignal,
+            {},
+          );
+        });
+      },
+    );
+    itBuilt(
+      `preserves binary transport security in packed ${runtime} bundles`,
+      () => {
+        ['development', 'production'].forEach(nodeEnv => {
+          const payload = runNode(
+            `${packageName}/server.${runtime}`,
+            nodeEnv,
+            ['react-server'],
+            renderBinaryTransport,
+            {},
+          );
+          runNode(
+            `${packageName}/client.edge`,
+            nodeEnv,
+            [],
+            decodeBinaryTransport,
+            {payload},
+          );
+        });
+      },
+    );
+  });
 
   itBuilt(
     'loads every supported public entry point from the assembled release',
