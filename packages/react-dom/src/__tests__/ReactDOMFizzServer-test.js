@@ -3813,6 +3813,141 @@ describe('ReactDOMFizzServer', () => {
     },
   );
 
+  // Same as the server error case above, but the boundary was left in its
+  // fallback state by browser(). See https://github.com/react/react/issues/37620
+
+  // @gate FIXME
+  it('does not recreate the fallback if browser() bails out and hydration suspends', async () => {
+    function Child() {
+      use(ReactDOM.browser());
+      const text = readText('Yay!');
+      Scheduler.log(text);
+      return text;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<p>Loading...</p>}>
+            <span>
+              <Child />
+            </span>
+          </Suspense>
+        </div>
+      );
+    }
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onBrowserBailout(error) {
+          Scheduler.log('[s!] ' + error.message);
+        },
+      });
+      pipe(writable);
+    });
+    assertLog(['[s!] Browser-only rendering was requested by `browser()`.']);
+
+    const serverFallback = container.getElementsByTagName('p')[0];
+    expect(serverFallback.innerHTML).toBe('Loading...');
+
+    // Hydrate the tree. This will suspend.
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        Scheduler.log('onRecoverableError: ' + error.message);
+      },
+    });
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p>Loading...</p>
+      </div>,
+    );
+
+    // The client render suspended, so at best we'd get the same fallback.
+    // Recreating it would restart animations etc. Check we don't do that.
+    const clientFallback = container.getElementsByTagName('p')[0];
+    expect(clientFallback).toBe(serverFallback);
+
+    await act(() => {
+      resolveText('Yay!');
+    });
+    await waitForAll(['Yay!']);
+    jest.runAllTimers();
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Yay!</span>
+      </div>,
+    );
+  });
+
+  it('updates the fallback if browser() bails out, hydration suspends, and the fallback changes', async () => {
+    function Child() {
+      use(ReactDOM.browser());
+      const text = readText('Yay!');
+      Scheduler.log(text);
+      return text;
+    }
+
+    function App({fallbackText}) {
+      return (
+        <div>
+          <Suspense fallback={<p>{fallbackText}</p>}>
+            <span>
+              <Child />
+            </span>
+          </Suspense>
+        </div>
+      );
+    }
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App fallbackText="Loading..." />, {
+        onBrowserBailout(error) {
+          Scheduler.log('[s!] ' + error.message);
+        },
+      });
+      pipe(writable);
+    });
+    assertLog(['[s!] Browser-only rendering was requested by `browser()`.']);
+
+    // Hydrate the tree. This will suspend.
+    const root = ReactDOMClient.hydrateRoot(
+      container,
+      <App fallbackText="Loading..." />,
+      {
+        onRecoverableError(error) {
+          Scheduler.log('onRecoverableError: ' + error.message);
+        },
+      },
+    );
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p>Loading...</p>
+      </div>,
+    );
+
+    // Whether or not the server fallback was reused, new fallback props must
+    // still be rendered while the content is suspended.
+    root.render(<App fallbackText="More loading..." />);
+    await waitForAll([]);
+    jest.runAllTimers();
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p>More loading...</p>
+      </div>,
+    );
+
+    await act(() => {
+      resolveText('Yay!');
+    });
+    await waitForAll(['Yay!']);
+    jest.runAllTimers();
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Yay!</span>
+      </div>,
+    );
+  });
+
   it(
     'errors during hydration force a client render at the nearest Suspense ' +
       'boundary, and during the client render it recovers, then a deeper ' +
