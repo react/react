@@ -8011,6 +8011,21 @@ const testsTypescript = {
     },
     {
       code: normalizeIndent`
+        function useBug<T>(val: T) {
+          const ref = useRef<T>(val);
+
+          const fn = () => {
+            const temp: T = ref.current;
+          };
+
+          useEffect(() => {
+            fn();
+          }, []);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
         function MyComponent() {
           const [state, setState] = React.useState<number>(0);
 
