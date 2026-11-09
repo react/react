@@ -52,7 +52,6 @@ Before promoting, make sure the versions have been bumped:
 
 1. [ReactVersions.js](../../ReactVersions.js)
 1. `package.json` files for each package
-1. [packages/shared/ReactVersion.js](../../packages/shared/ReactVersion.js)
 
 Once the "canary" release has been tested and verified, you can promote it to stable by running the [Publish release](./actions/workflows/runtime_release_from_ci.yml) GitHub Action workflow. This workflow will prepare the release artifacts and publish them to NPM as either `stable-latest` (e.g. for `react@latest`) or `stable-backport` for an older release line that shouldn't move `@latest` (published under the `@backport` dist-tag instead).
 
@@ -64,7 +63,7 @@ Once the "canary" release has been tested and verified, you can promote it to st
 1. Pick a commit from `main` which you want to backport
 1. Choose which release you want to backport it to
 1. Find or create a branch for that release following our release branch naming convention `releases/**/*` e.g. `releases/19.1.x`
-1. Make sure versions (`ReactVersions.js`, `ReactVersion.js`, `package.json`) are set to an unreleased version 
+1. Make sure versions (`ReactVersions.js`, `package.json`) are set to an unreleased version
 1. Cherry-pick desired commits
 1. Push to branch
 1. [Publish release](./actions/workflows/runtime_release_from_ci.yml)

@@ -44,8 +44,10 @@ moduleNameMapper['^shared/ReactFeatureFlags'] =
 packages.forEach(name => {
   // Root entry point
   moduleNameMapper[`^${name}$`] = `<rootDir>/build/${NODE_MODULES_DIR}/${name}`;
-  // Named entry points
-  moduleNameMapper[`^${name}\/([^\/]+)$`] =
+  // Named entry points. ReactVersion is virtual, so leave it unmapped.
+  const subpathPattern =
+    name === 'shared' ? '(?!ReactVersion$)([^/]+)' : '([^/]+)';
+  moduleNameMapper[`^${name}/${subpathPattern}$`] =
     `<rootDir>/build/${NODE_MODULES_DIR}/${name}/$1`;
 });
 

@@ -21,6 +21,7 @@ const Stats = require('./stats');
 const Sync = require('./sync');
 const sizes = require('./plugins/sizes-plugin');
 const useForks = require('./plugins/use-forks-plugin');
+const reactVersion = require('./plugins/react-version-plugin');
 const dynamicImports = require('./plugins/dynamic-imports');
 const externalRuntime = require('./plugins/external-runtime-plugin');
 const Packaging = require('./packaging');
@@ -397,6 +398,8 @@ function getPlugins(
       },
       // See https://github.com/rollup/plugins/issues/1425
       bundle.tsconfig != null ? commonjs({strictRequires: true}) : false,
+      // Inject the runtime version before resolving modules from disk.
+      reactVersion(),
       // Shim any modules that need forking in this environment.
       useForks(forks),
       // Ensure we don't try to bundle any fbjs modules.

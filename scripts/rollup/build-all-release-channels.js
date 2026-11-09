@@ -46,13 +46,6 @@ if (dateString.startsWith("'")) {
 const PLACEHOLDER_REACT_VERSION =
   ReactVersion + '-' + canaryChannelLabel + '-' + sha + '-' + dateString;
 
-// TODO: We should inject the React version using a build-time parameter
-// instead of overwriting the source files.
-fs.writeFileSync(
-  './packages/shared/ReactVersion.js',
-  `export default '${PLACEHOLDER_REACT_VERSION}';\n`
-);
-
 const argv = yargs.wrap(yargs.terminalWidth()).options({
   releaseChannel: {
     alias: 'r',
@@ -164,6 +157,7 @@ function buildForChannel(channel, total, index) {
       env: {
         ...process.env,
         RELEASE_CHANNEL: channel,
+        REACT_BUILD_VERSION: PLACEHOLDER_REACT_VERSION,
         CI_TOTAL: total,
         CI_INDEX: index,
       },

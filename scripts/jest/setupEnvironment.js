@@ -19,3 +19,14 @@ global.__EXPERIMENTAL__ =
     : true;
 
 global.__VARIANT__ = !!process.env.VARIANT;
+
+// Source modules use the canonical version. Compiled packages retain the version
+// embedded by the build, including when testing an older React release.
+jest.mock(
+  'shared/ReactVersion',
+  () => ({
+    __esModule: true,
+    default: jest.requireActual('../../ReactVersions').ReactVersion,
+  }),
+  {virtual: true}
+);

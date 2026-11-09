@@ -10,6 +10,21 @@
 
 'use strict';
 
+test('source modules use the canonical version after module resets', () => {
+  if (gate(flags => flags.source)) {
+    const {ReactVersion} = require('../../../../ReactVersions');
+    for (let i = 0; i < 2; i++) {
+      jest.resetModules();
+      expect(require('shared/ReactVersion')).toEqual({
+        __esModule: true,
+        default: ReactVersion,
+      });
+      expect(require('react').version).toBe(ReactVersion);
+      expect(require('react-dom').version).toBe(ReactVersion);
+    }
+  }
+});
+
 // NOTE: Intentionally using the dynamic version of the `gate` pragma to opt out
 // the negative test behavior. If this test happens to pass when running
 // against files source, that's fine. But all we care about is the behavior of

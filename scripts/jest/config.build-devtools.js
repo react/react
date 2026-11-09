@@ -43,13 +43,16 @@ moduleNameMapper['react-devtools-feature-flags'] =
 packages.forEach(name => {
   // Root entry point
   moduleNameMapper[`^${name}$`] = `<rootDir>/build/${NODE_MODULES_DIR}/${name}`;
-  // Named entry points
-  moduleNameMapper[`^${name}\/([^\/]+)$`] =
+  // Named entry points. ReactVersion is virtual, so leave it unmapped.
+  const subpathPattern =
+    name === 'shared' ? '(?!ReactVersion$)([^/]+)' : '([^/]+)';
+  moduleNameMapper[`^${name}/${subpathPattern}$`] =
     `<rootDir>/build/${NODE_MODULES_DIR}/${name}/$1`;
 });
 
 // Allow tests to import shared code (e.g. feature flags, getStackByFiberInDevAndProd)
-moduleNameMapper['^shared/([^/]+)$'] = '<rootDir>/packages/shared/$1';
+moduleNameMapper['^shared/(?!ReactVersion$)([^/]+)$'] =
+  '<rootDir>/packages/shared/$1';
 moduleNameMapper['^react-reconciler/([^/]+)$'] =
   '<rootDir>/packages/react-reconciler/$1';
 
