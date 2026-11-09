@@ -15,7 +15,7 @@ export function setBrowserSelectionFromReact() {
   );
 }
 
-export function setReactSelectionFromBrowser(bridge) {
+export function setReactSelectionFromBrowser(onSelectionChanged) {
   // When the user chooses a different node in the browser Elements tab,
   // copy it over to the hook object so that we can sync the selection.
   evalInInspectedWindow(
@@ -25,15 +25,7 @@ export function setReactSelectionFromBrowser(bridge) {
       if (evalError) {
         console.error(evalError);
       } else if (didSelectionChange) {
-        if (!bridge) {
-          console.error(
-            'Browser element selection changed, but bridge was not initialized',
-          );
-          return;
-        }
-
-        // Remember to sync the selection next time we show inspected element
-        bridge.send('syncSelectionFromBuiltinElementsPanel');
+        onSelectionChanged();
       }
     },
   );

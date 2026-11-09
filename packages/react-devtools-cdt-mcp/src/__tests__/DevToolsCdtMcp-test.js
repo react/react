@@ -271,6 +271,9 @@ describe('react-devtools-cdt-mcp', () => {
     expect(getTool('react_get_owner_stack').description).toEqual(
       expect.stringContaining('Owners describe'),
     );
+    expect(
+      getTool('react_get_component_by_dom_element').description,
+    ).not.toContain('hooks');
   });
 
   it('declares JSON-Schema input with required params', () => {

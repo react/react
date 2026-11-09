@@ -1,5 +1,5 @@
 export const CHANGE_LOG_URL =
-  'https://github.com/facebook/react/blob/main/packages/react-devtools/CHANGELOG.md';
+  'https://github.com/react/react/blob/main/packages/react-devtools/CHANGELOG.md';
 
 export const UNSUPPORTED_VERSION_URL =
   'https://reactjs.org/blog/2019/08/15/new-react-devtools.html#how-do-i-get-the-old-version-back';

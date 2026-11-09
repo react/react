@@ -388,7 +388,10 @@ function processExperimental(buildDir, version) {
     if (
       pathName !== 'oss-experimental' &&
       pathName !== 'facebook-www' &&
-      pathName !== 'sizes-experimental'
+      pathName !== 'sizes-experimental' &&
+      // Not a duplicate: this worker's shard timings, merged into the build
+      // weights cache by process_artifacts_combined.
+      pathName !== '__shard_timings__'
     ) {
       fs.rmSync(path.join(buildDir, pathName), {
         recursive: true,

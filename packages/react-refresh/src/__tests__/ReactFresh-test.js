@@ -4566,7 +4566,7 @@ describe('ReactFresh', () => {
     };
   }
 
-  // This simulates the scenario in https://github.com/facebook/react/issues/17626
+  // This simulates the scenario in https://github.com/react/react/issues/17626
   it('can inject the runtime after the renderer executes', async () => {
     if (__DEV__) {
       initFauxDevToolsHook();
@@ -4631,7 +4631,7 @@ describe('ReactFresh', () => {
     }
   });
 
-  // This simulates the scenario in https://github.com/facebook/react/issues/20100
+  // This simulates the scenario in https://github.com/react/react/issues/20100
   it('does not block DevTools when an unsupported legacy renderer is injected', () => {
     if (__DEV__) {
       initFauxDevToolsHook();

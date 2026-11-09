@@ -734,6 +734,13 @@ describe('ReactDOMFizzForm', () => {
       ReactDOMServer.renderToReadableStream(<App />),
     );
     await readIntoContainer(stream);
+    if (!ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      assertConsoleErrorDev([
+        'React encountered an empty buffer when writing in an environment that does not support ArrayBuffer.prototype.detached. ' +
+          'This could be a security issue if the buffer was not actually empty. ' +
+          'Please use a modern browser that supports ArrayBuffer.prototype.detached.',
+      ]);
+    }
 
     const barField = container.querySelector('[name=bar]');
 

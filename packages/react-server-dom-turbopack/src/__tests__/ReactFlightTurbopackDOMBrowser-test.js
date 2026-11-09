@@ -58,6 +58,9 @@ describe('ReactFlightTurbopackDOMBrowser', () => {
     ({act} = require('internal-test-utils'));
     React = require('react');
     ReactDOMClient = require('react-dom/client');
+    jest.mock('react-server-dom-turbopack/client', () =>
+      require('react-server-dom-turbopack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-turbopack/client');
     use = React.use;
   });

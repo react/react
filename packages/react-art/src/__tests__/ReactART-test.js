@@ -382,12 +382,12 @@ describe('ReactART', () => {
     const onClick1 = jest.fn();
     let instance = await render(onClick1);
     doClick(instance);
-    expect(onClick1).toBeCalled();
+    expect(onClick1).toHaveBeenCalled();
 
     const onClick2 = jest.fn();
     instance = await render(onClick2);
     doClick(instance);
-    expect(onClick2).toBeCalled();
+    expect(onClick2).toHaveBeenCalled();
   });
 });
 

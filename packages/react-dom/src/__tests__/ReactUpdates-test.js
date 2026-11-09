@@ -849,7 +849,7 @@ describe('ReactUpdates', () => {
   });
 
   it('should queue nested updates', async () => {
-    // See https://github.com/facebook/react/issues/1147
+    // See https://github.com/react/react/issues/1147
 
     class X extends React.Component {
       state = {s: 0};
@@ -916,7 +916,7 @@ describe('ReactUpdates', () => {
   });
 
   it('should queue updates from during mount', async () => {
-    // See https://github.com/facebook/react/issues/1353
+    // See https://github.com/react/react/issues/1353
     let a;
 
     class A extends React.Component {
@@ -1059,7 +1059,7 @@ describe('ReactUpdates', () => {
       await act(() => {
         component.setState({}, 'no');
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: no',
     );
@@ -1077,7 +1077,7 @@ describe('ReactUpdates', () => {
       await act(() => {
         component.setState({}, {foo: 'bar'});
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -1095,7 +1095,7 @@ describe('ReactUpdates', () => {
       act(() => {
         component.setState({}, new Foo());
       }),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -1126,7 +1126,7 @@ describe('ReactUpdates', () => {
       await act(() => {
         component.forceUpdate('no');
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: no',
     );
@@ -1144,7 +1144,7 @@ describe('ReactUpdates', () => {
       await act(() => {
         component.forceUpdate({foo: 'bar'});
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -1163,7 +1163,7 @@ describe('ReactUpdates', () => {
       act(() => {
         component.forceUpdate(new Foo());
       }),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );

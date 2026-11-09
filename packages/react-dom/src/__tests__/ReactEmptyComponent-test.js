@@ -70,7 +70,7 @@ describe('ReactEmptyComponent', () => {
         ReactDOM.flushSync(() => {
           root.render(<EmptyComponent />);
         });
-      }).not.toThrowError();
+      }).not.toThrow();
     });
 
     it('should not produce child DOM nodes for nullish and false', async () => {
@@ -178,15 +178,13 @@ describe('ReactEmptyComponent', () => {
       }).not.toThrow();
 
       expect(container.innerHTML).toBe('<script></script>');
-      if (gate('enableTrustedTypesIntegration')) {
-        assertConsoleErrorDev([
-          'Encountered a script tag while rendering React component. ' +
-            'Scripts inside React components are never executed when rendering on the client. ' +
-            'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
-            '     in script (at **)\n' +
-            '     in TogglingComponent (at **)',
-        ]);
-      }
+      assertConsoleErrorDev([
+        'Encountered a script tag while rendering React component. ' +
+          'Scripts inside React components are never executed when rendering on the client. ' +
+          'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
+          '     in script (at **)\n' +
+          '     in TogglingComponent (at **)',
+      ]);
 
       const container2 = document.createElement('div');
       const root2 = ReactDOMClient.createRoot(container2);
@@ -380,7 +378,7 @@ describe('ReactEmptyComponent', () => {
         ReactDOM.flushSync(() => {
           root.render(<EmptyForwardRef />);
         });
-      }).not.toThrowError();
+      }).not.toThrow();
     });
 
     it('should not warn about React.memo that returns nullish', () => {
@@ -394,7 +392,7 @@ describe('ReactEmptyComponent', () => {
         ReactDOM.flushSync(() => {
           root.render(<EmptyMemo />);
         });
-      }).not.toThrowError();
+      }).not.toThrow();
     });
   });
 });

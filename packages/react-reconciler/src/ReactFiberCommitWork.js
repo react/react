@@ -47,7 +47,6 @@ import type {ViewTransitionState} from './ReactFiberViewTransitionComponent';
 import {
   alwaysThrottleRetries,
   enableCreateEventHandleAPI,
-  enableEffectEventMutationPhase,
   enableProfilerTimer,
   enableProfilerCommitHooks,
   enableSuspenseCallback,
@@ -58,9 +57,7 @@ import {
   disableLegacyMode,
   enableComponentPerformanceTrack,
   enableViewTransition,
-  enableFragmentRefs,
   enableDefaultTransitionIndicator,
-  enableFragmentRefsTextNodes,
 } from 'shared/ReactFeatureFlags';
 import {
   FunctionComponent,
@@ -169,6 +166,7 @@ import {
   acquireResource,
   releaseResource,
   hydrateHoistable,
+  createHoistableInstance,
   mountHoistable,
   unmountHoistable,
   prepareToCommitHoistables,
@@ -254,9 +252,11 @@ import {
   commitHostRemoveChild,
   commitHostSingletonAcquisition,
   commitHostSingletonRelease,
+} from './ReactFiberCommitHostEffects';
+import {
   commitFragmentInstanceDeletionEffects,
   commitFragmentInstanceInsertionEffects,
-} from './ReactFiberCommitHostEffects';
+} from './ReactFiberFragmentInstance';
 import {
   trackEnterViewTransitions,
   commitEnterViewTransitions,
@@ -502,22 +502,6 @@ function commitBeforeMutationEffectsOnFiber(
   }
 
   switch (finishedWork.tag) {
-    case FunctionComponent:
-    case ForwardRef:
-    case SimpleMemoComponent: {
-      if (!enableEffectEventMutationPhase && (flags & Update) !== NoFlags) {
-        const updateQueue: FunctionComponentUpdateQueue | null =
-          finishedWork.updateQueue as any;
-        const eventPayloads = updateQueue !== null ? updateQueue.events : null;
-        if (eventPayloads !== null) {
-          for (let ii = 0; ii < eventPayloads.length; ii++) {
-            const {ref, nextImpl} = eventPayloads[ii];
-            ref.impl = nextImpl;
-          }
-        }
-      }
-      break;
-    }
     case ClassComponent: {
       if ((flags & Snapshot) !== NoFlags) {
         if (current !== null) {
@@ -528,7 +512,6 @@ function commitBeforeMutationEffectsOnFiber(
     }
     case HostRoot: {
       if ((flags & Snapshot) !== NoFlags) {
-        // $FlowFixMe[constant-condition]
         if (supportsMutation) {
           const root = finishedWork.stateNode;
           clearContainer(root.containerInfo);
@@ -536,6 +519,9 @@ function commitBeforeMutationEffectsOnFiber(
       }
       break;
     }
+    case FunctionComponent:
+    case ForwardRef:
+    case SimpleMemoComponent:
     case HostComponent:
     case HostHoistable:
     case HostSingleton:
@@ -658,7 +644,6 @@ function commitLayoutEffectOnFiber(
       break;
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         // We acquire the singleton instance first so it has appropriate
         // styles before other layout effects run. This isn't perfect because
@@ -802,7 +787,6 @@ function commitLayoutEffectOnFiber(
             // effects that were unmounted when the Offscreen subtree was
             // hidden. So this is a superset of the normal commitLayoutEffects.
             let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
-            // $FlowFixMe[constant-condition]
             if (supportsSingletons) {
               layoutEffectTraversalFlags = IncludeHostSingletons;
             } else {
@@ -870,10 +854,8 @@ function commitLayoutEffectOnFiber(
       break;
     }
     case Fragment:
-      if (enableFragmentRefs) {
-        if (flags & Ref) {
-          safelyAttachRef(finishedWork, finishedWork.return);
-        }
+      if (flags & Ref) {
+        safelyAttachRef(finishedWork, finishedWork.return);
       }
     // Fallthrough
     default: {
@@ -1197,7 +1179,6 @@ function commitTransitionProgress(offscreenFiber: Fiber) {
 }
 
 function hideOrUnhideAllChildren(parentFiber: Fiber, isHidden: boolean) {
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -1211,7 +1192,6 @@ function hideOrUnhideAllChildren(parentFiber: Fiber, isHidden: boolean) {
 }
 
 function hideOrUnhideAllChildrenOnFiber(fiber: Fiber, isHidden: boolean) {
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -1260,7 +1240,6 @@ function hideOrUnhideAllChildrenOnFiber(fiber: Fiber, isHidden: boolean) {
 }
 
 function hideOrUnhideNearestPortals(parentFiber: Fiber, isHidden: boolean) {
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -1274,7 +1253,6 @@ function hideOrUnhideNearestPortals(parentFiber: Fiber, isHidden: boolean) {
 }
 
 function hideOrUnhideNearestPortalsOnFiber(fiber: Fiber, isHidden: boolean) {
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -1387,7 +1365,6 @@ function commitDeletionEffects(
 ) {
   const prevEffectStart = pushComponentEffectStart();
 
-  // $FlowFixMe[constant-condition]
   if (supportsMutation) {
     // We only have the top Fiber that was deleted but we need to recurse down its
     // children to find all the terminal nodes.
@@ -1411,7 +1388,6 @@ function commitDeletionEffects(
     findParent: while (parent !== null) {
       switch (parent.tag) {
         case HostSingleton: {
-          // $FlowFixMe[constant-condition]
           if (supportsSingletons) {
             if (isSingletonScope(parent.type)) {
               hostParent = parent.stateNode;
@@ -1502,7 +1478,6 @@ function commitDeletionEffectsOnFiber(
   // that don't modify the stack.
   switch (deletedFiber.tag) {
     case HostHoistable: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         if (!offscreenSubtreeWasHidden) {
           safelyDetachRef(deletedFiber, nearestMountedAncestor);
@@ -1515,21 +1490,24 @@ function commitDeletionEffectsOnFiber(
         if (deletedFiber.memoizedState) {
           releaseResource(deletedFiber.memoizedState);
         } else if (deletedFiber.stateNode) {
-          unmountHoistable(deletedFiber.stateNode);
+          // A Hoistable Instance lives in document.head only when its enclosing
+          // Activity is visible. If the Activity is hidden (or has been hidden
+          // since mount), the instance was either never inserted or was
+          // detached by the disappear traversal. Skip in those cases.
+          if (!offscreenSubtreeWasHidden) {
+            unmountHoistable(deletedFiber.stateNode);
+          }
         }
         break;
       }
       // Fall through
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         if (!offscreenSubtreeWasHidden) {
           safelyDetachRef(deletedFiber, nearestMountedAncestor);
         }
-        if (enableFragmentRefs) {
-          commitFragmentInstanceDeletionEffects(deletedFiber);
-        }
+        commitFragmentInstanceDeletionEffects(deletedFiber);
 
         const prevHostParent = hostParent;
         const prevHostParentIsContainer = hostParentIsContainer;
@@ -1561,20 +1539,17 @@ function commitDeletionEffectsOnFiber(
       if (!offscreenSubtreeWasHidden) {
         safelyDetachRef(deletedFiber, nearestMountedAncestor);
       }
-      if (
-        enableFragmentRefs &&
-        (deletedFiber.tag === HostComponent ||
-          (enableFragmentRefsTextNodes && deletedFiber.tag === HostText))
-      ) {
-        commitFragmentInstanceDeletionEffects(deletedFiber);
-      }
+      commitFragmentInstanceDeletionEffects(deletedFiber);
       // Intentional fallthrough to next branch
     }
     case HostText: {
+      // HostComponent falls through into this case.
+      if (deletedFiber.tag === HostText) {
+        commitFragmentInstanceDeletionEffects(deletedFiber);
+      }
       // We only need to remove the nearest host child. Set the host parent
       // to `null` on the stack to indicate that nested children don't
       // need to be removed.
-      // $FlowFixMe[constant-condition]
       if (supportsMutation) {
         const prevHostParent = hostParent;
         const prevHostParentIsContainer = hostParentIsContainer;
@@ -1639,7 +1614,6 @@ function commitDeletionEffectsOnFiber(
       // Dehydrated fragments don't have any children
 
       // Delete the dehydrated suspense boundary and all of its content.
-      // $FlowFixMe[constant-condition]
       if (supportsMutation) {
         if (hostParent !== null) {
           if (hostParentIsContainer) {
@@ -1658,7 +1632,6 @@ function commitDeletionEffectsOnFiber(
       break;
     }
     case HostPortal: {
-      // $FlowFixMe[constant-condition]
       if (supportsMutation) {
         // When we go into a portal, it becomes the parent to remove from.
         const prevHostParent = hostParent;
@@ -1673,7 +1646,6 @@ function commitDeletionEffectsOnFiber(
         hostParent = prevHostParent;
         hostParentIsContainer = prevHostParentIsContainer;
       } else {
-        // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
           commitHostPortalContainerChildren(
             deletedFiber.stateNode,
@@ -1794,18 +1766,15 @@ function commitDeletionEffectsOnFiber(
       // Fallthrough
     }
     case Fragment: {
-      if (enableFragmentRefs) {
-        if (!offscreenSubtreeWasHidden) {
-          safelyDetachRef(deletedFiber, nearestMountedAncestor);
-        }
-        recursivelyTraverseDeletionEffects(
-          finishedRoot,
-          nearestMountedAncestor,
-          deletedFiber,
-        );
-        break;
+      if (!offscreenSubtreeWasHidden) {
+        safelyDetachRef(deletedFiber, nearestMountedAncestor);
       }
-      // Fallthrough
+      recursivelyTraverseDeletionEffects(
+        finishedRoot,
+        nearestMountedAncestor,
+        deletedFiber,
+      );
+      break;
     }
     default: {
       recursivelyTraverseDeletionEffects(
@@ -1863,7 +1832,6 @@ function commitActivityHydrationCallbacks(
   finishedRoot: FiberRoot,
   finishedWork: Fiber,
 ) {
-  // $FlowFixMe[constant-condition]
   if (!supportsHydration) {
     return;
   }
@@ -1898,7 +1866,6 @@ function commitSuspenseHydrationCallbacks(
   finishedRoot: FiberRoot,
   finishedWork: Fiber,
 ) {
-  // $FlowFixMe[constant-condition]
   if (!supportsHydration) {
     return;
   }
@@ -2080,17 +2047,14 @@ function commitMutationEffectsOnFiber(
       // This ensures that parent event effects are mutated before child effects.
       // This isn't a supported use case, so we can re-consider it,
       // but this was the behavior we originally shipped.
-      if (enableEffectEventMutationPhase) {
-        if (flags & Update) {
-          const updateQueue: FunctionComponentUpdateQueue | null =
-            finishedWork.updateQueue as any;
-          const eventPayloads =
-            updateQueue !== null ? updateQueue.events : null;
-          if (eventPayloads !== null) {
-            for (let ii = 0; ii < eventPayloads.length; ii++) {
-              const {ref, nextImpl} = eventPayloads[ii];
-              ref.impl = nextImpl;
-            }
+      if (flags & Update) {
+        const updateQueue: FunctionComponentUpdateQueue | null =
+          finishedWork.updateQueue as any;
+        const eventPayloads = updateQueue !== null ? updateQueue.events : null;
+        if (eventPayloads !== null) {
+          for (let ii = 0; ii < eventPayloads.length; ii++) {
+            const {ref, nextImpl} = eventPayloads[ii];
+            ref.impl = nextImpl;
           }
         }
       }
@@ -2133,7 +2097,6 @@ function commitMutationEffectsOnFiber(
       break;
     }
     case HostHoistable: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // We cast because we always set the root at the React root and so it cannot be
         // null while we are processing mutation effects
@@ -2157,13 +2120,32 @@ function commitMutationEffectsOnFiber(
             // or a Hoistable Resource
             if (newResource === null) {
               if (finishedWork.stateNode === null) {
-                finishedWork.stateNode = hydrateHoistable(
-                  hoistableRoot,
-                  finishedWork.type,
-                  finishedWork.memoizedProps,
-                  finishedWork,
-                );
-              } else {
+                // Initial mount. The instance has not been created yet, which
+                // happens during hydration (createHoistableInstance is normally
+                // called in beginWork's updateHostHoistable, but is skipped
+                // when hydrating).
+                if (offscreenSubtreeIsHidden) {
+                  // We're inside a hidden Activity boundary. Create the
+                  // instance off-document so we don't leak metadata into
+                  // the head. It will be mounted by the reappear path when
+                  // the Activity becomes visible.
+                  finishedWork.stateNode = createHoistableInstance(
+                    finishedWork.type,
+                    finishedWork.memoizedProps,
+                    root.containerInfo,
+                    finishedWork,
+                  );
+                } else {
+                  finishedWork.stateNode = hydrateHoistable(
+                    hoistableRoot,
+                    finishedWork.type,
+                    finishedWork.memoizedProps,
+                    finishedWork,
+                  );
+                }
+              } else if (!offscreenSubtreeIsHidden) {
+                // The instance was created in beginWork. Only mount it into
+                // the document if we're not inside a hidden Activity boundary.
                 mountHoistable(
                   hoistableRoot,
                   finishedWork.type,
@@ -2180,18 +2162,27 @@ function commitMutationEffectsOnFiber(
           } else if (currentResource !== newResource) {
             // We are moving to or from Hoistable Resource, or between different Hoistable Resources
             if (currentResource === null) {
-              if (current.stateNode !== null) {
-                unmountHoistable(current.stateNode);
+              // Transitioning from Instance to Resource. Only unmount when the
+              // Instance is currently mounted in the document; hidden Activity
+              // boundaries keep instances off-document or detach them before
+              // this update is processed.
+              const instance = current.stateNode;
+              if (instance !== null && !offscreenSubtreeWasHidden) {
+                unmountHoistable(instance);
               }
             } else {
               releaseResource(currentResource);
             }
             if (newResource === null) {
-              mountHoistable(
-                hoistableRoot,
-                finishedWork.type,
-                finishedWork.stateNode,
-              );
+              // Transitioning to an Instance. Only mount if visible; hidden
+              // Activity boundaries will mount via the reappear path.
+              if (!offscreenSubtreeIsHidden) {
+                mountHoistable(
+                  hoistableRoot,
+                  finishedWork.type,
+                  finishedWork.stateNode,
+                );
+              }
             } else {
               acquireResource(
                 hoistableRoot,
@@ -2212,7 +2203,6 @@ function commitMutationEffectsOnFiber(
       // Fall through
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         recursivelyTraverseMutationEffects(root, finishedWork, lanes);
         commitReconciliationEffects(finishedWork, lanes);
@@ -2246,7 +2236,6 @@ function commitMutationEffectsOnFiber(
           safelyDetachRef(current, current.return);
         }
       }
-      // $FlowFixMe[constant-condition]
       if (supportsMutation) {
         // TODO: ContentReset gets cleared by the children during the commit
         // phase. This is a refactor hazard because it means we must read
@@ -2286,7 +2275,6 @@ function commitMutationEffectsOnFiber(
           }
         }
       } else {
-        // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
           if (finishedWork.alternate !== null) {
             // `finishedWork.alternate.stateNode` is pointing to a stale shadow
@@ -2306,7 +2294,6 @@ function commitMutationEffectsOnFiber(
       commitReconciliationEffects(finishedWork, lanes);
 
       if (flags & Update) {
-        // $FlowFixMe[constant-condition]
         if (supportsMutation) {
           if (finishedWork.stateNode === null) {
             throw new Error(
@@ -2331,7 +2318,6 @@ function commitMutationEffectsOnFiber(
       const prevProfilerEffectDuration = pushNestedEffectDurations();
 
       pushRootMutationContext();
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         prepareToCommitHoistables();
 
@@ -2348,7 +2334,6 @@ function commitMutationEffectsOnFiber(
       }
 
       if (flags & Update) {
-        // $FlowFixMe[constant-condition]
         if (supportsMutation && supportsHydration) {
           if (current !== null) {
             const prevRootState: RootState = current.memoizedState;
@@ -2357,7 +2342,6 @@ function commitMutationEffectsOnFiber(
             }
           }
         }
-        // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
           commitHostRootContainerChildren(root, finishedWork);
         }
@@ -2408,7 +2392,6 @@ function commitMutationEffectsOnFiber(
       const prevOffscreenDirectParentIsHidden = offscreenDirectParentIsHidden;
       offscreenDirectParentIsHidden = offscreenSubtreeIsHidden;
       const prevMutationContext = pushMutationContext();
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         const previousHoistableRoot = currentHoistableRoot;
         currentHoistableRoot = getHoistableRoot(
@@ -2432,7 +2415,6 @@ function commitMutationEffectsOnFiber(
       offscreenDirectParentIsHidden = prevOffscreenDirectParentIsHidden;
 
       if (flags & Update) {
-        // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
           commitHostPortalContainerChildren(
             finishedWork.stateNode,
@@ -2599,12 +2581,21 @@ function commitMutationEffectsOnFiber(
             ) {
               // Disappear the layout effects of all the children
               let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
-              // $FlowFixMe[constant-condition]
               if (supportsSingletons) {
                 layoutEffectTraversalFlags = IncludeHostSingletons;
               } else {
                 layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
               }
+              const newOffscreenSubtreeIsHidden =
+                // $FlowFixMe[constant-condition]
+                isHidden || offscreenSubtreeIsHidden;
+              const newOffscreenSubtreeWasHidden =
+                // $FlowFixMe[constant-condition]
+                wasHidden || offscreenSubtreeWasHidden;
+              const prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden;
+              const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
+              offscreenSubtreeIsHidden = newOffscreenSubtreeIsHidden;
+              offscreenSubtreeWasHidden = newOffscreenSubtreeWasHidden;
               recursivelyTraverseDisappearLayoutEffects(
                 finishedWork,
                 layoutEffectTraversalFlags,
@@ -2625,11 +2616,12 @@ function commitMutationEffectsOnFiber(
                   componentEffectEndTime,
                 );
               }
+              offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
+              offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
             }
           }
         }
 
-        // $FlowFixMe[constant-condition]
         if (supportsMutation) {
           // If it's trying to unhide but the parent is still hidden, then we should not unhide.
           if (isHidden || !offscreenDirectParentIsHidden) {
@@ -2726,10 +2718,13 @@ function commitMutationEffectsOnFiber(
       break;
     }
     case Fragment:
-      if (enableFragmentRefs) {
-        if (current && current.stateNode !== null) {
-          updateFragmentInstanceFiber(finishedWork, current.stateNode);
+      if (flags & Ref) {
+        if (!offscreenSubtreeWasHidden && current !== null) {
+          safelyDetachRef(current, current.return);
         }
+      }
+      if (current && current.stateNode !== null) {
+        updateFragmentInstanceFiber(finishedWork, current.stateNode);
       }
     // Fallthrough
     default: {
@@ -3085,7 +3080,6 @@ function disappearLayoutEffects(
       break;
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         const includeHostSingletons =
           (layoutEffectTraversalFlags & IncludeHostSingletons) !==
@@ -3097,18 +3091,46 @@ function disappearLayoutEffects(
       }
       // Expected fallthrough to HostComponent
     }
-    case HostHoistable:
     case HostComponent: {
       // TODO (Offscreen) Check: flags & RefStatic
       safelyDetachRef(finishedWork, finishedWork.return);
 
       if (
-        enableFragmentRefs &&
-        (finishedWork.tag === HostComponent ||
-          finishedWork.tag === HostSingleton ||
-          (enableFragmentRefsTextNodes && finishedWork.tag === HostText))
+        // HostHoistable shares this case via fallthrough but must not be
+        // attributed to fragment instances. HostText has its own case below.
+        finishedWork.tag === HostComponent ||
+        finishedWork.tag === HostSingleton
       ) {
         commitFragmentInstanceDeletionEffects(finishedWork);
+      }
+
+      recursivelyTraverseDisappearLayoutEffects(
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
+      break;
+    }
+    case HostText: {
+      commitFragmentInstanceDeletionEffects(finishedWork);
+      break;
+    }
+    case HostHoistable: {
+      // TODO (Offscreen) Check: flags & RefStatic
+      safelyDetachRef(finishedWork, finishedWork.return);
+
+      if (supportsResources) {
+        // We only act on Hoistable Instances (memoizedState === null).
+        // Resources (memoizedState !== null) are ref-counted and intentionally
+        // remain in the document across Activity visibility transitions;
+        // they are released only on actual deletion.
+        const instance = finishedWork.stateNode;
+        if (
+          finishedWork.memoizedState === null &&
+          instance !== null &&
+          !offscreenSubtreeWasHidden
+        ) {
+          unmountHoistable(instance);
+        }
       }
 
       recursivelyTraverseDisappearLayoutEffects(
@@ -3146,9 +3168,7 @@ function disappearLayoutEffects(
       break;
     }
     case Fragment: {
-      if (enableFragmentRefs) {
-        safelyDetachRef(finishedWork, finishedWork.return);
-      }
+      safelyDetachRef(finishedWork, finishedWork.return);
       // Fallthrough
     }
     default: {
@@ -3269,7 +3289,6 @@ function reappearLayoutEffects(
     //  ...
     // }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         const includeHostSingletons =
           (layoutEffectTraversalFlags & IncludeHostSingletons) !==
@@ -3288,13 +3307,10 @@ function reappearLayoutEffects(
       }
       // Fallthrough
     }
-    case HostHoistable:
     case HostComponent: {
-      // TODO: Enable HostText for RN
       if (
-        enableFragmentRefs &&
-        (finishedWork.tag === HostComponent ||
-          finishedWork.tag === HostSingleton)
+        finishedWork.tag === HostComponent ||
+        finishedWork.tag === HostSingleton
       ) {
         commitFragmentInstanceInsertionEffects(finishedWork);
       }
@@ -3308,6 +3324,60 @@ function reappearLayoutEffects(
       // (eg DOM renderer may schedule auto-focus for inputs and form controls).
       // These effects should only be committed when components are first mounted,
       // aka when there is no current/alternate.
+      if (includeWorkInProgressEffects && current === null && flags & Update) {
+        commitHostMount(finishedWork);
+      }
+
+      // TODO: Check flags & Ref
+      safelyAttachRef(finishedWork, finishedWork.return);
+      break;
+    }
+    case HostText: {
+      commitFragmentInstanceInsertionEffects(finishedWork);
+      break;
+    }
+    case HostHoistable: {
+      if (supportsResources) {
+        // The reappear traversal runs whenever an Activity transitions from
+        // hidden to visible. We piggy-back on it (rather than adding a
+        // separate recursive traversal) to insert hoistable metadata such as
+        // <title> and <meta> into the document.
+        //
+        // We only act on Hoistable Instances (memoizedState === null).
+        // Resources stay mounted across Activity visibility transitions.
+        //
+        // The parentNode guard makes this idempotent and safe under StrictMode
+        // dev double-invoke: if the instance is already attached we skip.
+        //
+        // Note: this runs in the layout phase. A useLayoutEffect on an earlier
+        // sibling can therefore observe document.title before the hoistable
+        // is re-attached. Moving this to the mutation phase would require an
+        // additional unconditional traversal of the Activity subtree (the
+        // mutation traversal is gated by subtreeFlags and would skip an
+        // unchanged hoistable). This is the same tradeoff as for HostSingleton.
+        const instance = finishedWork.stateNode;
+        if (
+          finishedWork.memoizedState === null &&
+          instance !== null &&
+          !offscreenSubtreeIsHidden
+        ) {
+          // currentHoistableRoot is only maintained during the mutation phase.
+          // Derive the hoistable root from the instance's owner document so
+          // this works in the layout phase too. Hoistable Instances are
+          // hoisted to document.head, which always lives in ownerDocument.
+          mountHoistable(
+            getHoistableRoot(instance.ownerDocument),
+            finishedWork.type,
+            instance,
+          );
+        }
+      }
+      recursivelyTraverseReappearLayoutEffects(
+        finishedRoot,
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
+
       if (includeWorkInProgressEffects && current === null && flags & Update) {
         commitHostMount(finishedWork);
       }
@@ -3413,9 +3483,7 @@ function reappearLayoutEffects(
       break;
     }
     case Fragment: {
-      if (enableFragmentRefs) {
-        safelyAttachRef(finishedWork, finishedWork.return);
-      }
+      safelyAttachRef(finishedWork, finishedWork.return);
       // Fallthrough
     }
     default: {
@@ -3834,7 +3902,6 @@ function commitPassiveMountOnFiber(
       }
 
       if (isViewTransitionEligible) {
-        // $FlowFixMe[constant-condition]
         if (supportsMutation && rootViewTransitionNameCanceled) {
           restoreRootViewTransitionName(finishedRoot.containerInfo);
         }
@@ -4810,7 +4877,6 @@ function accumulateSuspenseyCommitOnFiber(
     }
     case HostRoot:
     case HostPortal: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         const previousHoistableRoot = currentHoistableRoot;
         const container: Container = fiber.stateNode.containerInfo;

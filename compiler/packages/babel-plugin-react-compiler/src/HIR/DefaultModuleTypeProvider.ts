@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {Effect, ValueKind} from '..';
+import {Effect, ValueKind, ValueReason} from '..';
 import {TypeConfig} from './TypeSchema';
 
 /**
@@ -111,6 +111,56 @@ export function defaultModuleTypeProvider(
             restParam: Effect.Read,
             returnType: {kind: 'type', name: 'Any'},
             knownIncompatible: `TanStack Virtual's \`useWindowVirtualizer()\` API returns functions that cannot be memoized safely`,
+          },
+        },
+      };
+    }
+    case 'react-native': {
+      return {
+        kind: 'object',
+        properties: {
+          PanResponder: {
+            kind: 'object',
+            properties: {
+              /*
+               * `PanResponder.create()` only stores the handler callbacks in the config to invoke them
+               * later in response to gesture events. It does not call them during render, so they may
+               * safely read or write refs.
+               */
+              create: {
+                kind: 'function',
+                positionalParams: [Effect.Freeze],
+                restParam: null,
+                calleeEffect: Effect.Read,
+                returnType: {kind: 'type', name: 'Any'},
+                returnValueKind: ValueKind.Frozen,
+                aliasing: {
+                  receiver: '@receiver',
+                  params: ['@config'],
+                  rest: null,
+                  returns: '@returns',
+                  temporaries: [],
+                  effects: [
+                    {
+                      kind: 'Freeze',
+                      value: '@config',
+                      reason: ValueReason.KnownReturnSignature,
+                    },
+                    {
+                      kind: 'Create',
+                      into: '@returns',
+                      value: ValueKind.Frozen,
+                      reason: ValueReason.KnownReturnSignature,
+                    },
+                    {
+                      kind: 'ImmutableCapture',
+                      from: '@config',
+                      into: '@returns',
+                    },
+                  ],
+                },
+              },
+            },
           },
         },
       };

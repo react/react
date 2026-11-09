@@ -496,14 +496,10 @@ function propagateNonNull(
   registry: PropertyPathRegistry,
 ): void {
   const blockSuccessors = new Map<BlockId, Set<BlockId>>();
-  const terminalPreds = new Set<BlockId>();
 
   for (const [blockId, block] of fn.body.blocks) {
     for (const pred of block.preds) {
       getOrInsertDefault(blockSuccessors, pred, new Set()).add(blockId);
-    }
-    if (block.terminal.kind === 'throw' || block.terminal.kind === 'return') {
-      terminalPreds.add(blockId);
     }
   }
 
