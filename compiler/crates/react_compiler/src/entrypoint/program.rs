@@ -3753,7 +3753,15 @@ impl MutVisitor for RenameIdentifierVisitor<'_> {
 /// - findFunctionsToCompile: traverse program to find components and hooks
 /// - processFn: per-function compilation with directive and suppression handling
 /// - applyCompiledFunctions: replace original functions with compiled versions
-pub fn compile_program(mut file: File, scope: ScopeInfo, options: PluginOptions) -> CompileResult {
+pub fn compile_program(
+    mut file: File,
+    scope: ScopeInfo,
+    mut options: PluginOptions,
+) -> CompileResult {
+    // Fold the JS-resolved `isDev` / `enableReanimated` flags into the
+    // environment config before anything reads it.
+    options.apply_js_resolved_flags();
+
     // Compute output mode once, up front
     let output_mode = CompilerOutputMode::from_opts(&options);
 
