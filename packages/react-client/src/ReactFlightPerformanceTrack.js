@@ -37,14 +37,14 @@ type ReactPerformanceMetadata = {
   requestId: string | void,
   kind: 'component' | 'await',
   outcome: 'completed' | 'errored' | 'aborted',
-  environment: string,
+  environment: string | void,
 };
 
-function getReactMetadata(
+function createReactMetadata(
   requestId: string | void,
   kind: ReactPerformanceMetadata['kind'],
   outcome: ReactPerformanceMetadata['outcome'],
-  environment: string,
+  environment: string | void,
 ): ReactPerformanceMetadata {
   return {version: 1, requestId, kind, outcome, environment};
 }
@@ -142,11 +142,11 @@ export function logComponentRender(
               trackGroup: COMPONENTS_TRACK,
               properties,
             },
-            react: getReactMetadata(
+            react: createReactMetadata(
               requestId,
               'component',
               'completed',
-              env ?? rootEnv,
+              env,
             ),
           },
         }),
@@ -206,12 +206,7 @@ export function logComponentAborted(
             tooltipText: entryName + ' Aborted',
             properties,
           },
-          react: getReactMetadata(
-            requestId,
-            'component',
-            'aborted',
-            env ?? rootEnv,
-          ),
+          react: createReactMetadata(requestId, 'component', 'aborted', env),
         },
       });
       performance.clearMeasures(measureName);
@@ -273,12 +268,7 @@ export function logComponentErrored(
             tooltipText: entryName + ' Errored',
             properties,
           },
-          react: getReactMetadata(
-            requestId,
-            'component',
-            'errored',
-            env ?? rootEnv,
-          ),
+          react: createReactMetadata(requestId, 'component', 'errored', env),
         },
       });
       performance.clearMeasures(measureName);
@@ -442,11 +432,11 @@ export function logComponentAwaitAborted(
               properties,
               tooltipText,
             },
-            react: getReactMetadata(
+            react: createReactMetadata(
               requestId,
               'await',
               'aborted',
-              asyncInfo.env ?? rootEnv,
+              asyncInfo.env,
             ),
           },
         }),
@@ -506,11 +496,11 @@ export function logComponentAwaitErrored(
               properties,
               tooltipText,
             },
-            react: getReactMetadata(
+            react: createReactMetadata(
               requestId,
               'await',
               'errored',
-              asyncInfo.env ?? rootEnv,
+              asyncInfo.env,
             ),
           },
         }),
@@ -575,11 +565,11 @@ export function logComponentAwait(
               properties,
               tooltipText,
             },
-            react: getReactMetadata(
+            react: createReactMetadata(
               requestId,
               'await',
               'completed',
-              asyncInfo.env ?? rootEnv,
+              asyncInfo.env,
             ),
           },
         }),
