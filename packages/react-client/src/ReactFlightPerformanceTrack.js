@@ -35,6 +35,7 @@ const supportsUserTiming =
 type ReactPerformanceMetadata = {
   version: 1,
   requestId: string | void,
+  transitionId: string | void,
   kind: 'component' | 'await',
   outcome: 'completed' | 'errored' | 'aborted',
   environment: string,
@@ -42,11 +43,12 @@ type ReactPerformanceMetadata = {
 
 function getReactMetadata(
   requestId: string | void,
+  transitionId: string | void,
   kind: ReactPerformanceMetadata['kind'],
   outcome: ReactPerformanceMetadata['outcome'],
   environment: string,
 ): ReactPerformanceMetadata {
-  return {version: 1, requestId, kind, outcome, environment};
+  return {version: 1, requestId, transitionId, kind, outcome, environment};
 }
 
 const IO_TRACK = 'Server Requests ⚛';
@@ -97,6 +99,7 @@ export function logComponentRender(
   childrenEndTime: number,
   rootEnv: string,
   requestId: string | void,
+  transitionId: string | void,
 ): void {
   if (supportsUserTiming && childrenEndTime >= 0 && trackIdx < 10) {
     const env = componentInfo.env;
@@ -144,6 +147,7 @@ export function logComponentRender(
             },
             react: getReactMetadata(
               requestId,
+              transitionId,
               'component',
               'completed',
               env ?? rootEnv,
@@ -173,6 +177,7 @@ export function logComponentAborted(
   childrenEndTime: number,
   rootEnv: string,
   requestId: string | void,
+  transitionId: string | void,
 ): void {
   if (supportsUserTiming) {
     const env = componentInfo.env;
@@ -208,6 +213,7 @@ export function logComponentAborted(
           },
           react: getReactMetadata(
             requestId,
+            transitionId,
             'component',
             'aborted',
             env ?? rootEnv,
@@ -237,6 +243,7 @@ export function logComponentErrored(
   rootEnv: string,
   error: mixed,
   requestId: string | void,
+  transitionId: string | void,
 ): void {
   if (supportsUserTiming) {
     const env = componentInfo.env;
@@ -275,6 +282,7 @@ export function logComponentErrored(
           },
           react: getReactMetadata(
             requestId,
+            transitionId,
             'component',
             'errored',
             env ?? rootEnv,
@@ -417,6 +425,7 @@ export function logComponentAwaitAborted(
   endTime: number,
   rootEnv: string,
   requestId: string | void,
+  transitionId: string | void,
 ): void {
   if (supportsUserTiming && endTime > 0) {
     const entryName =
@@ -444,6 +453,7 @@ export function logComponentAwaitAborted(
             },
             react: getReactMetadata(
               requestId,
+              transitionId,
               'await',
               'aborted',
               asyncInfo.env ?? rootEnv,
@@ -473,6 +483,7 @@ export function logComponentAwaitErrored(
   rootEnv: string,
   error: mixed,
   requestId: string | void,
+  transitionId: string | void,
 ): void {
   if (supportsUserTiming && endTime > 0) {
     const description = getIODescription(error);
@@ -508,6 +519,7 @@ export function logComponentAwaitErrored(
             },
             react: getReactMetadata(
               requestId,
+              transitionId,
               'await',
               'errored',
               asyncInfo.env ?? rootEnv,
@@ -537,6 +549,7 @@ export function logComponentAwait(
   rootEnv: string,
   value: mixed,
   requestId: string | void,
+  transitionId: string | void,
 ): void {
   if (supportsUserTiming && endTime > 0) {
     const description = getIODescription(value);
@@ -577,6 +590,7 @@ export function logComponentAwait(
             },
             react: getReactMetadata(
               requestId,
+              transitionId,
               'await',
               'completed',
               asyncInfo.env ?? rootEnv,

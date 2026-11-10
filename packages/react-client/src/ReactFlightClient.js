@@ -403,6 +403,7 @@ type Response = {
   _debugRootStack?: null | Error, // DEV-only
   _debugRootTask?: null | ConsoleTask, // DEV-only
   _debugRequestId: string | void, // DEV-only
+  _debugTransitionId: string | void, // DEV-only
   _debugStartTime: number, // DEV-only
   _debugEndTime: null | number, // DEV-only
   _debugIOStarted: boolean, // DEV-only
@@ -3114,6 +3115,10 @@ function ResponseInstance(
     setTimeout(markIOStarted.bind(this), 0);
     this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
     this._debugRequestId = debugRequestId;
+    const transition =
+      'T' in ReactSharedInternals ? ReactSharedInternals.T : null;
+    this._debugTransitionId =
+      transition !== null ? transition.transitionId : undefined;
     this._debugFindSourceMapURL = findSourceMapURL;
     this._debugChannel = debugChannel;
     this._blockedConsole = null;
@@ -4809,6 +4814,7 @@ function logComponentInfo(
       response._rootEnvironmentName,
       root.reason,
       response._debugRequestId,
+      response._debugTransitionId,
     );
   } else {
     logComponentRender(
@@ -4819,6 +4825,7 @@ function logComponentInfo(
       childrenEndTime,
       response._rootEnvironmentName,
       response._debugRequestId,
+      response._debugTransitionId,
     );
   }
 }
@@ -5012,6 +5019,7 @@ function flushComponentPerformance(
                     env,
                     thenable.value,
                     response._debugRequestId,
+                    response._debugTransitionId,
                   );
                   break;
                 case ERRORED:
@@ -5023,6 +5031,7 @@ function flushComponentPerformance(
                     env,
                     thenable.reason,
                     response._debugRequestId,
+                    response._debugTransitionId,
                   );
                   break;
                 default:
@@ -5037,6 +5046,7 @@ function flushComponentPerformance(
                     env,
                     undefined,
                     response._debugRequestId,
+                    response._debugTransitionId,
                   );
                   break;
               }
@@ -5049,6 +5059,7 @@ function flushComponentPerformance(
                 env,
                 undefined,
                 response._debugRequestId,
+                response._debugTransitionId,
               );
             }
           }
@@ -5074,6 +5085,7 @@ function flushComponentPerformance(
               childrenEndTime,
               env,
               response._debugRequestId,
+              response._debugTransitionId,
             );
             componentEndTime = time; // The end time of previous component is the start time of the next.
             // Track the root most component of the result for deduping logging.
@@ -5100,6 +5112,7 @@ function flushComponentPerformance(
               endTime,
               env,
               response._debugRequestId,
+              response._debugTransitionId,
             );
           }
         }
