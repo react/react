@@ -482,6 +482,99 @@ describe('ReactPerformanceTracks', () => {
   });
 
   // @gate __DEV__ && enableComponentPerformanceTrack
+  it('does not re-diff the same object pair when it is aliased under multiple props', async () => {
+    const App = function App({aliases}) {
+      Scheduler.unstable_advanceTime(10);
+      React.useEffect(() => {}, [aliases]);
+    };
+
+    function makeAliases(tick) {
+      // One array of rows exposed under several names (data-table / ORM-style
+      // prop shapes). Each render creates a new instance.
+      const rows = Array.from({length: 10}, (_, i) => ({id: i, tick}));
+      return {a: rows, b: rows, c: rows};
+    }
+
+    Scheduler.unstable_advanceTime(1);
+    await act(() => {
+      ReactNoop.render(<App aliases={makeAliases(0)} />);
+    });
+
+    performanceMeasureCalls.length = 0;
+
+    Scheduler.unstable_advanceTime(10);
+    await act(() => {
+      ReactNoop.render(<App aliases={makeAliases(1)} />);
+    });
+
+    const i1 = '\xa0\xa0';
+    const i2 = i1 + i1;
+    const i3 = i2 + i1;
+    expect(performanceMeasureCalls).toEqual([
+      [
+        '\u200bApp',
+        {
+          detail: {
+            devtools: {
+              color: 'primary-dark',
+              properties: [
+                ['Changed Props', ''],
+                ['\u2007\xa0aliases', ''],
+                ['\u2007\xa0' + i1 + 'a', 'Array'],
+                // Each of the 10 rows emits a `- tick` / `+ tick` pair...
+                ['\u2007\xa0' + i2 + '0', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '1', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '2', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '3', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '4', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '5', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '6', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '7', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '8', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                ['\u2007\xa0' + i2 + '9', ''],
+                ['-\xa0' + i3 + 'tick', '0'],
+                ['+\xa0' + i3 + 'tick', '1'],
+                // ...but only once, even though `b` and `c` reference the
+                // exact same (prev, next) array pair.
+                [
+                  '\u2007\xa0' + i1 + 'b',
+                  'Repeats a value pair already shown; the diff is omitted.',
+                ],
+                [
+                  '\u2007\xa0' + i1 + 'c',
+                  'Repeats a value pair already shown; the diff is omitted.',
+                ],
+              ],
+              tooltipText: 'App',
+              track: 'Components \u269B',
+            },
+          },
+          end: 31,
+          start: 21,
+        },
+      ],
+    ]);
+  });
+
+  // @gate __DEV__ && enableComponentPerformanceTrack
   it('diffs HTML-like objects', async () => {
     const App = function App({container}) {
       Scheduler.unstable_advanceTime(10);
