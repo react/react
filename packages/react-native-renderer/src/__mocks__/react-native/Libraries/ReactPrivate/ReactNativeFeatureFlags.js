@@ -7,8 +7,4 @@
  * @flow strict-local
  */
 
-module.exports = {
-  enableNativeEventTargetEventDispatching(): boolean {
-    return false;
-  },
-};
+module.exports = {};
