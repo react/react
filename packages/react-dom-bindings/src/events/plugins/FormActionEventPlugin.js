@@ -96,13 +96,12 @@ function extractEvents(
   );
 
   function submitForm() {
-    if (submitter != null && submitter.form !== form) {
-      // The submitter may have been replaced during the submit event
-      // (for example, by a flushSync update in onSubmit). If it's no
-      // longer owned by this form, passing it to FormData would throw
-      // a NotFoundError, so treat the submission as having no submitter.
-      submitter = null;
-    }
+    // The submitter may have been replaced during the submit event
+    // (for example, by a flushSync update in onSubmit). If it's no
+    // longer owned by this form, passing it to FormData would throw
+    // a NotFoundError, so treat the submission as having no submitter.
+    const submitterForFormData =
+      submitter != null && submitter.form === form ? submitter : null;
     if (nativeEvent.defaultPrevented) {
       // An earlier event prevented form submission. If a transition update was
       // also scheduled, we should trigger a pending form status — even if
@@ -110,7 +109,7 @@ function extractEvents(
       if (didCurrentEventScheduleTransition()) {
         // We're going to set the pending form status, but because the submission
         // was prevented, we should not fire the action function.
-        const formData = new FormData(form, submitter);
+        const formData = new FormData(form, submitterForFormData);
         const pendingState: FormStatus = {
           pending: true,
           data: formData,
@@ -139,7 +138,7 @@ function extractEvents(
       event.preventDefault();
 
       // Dispatch the action and set a pending form status.
-      const formData = new FormData(form, submitter);
+      const formData = new FormData(form, submitterForFormData);
       const pendingState: FormStatus = {
         pending: true,
         data: formData,
