@@ -19,7 +19,7 @@ function shim(...args: any): any {
 }
 
 // Resources (when unsupported)
-export const supportsSingletons = false;
+export const supportsSingletons: boolean = false;
 export const resolveSingletonInstance = shim;
 export const acquireSingletonInstance = shim;
 export const releaseSingletonInstance = shim;

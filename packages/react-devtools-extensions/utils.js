@@ -9,7 +9,7 @@ const {execSync} = require('child_process');
 const {readFileSync} = require('fs');
 const {resolve} = require('path');
 
-const GITHUB_URL = 'https://github.com/facebook/react';
+const GITHUB_URL = 'https://github.com/react/react';
 const GIT_COMMIT_HASH_LENGTH = 10;
 
 function shortenCommitHash(commitHash) {

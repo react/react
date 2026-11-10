@@ -45,8 +45,8 @@ import type {TemporaryReferenceSet} from './ReactFlightTemporaryReferences';
 import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
-  enableAsyncDebugInfo,
   enableFlightWeakThenables,
+  enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -69,6 +69,7 @@ import {
 import {
   createBoundServerReference,
   registerBoundServerReference,
+  createServerObjectReference,
 } from './ReactFlightReplyClient';
 
 import {readTemporaryReference} from './ReactFlightTemporaryReferences';
@@ -172,6 +173,9 @@ const __PROTO__ = '__proto__';
 const ObjectPrototype = Object.prototype;
 const ArrayPrototype = Array.prototype;
 
+type RESPONSE_SYMBOL_TYPE = 'RESPONSE_SYMBOL'; // Fake symbol type.
+const RESPONSE_SYMBOL: RESPONSE_SYMBOL_TYPE = Symbol() as any;
+
 type PendingChunk<T> = {
   status: 'pending',
   value: null | Array<InitializationReference | (T => mixed)>,
@@ -203,7 +207,7 @@ type BlockedChunk<T> = {
 type ResolvedModelChunk<T> = {
   status: 'resolved_model',
   value: UninitializedModel,
-  reason: Response,
+  reason: {[RESPONSE_SYMBOL_TYPE]: Response},
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
@@ -299,7 +303,7 @@ function reactPromiseThen<T>(
       initializeModuleChunk(chunk);
       break;
   }
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // Because only native Promises get picked up when we're awaiting we need to wrap
     // this in a native Promise in DEV. This means that these callbacks are no longer sync
     // but the lazy initialization is still sync and the .value can be inspected after,
@@ -865,7 +869,7 @@ function createResolvedModelChunk<T>(
   value: UninitializedModel,
 ): ResolvedModelChunk<T> {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new ReactPromise(RESOLVED_MODEL, value, response);
+  return new ReactPromise(RESOLVED_MODEL, value, {[RESPONSE_SYMBOL]: response});
 }
 
 function createResolvedModuleChunk<T>(
@@ -929,7 +933,9 @@ function createResolvedIteratorResultChunk<T>(
   const iteratorResultJSON =
     (done ? '{"done":true,"value":' : '{"done":false,"value":') + value + '}';
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new ReactPromise(RESOLVED_MODEL, iteratorResultJSON, response);
+  return new ReactPromise(RESOLVED_MODEL, iteratorResultJSON, {
+    [RESPONSE_SYMBOL]: response,
+  });
 }
 
 function resolveIteratorResultChunk<T>(
@@ -963,7 +969,7 @@ function resolveModelChunk<T>(
   const resolvedChunk: ResolvedModelChunk<T> = chunk as any;
   resolvedChunk.status = RESOLVED_MODEL;
   resolvedChunk.value = value;
-  resolvedChunk.reason = response;
+  resolvedChunk.reason = {[RESPONSE_SYMBOL]: response};
   if (resolveListeners !== null) {
     // This is unfortunate that we're reading this eagerly if
     // we already have listeners attached since they might no
@@ -1134,7 +1140,7 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
   initializingHandler = null;
 
   const resolvedModel = chunk.value;
-  const response = chunk.reason;
+  const response = chunk.reason[RESPONSE_SYMBOL];
 
   // We go to the BLOCKED state until we've fully resolved this.
   // We do this before parsing in case we try to initialize the same chunk
@@ -2070,6 +2076,15 @@ function loadServerReference<A: Iterable<any>, T>(
   parentObject: Object,
   key: string,
 ): (...A) => Promise<T> {
+  if (key === 'then') {
+    // This should never happen because we always serialize objects with then-functions
+    // as "thenable" which reduces to a chunk with no other fields.
+    return null as any;
+  }
+  const id = metaData.id;
+  if (typeof id !== 'string') {
+    return null as any;
+  }
   if (!response._serverReferenceConfig) {
     // In the normal case, we can't load this Server Reference in the current environment and
     // we just return a proxy to it.
@@ -2082,27 +2097,27 @@ function loadServerReference<A: Iterable<any>, T>(
   }
   // If we have a module mapping we can load the real version of this Server Reference.
   const serverReference: ClientReference<T> =
-    resolveServerReference<$FlowFixMe>(
-      response._serverReferenceConfig,
-      metaData.id,
-    );
+    resolveServerReference<$FlowFixMe>(response._serverReferenceConfig, id);
 
+  const bound = metaData.bound;
   let promise: null | Thenable<any> = preloadModule(serverReference);
   if (!promise) {
-    if (!metaData.bound) {
+    if (bound instanceof ReactPromise) {
+      promise = Promise.resolve(bound);
+    } else {
+      // We only await the bound arguments when they are one of our own chunks.
+      // Anything else could be a foreign thenable whose `then` we must not call.
       const resolvedValue = requireModule(serverReference) as any;
       registerBoundServerReference(
         resolvedValue,
-        metaData.id,
-        metaData.bound,
+        id,
+        bound,
         response._encodeFormAction,
       );
       return resolvedValue;
-    } else {
-      promise = Promise.resolve(metaData.bound);
     }
-  } else if (metaData.bound) {
-    promise = Promise.all([promise, metaData.bound]);
+  } else if (bound instanceof ReactPromise) {
+    promise = Promise.all([promise, bound]);
   }
 
   let handler: InitializationHandler;
@@ -2123,17 +2138,20 @@ function loadServerReference<A: Iterable<any>, T>(
   function fulfill(): void {
     let resolvedValue = requireModule(serverReference) as any;
 
-    if (metaData.bound) {
-      // This promise is coming from us and should have initilialized by now.
-      const boundArgs: Array<any> = (metaData.bound as any).value.slice(0);
+    if (bound) {
+      // This promise is coming from us and should have initialized by now.
+      const promiseValue = (bound as any).value;
+      const boundArgs: Array<any> = isArray(promiseValue)
+        ? promiseValue.slice(0)
+        : [];
       boundArgs.unshift(null); // this
       resolvedValue = resolvedValue.bind.apply(resolvedValue, boundArgs);
     }
 
     registerBoundServerReference(
       resolvedValue,
-      metaData.id,
-      metaData.bound,
+      id,
+      bound,
       response._encodeFormAction,
     );
 
@@ -2224,6 +2242,28 @@ function loadServerReference<A: Iterable<any>, T>(
 
   // Return a place holder value for now.
   return null as any;
+}
+
+function loadServerObjectReference(
+  response: Response,
+  metaData: {id: any, $$reference?: Object},
+  parentObject: Object,
+  key: string,
+): mixed {
+  // A Server Reference to an object is always opaque on the client, even if
+  // we have a module mapping for Server References: unlike a function
+  // reference, the module that produced it is only meant to be evaluated in a
+  // true server environment. The reference can only be passed back to the
+  // server, where it resolves to the object.
+  // The server reuses this metadata when the same object occurs again.
+  // Cache its handle so reference equality is preserved within this response.
+  const existingReference = metaData.$$reference;
+  if (existingReference !== undefined) {
+    return existingReference;
+  }
+  const reference = createServerObjectReference(metaData.id);
+  metaData.$$reference = reference;
+  return reference;
 }
 
 function resolveLazy(value: any): mixed {
@@ -2584,7 +2624,17 @@ function extractIterator(response: Response, model: Array<any>): Iterator<any> {
   return model[Symbol.iterator]();
 }
 
-function createModel(response: Response, model: any): any {
+function createModel(
+  response: Response,
+  model: any,
+  parentObject: Object,
+  key: string,
+): any {
+  if (key === 'then' && typeof model === 'function') {
+    // This should never happen because we always serialize objects with then-functions
+    // as "thenable" which reduces to a chunk with no other fields.
+    return null;
+  }
   return model;
 }
 
@@ -2717,6 +2767,20 @@ function parseModelString(
           key,
           loadServerReference,
         );
+      }
+      case 'H': {
+        if (enableFlightObjectReferences) {
+          // Server Reference to an object
+          const ref = value.slice(2);
+          return getOutlinedModel(
+            response,
+            ref,
+            parentObject,
+            key,
+            loadServerObjectReference,
+          );
+        }
+        return undefined;
       }
       case 'T': {
         // Temporary Reference
@@ -2990,7 +3054,8 @@ function ResponseInstance(
   this._encodeFormAction = encodeFormAction;
   this._nonce = nonce;
   this._chunks = chunks;
-  this._stringDecoder = createStringDecoder();
+  // Preserve a leading U+FEFF instead of consuming it as an encoding signature.
+  this._stringDecoder = createStringDecoder(true);
   this._closed = false;
   this._closedReason = null;
   this._allowPartialStream = allowPartialStream;
@@ -3035,18 +3100,16 @@ function ResponseInstance(
         '"use ' + rootEnv.toLowerCase() + '"',
       );
     }
-    if (enableAsyncDebugInfo) {
-      // Track the start of the fetch to the best of our knowledge.
-      // Note: createFromFetch allows this to be marked at the start of the fetch
-      // where as if you use createFromReadableStream from the body of the fetch
-      // then the start time is when the headers resolved.
-      this._debugStartTime =
-        debugStartTime == null ? performance.now() : debugStartTime;
-      this._debugIOStarted = false;
-      // We consider everything before the first setTimeout task to be cached data
-      // and is not considered I/O required to load the stream.
-      setTimeout(markIOStarted.bind(this), 0);
-    }
+    // Track the start of the fetch to the best of our knowledge.
+    // Note: createFromFetch allows this to be marked at the start of the fetch
+    // where as if you use createFromReadableStream from the body of the fetch
+    // then the start time is when the headers resolved.
+    this._debugStartTime =
+      debugStartTime == null ? performance.now() : debugStartTime;
+    this._debugIOStarted = false;
+    // We consider everything before the first setTimeout task to be cached data
+    // and is not considered I/O required to load the stream.
+    setTimeout(markIOStarted.bind(this), 0);
     this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
     this._debugFindSourceMapURL = findSourceMapURL;
     this._debugChannel = debugChannel;
@@ -3142,7 +3205,7 @@ export function createStreamState(
     _rowLength: 0,
     _buffer: [],
   } as Omit<StreamState, '_debugInfo' | '_debugTargetChunkSize'> as any;
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     const response = unwrapWeakResponse(weakResponse);
     // Create an entry for the I/O to load the stream itself.
     const debugValuePromise = Promise.resolve(streamDebugValue);
@@ -3177,7 +3240,7 @@ function incrementChunkDebugInfo(
   streamState: StreamState,
   chunkLength: number,
 ): void {
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     const debugInfo: ReactIOInfo = streamState._debugInfo;
     const endTime = performance.now();
     const previousEndTime = debugInfo.end;
@@ -3245,7 +3308,7 @@ function resolveChunkDebugInfo(
   streamState: StreamState,
   chunk: SomeChunk<any>,
 ): void {
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // Only include stream information after a macrotask. Any chunk processed
     // before that is considered cached data.
     if (response._debugIOStarted) {
@@ -5212,10 +5275,7 @@ function processFullStringRow(
       return;
     }
     case 78 /* "N" */: {
-      if (
-        enableProfilerTimer &&
-        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ) {
+      if (enableProfilerTimer) {
         // Track the time origin for future debug info. We track it relative
         // to the current environment's time space.
         const timeOrigin: number = +row;
@@ -5235,7 +5295,7 @@ function processFullStringRow(
       // Fallthrough to share the error with Console entries.
     }
     case 74 /* "J" */: {
-      if (enableProfilerTimer && enableAsyncDebugInfo) {
+      if (enableProfilerTimer) {
         resolveIOInfo(response, id, row);
         return;
       }

@@ -1242,7 +1242,7 @@ describe('ReactCompositeComponent', () => {
   });
 
   // Regression test for accidental breaking change
-  // https://github.com/facebook/react/issues/13580
+  // https://github.com/react/react/issues/13580
   it('should support classes shadowing isReactComponent', async () => {
     class Shadow extends React.Component {
       isReactComponent() {}

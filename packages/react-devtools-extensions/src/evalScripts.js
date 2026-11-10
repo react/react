@@ -8,6 +8,7 @@
  */
 
 export type EvalScriptIds =
+  | 'checkIfBackendManagerIsInjected'
   | 'checkIfReactPresentInInspectedWindow'
   | 'reload'
   | 'setBrowserSelectionFromReact'
@@ -29,6 +30,10 @@ type EvalScriptEntry = {
   So some fallback functions are no-op or throw error.
 */
 export const evalScripts: {[key: EvalScriptIds]: EvalScriptEntry} = {
+  checkIfBackendManagerIsInjected: {
+    fn: () => window.__REACT_DEVTOOLS_BACKEND_MANAGER_INJECTED__ === true,
+    code: () => 'window.__REACT_DEVTOOLS_BACKEND_MANAGER_INJECTED__ === true',
+  },
   checkIfReactPresentInInspectedWindow: {
     fn: () =>
       window.__REACT_DEVTOOLS_GLOBAL_HOOK__ &&

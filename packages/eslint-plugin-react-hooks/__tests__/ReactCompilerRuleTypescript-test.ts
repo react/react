@@ -195,7 +195,126 @@ const tests: CompilerTestCases = {
   ],
 };
 
+const refsTests: CompilerTestCases = {
+  valid: [
+    {
+      name: 'Allows deferred ref access in IntersectionObserver callbacks without options',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useRef} from 'react';
+
+        function useObserver() {
+          const ref = useRef(null);
+          return new IntersectionObserver(() => ref.current);
+        }
+      `,
+    },
+    {
+      name: 'Allows deferred ref access in IntersectionObserver callbacks',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback, useMemo, useRef} from 'react';
+
+        type IntersectionCallback = (isIntersecting: boolean) => void;
+
+        function useIntersectionObserver(options: Partial<IntersectionObserverInit>) {
+          const callbacks = useRef(new Map<string, IntersectionCallback>());
+          const onIntersect = useCallback(
+            (entries: ReadonlyArray<IntersectionObserverEntry>) => {
+              entries.forEach(entry =>
+                callbacks.current.get(entry.target.id)?.(entry.isIntersecting),
+              );
+            },
+            [],
+          );
+          return useMemo(
+            () => new IntersectionObserver(onIntersect, options),
+            [onIntersect, options],
+          );
+        }
+      `,
+    },
+    {
+      name: 'Allows deferred ref access in React Native PanResponder callbacks',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useRef} from 'react';
+        import {PanResponder, View} from 'react-native';
+
+        function SwipeableCard() {
+          const swipeAxisRef = useRef<'x' | 'y' | undefined>(undefined);
+
+          const panResponder = PanResponder.create({
+            onMoveShouldSetPanResponder: (_event, gestureState) => {
+              swipeAxisRef.current = Math.abs(gestureState.dx) > 10 ? 'x' : 'y';
+              return true;
+            },
+            onPanResponderRelease: () => {
+              swipeAxisRef.current = undefined;
+            },
+          });
+
+          return <View {...panResponder.panHandlers} />;
+        }
+      `,
+    },
+    {
+      name: 'Allows deferred ref access in memoized React Native PanResponder config',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useMemo, useRef} from 'react';
+        import {PanResponder, View} from 'react-native';
+
+        function SwipeableCard() {
+          const ref = useRef(0);
+          const config = useMemo(
+            () => ({
+              onPanResponderRelease: () => {
+                ref.current = 0;
+              },
+            }),
+            [],
+          );
+          const panResponder = PanResponder.create(config);
+
+          return <View {...panResponder.panHandlers} />;
+        }
+      `,
+    },
+  ],
+  invalid: [
+    {
+      name: 'Rejects refs passed directly to unknown constructors',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useRef} from 'react';
+
+        function useObserver(Observer) {
+          const ref = useRef(null);
+          return new Observer(ref);
+        }
+      `,
+      errors: [{message: /Cannot access refs during render/}],
+    },
+    {
+      name: 'Rejects ref access in callbacks passed to unknown constructors',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback, useMemo, useRef} from 'react';
+
+        function useObserver(Observer) {
+          const ref = useRef(null);
+          const callback = useCallback(() => ref.current, []);
+          return useMemo(() => new Observer(callback), [Observer, callback]);
+        }
+      `,
+      errors: [{message: /Cannot access refs during render/}],
+    },
+  ],
+};
+
 const eslintTester = new ESLintTesterV8({
   parser: require.resolve('@typescript-eslint/parser-v5'),
 });
 eslintTester.run('react-compiler', allRules['immutability'].rule, tests);
+eslintTester.run('react-compiler refs', allRules['refs'].rule, refsTests);

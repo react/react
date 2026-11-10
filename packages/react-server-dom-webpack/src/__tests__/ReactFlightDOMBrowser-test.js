@@ -3046,13 +3046,7 @@ describe('ReactFlightDOMBrowser', () => {
 
     expect(container.innerHTML).toBe('<p>foo</p><p>bar</p>');
 
-    if (
-      __DEV__ &&
-      gate(
-        flags =>
-          flags.enableComponentPerformanceTrack && flags.enableAsyncDebugInfo,
-      )
-    ) {
+    if (__DEV__ && gate(flags => flags.enableComponentPerformanceTrack)) {
       const result = await response;
       const firstParagraph = result.root[0];
 
