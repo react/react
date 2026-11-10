@@ -2023,6 +2023,56 @@
 | `colSpan=(null)`| (initial, ssr error, ssr mismatch)| `<number: 1>` |
 | `colSpan=(undefined)`| (initial, ssr error, ssr mismatch)| `<number: 1>` |
 
+## `commandFor` (on `<button>` inside `<div>`)
+| Test Case | Flags | Result |
+| --- | --- | --- |
+| `commandFor=(string)`| (changed)| `<HTMLDivElement>` |
+| `commandFor=(empty string)`| (initial)| `<null>` |
+| `commandFor=(array with string)`| (changed, warning, ssr warning)| `<HTMLDivElement>` |
+| `commandFor=(empty array)`| (initial, warning, ssr warning)| `<null>` |
+| `commandFor=(object)`| (initial, warning, ssr warning)| `<null>` |
+| `commandFor=(numeric string)`| (initial)| `<null>` |
+| `commandFor=(-1)`| (initial)| `<null>` |
+| `commandFor=(0)`| (initial)| `<null>` |
+| `commandFor=(integer)`| (initial)| `<null>` |
+| `commandFor=(NaN)`| (initial, warning)| `<null>` |
+| `commandFor=(float)`| (initial)| `<null>` |
+| `commandFor=(true)`| (initial, warning)| `<null>` |
+| `commandFor=(false)`| (initial, warning)| `<null>` |
+| `commandFor=(string 'true')`| (initial)| `<null>` |
+| `commandFor=(string 'false')`| (initial)| `<null>` |
+| `commandFor=(string 'on')`| (initial)| `<null>` |
+| `commandFor=(string 'off')`| (initial)| `<null>` |
+| `commandFor=(symbol)`| (initial, warning)| `<null>` |
+| `commandFor=(function)`| (initial, warning)| `<null>` |
+| `commandFor=(null)`| (initial)| `<null>` |
+| `commandFor=(undefined)`| (initial)| `<null>` |
+
+## `command` (on `<button>` inside `<div>`)
+| Test Case | Flags | Result |
+| --- | --- | --- |
+| `command=(string)`| (changed)| `"toggle-popover"` |
+| `command=(empty string)`| (initial)| `""` |
+| `command=(array with string)`| (changed)| `"toggle-popover"` |
+| `command=(empty array)`| (initial)| `""` |
+| `command=(object)`| (initial)| `""` |
+| `command=(numeric string)`| (initial)| `""` |
+| `command=(-1)`| (initial)| `""` |
+| `command=(0)`| (initial)| `""` |
+| `command=(integer)`| (initial)| `""` |
+| `command=(NaN)`| (initial, warning)| `""` |
+| `command=(float)`| (initial)| `""` |
+| `command=(true)`| (initial, warning)| `""` |
+| `command=(false)`| (initial, warning)| `""` |
+| `command=(string 'true')`| (initial)| `""` |
+| `command=(string 'false')`| (initial)| `""` |
+| `command=(string 'on')`| (initial)| `""` |
+| `command=(string 'off')`| (initial)| `""` |
+| `command=(symbol)`| (initial, warning)| `""` |
+| `command=(function)`| (initial, warning)| `""` |
+| `command=(null)`| (initial)| `""` |
+| `command=(undefined)`| (initial)| `""` |
+
 ## `content` (on `<meta>` inside `<head>`)
 | Test Case | Flags | Result |
 | --- | --- | --- |
