@@ -516,6 +516,132 @@ describe('ReactDOMServer', () => {
       expect(reentrantResults).toEqual([2, 1, 3, 1]);
     });
 
+    // Regression test for https://github.com/facebook/react/issues/16416.
+    // Calling renderToStaticMarkup/renderToString synchronously from inside
+    // a hook (e.g. to precompute a value) used to corrupt the outer
+    // render's in-progress hooks, crashing with a cryptic internal error
+    // ("Cannot set property 'memoizedState' of null").
+    describe('reentrancy from inside a hook', () => {
+      it('useMemo can call renderToStaticMarkup', () => {
+        function Inner() {
+          return <h1>hi</h1>;
+        }
+        function App() {
+          const html = React.useMemo(
+            () => ReactDOMServer.renderToStaticMarkup(<Inner />),
+            [],
+          );
+          return <div dangerouslySetInnerHTML={{__html: html}} />;
+        }
+        const markup = ReactDOMServer.renderToStaticMarkup(<App />);
+        expect(markup).toBe('<div><h1>hi</h1></div>');
+      });
+
+      it('useState initializer can call renderToStaticMarkup', () => {
+        function Inner() {
+          return <h1>hi</h1>;
+        }
+        function App() {
+          const [html] = React.useState(() =>
+            ReactDOMServer.renderToStaticMarkup(<Inner />),
+          );
+          return <div dangerouslySetInnerHTML={{__html: html}} />;
+        }
+        const markup = ReactDOMServer.renderToStaticMarkup(<App />);
+        expect(markup).toBe('<div><h1>hi</h1></div>');
+      });
+
+      it('useReducer initializer can call renderToStaticMarkup', () => {
+        function Inner() {
+          return <h1>hi</h1>;
+        }
+        function App() {
+          const [html] = React.useReducer(
+            state => state,
+            null,
+            () => ReactDOMServer.renderToStaticMarkup(<Inner />),
+          );
+          return <div dangerouslySetInnerHTML={{__html: html}} />;
+        }
+        const markup = ReactDOMServer.renderToStaticMarkup(<App />);
+        expect(markup).toBe('<div><h1>hi</h1></div>');
+      });
+
+      it('the outer hooks keep working correctly before and after the nested render', () => {
+        function Inner() {
+          return <span>inner</span>;
+        }
+        function App() {
+          const before = React.useMemo(() => 'before', []);
+          const nested = React.useMemo(
+            () => ReactDOMServer.renderToStaticMarkup(<Inner />),
+            [],
+          );
+          const after = React.useMemo(() => 'after', []);
+          return (
+            <div>
+              {before}-
+              <span dangerouslySetInnerHTML={{__html: nested}} />-{after}
+            </div>
+          );
+        }
+        const markup = ReactDOMServer.renderToStaticMarkup(<App />);
+        expect(markup).toBe(
+          '<div>before-<span><span>inner</span></span>-after</div>',
+        );
+      });
+
+      it('does not corrupt the outer render if the nested render throws', () => {
+        function ThrowingInner() {
+          throw new Error('nested boom');
+        }
+        function App() {
+          let caught = null;
+          React.useMemo(() => {
+            try {
+              ReactDOMServer.renderToStaticMarkup(<ThrowingInner />);
+            } catch (e) {
+              caught = e.message;
+            }
+            return null;
+          }, []);
+          const after = React.useMemo(() => 'after-throw', []);
+          return (
+            <div>
+              {caught}-{after}
+            </div>
+          );
+        }
+        const markup = ReactDOMServer.renderToStaticMarkup(<App />);
+        expect(markup).toBe('<div>nested boom-after-throw</div>');
+      });
+
+      it('does not corrupt the outer render if the nested render suspends', () => {
+        function Suspender() {
+          throw new Promise(() => {});
+        }
+        function App() {
+          React.useMemo(() => {
+            try {
+              ReactDOMServer.renderToStaticMarkup(
+                <React.Suspense>
+                  <Suspender />
+                </React.Suspense>,
+              );
+            } catch (e) {
+              // Ignored: the nested static render can't finish because
+              // Suspender never resolves.
+            }
+            return null;
+          }, []);
+          const after = React.useMemo(() => 'after-suspend', []);
+          return <div>{after}</div>;
+        }
+        const markup = ReactDOMServer.renderToStaticMarkup(<App />);
+        expect(markup).toBe('<div>after-suspend</div>');
+      });
+    });
+
     it('renders components with different batching strategies', () => {
       class StaticComponent extends React.Component {
         render() {
