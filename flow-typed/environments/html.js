@@ -1128,6 +1128,7 @@ declare class HTMLButtonElement extends HTMLElement {
   autofocus: boolean;
   disabled: boolean;
   form: HTMLFormElement | null;
+  formMethod: string;
   labels: NodeList<HTMLLabelElement> | null;
   name: string;
   type: string;
