@@ -58,6 +58,33 @@ describe('ReactChildReconciler', () => {
     return fn;
   }
 
+  it.each([
+    ['array', children => children],
+    ['iterable', createIterable],
+  ])('preserves keyed children after empty slots in an %s', async (_, wrap) => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    function render(gaps, keys, revision) {
+      const rows = keys.map(key => <span key={key}>{key + revision}</span>);
+      return act(() => root.render(wrap([...gaps, ...rows])));
+    }
+
+    await render([null, false, undefined, ''], ['a', 'b'], 1);
+    const a = container.firstChild;
+    const b = container.lastChild;
+
+    await render([false, undefined, '', null], ['a', 'b'], 2);
+    expect(container.textContent).toBe('a2b2');
+    expect(container.firstChild).toBe(a);
+    expect(container.lastChild).toBe(b);
+
+    // Fill one gap with text and move the keyed children after the other gaps.
+    await render([null, 0, false, ''], ['b', 'a'], 3);
+    expect(container.textContent).toBe('0b3a3');
+    expect(container.childNodes[1]).toBe(b);
+    expect(container.lastChild).toBe(a);
+  });
+
   it('does not treat functions as iterables', async () => {
     const iterableFunction = makeIterableFunction('foo');
 

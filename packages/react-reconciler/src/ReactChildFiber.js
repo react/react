@@ -411,6 +411,15 @@ type ChildReconciler = (
   lanes: Lanes,
 ) => Fiber | null;
 
+function isEmptySlot(child: mixed): boolean {
+  return (
+    child === null ||
+    child === undefined ||
+    typeof child === 'boolean' ||
+    child === ''
+  );
+}
+
 // This wrapper function exists because I expect to clone the code in each path
 // to be able to optimize each path individually by branching early. This needs
 // a compiler or we can do it manually. Helpers that don't need this branching
@@ -1194,23 +1203,22 @@ function createChildReconciler(
     let newIdx = 0;
     let nextOldFiber = null;
     for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
+      const newChild = newChildren[newIdx];
       if (oldFiber.index > newIdx) {
+        // There was no fiber at this index. If the slot is still empty,
+        // advance the new index without consuming the next old fiber.
+        if (isEmptySlot(newChild)) {
+          continue;
+        }
         nextOldFiber = oldFiber;
         oldFiber = null;
       } else {
         nextOldFiber = oldFiber.sibling;
       }
-      const newFiber = updateSlot(
-        returnFiber,
-        oldFiber,
-        newChildren[newIdx],
-        lanes,
-      );
+      const newFiber = updateSlot(returnFiber, oldFiber, newChild, lanes);
       if (newFiber === null) {
-        // TODO: This breaks on empty slots like null children. That's
-        // unfortunate because it triggers the slow path all the time. We need
-        // a better way to communicate whether this was a miss or null,
-        // boolean, undefined, etc.
+        // TODO: updateSlot can also return null for a newly empty slot,
+        // so we still take the slow path when a child disappears.
         if (oldFiber === null) {
           oldFiber = nextOldFiber;
         }
@@ -1501,18 +1509,22 @@ function createChildReconciler(
       oldFiber !== null && !step.done;
       newIdx++, step = newChildren.next()
     ) {
+      const newChild = step.value;
       if (oldFiber.index > newIdx) {
+        // There was no fiber at this index. If the slot is still empty,
+        // advance the new index without consuming the next old fiber.
+        if (isEmptySlot(newChild)) {
+          continue;
+        }
         nextOldFiber = oldFiber;
         oldFiber = null;
       } else {
         nextOldFiber = oldFiber.sibling;
       }
-      const newFiber = updateSlot(returnFiber, oldFiber, step.value, lanes);
+      const newFiber = updateSlot(returnFiber, oldFiber, newChild, lanes);
       if (newFiber === null) {
-        // TODO: This breaks on empty slots like null children. That's
-        // unfortunate because it triggers the slow path all the time. We need
-        // a better way to communicate whether this was a miss or null,
-        // boolean, undefined, etc.
+        // TODO: updateSlot can also return null for a newly empty slot,
+        // so we still take the slow path when a child disappears.
         if (oldFiber === null) {
           oldFiber = nextOldFiber;
         }
