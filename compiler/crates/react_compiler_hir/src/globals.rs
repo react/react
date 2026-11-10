@@ -1992,7 +1992,7 @@ fn build_typed_globals(
         shapes,
         Vec::new(),
         FunctionSignatureBuilder {
-            positional_params: vec![Effect::Capture],
+            positional_params: vec![Effect::ConditionallyMutate],
             return_type: Type::Object {
                 shape_id: Some(BUILT_IN_OBJECT_ID.to_string()),
             },
@@ -2009,6 +2009,9 @@ fn build_typed_globals(
                         value: ValueKind::Mutable,
                         reason: ValueReason::KnownReturnSignature,
                     },
+                    AliasingEffectConfig::MutateTransitiveConditionally {
+                        value: "@iterable".to_string(),
+                    },
                     AliasingEffectConfig::Capture {
                         from: "@iterable".to_string(),
                         into: "@returns".to_string(),
@@ -2017,7 +2020,7 @@ fn build_typed_globals(
             }),
             ..Default::default()
         },
-        None,
+        Some(BUILT_IN_OBJECT_FROM_ENTRIES_ID),
         false,
     );
     let obj_entries = add_function(
