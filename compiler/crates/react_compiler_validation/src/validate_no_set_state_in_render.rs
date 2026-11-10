@@ -63,7 +63,8 @@ fn validate_impl(
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
             match &instr.value {
-                InstructionValue::LoadLocal { place, .. } => {
+                InstructionValue::LoadLocal { place, .. }
+                | InstructionValue::NonNullExpression { value: place, .. } => {
                     if unconditional_set_state_functions.contains(&place.identifier) {
                         unconditional_set_state_functions.insert(instr.lvalue.identifier);
                     }
