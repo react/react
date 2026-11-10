@@ -908,8 +908,10 @@ export class Environment {
       case 'ImportNamespace': {
         if (this.#isKnownReactModule(binding.module)) {
           // only resolve imports to modules we know about
+          const globalName =
+            binding.module.toLowerCase() === 'react' ? 'React' : binding.name;
           return (
-            this.#globals.get(binding.name) ??
+            this.#globals.get(globalName) ??
             (isHookName(binding.name) ? this.#getCustomHookType() : null)
           );
         } else {
