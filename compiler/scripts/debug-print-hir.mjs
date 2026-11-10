@@ -378,6 +378,11 @@ function printInstructionValueFields(value, depth) {
       lines.push(`${indent(d + 1)}value: $${value.value.identifier.id}`);
       lines.push(`${indent(d)}}`);
       break;
+    case "NonNullExpression":
+      lines.push(`${indent(d)}NonNullExpression {`);
+      lines.push(`${indent(d + 1)}value: $${value.value.identifier.id}`);
+      lines.push(`${indent(d)}}`);
+      break;
     case "TypeCastExpression":
       lines.push(`${indent(d)}TypeCastExpression {`);
       lines.push(`${indent(d + 1)}value: $${value.value.identifier.id}`);
@@ -1074,6 +1079,7 @@ function collectIdentifiersFromValue(value, map) {
     case "StoreGlobal":
       collectIdentifiersFromPlace(value.value, map);
       break;
+    case "NonNullExpression":
     case "TypeCastExpression":
       collectIdentifiersFromPlace(value.value, map);
       break;

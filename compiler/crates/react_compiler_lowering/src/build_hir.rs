@@ -2228,7 +2228,11 @@ fn lower_expression(
                 loc,
             })
         }
-        Expression::TSNonNullExpression(ts) => Ok(lower_expression(builder, &ts.expression)?),
+        Expression::TSNonNullExpression(ts) => {
+            let loc = convert_base_loc(&ts.base);
+            let value = lower_expression_to_temporary(builder, &ts.expression)?;
+            Ok(InstructionValue::NonNullExpression { value, loc })
+        }
         Expression::TSTypeAssertion(ts) => {
             let loc = convert_base_loc(&ts.base);
             let value = lower_expression_to_temporary(builder, &ts.expression)?;
