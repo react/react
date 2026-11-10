@@ -2384,7 +2384,7 @@ function codegenValue(
        * See repro https://codesandbox.io/p/devbox/5d47fr
        * An explicit unary expression also preserves the sign of negative zero.
        */
-      return t.unaryExpression('-', t.numericLiteral(-value), false);
+      return t.unaryExpression('-', t.numericLiteral(-value));
     } else {
       return t.numericLiteral(value);
     }
