@@ -645,6 +645,7 @@ export type Request = {
   ) => boolean,
   didWarnForKey: null | WeakSet<ReactComponentInfo>,
   writtenDebugObjects: WeakMap<Reference, string>,
+  asyncOwners: Set<ReactComponentInfo>,
   deferredDebugObjects: null | DeferredDebugStore,
 };
 
@@ -771,6 +772,7 @@ function RequestInstance(
         : filterStackFrame;
     this.didWarnForKey = null;
     this.writtenDebugObjects = new WeakMap();
+    this.asyncOwners = new Set();
     this.deferredDebugObjects = keepDebugAlive
       ? {
           retained: new Map(),
@@ -889,6 +891,19 @@ export function createPrerenderRequest(
 }
 
 let currentRequest: null | Request = null;
+
+// The async debug info only holds on to owners weakly, so that it doesn't keep
+// a component and its props alive after the request that rendered it is gone.
+// The request holds on to them instead, so that the owner of any async work is
+// still there whenever this request emits the debug info for it.
+export function retainAsyncOwner(owner: ReactComponentInfo): void {
+  if (__DEV__) {
+    const request = resolveRequest();
+    if (request !== null) {
+      request.asyncOwners.add(owner);
+    }
+  }
+}
 
 export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
@@ -2699,9 +2714,13 @@ function visitAsyncNodeImpl(
               // exact entry and we don't need two awaits on the same thing.
               visited.set(ioNode, null);
 
+              // The owner is held weakly. It may be gone if it was part of a
+              // different request that has since completed.
+              const owner =
+                node.owner === null ? undefined : node.owner.deref();
               // Ensure the owner is already outlined.
-              if (node.owner != null) {
-                outlineComponentInfo(request, node.owner);
+              if (owner !== undefined) {
+                outlineComponentInfo(request, owner);
               }
 
               // We log the environment at the time when the last promise pigned ping which may
@@ -2713,7 +2732,7 @@ function visitAsyncNodeImpl(
               emitDebugChunk(request, task.id, {
                 awaited: ioNode as any as ReactIOInfo, // This is deduped by this reference.
                 env: env,
-                owner: node.owner,
+                owner: owner,
                 stack:
                   node.stack === null
                     ? null
@@ -5076,9 +5095,11 @@ function serializeIONode(
       }
     }
   }
-  const owner = ioNode.owner;
+  // The owner is held weakly. It may be gone if it was part of a different
+  // request that has since completed.
+  const owner = ioNode.owner === null ? undefined : ioNode.owner.deref();
   // Ensure the owner is already outlined.
-  if (owner != null) {
+  if (owner !== undefined) {
     outlineComponentInfo(request, owner);
   }
 
