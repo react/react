@@ -75,10 +75,16 @@ export function getValueForAttributeOnCustomComponent(
           return expected;
         case 'function':
           return expected;
-        case 'boolean':
+        case 'boolean': {
+          // Custom elements omit false. aria-/data- false is the string "false",
+          // so a missing attribute only matches non-aria/data false.
           if (expected === false) {
-            return expected;
+            const prefix = name.toLowerCase().slice(0, 5);
+            if (prefix !== 'data-' && prefix !== 'aria-') {
+              return expected;
+            }
           }
+        }
       }
       return expected === undefined ? undefined : null;
     }
@@ -89,7 +95,12 @@ export function getValueForAttributeOnCustomComponent(
     const value = isNonce ? (node as any).nonce : node.getAttribute(name);
 
     if (value === '' && expected === true) {
-      return true;
+      // Custom elements emit true as an empty attribute. aria-/data- stringify
+      // to "true", so an empty value is a mismatch.
+      const prefix = name.toLowerCase().slice(0, 5);
+      if (prefix !== 'data-' && prefix !== 'aria-') {
+        return true;
+      }
     }
 
     if (__DEV__) {
@@ -223,8 +234,13 @@ export function setValueForPropertyOnCustomComponent(
   }
 
   if (value === true) {
-    node.setAttribute(name, '');
-    return;
+    const prefix = name.toLowerCase().slice(0, 5);
+    if (prefix !== 'data-' && prefix !== 'aria-') {
+      // Boolean attribute presence: true → empty string value.
+      // aria-/data- fall through to setValueForAttribute and stringify.
+      node.setAttribute(name, '');
+      return;
+    }
   }
 
   // From here, it's the same as any attribute
