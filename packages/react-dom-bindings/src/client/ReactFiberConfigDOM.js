@@ -6206,7 +6206,8 @@ export function hydrateHoistable(
             node.getAttribute('title') !==
               (props.title == null ? null : props.title) ||
             node.getAttribute('crossorigin') !==
-              (props.crossOrigin == null ? null : props.crossOrigin)
+              (props.crossOrigin == null ? null : props.crossOrigin) ||
+            isInsideHydrationBoundary(node, ownerDocument)
           ) {
             // mismatch, try the next node;
             continue;
@@ -6249,7 +6250,8 @@ export function hydrateHoistable(
             node.getAttribute('http-equiv') !==
               (props.httpEquiv == null ? null : props.httpEquiv) ||
             node.getAttribute('charset') !==
-              (props.charSet == null ? null : props.charSet)
+              (props.charSet == null ? null : props.charSet) ||
+            isInsideHydrationBoundary(node, ownerDocument)
           ) {
             // mismatch, try the next node;
             continue;
@@ -6269,8 +6271,10 @@ export function hydrateHoistable(
       );
   }
 
-  // Hoistables that flush after the shell are streamed into the body.
-  if (instance.parentNode !== ownerDocument.head) {
+  // Hoistables that flush after the shell are streamed into the body. A node
+  // matched anywhere else stays where it is.
+  const parent = instance.parentNode;
+  if (parent === null || parent === ownerDocument.body) {
     (ownerDocument.head as any).appendChild(instance);
   }
 
@@ -6278,6 +6282,26 @@ export function hydrateHoistable(
   precacheFiberNode(internalInstanceHandle, instance);
   markNodeAsHoistable(instance);
   return instance;
+}
+
+// Fizz never writes hoistables inside a Suspense or Activity boundary. A node
+// there was rendered in place and belongs to the boundary, which may not have
+// hydrated yet.
+function isInsideHydrationBoundary(
+  node: Element,
+  ownerDocument: Document,
+): boolean {
+  if (node.parentNode === ownerDocument.head) {
+    return false;
+  }
+  let ancestor: ?Node = node;
+  while (ancestor) {
+    if (getParentHydrationBoundary(ancestor) !== null) {
+      return true;
+    }
+    ancestor = ancestor.parentNode;
+  }
+  return false;
 }
 
 function getHydratableHoistableCache(

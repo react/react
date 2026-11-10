@@ -62,6 +62,7 @@ describe('ReactDOMFloat', () => {
     global.document = global.window.document;
     global.navigator = global.window.navigator;
     global.Node = global.window.Node;
+    global.Event = global.window.Event;
     global.addEventListener = global.window.addEventListener;
     global.MutationObserver = global.window.MutationObserver;
     // The Fizz runtime assumes requestAnimationFrame exists so we need to polyfill it.
@@ -9688,6 +9689,75 @@ background-color: green;
         </html>,
       );
     });
+
+    it.each([false, true])(
+      'does not move a non-hoisted link out of its boundary on hydration (dehydrated=%s)',
+      async dehydrated => {
+        function Form({isClient}) {
+          if (isClient && dehydrated) {
+            readText('client');
+          }
+          return (
+            <>
+              <link
+                rel="preload"
+                as="image"
+                href="/shared.png"
+                onLoad={() => {}}
+              />
+              <input defaultValue="initial" />
+            </>
+          );
+        }
+
+        function App({isClient}) {
+          return (
+            <html>
+              <head />
+              <body>
+                <Suspense fallback={null}>
+                  <Form isClient={isClient} />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <BlockedOn value="server">
+                    <link rel="preload" as="image" href="/shared.png" />
+                  </BlockedOn>
+                </Suspense>
+              </body>
+            </html>
+          );
+        }
+
+        await act(() => {
+          renderToPipeableStream(<App isClient={false} />).pipe(writable);
+        });
+        await act(() => {
+          resolveText('server');
+        });
+
+        const input = document.querySelector('input');
+        const link = input.previousSibling;
+        expect(link.nodeName).toBe('LINK');
+        input.value = 'user input';
+        const errors = [];
+        const root = ReactDOMClient.hydrateRoot(
+          document,
+          <App isClient={true} />,
+          {onRecoverableError: error => errors.push(error.message)},
+        );
+        await waitForAll([]);
+        await act(() => {
+          resolveText('client');
+        });
+        await waitForAll([]);
+
+        expect(errors).toEqual([]);
+        expect(document.querySelector('input')).toBe(input);
+        expect(input.value).toBe('user input');
+        expect(input.previousSibling).toBe(link);
+        root.unmount();
+      },
+    );
 
     it('does not hoist inside an <svg> context', async () => {
       await act(() => {
