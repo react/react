@@ -85,6 +85,15 @@ function getEventTargetDocument(eventTarget: any) {
 }
 
 /**
+ * Get the document or shadow root that contains the node.
+ */
+function getRootNode(node: any) {
+  return typeof node.getRootNode === 'function'
+    ? node.getRootNode()
+    : node.ownerDocument;
+}
+
+/**
  * Poll selection to see whether it's changed.
  *
  * @param {object} nativeEvent
@@ -105,7 +114,8 @@ function constructSelectEvent(
   if (
     mouseDown ||
     activeElement == null ||
-    activeElement !== getActiveElement(doc)
+    activeElement.ownerDocument !== doc ||
+    activeElement !== getActiveElement(getRootNode(activeElement))
   ) {
     return;
   }
