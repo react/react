@@ -4072,13 +4072,11 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     },
   );
 
-  // @gate enableLegacyCache && enableRetryLaneExpiration
+  // @gate enableLegacyCache
   it('recurring updates in siblings should not block expensive content in suspense boundary from committing', async () => {
-    const {useState} = React;
-
     let setText;
     function UpdatingText() {
-      const [text, _setText] = useState('1');
+      const [text, _setText] = React.useState('1');
       setText = _setText;
       return <Text text={text} />;
     }
@@ -4138,17 +4136,149 @@ describe('ReactSuspenseWithNoopRenderer', () => {
 
     await waitForMicrotasks();
     Scheduler.unstable_flushNumberOfYields(1);
-    assertLog(['Async', 'A', 'B', 'C']);
 
+    if (gate('enableRetryLaneExpiration')) {
+      // Even with an interruption, the expired retry is included.
+      assertLog(['Async', 'A', 'B', 'C']);
+
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="2" />
+          <span prop="Async" />
+          <span prop="A" />
+          <span prop="B" />
+          <span prop="C" />
+        </>,
+      );
+    } else {
+      // Since there's an interruption, the expired content is pushed out.
+      assertLog(['Async']);
+
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="2" />
+          <span prop="Loading..." />
+        </>,
+      );
+
+      // Now flush without interrupting
+      await waitForAll(['A', 'B', 'C']);
+
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="2" />
+          <span prop="Async" />
+          <span prop="A" />
+          <span prop="B" />
+          <span prop="C" />
+        </>,
+      );
+    }
+  });
+
+  // @gate enableLegacyCache
+  it('recurring transition updates in siblings should not block expensive content in suspense boundary from committing', async () => {
+    let setText;
+    function UpdatingText() {
+      const [text, _setText] = React.useState('1');
+      setText = _setText;
+      return <Text text={text} />;
+    }
+
+    function ExpensiveText({text, ms}) {
+      Scheduler.log(text);
+      Scheduler.unstable_advanceTime(ms);
+      return <span prop={text} />;
+    }
+
+    function App() {
+      return (
+        <>
+          <UpdatingText />
+          <Suspense fallback={<Text text="Loading..." />}>
+            <AsyncText text="Async" />
+            <ExpensiveText text="A" ms={1000} />
+            <ExpensiveText text="B" ms={3999} />
+            <ExpensiveText text="C" ms={100000} />
+          </Suspense>
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    root.render(<App />);
+    await waitForAll([
+      '1',
+      'Suspend! [Async]',
+      'Loading...',
+
+      ...(gate('enableSiblingPrerendering')
+        ? ['Suspend! [Async]', 'A', 'B', 'C']
+        : []),
+    ]);
     expect(root).toMatchRenderedOutput(
       <>
-        <span prop="2" />
-        <span prop="Async" />
-        <span prop="A" />
-        <span prop="B" />
-        <span prop="C" />
+        <span prop="1" />
+        <span prop="Loading..." />
       </>,
     );
+
+    await resolveText('Async');
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span prop="1" />
+        <span prop="Loading..." />
+      </>,
+    );
+
+    await waitFor(['Async', 'A', 'B']);
+    ReactNoop.expire(100000);
+    await advanceTimers(100000);
+    startTransition(() => {
+      setText('2');
+    });
+    await waitForPaint(['2']);
+
+    await waitForMicrotasks();
+    Scheduler.unstable_flushNumberOfYields(1);
+
+    if (gate('enableRetryLaneExpiration')) {
+      // Even with an interruption, the expired retry is included.
+      assertLog(['Async', 'A', 'B', 'C']);
+
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="2" />
+          <span prop="Async" />
+          <span prop="A" />
+          <span prop="B" />
+          <span prop="C" />
+        </>,
+      );
+    } else {
+      // Since there's an interruption, the expired content is pushed out.
+      assertLog(['Async', 'A', 'B', 'C']);
+
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="2" />
+          <span prop="Loading..." />
+        </>,
+      );
+
+      // Now flush without interrupting
+      await waitForAll(['A', 'B', 'C']);
+
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="2" />
+          <span prop="Async" />
+          <span prop="A" />
+          <span prop="B" />
+          <span prop="C" />
+        </>,
+      );
+    }
   });
 
   it('can rerender after resolving a promise', async () => {
