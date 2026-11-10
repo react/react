@@ -1,9 +1,9 @@
 // @validateRefAccessDuringRender
-import {useRef, useState} from "react";
+import {useRef, useState} from 'react';
 function Component() {
   const inputRef = useRef(null);
   const [files] = useState([]);
-  const ctx = { inputRef, files };
+  const ctx = {inputRef, files};
   return (
     <div>
       <input ref={ctx.inputRef} />

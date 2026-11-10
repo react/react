@@ -115,19 +115,12 @@ class Env {
     this.#temporaries.set(place.identifier.id, value);
   }
 
-  lookupProperty(
-    object: Place,
-    property: PropertyLiteral,
-  ): Place | undefined {
+  lookupProperty(object: Place, property: PropertyLiteral): Place | undefined {
     const objectId = this.lookup(object).identifier.id;
     return this.#propertyTemporaries.get(`${objectId}.${property}`);
   }
 
-  defineProperty(
-    object: Place,
-    property: PropertyLiteral,
-    value: Place,
-  ): void {
+  defineProperty(object: Place, property: PropertyLiteral, value: Place): void {
     const objectId = this.lookup(object).identifier.id;
     this.#propertyTemporaries.set(`${objectId}.${property}`, value);
   }
@@ -267,7 +260,11 @@ function tyEqual(a: RefAccessType, b: RefAccessType): boolean {
       const valueEqual =
         a.value === b.value ||
         (a.value !== null && b.value !== null && tyEqual(a.value, b.value));
-      return fnTypesEqual && valueEqual && propertiesEqual(a.properties, b.properties);
+      return (
+        fnTypesEqual &&
+        valueEqual &&
+        propertiesEqual(a.properties, b.properties)
+      );
     }
   }
 }
