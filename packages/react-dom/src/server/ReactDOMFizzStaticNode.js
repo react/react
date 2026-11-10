@@ -127,6 +127,15 @@ function prerenderToNodeStream(
         read() {
           startFlowing(request, writable);
         },
+        destroy(error, callback) {
+          // Destroying the prelude before it is fully read cancels the
+          // request, like cancelling a Web prelude. Once the prelude has been
+          // fully read the request is closed and abort() is a no-op.
+          const reason = error == null ? undefined : error;
+          stopFlowing(request);
+          abort(request, reason);
+          callback(reason);
+        },
       });
       const writable = createFakeWritableFromReadable(readable);
 
@@ -271,6 +280,15 @@ function resumeAndPrerenderToNodeStream(
       const readable: Readable = new Readable({
         read() {
           startFlowing(request, writable);
+        },
+        destroy(error, callback) {
+          // Destroying the prelude before it is fully read cancels the
+          // request, like cancelling a Web prelude. Once the prelude has been
+          // fully read the request is closed and abort() is a no-op.
+          const reason = error == null ? undefined : error;
+          stopFlowing(request);
+          abort(request, reason);
+          callback(reason);
         },
       });
       const writable = createFakeWritableFromReadable(readable);

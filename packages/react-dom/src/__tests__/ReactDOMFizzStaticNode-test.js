@@ -623,4 +623,107 @@ describe('ReactDOMFizzStaticNode', () => {
       }
     });
   });
+
+  // https://github.com/facebook/react/issues/38177
+  describe('abort signal lifetime', () => {
+    function abortListenerCount(signal) {
+      return require('events').getEventListeners(signal, 'abort').length;
+    }
+
+    it('detaches the listener when the prelude is fully read', async () => {
+      const controller = new AbortController();
+      const result = await ReactDOMFizzStatic.prerenderToNodeStream(
+        <div>hello world</div>,
+        {signal: controller.signal},
+      );
+      expect(abortListenerCount(controller.signal)).toBe(1);
+
+      expect(await readContent(result.prelude)).toContain('hello world');
+      expect(abortListenerCount(controller.signal)).toBe(0);
+    });
+
+    it('detaches the listener when an unread prelude is destroyed', async () => {
+      const errors = [];
+      const controller = new AbortController();
+      const result = await ReactDOMFizzStatic.prerenderToNodeStream(
+        <div>hello world</div>,
+        {
+          signal: controller.signal,
+          onError(x) {
+            errors.push(x);
+          },
+        },
+      );
+      expect(abortListenerCount(controller.signal)).toBe(1);
+
+      result.prelude.destroy();
+      expect(abortListenerCount(controller.signal)).toBe(0);
+      expect(result.prelude.destroyed).toBe(true);
+      expect(errors).toEqual([]);
+    });
+
+    it('detaches the listener when an unread prelude is destroyed with an error', async () => {
+      const controller = new AbortController();
+      const result = await ReactDOMFizzStatic.prerenderToNodeStream(
+        <div>hello world</div>,
+        {signal: controller.signal},
+      );
+      const streamErrors = [];
+      result.prelude.on('error', error => {
+        streamErrors.push(error.message);
+      });
+
+      result.prelude.destroy(new Error('The consumer went away.'));
+      expect(abortListenerCount(controller.signal)).toBe(0);
+      await new Promise(resolve => setImmediate(resolve));
+      expect(streamErrors).toEqual(['The consumer went away.']);
+    });
+
+    it('detaches the listener when an unread resumed prelude is destroyed', async () => {
+      let isResolved = false;
+      const promise = new Promise(() => {});
+      function Wait() {
+        if (!isResolved) {
+          throw promise;
+        }
+        return 'Hi';
+      }
+      function App() {
+        return (
+          <div>
+            <Suspense fallback="Loading">
+              <Wait />
+            </Suspense>
+          </div>
+        );
+      }
+
+      const prerenderController = new AbortController();
+      const pendingPrerender = ReactDOMFizzStatic.prerenderToNodeStream(
+        <App />,
+        {
+          signal: prerenderController.signal,
+          onError() {},
+        },
+      );
+      await jest.runAllTimers();
+      prerenderController.abort();
+      await jest.runAllTimers();
+      const prerendered = await pendingPrerender;
+      await readContent(prerendered.prelude);
+      expect(prerendered.postponed).not.toBe(null);
+
+      isResolved = true;
+      const controller = new AbortController();
+      const result = await ReactDOMFizzStatic.resumeAndPrerenderToNodeStream(
+        <App />,
+        JSON.parse(JSON.stringify(prerendered.postponed)),
+        {signal: controller.signal},
+      );
+      expect(abortListenerCount(controller.signal)).toBe(1);
+
+      result.prelude.destroy();
+      expect(abortListenerCount(controller.signal)).toBe(0);
+    });
+  });
 });
