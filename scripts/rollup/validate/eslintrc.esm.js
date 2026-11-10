@@ -34,6 +34,7 @@ module.exports = {
     globalThis: 'readonly',
 
     FinalizationRegistry: 'readonly',
+    Temporal: 'readonly',
 
     ScrollTimeline: 'readonly',
     navigation: 'readonly',

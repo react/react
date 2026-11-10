@@ -17,6 +17,7 @@ import type {
 } from 'shared/ReactTypes';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {TemporaryReferenceSet} from './ReactFlightTemporaryReferences';
+import type {TemporalValue} from 'shared/ReactFlightTemporal';
 
 import {
   REACT_ELEMENT_TYPE,
@@ -37,7 +38,15 @@ import {writeTemporaryReference} from './ReactFlightTemporaryReferences';
 import isArray from 'shared/isArray';
 import getPrototypeOf from 'shared/getPrototypeOf';
 
-import {enableFlightObjectReferences} from 'shared/ReactFeatureFlags';
+import {
+  enableFlightObjectReferences,
+  enableFlightTemporal,
+} from 'shared/ReactFeatureFlags';
+
+import {
+  getTemporalPrefix,
+  isPossiblyTemporalJSON,
+} from 'shared/ReactFlightTemporal';
 
 const ObjectPrototype = Object.prototype;
 
@@ -107,6 +116,7 @@ export type ReactServerValue =
   | Set<ReactServerValue>
   | FormData
   | Date
+  | TemporalValue
   | ReactServerObject
   | Promise<ReactServerValue>; // Thenable<ReactServerValue>
 
@@ -460,7 +470,8 @@ export function processReply(
       if (
         typeof originalValue === 'object' &&
         originalValue !== value &&
-        !(originalValue instanceof Date)
+        !(originalValue instanceof Date) &&
+        !(enableFlightTemporal && getTemporalPrefix(originalValue) !== '')
       ) {
         if (objectName(originalValue) !== 'Object') {
           console.error(
@@ -897,6 +908,17 @@ export function processReply(
         const originalValue = parent[key];
         if (originalValue instanceof Date) {
           return serializeDateFromDateJSON(value);
+        }
+      }
+      if (enableFlightTemporal && isPossiblyTemporalJSON(value)) {
+        // Possibly a Temporal object, whose toJSON has already been called.
+        // $FlowFixMe[incompatible-use]
+        const originalValue = parent[key];
+        if (typeof originalValue === 'object' && originalValue !== null) {
+          const temporalPrefix = getTemporalPrefix(originalValue);
+          if (temporalPrefix !== '') {
+            return temporalPrefix + value;
+          }
         }
       }
 

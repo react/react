@@ -17,6 +17,9 @@ if (typeof File === 'undefined' || typeof FormData === 'undefined') {
   global.File = require('undici').File;
   global.FormData = require('undici').FormData;
 }
+if (typeof Temporal === 'undefined') {
+  global.Temporal = require('temporal-polyfill').Temporal;
+}
 
 function normalizeCodeLocInfo(str) {
   return (
@@ -648,6 +651,241 @@ describe('ReactFlight', () => {
     });
 
     expect(readValue).toEqual(date);
+  });
+
+  // @gate enableFlightTemporal
+  it('can transport Temporal objects', async () => {
+    function ComponentClient({values}) {
+      return values
+        .map(
+          value =>
+            Object.prototype.toString.call(value) + ' ' + value.toString(),
+        )
+        .join('\n');
+    }
+    const Component = clientReference(ComponentClient);
+
+    const values = [
+      Temporal.Instant.from('2009-02-13T23:31:30.123456789Z'),
+      Temporal.ZonedDateTime.from(
+        '2009-02-14T00:31:30.123456789+01:00[Europe/Berlin]',
+      ),
+      Temporal.PlainDate.from('2009-02-13'),
+      Temporal.PlainTime.from('23:31:30.123456789'),
+      Temporal.PlainDateTime.from('2009-02-13T23:31:30.123456789'),
+      Temporal.PlainYearMonth.from('2009-02'),
+      Temporal.PlainMonthDay.from('02-13'),
+      Temporal.Duration.from('P1Y2M3W4DT5H6M7.123456789S'),
+    ];
+
+    const transport = ReactNoopFlightServer.render(
+      <Component values={values} />,
+    );
+
+    await act(async () => {
+      ReactNoop.render(await ReactNoopFlightClient.read(transport));
+    });
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      [
+        '[object Temporal.Instant] 2009-02-13T23:31:30.123456789Z',
+        '[object Temporal.ZonedDateTime] 2009-02-14T00:31:30.123456789+01:00[Europe/Berlin]',
+        '[object Temporal.PlainDate] 2009-02-13',
+        '[object Temporal.PlainTime] 23:31:30.123456789',
+        '[object Temporal.PlainDateTime] 2009-02-13T23:31:30.123456789',
+        '[object Temporal.PlainYearMonth] 2009-02',
+        '[object Temporal.PlainMonthDay] 02-13',
+        '[object Temporal.Duration] P1Y2M3W4DT5H6M7.123456789S',
+      ].join('\n'),
+    );
+  });
+
+  // @gate enableFlightTemporal
+  it('can transport Temporal objects in a non-ISO calendar', async () => {
+    const values = {
+      date: Temporal.PlainDate.from('2009-02-13[u-ca=hebrew]'),
+      // In a non-ISO calendar these are formatted as a full date which is why
+      // we can't infer the type from the string.
+      yearMonth: Temporal.PlainYearMonth.from({
+        year: 5769,
+        monthCode: 'M05',
+        calendar: 'hebrew',
+      }),
+      monthDay: Temporal.PlainMonthDay.from({
+        monthCode: 'M05',
+        day: 19,
+        calendar: 'hebrew',
+      }),
+    };
+
+    const transport = ReactNoopFlightServer.render(values);
+
+    let readValue;
+    await act(async () => {
+      readValue = await ReactNoopFlightClient.read(transport);
+    });
+
+    expect(readValue.date).toBeInstanceOf(Temporal.PlainDate);
+    expect(readValue.date.equals(values.date)).toBe(true);
+    expect(readValue.yearMonth).toBeInstanceOf(Temporal.PlainYearMonth);
+    expect(readValue.yearMonth.equals(values.yearMonth)).toBe(true);
+    expect(readValue.monthDay).toBeInstanceOf(Temporal.PlainMonthDay);
+    expect(readValue.monthDay.equals(values.monthDay)).toBe(true);
+  });
+
+  // @gate enableFlightTemporal
+  it('can transport a Temporal object as a top-level value', async () => {
+    const instant = Temporal.Instant.from('2009-02-13T23:31:30.123456789Z');
+    const transport = ReactNoopFlightServer.render(instant);
+
+    let readValue;
+    await act(async () => {
+      readValue = await ReactNoopFlightClient.read(transport);
+    });
+
+    expect(readValue).toBeInstanceOf(Temporal.Instant);
+    expect(readValue.equals(instant)).toBe(true);
+  });
+
+  // @gate enableFlightTemporal
+  it('can transport a Temporal object resolved by a Promise', async () => {
+    const instant = Temporal.Instant.from('2009-02-13T23:31:30.123456789Z');
+    const transport = ReactNoopFlightServer.render({
+      promise: Promise.resolve(instant),
+    });
+
+    let readValue;
+    await act(async () => {
+      readValue = await (await ReactNoopFlightClient.read(transport)).promise;
+    });
+
+    expect(readValue).toBeInstanceOf(Temporal.Instant);
+    expect(readValue.equals(instant)).toBe(true);
+  });
+
+  // @gate enableFlightTemporal
+  it('can transport Temporal objects from a polyfill that is not installed globally', async () => {
+    // Modules were reset so this is a different copy than the global one, if
+    // the global one is a polyfill at all.
+    const TemporalPolyfill = require('temporal-polyfill').Temporal;
+    expect(TemporalPolyfill).not.toBe(Temporal);
+
+    const transport = ReactNoopFlightServer.render({
+      instant: TemporalPolyfill.Instant.from('2009-02-13T23:31:30.123456789Z'),
+      duration: TemporalPolyfill.Duration.from('PT36H'),
+    });
+
+    let readValue;
+    await act(async () => {
+      readValue = await ReactNoopFlightClient.read(transport);
+    });
+
+    // They're revived using the global Temporal.
+    expect(readValue.instant).not.toBeInstanceOf(TemporalPolyfill.Instant);
+    expect(readValue.instant).toBeInstanceOf(Temporal.Instant);
+    expect(readValue.instant.toString()).toBe('2009-02-13T23:31:30.123456789Z');
+    expect(readValue.duration).not.toBeInstanceOf(TemporalPolyfill.Duration);
+    expect(readValue.duration).toBeInstanceOf(Temporal.Duration);
+    expect(readValue.duration.toString()).toBe('PT36H');
+  });
+
+  it('does not treat strings that look like Temporal objects as Temporal objects', async () => {
+    const values = {
+      instant: '2009-02-13T23:31:30.123456789Z',
+      date: '2009-02-13',
+      duration: 'PT36H',
+      escaped: '$ti2009-02-13T23:31:30.123456789Z',
+    };
+
+    const transport = ReactNoopFlightServer.render(values);
+
+    let readValue;
+    await act(async () => {
+      readValue = await ReactNoopFlightClient.read(transport);
+    });
+
+    expect(readValue).toEqual(values);
+  });
+
+  // @gate enableFlightTemporal
+  it('preserves the exact time of a Temporal.ZonedDateTime if the time zone rules differ', async () => {
+    // The offset doesn't match the rules of the time zone, which is what the
+    // client sees if its time zone database differs from the server's.
+    const transport = [
+      new TextEncoder().encode(
+        '0:"$tz2009-02-14T01:31:30+02:00[Europe/Berlin]"\n',
+      ),
+    ];
+
+    let readValue;
+    await act(async () => {
+      readValue = await ReactNoopFlightClient.read(transport);
+    });
+
+    expect(readValue).toBeInstanceOf(Temporal.ZonedDateTime);
+    expect(readValue.toString()).toBe(
+      '2009-02-14T00:31:30+01:00[Europe/Berlin]',
+    );
+    expect(readValue.toInstant().toString()).toBe('2009-02-13T23:31:30Z');
+  });
+
+  // @gate enableFlightTemporal
+  it('errors when a Temporal object is received but Temporal is not available', async () => {
+    const transport = ReactNoopFlightServer.render(
+      Temporal.Instant.from('2009-02-13T23:31:30.123456789Z'),
+    );
+
+    const originalTemporal = global.Temporal;
+    delete global.Temporal;
+    let error;
+    try {
+      await act(async () => {
+        try {
+          await ReactNoopFlightClient.read(transport);
+        } catch (x) {
+          error = x;
+        }
+      });
+    } finally {
+      global.Temporal = originalTemporal;
+    }
+
+    expect(error.message).toBe(
+      'A Temporal object was received but Temporal is not available in this ' +
+        'environment. Make sure that you load a polyfill that defines the ' +
+        'global Temporal.',
+    );
+  });
+
+  // @gate !enableFlightTemporal
+  it('warns and serializes Temporal objects as strings if the flag is off', async () => {
+    function ComponentClient({prop}) {
+      return `prop: ${prop} (${typeof prop})`;
+    }
+    const Component = clientReference(ComponentClient);
+
+    const transport = ReactNoopFlightServer.render(
+      <Component prop={Temporal.PlainDate.from('2009-02-13')} />,
+    );
+    assertConsoleErrorDev([
+      'Only plain objects can be passed to Client Components from Server Components. ' +
+        'Temporal.PlainDate objects are not supported.\n' +
+        '  <... prop={Temporal.PlainDate}>\n' +
+        '            ^^^^^^^^^^^^^^^^^^^^',
+    ]);
+
+    await act(async () => {
+      ReactNoop.render(await ReactNoopFlightClient.read(transport));
+    });
+    assertConsoleErrorDev([
+      'Only plain objects can be passed to Client Components from Server Components. ' +
+        'Temporal.PlainDate objects are not supported.\n' +
+        '  <... prop={Temporal.PlainDate}>\n' +
+        '            ^^^^^^^^^^^^^^^^^^^^\n' +
+        '    at  (<anonymous>)',
+    ]);
+
+    expect(ReactNoop).toMatchRenderedOutput('prop: 2009-02-13 (string)');
   });
 
   it('can transport Error objects as values', async () => {

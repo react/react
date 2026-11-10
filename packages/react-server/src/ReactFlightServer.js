@@ -17,6 +17,7 @@ import {
   enableComponentPerformanceTrack,
   enableFlightWeakThenables,
   enableFlightObjectReferences,
+  enableFlightTemporal,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -70,6 +71,7 @@ import type {
 } from 'shared/ReactTypes';
 import type {ReactElement} from 'shared/ReactElementType';
 import type {LazyComponent} from 'react/src/ReactLazy';
+import type {TemporalValue} from 'shared/ReactFlightTemporal';
 import type {
   AsyncSequence,
   IONode,
@@ -148,6 +150,8 @@ import {
   jsxChildrenParents,
   objectName,
 } from 'shared/ReactSerializationErrors';
+
+import {getTemporalPrefix} from 'shared/ReactFlightTemporal';
 
 import ReactSharedInternals from './ReactSharedInternalsServer';
 import isArray from 'shared/isArray';
@@ -532,6 +536,7 @@ export type ReactClientValue =
   | $ArrayBufferView
   | ArrayBuffer
   | Date
+  | TemporalValue
   | ReactClientObject
   | Promise<ReactClientValue>; // Thenable<ReactClientValue>
 
@@ -2949,6 +2954,16 @@ function resolveModel(
   ) {
     // $FlowFixMe[incompatible-use]
     jsonValue = value.toJSON(parentPropertyName);
+    if (enableFlightTemporal && typeof jsonValue === 'string') {
+      // Unlike a Date, we can't cheaply tell from the string whether this was
+      // a Temporal object, so we check the original value here instead of
+      // when we serialize the string.
+      const temporalPrefix = getTemporalPrefix(value);
+      if (temporalPrefix !== '') {
+        serializedSize += jsonValue.length;
+        return temporalPrefix + jsonValue;
+      }
+    }
   }
 
   if (__DEV__) {
@@ -4208,6 +4223,16 @@ function renderModelDestructive(
       proto !== ObjectPrototype &&
       (proto === null || getPrototypeOf(proto) !== null)
     ) {
+      if (enableFlightTemporal) {
+        // Like Date, most of the time Temporal objects will already have been
+        // serialized before we get here but when rendering one as a top level
+        // it can end up being an instance here. We check this late so that
+        // plain objects don't have to pay for it.
+        const temporalPrefix = getTemporalPrefix(value);
+        if (temporalPrefix !== '') {
+          return temporalPrefix + (value as any).toJSON();
+        }
+      }
       throw new Error(
         'Only plain objects, and a few built-ins, can be passed to Client Components ' +
           'from Server Components. Classes or null prototypes are not supported.' +

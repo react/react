@@ -108,6 +108,7 @@
     "shelljs": "^0.8.5",
     "signedsource": "^2.0.0",
     "targz": "^1.0.1",
+    "temporal-polyfill": "^0.3.2",
     "through2": "^3.0.1",
     "tmp": "^0.1.0",
     "to-fast-properties": "^2.0.0",

@@ -90,6 +90,11 @@ export const enableFlightWeakThenables = __EXPERIMENTAL__;
 // where it resolves via the manifest.
 export const enableFlightObjectReferences = __EXPERIMENTAL__;
 
+// Support passing Temporal objects through Flight in both directions. They're
+// revived using the global Temporal, so environments that don't implement it
+// natively need a polyfill installed on the global to receive them.
+export const enableFlightTemporal = __EXPERIMENTAL__;
+
 export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;

@@ -624,6 +624,7 @@ module.exports = {
     TimeoutID: 'readonly',
     WheelEventHandler: 'readonly',
     FinalizationRegistry: 'readonly',
+    Temporal: 'readonly',
     Exclude: 'readonly',
     Omit: 'readonly',
     Pick: 'readonly',

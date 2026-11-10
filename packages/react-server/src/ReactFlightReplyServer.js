@@ -40,7 +40,11 @@ import {
   registerTemporaryReference,
 } from './ReactFlightServerTemporaryReferences';
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
-import {enableFlightObjectReferences} from 'shared/ReactFeatureFlags';
+import {
+  enableFlightObjectReferences,
+  enableFlightTemporal,
+} from 'shared/ReactFeatureFlags';
+import {parseTemporal} from 'shared/ReactFlightTemporal';
 
 import hasOwnProperty from 'shared/hasOwnProperty';
 import getPrototypeOf from 'shared/getPrototypeOf';
@@ -1818,6 +1822,25 @@ function parseModelString(
         }
         return BigInt(bigIntStr);
       }
+      case 't': {
+        if (enableFlightTemporal) {
+          // Temporal
+          if (value.length > MAX_TEMPORAL_LENGTH) {
+            throw new Error(
+              'Temporal string is too long. Received ' +
+                value.length +
+                ' characters but the limit is ' +
+                MAX_TEMPORAL_LENGTH +
+                '.',
+            );
+          }
+          if (arrayRoot !== null) {
+            bumpArrayCount(arrayRoot, value.length, response);
+          }
+          return parseTemporal(value);
+        }
+        return undefined;
+      }
       case 'A':
         return parseTypedArray(
           response,
@@ -1994,6 +2017,12 @@ const DEFAULT_MAX_ARRAY_NESTING = 1000000;
 // ~154 digits) and aligns with the implicit limit from the Number approximation
 // checks in fulfillReference and getOutlinedModel.
 const MAX_BIGINT_DIGITS = 300;
+
+// Limit the length of the strings we pass to Temporal to prevent CPU exhaustion
+// from parsing very long values, since we might be using a polyfill. Even a
+// ZonedDateTime with an extended year, nanosecond precision, the longest time
+// zone identifier and a calendar annotation is much shorter than this.
+const MAX_TEMPORAL_LENGTH = 300;
 
 export const MAX_BOUND_ARGS = 1000;
 
