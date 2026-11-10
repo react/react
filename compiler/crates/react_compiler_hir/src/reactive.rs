@@ -28,6 +28,7 @@ use crate::{
 pub struct ReactiveFunction {
     pub loc: Option<SourceLocation>,
     pub id: Option<String>,
+    pub self_binding: Option<Place>,
     pub name_hint: Option<String>,
     pub params: Vec<ParamPattern>,
     pub generator: bool,
