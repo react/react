@@ -29,6 +29,9 @@ export function alphaSortEntries(
     }
     return +a < +b ? -1 : 1;
   }
+  if (String(+b) === b) {
+    return 1;
+  }
   return a < b ? -1 : 1;
 }
 
