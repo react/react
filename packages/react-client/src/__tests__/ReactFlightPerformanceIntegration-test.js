@@ -98,6 +98,7 @@ describe.each(['webpack', 'turbopack'])(
       const entries = measure.mock.calls.map(([name, options]) => [
         name,
         options.detail.react,
+        options.detail.devtools.properties,
       ]);
       expect(entries).toHaveLength(4);
       ['first', 'second'].forEach(requestId => {
@@ -111,6 +112,7 @@ describe.each(['webpack', 'turbopack'])(
               outcome: 'completed',
               environment: 'Server',
             },
+            [['label', JSON.stringify(requestId)]],
           ]);
         });
       });
