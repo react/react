@@ -3401,6 +3401,25 @@ function lowerLogicalAssignment(
   const exprLoc = getSourceLocation(expr.node);
   const leftLoc = getSourceLocation(left.node);
 
+  if (
+    left.isIdentifier() &&
+    left.scope.getBinding(left.node.name)?.kind === 'const'
+  ) {
+    /*
+     * Lowering the conditional store as a reassignment would lose the const
+     * check when taken, or report a false Syntax error when short-circuited.
+     */
+    builder.recordError(
+      new CompilerErrorDetail({
+        reason: 'Logical assignment to a `const` variable is not supported',
+        category: ErrorCategory.Todo,
+        loc: left.node.loc ?? null,
+        suggestions: null,
+      }),
+    );
+    return {kind: 'UnsupportedNode', node: expr.node, loc: exprLoc};
+  }
+
   if (!left.isIdentifier() && !left.isMemberExpression()) {
     builder.recordError(
       new CompilerErrorDetail({

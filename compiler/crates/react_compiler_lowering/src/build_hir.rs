@@ -540,6 +540,31 @@ fn lower_logical_assignment(
     use react_compiler_ast::patterns::PatternLike;
 
     let left_loc = pattern_like_loc(&expr.left);
+    if let PatternLike::Identifier(ident) = expr.left.as_ref() {
+        if builder
+            .scope_info()
+            .resolve_reference_for_node(ident.base.node_id)
+            .is_some_and(|binding| matches!(binding.kind, AstBindingKind::Const))
+        {
+            // Keep the runtime const check, including when the store never runs.
+            builder.record_error(CompilerErrorDetail {
+                reason: "Logical assignment to a `const` variable is not supported".to_string(),
+                category: ErrorCategory::Todo,
+                loc: left_loc,
+                description: None,
+                suggestions: None,
+            })?;
+            return Ok(InstructionValue::UnsupportedNode {
+                node_type: Some("AssignmentExpression".to_string()),
+                original_node: serialize_expression(
+                    &react_compiler_ast::expressions::Expression::AssignmentExpression(
+                        expr.clone(),
+                    ),
+                ),
+                loc,
+            });
+        }
+    }
     if !matches!(
         &*expr.left,
         PatternLike::Identifier(_) | PatternLike::MemberExpression(_)
