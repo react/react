@@ -49,7 +49,7 @@ mod marker {
 /// be confused with a real marker for an unpaired surrogate. Mirrors
 /// `escapeLiteralMarkers` in bridge.ts; `JsString::from_marker_string`
 /// reverses this.
-fn escape_literal_markers(s: &str) -> String {
+pub fn escape_literal_markers(s: &str) -> String {
     if !s.contains(marker::PREFIX_STR) {
         return s.to_string();
     }
