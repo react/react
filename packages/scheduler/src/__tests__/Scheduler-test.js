@@ -352,6 +352,31 @@ describe('SchedulerBrowser', () => {
     runtime.assertLog(['Message Event', 'Task']);
   });
 
+  it('re-entrant message event preserves a task continuation', () => {
+    // Companion to the no-op case above: a task that returns a continuation.
+    // Without the isPerformingWork guard, the re-entrant work loop clears
+    // currentTask, so when the outer loop tries to store the continuation the
+    // base implementation throws "Cannot set properties of null (setting
+    // 'callback')". The guard keeps currentTask intact and the continuation
+    // runs on the next message event.
+    const performWorkUntilDeadline = new global.MessageChannel().port1.onmessage;
+
+    scheduleCallback(NormalPriority, () => {
+      runtime.log('Task');
+      performWorkUntilDeadline();
+      return () => {
+        runtime.log('Continuation');
+      };
+    });
+
+    runtime.assertLog(['Post Message']);
+    runtime.fireMessageEvent();
+    runtime.assertLog(['Message Event', 'Task', 'Post Message']);
+
+    runtime.fireMessageEvent();
+    runtime.assertLog(['Message Event', 'Continuation']);
+  });
+
   it('yielding continues in a new task regardless of how much time is remaining', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('Original Task');
