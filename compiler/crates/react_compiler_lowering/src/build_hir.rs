@@ -599,34 +599,22 @@ fn lower_logical_assignment(
         PatternLike::MemberExpression(member) => {
             let member_loc = convert_base_loc(&member.base);
             let object = lower_expression_to_temporary(builder, &member.object)?;
-            let target_object = if matches!(
-                &*member.object,
-                react_compiler_ast::expressions::Expression::Identifier(_)
-            ) {
-                object
-            } else {
-                copy_to_promoted_temporary(builder, object)?
-            };
-            // Capture the object before lowering the key, so no pending key
-            // expression has to be promoted across the capture assignment.
+            let target_object = copy_to_promoted_temporary(builder, object)?;
+            // Fix the base value before evaluating a computed key: either the
+            // key expression or a getter can reassign the original binding.
             let lowered =
                 lower_member_expression_impl(builder, member, Some(target_object.clone()))?;
             let mut target_property = lowered.property;
             let mut load_value = lowered.value;
             if !matches!(load_value, InstructionValue::UnsupportedNode { .. }) {
                 if let MemberProperty::Computed(prop_place) = &target_property {
-                    if !matches!(
-                        &*member.property,
-                        react_compiler_ast::expressions::Expression::Identifier(_)
-                    ) {
-                        let promoted = copy_to_promoted_temporary(builder, prop_place.clone())?;
-                        target_property = MemberProperty::Computed(promoted.clone());
-                        load_value = InstructionValue::ComputedLoad {
-                            object: target_object.clone(),
-                            property: promoted,
-                            loc: member_loc.clone(),
-                        };
-                    }
+                    let promoted = copy_to_promoted_temporary(builder, prop_place.clone())?;
+                    target_property = MemberProperty::Computed(promoted.clone());
+                    load_value = InstructionValue::ComputedLoad {
+                        object: target_object.clone(),
+                        property: promoted,
+                        loc: member_loc,
+                    };
                 }
             }
             let previous_value = lower_value_to_temporary(builder, load_value)?;

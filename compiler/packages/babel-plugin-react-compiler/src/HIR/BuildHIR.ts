@@ -3437,12 +3437,10 @@ function lowerLogicalAssignment(
     assignmentTarget = {kind: 'Identifier', path: left};
   } else {
     const object = lowerExpressionToTemporary(builder, left.get('object'));
-    const targetObject = left.get('object').isIdentifier()
-      ? object
-      : copyToPromotedTemporary(builder, object);
+    const targetObject = copyToPromotedTemporary(builder, object);
     /*
-     * Capture the object before lowering the key, so no pending key
-     * expression has to be promoted across the capture assignment.
+     * Fix the base value before evaluating a computed key: either the
+     * key expression or a getter can reassign the original binding.
      */
     const {property, value} = lowerMemberExpression(
       builder,
@@ -3454,8 +3452,7 @@ function lowerLogicalAssignment(
     if (
       value.kind !== 'UnsupportedNode' &&
       typeof property !== 'string' &&
-      typeof property !== 'number' &&
-      !left.get('property').isIdentifier()
+      typeof property !== 'number'
     ) {
       targetProperty = copyToPromotedTemporary(builder, property);
       loadValue = {
