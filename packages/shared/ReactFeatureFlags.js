@@ -106,6 +106,10 @@ export const enableSuspenseyImages: boolean = false;
 
 export const enableFizzBlockingRender = __EXPERIMENTAL__; // rel="expect"
 
+// Limits how deep Fizz renders in one task so that a deep tree continues from
+// an empty stack instead of running out of it.
+export const enableFizzRenderDepthLimit: boolean = true;
+
 export const enableSrcObject = __EXPERIMENTAL__;
 
 export const enableHydrationChangeEvent = __EXPERIMENTAL__;

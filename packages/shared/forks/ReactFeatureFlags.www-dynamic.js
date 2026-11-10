@@ -14,6 +14,7 @@
 // with the __VARIANT__ set to `true`, and once set to `false`.
 
 export const alwaysThrottleRetries: boolean = __VARIANT__;
+export const enableFizzRenderDepthLimit: boolean = __VARIANT__;
 export const disableLegacyContextForFunctionComponents: boolean = __VARIANT__;
 export const disableSchedulerTimeoutInWorkLoop: boolean = __VARIANT__;
 export const enableNoCloningMemoCache: boolean = __VARIANT__;
