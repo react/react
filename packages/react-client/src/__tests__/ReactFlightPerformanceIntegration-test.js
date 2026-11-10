@@ -83,10 +83,10 @@ describe.each(['webpack', 'turbopack'])(
       const models = await serverAct(() =>
         Promise.all([
           client.createFromReadableStream(streams[0], {
-            unstable_performanceId: 'first',
+            unstable_requestId: 'first',
           }),
           client.createFromFetch(Promise.resolve({body: streams[1]}), {
-            unstable_performanceId: 'second',
+            unstable_requestId: 'second',
           }),
         ]),
       );
@@ -100,13 +100,13 @@ describe.each(['webpack', 'turbopack'])(
         options.detail.react,
       ]);
       expect(entries).toHaveLength(4);
-      ['first', 'second'].forEach(performanceId => {
+      ['first', 'second'].forEach(requestId => {
         ['Page', 'Child'].forEach(name => {
           expect(entries).toContainEqual([
             '\u200b' + name,
             {
               version: 1,
-              performanceId,
+              requestId,
               kind: 'component',
               outcome: 'completed',
               environment: 'Server',
