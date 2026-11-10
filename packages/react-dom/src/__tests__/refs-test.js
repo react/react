@@ -488,6 +488,30 @@ describe('useImerativeHandle refs', () => {
     return null;
   });
 
+  it('should work with null-prototype object refs', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    const handleRef = Object.create(null);
+    handleRef.current = null;
+    const divRef = Object.create(null);
+    divRef.current = null;
+
+    await act(async () => {
+      root.render(
+        <div ref={divRef}>
+          <ImperativeHandleComponent name="Alice" ref={handleRef} />
+        </div>,
+      );
+    });
+    expect(handleRef.current.greet()).toBe('Hello Alice');
+    expect(divRef.current).toBe(container.firstChild);
+    await act(() => {
+      root.render(null);
+    });
+    expect(handleRef.current).toBe(null);
+    expect(divRef.current).toBe(null);
+  });
+
   it('should work with object style refs', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
