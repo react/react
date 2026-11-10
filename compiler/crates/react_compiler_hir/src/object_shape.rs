@@ -72,25 +72,31 @@ pub enum HookKind {
     Custom,
 }
 
+impl HookKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HookKind::UseContext => "useContext",
+            HookKind::UseState => "useState",
+            HookKind::UseActionState => "useActionState",
+            HookKind::UseReducer => "useReducer",
+            HookKind::UseRef => "useRef",
+            HookKind::UseEffect => "useEffect",
+            HookKind::UseLayoutEffect => "useLayoutEffect",
+            HookKind::UseInsertionEffect => "useInsertionEffect",
+            HookKind::UseMemo => "useMemo",
+            HookKind::UseCallback => "useCallback",
+            HookKind::UseTransition => "useTransition",
+            HookKind::UseImperativeHandle => "useImperativeHandle",
+            HookKind::UseEffectEvent => "useEffectEvent",
+            HookKind::UseOptimistic => "useOptimistic",
+            HookKind::Custom => "Custom",
+        }
+    }
+}
+
 impl std::fmt::Display for HookKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HookKind::UseContext => write!(f, "useContext"),
-            HookKind::UseState => write!(f, "useState"),
-            HookKind::UseActionState => write!(f, "useActionState"),
-            HookKind::UseReducer => write!(f, "useReducer"),
-            HookKind::UseRef => write!(f, "useRef"),
-            HookKind::UseEffect => write!(f, "useEffect"),
-            HookKind::UseLayoutEffect => write!(f, "useLayoutEffect"),
-            HookKind::UseInsertionEffect => write!(f, "useInsertionEffect"),
-            HookKind::UseMemo => write!(f, "useMemo"),
-            HookKind::UseCallback => write!(f, "useCallback"),
-            HookKind::UseTransition => write!(f, "useTransition"),
-            HookKind::UseImperativeHandle => write!(f, "useImperativeHandle"),
-            HookKind::UseEffectEvent => write!(f, "useEffectEvent"),
-            HookKind::UseOptimistic => write!(f, "useOptimistic"),
-            HookKind::Custom => write!(f, "Custom"),
-        }
+        f.write_str(self.as_str())
     }
 }
 
