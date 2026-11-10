@@ -10,8 +10,8 @@ use react_compiler_hir::visitors::{
     each_pattern_operand, each_terminal_operand,
 };
 use react_compiler_hir::{
-    AliasingEffect, BlockId, HirFunction, Identifier, IdentifierId, InstructionValue, Place,
-    PrimitiveValue, PropertyLiteral, Terminal, Type, UnaryOperator,
+    AliasingEffect, BlockId, HirFunction, Identifier, IdentifierId, InstructionValue,
+    LogicalOperator, Place, PrimitiveValue, PropertyLiteral, Terminal, Type, UnaryOperator,
 };
 
 const ERROR_DESCRIPTION: &str = "React refs are values that are not needed for rendering. \
@@ -599,6 +599,99 @@ fn collect_temporaries_sidemap(
     }
 }
 
+struct NullishRefInitialization {
+    object: IdentifierId,
+    stores: Vec<IdentifierId>,
+}
+
+impl NullishRefInitialization {
+    fn ref_id(&self, env: &Env) -> Option<RefId> {
+        let RefAccessType::Ref { ref_id } = env.get(self.object)? else {
+            return None;
+        };
+        self.stores
+            .iter()
+            .any(|object| {
+                matches!(
+                    env.get(*object),
+                    Some(RefAccessType::Ref { ref_id: target }) if target == ref_id
+                )
+            })
+            .then_some(*ref_id)
+    }
+}
+
+fn collect_nullish_ref_initializations(
+    func: &HirFunction,
+) -> FxHashMap<BlockId, NullishRefInitialization> {
+    let mut tests = Vec::new();
+    for block in func.body.blocks.values() {
+        if let Terminal::Logical {
+            operator: LogicalOperator::NullishCoalescing,
+            test,
+            ..
+        } = &block.terminal
+        {
+            tests.push(*test);
+        }
+    }
+    if tests.is_empty() {
+        return FxHashMap::default();
+    }
+    let mut current_loads = FxHashMap::default();
+    let mut stores: FxHashMap<BlockId, Vec<IdentifierId>> = FxHashMap::default();
+    for block in func.body.blocks.values() {
+        for &instr_id in &block.instructions {
+            let instr = &func.instructions[instr_id.0 as usize];
+            match &instr.value {
+                InstructionValue::PropertyLoad {
+                    object, property, ..
+                } if matches!(property, PropertyLiteral::String(name) if name == "current") => {
+                    current_loads.insert(instr.lvalue.identifier, object.identifier);
+                }
+                InstructionValue::LoadLocal { place, .. } => {
+                    if let Some(&object) = current_loads.get(&place.identifier) {
+                        current_loads.insert(instr.lvalue.identifier, object);
+                    }
+                }
+                InstructionValue::PropertyStore {
+                    object, property, ..
+                } if matches!(property, PropertyLiteral::String(name) if name == "current") => {
+                    if let Terminal::Goto { block, .. } = &block.terminal {
+                        stores.entry(*block).or_default().push(object.identifier);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut result = FxHashMap::default();
+    for test_block in tests {
+        let Some(block) = func.body.blocks.get(&test_block) else {
+            continue;
+        };
+        let Terminal::Branch {
+            test, fallthrough, ..
+        } = &block.terminal
+        else {
+            continue;
+        };
+        if let (Some(&object), Some(targets)) =
+            (current_loads.get(&test.identifier), stores.get(fallthrough))
+        {
+            // Stores reach the logical join even when the initializer has value blocks.
+            result.insert(
+                test_block,
+                NullishRefInitialization {
+                    object,
+                    stores: targets.clone(),
+                },
+            );
+        }
+    }
+    result
+}
+
 fn validate_no_ref_access_in_render_impl(
     func: &HirFunction,
     identifiers: &[Identifier],
@@ -624,6 +717,7 @@ fn validate_no_ref_access_in_render_impl(
 
     // Collect identifiers that are interpolated as JSX children
     let mut interpolated_as_jsx: FxHashSet<IdentifierId> = FxHashSet::default();
+    let nullish_ref_initializations = collect_nullish_ref_initializations(func);
     for (_, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
@@ -1229,8 +1323,22 @@ fn validate_no_ref_access_in_render_impl(
                 }
             }
 
+            let lazy_ref_id = nullish_ref_initializations
+                .get(&block.id)
+                .and_then(|initialization| initialization.ref_id(ref_env));
+            if let (Some(ref_id), Terminal::Branch { fallthrough, .. }) =
+                (lazy_ref_id, &block.terminal)
+            {
+                if !safe_blocks.iter().any(|(_, r)| *r == ref_id) {
+                    safe_blocks.push((*fallthrough, ref_id));
+                }
+            }
+
             // Process terminal operands
             for operand in &each_terminal_operand(&block.terminal) {
+                if lazy_ref_id.is_some() {
+                    continue;
+                }
                 if !matches!(&block.terminal, Terminal::Return { .. }) {
                     validate_no_ref_value_access(errors, ref_env, operand);
                     if !matches!(&block.terminal, Terminal::If { .. }) {
