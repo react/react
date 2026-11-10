@@ -792,15 +792,13 @@ describe('ReactDOMFizzServerNode', () => {
   describe('deeply nested segments', () => {
     // Every level suspends once while it's the only child of an array. That
     // leaves a segment for it inside the segment of the level above, with
-    // nothing after it.
+    // nothing after it. Each level needs its own promise: once a promise has
+    // resolved, reading it again doesn't suspend.
     const depth = 5000;
     function createNested() {
-      const suspended = new Set();
+      const promises = Array.from({length: depth + 1}, () => Promise.resolve());
       function Level({n}) {
-        if (!suspended.has(n)) {
-          suspended.add(n);
-          throw Promise.resolve();
-        }
+        React.use(promises[n]);
         if (n === 0) {
           return <i>leaf</i>;
         }
