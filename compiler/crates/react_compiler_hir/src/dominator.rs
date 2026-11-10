@@ -27,6 +27,18 @@ pub struct PostDominator {
     nodes: FxHashMap<BlockId, BlockId>,
 }
 
+/// Stores the post-dominator frontier for each block.
+pub struct PostDominatorFrontiers {
+    frontiers: FxHashMap<BlockId, FxHashSet<BlockId>>,
+}
+
+impl PostDominatorFrontiers {
+    /// Iterates over the blocks in `id`'s post-dominator frontier.
+    pub fn iter(&self, id: BlockId) -> impl Iterator<Item = BlockId> + '_ {
+        self.frontiers.get(&id).into_iter().flatten().copied()
+    }
+}
+
 impl PostDominator {
     /// Returns the immediate post-dominator of the given block, or None if
     /// the block post-dominates itself (i.e., it is the exit node).
@@ -40,6 +52,11 @@ impl PostDominator {
         } else {
             Some(*dominator)
         }
+    }
+
+    /// Iterates over `id` and its ancestors in the post-dominator tree.
+    fn ancestors(&self, id: BlockId) -> impl Iterator<Item = BlockId> + '_ {
+        std::iter::successors(Some(id), |&id| self.get(id))
     }
 }
 
@@ -269,62 +286,36 @@ fn intersect(a: BlockId, b: BlockId, graph: &Graph, doms: &FxHashMap<BlockId, Bl
 // Post-dominator frontier
 // =============================================================================
 
-/// Computes the post-dominator frontier of `target_id`. These are immediate
-/// predecessors of nodes that post-dominate `target_id` from which execution may
-/// not reach `target_id`. Intuitively, these are the earliest blocks from which
-/// execution branches such that it may or may not reach the target block.
-pub fn post_dominator_frontier(
+/// Computes the post-dominator frontiers of all blocks using the Cytron algorithm.
+///
+/// The frontier of a block contains the earliest blocks from which execution branches
+/// such that it may or may not reach that block. Walking each CFG edge up the immediate
+/// post-dominator chain avoids separately reverse-walking the whole CFG for every block.
+pub fn compute_post_dominator_frontiers(
     func: &HirFunction,
-    post_dominators: &PostDominator,
-    target_id: BlockId,
-) -> FxHashSet<BlockId> {
-    let target_post_dominators = post_dominators_of(func, post_dominators, target_id);
-    let mut visited = FxHashSet::default();
-    let mut frontier = FxHashSet::default();
+    next_block_id_counter: u32,
+    include_throws_as_exit_node: bool,
+) -> Result<PostDominatorFrontiers, CompilerDiagnostic> {
+    let post_dominators =
+        compute_post_dominator_tree(func, next_block_id_counter, include_throws_as_exit_node)?;
+    let mut frontiers: FxHashMap<BlockId, FxHashSet<BlockId>> = FxHashMap::default();
 
-    let mut to_visit: Vec<BlockId> = target_post_dominators.iter().copied().collect();
-    to_visit.push(target_id);
-
-    for block_id in to_visit {
-        if !visited.insert(block_id) {
-            continue;
-        }
-        if let Some(block) = func.body.blocks.get(&block_id) {
-            for &pred in &block.preds {
-                if !target_post_dominators.contains(&pred) {
-                    frontier.insert(pred);
-                }
+    // Apply Cytron's dominance-frontier algorithm to the reverse CFG. An original
+    // edge `block_id -> successor` is `successor -> block_id` in the reverse CFG,
+    // whose dominator tree is the post-dominator tree computed above.
+    for (&block_id, block) in &func.body.blocks {
+        let stop = post_dominators.get(block_id);
+        for successor in each_terminal_successor(&block.terminal) {
+            for runner in post_dominators
+                .ancestors(successor)
+                .take_while(|&runner| Some(runner) != stop)
+            {
+                frontiers.entry(runner).or_default().insert(block_id);
             }
         }
     }
-    frontier
-}
 
-/// Walks up the post-dominator tree to collect all blocks that post-dominate `target_id`.
-pub fn post_dominators_of(
-    func: &HirFunction,
-    post_dominators: &PostDominator,
-    target_id: BlockId,
-) -> FxHashSet<BlockId> {
-    let mut result = FxHashSet::default();
-    let mut visited = FxHashSet::default();
-    let mut queue = vec![target_id];
-
-    while let Some(current_id) = queue.pop() {
-        if !visited.insert(current_id) {
-            continue;
-        }
-        if let Some(block) = func.body.blocks.get(&current_id) {
-            for &pred in &block.preds {
-                let pred_post_dom = post_dominators.get(pred).unwrap_or(pred);
-                if pred_post_dom == target_id || result.contains(&pred_post_dom) {
-                    result.insert(pred);
-                }
-                queue.push(pred);
-            }
-        }
-    }
-    result
+    Ok(PostDominatorFrontiers { frontiers })
 }
 
 // =============================================================================
