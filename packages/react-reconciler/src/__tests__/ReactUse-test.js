@@ -2317,4 +2317,34 @@ describe('ReactUse', () => {
       },
     ]);
   });
+
+  it('does not crash when a frozen, userspace-instrumented thenable is passed to use()', async () => {
+    // A userspace implementation can pre-instrument a thenable with a status
+    // before passing it to `use`. Freezing such a thenable (e.g. an immutable
+    // cache that shares its entries) must not crash React's DEV-only debug
+    // info instrumentation, which attaches a `_debugInfo` expando.
+    const frozenThenable = Promise.resolve('Hi');
+    frozenThenable.status = 'fulfilled';
+    frozenThenable.value = 'Hi';
+    Object.freeze(frozenThenable);
+
+    function Child() {
+      return <Text text={use(frozenThenable)} />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Child />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog(['Hi']);
+    expect(root).toMatchRenderedOutput('Hi');
+  });
 });

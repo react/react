@@ -866,7 +866,7 @@ describe('ReactDOMFiber', () => {
     }
   });
 
-  // Regression test for https://github.com/facebook/react/issues/19562
+  // Regression test for https://github.com/react/react/issues/19562
   it('does not fire mouseEnter twice when relatedTarget is the root node', async () => {
     let target = null;
 
@@ -1223,7 +1223,7 @@ describe('ReactDOMFiber', () => {
     expect(container.innerHTML).toBe('<div>foo</div>');
   });
 
-  // Regression test for https://github.com/facebook/react/issues/12643#issuecomment-413727104
+  // Regression test for https://github.com/react/react/issues/12643#issuecomment-413727104
   it('should not diff memoized host components', async () => {
     const inputRef = React.createRef();
     let didCallOnChange = false;

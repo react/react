@@ -24,7 +24,7 @@ export function searchGitHubIssuesURL(message: string): string {
     'is:open',
     'is:public',
     'label:"Component: Developer Tools"',
-    'repo:facebook/react',
+    'repo:react/react',
   ];
 
   return (

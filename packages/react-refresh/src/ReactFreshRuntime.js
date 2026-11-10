@@ -493,7 +493,7 @@ export function injectIntoGlobalHook(globalObject: any): void {
 
     // Do the same for any already injected roots.
     // This is useful if ReactDOM has already been initialized.
-    // https://github.com/facebook/react/issues/17626
+    // https://github.com/react/react/issues/17626
     hook.renderers.forEach((injected, id) => {
       if (
         typeof injected.scheduleRefresh === 'function' &&
@@ -654,7 +654,7 @@ export function createSignatureFunctionForTransform(): <T>(
         }
         // Set the signature for all types (even wrappers!) in case
         // they have no signatures of their own. This is to prevent
-        // problems like https://github.com/facebook/react/issues/20417.
+        // problems like https://github.com/react/react/issues/20417.
         if (
           type != null &&
           (typeof type === 'function' || typeof type === 'object')

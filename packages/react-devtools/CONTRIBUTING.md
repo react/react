@@ -4,7 +4,7 @@ Interested in contributing to React DevTools, but not sure where to start? This 
 # Install project dependencies
 To get started, check out the React repo:
 ```sh
-git clone git@github.com:facebook/react.git
+git clone git@github.com:react/react.git
 ```
 Next install dependencies:
 ```sh
@@ -65,7 +65,7 @@ yarn build:chrome && yarn test:chrome --url=<url-to-test>
 ```
 
 # Unit tests
-Core DevTools functionality is typically unit tested (see [here](https://github.com/facebook/react/tree/main/packages/react-devtools-shared/src/__tests__)). To run tests, you'll first need to build or download React and React DOM ([as explained above](#build-react-and-react-dom)) and then use the following NPM script:
+Core DevTools functionality is typically unit tested (see [here](https://github.com/react/react/tree/main/packages/react-devtools-shared/src/__tests__)). To run tests, you'll first need to build or download React and React DOM ([as explained above](#build-react-and-react-dom)) and then use the following NPM script:
 ```sh
 yarn test-build-devtools
 ```
@@ -75,6 +75,6 @@ yarn debug-test-build-devtools
 ```
 
 # Finding the right first issue
-The React team maintains [this list of "good first issues"](https://github.com/facebook/react/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc+label%3A%22Component%3A+Developer+Tools%22+label%3A%22good+first+issue%22) for anyone interested in contributing to DevTools. If you see one that interests you, leave a comment!
+The React team maintains [this list of "good first issues"](https://github.com/react/react/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc+label%3A%22Component%3A+Developer+Tools%22+label%3A%22good+first+issue%22) for anyone interested in contributing to DevTools. If you see one that interests you, leave a comment!
 
 If you have ideas or suggestions of your own, you can also put together a PR demonstrating them. We suggest filing an issue before making any substantial changes though, to ensure that the idea is something the team feels comfortable landing.

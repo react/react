@@ -14,7 +14,7 @@ if (process.env.GH_TOKEN == null) {
   process.exit(1);
 }
 
-const REPO = process.env.GITHUB_REPOSITORY || 'facebook/react';
+const REPO = process.env.GITHUB_REPOSITORY || 'react/react';
 const WORKFLOW_ID = 'runtime_build_and_test.yml';
 const GITHUB_HEADERS = `
   -H "Accept: application/vnd.github+json" \
@@ -100,7 +100,7 @@ async function processArtifact(artifact, opts) {
     console.log(theme`{caution Skipping verification of build artifact.}`);
   } else {
     // Use https://cli.github.com/manual/gh_attestation_verify to verify artifact
-    if (executableIsAvailable('gh')) {
+    if (await executableIsAvailable('gh')) {
       await exec(
         `gh attestation verify artifacts_combined.zip --repo=${REPO}`,
         {

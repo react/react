@@ -19,7 +19,7 @@ function shim(...args: any): empty {
 }
 
 // Mutation (when unsupported)
-export const supportsMutation = false;
+export const supportsMutation: boolean = false;
 export const cloneMutableInstance = shim;
 export const cloneMutableTextInstance = shim;
 export const appendChild = shim;

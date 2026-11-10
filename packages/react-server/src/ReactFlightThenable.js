@@ -20,8 +20,6 @@ import type {
   RejectedThenable,
 } from 'shared/ReactTypes';
 
-import {enableAsyncDebugInfo} from 'shared/ReactFeatureFlags';
-
 import noop from 'shared/noop';
 
 export type ThenableState = Array<Thenable<any>>;
@@ -52,7 +50,7 @@ export function trackUsedThenable<T>(
   const previous = thenableState[index];
   if (previous === undefined) {
     thenableState.push(thenable);
-    if (__DEV__ && enableAsyncDebugInfo) {
+    if (__DEV__) {
       const stacks: Array<Error> =
         (thenableState as any)._stacks || ((thenableState as any)._stacks = []);
       stacks.push(new Error());
