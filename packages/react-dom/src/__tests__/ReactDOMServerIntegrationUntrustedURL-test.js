@@ -212,8 +212,9 @@ describe('ReactDOMServerIntegration - Untrusted URLs', () => {
       expectedToStringCalls *= 2;
     }
 
-    if (gate('enableTrustedTypesIntegration') && render === clientCleanRender) {
-      // Trusted types does another toString.
+    if (render === clientCleanRender) {
+      // Passing the value to setAttribute without stringifying it first (to
+      // support Trusted Types) does another toString.
       expectedToStringCalls += 1;
     }
 

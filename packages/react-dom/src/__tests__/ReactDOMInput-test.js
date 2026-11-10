@@ -1187,7 +1187,7 @@ describe('ReactDOMInput', () => {
     container.firstChild.reset();
     // Note: I don't know if we want to always support this.
     // But it's current behavior so worth being intentional if we break it.
-    // https://github.com/facebook/react/issues/4618
+    // https://github.com/react/react/issues/4618
     expect(inputRef.current.value).toBe('default2');
     expect(isValueDirty(inputRef.current)).toBe(false);
   });
@@ -2615,7 +2615,7 @@ describe('ReactDOMInput', () => {
         'node.type = "date"',
         // value must be assigned before defaultValue. This fixes an issue where the
         // visually displayed value of date inputs disappears on mobile Safari and Chrome:
-        // https://github.com/facebook/react/issues/7233
+        // https://github.com/react/react/issues/7233
         'node.value = "1980-01-01"',
         'node.defaultValue = "1980-01-01"',
       ]);

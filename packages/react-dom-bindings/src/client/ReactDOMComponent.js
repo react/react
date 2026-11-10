@@ -71,7 +71,6 @@ import {
   enableHydrationChangeEvent,
   enableScrollEndPolyfill,
   enableSrcObject,
-  enableTrustedTypesIntegration,
   enableViewTransition,
   enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
@@ -327,7 +326,7 @@ function normalizeHTML(parent: Element, html: string) {
     // We could have created a separate document here to avoid
     // re-initializing custom elements if they exist. But this breaks
     // how <noscript> is being handled. So we use the same document.
-    // See the discussion in https://github.com/facebook/react/pull/11157.
+    // See the discussion in https://github.com/react/react/pull/11157.
     const testElement =
       parent.namespaceURI === MATH_NAMESPACE ||
       parent.namespaceURI === SVG_NAMESPACE
@@ -411,7 +410,7 @@ function setProp(
         // Avoid setting initial textContent when the text is empty. In IE11 setting
         // textContent on a <textarea> will cause the placeholder to not
         // show within the <textarea> until it has been focused and blurred again.
-        // https://github.com/facebook/react/issues/6731#issuecomment-254874553
+        // https://github.com/react/react/issues/6731#issuecomment-254874553
         const canSetTextContent =
           tag !== 'body' && (tag !== 'textarea' || value !== '');
         if (canSetTextContent) {
@@ -533,14 +532,10 @@ function setProp(
         domElement.removeAttribute(key);
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value as any),
-      ) as any;
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttribute(key, sanitizedValue);
       break;
     }
@@ -604,14 +599,10 @@ function setProp(
         domElement.removeAttribute(key);
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value as any),
-      ) as any;
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttribute(key, sanitizedValue);
       break;
     }
@@ -711,14 +702,10 @@ function setProp(
         domElement.removeAttribute('xlink:href');
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value as any),
-      ) as any;
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttributeNS(xlinkNamespace, 'xlink:href', sanitizedValue);
       break;
     }
@@ -744,10 +731,7 @@ function setProp(
         if (__DEV__) {
           checkAttributeStringCoercion(value, key);
         }
-        domElement.setAttribute(
-          key,
-          enableTrustedTypesIntegration ? (value as any) : '' + (value as any),
-        );
+        domElement.setAttribute(key, value as any);
       } else {
         domElement.removeAttribute(key);
       }
@@ -3348,7 +3332,7 @@ export function diffHydratedProperties(
         // Fallthrough
         default:
           // Intentionally use the original name.
-          // See discussion in https://github.com/facebook/react/pull/10676.
+          // See discussion in https://github.com/react/react/pull/10676.
           extraAttributes.add(attributes[i].name);
       }
     }

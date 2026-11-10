@@ -18,17 +18,15 @@ import {
 import {createThenableState, trackUsedThenable} from './ReactFlightThenable';
 import {isClientReference} from './ReactFlightServerConfig';
 
-let currentRequest = null;
+let currentRequest: null | Request = null;
 let thenableIndexCounter = 0;
 let thenableState = null;
 let currentComponentDebugInfo = null;
 
-export function prepareToUseHooksForRequest(request: Request) {
+export function switchHooksRequest(request: null | Request): null | Request {
+  const previousRequest = currentRequest;
   currentRequest = request;
-}
-
-export function resetHooksForRequest() {
-  currentRequest = null;
+  return previousRequest;
 }
 
 export function prepareToUseHooksForComponent(

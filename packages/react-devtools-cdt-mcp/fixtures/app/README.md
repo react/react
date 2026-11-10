@@ -31,13 +31,16 @@ the fixture runs against React from source — no CDN copy, and
 
    This opens `http://localhost:8080/`.
 
-3. Point chrome-devtools-mcp at the page. The React tool group is discovered
-   automatically — list it with `list_3p_developer_tools` and call the tools with
-   `execute_3p_developer_tool({toolName, params})`.
+3. Point chrome-devtools-mcp at the page. Requires chrome-devtools-mcp 1.3.0+
+   with `--categoryExperimentalThirdParty=true`. The React tool group is
+   discovered automatically — list it with `list_3p_developer_tools` and call
+   the tools with `execute_3p_developer_tool({toolName, params})`.
 
 ## Test with the chrome-devtools-mcp CLI
 
-With the dev server running, drive the tools end-to-end from the CLI:
+With the dev server running, drive the tools end-to-end from the CLI
+(chrome-devtools-mcp 1.8.0+ passes `pageId` as the first argument of
+page-scoped commands):
 
 1. Start chrome-devtools-mcp with experimental third-party tools enabled:
 
@@ -48,11 +51,11 @@ With the dev server running, drive the tools end-to-end from the CLI:
 2. Navigate to the fixture page:
 
    ```sh
-   chrome-devtools navigate_page --url http://localhost:8080
+   chrome-devtools navigate_page 1 --url http://localhost:8080
    ```
 
 3. Run a React tool by name:
 
    ```sh
-   chrome-devtools execute_3p_developer_tool <react-tool-name>
+   chrome-devtools execute_3p_developer_tool 1 <react-tool-name> --params '{}'
    ```

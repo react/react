@@ -931,8 +931,14 @@ pub fn infer_mutation_aliasing_ranges(
                     | AliasingEffect::MutateTransitiveConditionally { value } => {
                         operand_effects.insert(value.identifier, Effect::ConditionallyMutate);
                     }
-                    AliasingEffect::Freeze { value, .. } => {
-                        operand_effects.insert(value.identifier, Effect::Freeze);
+                    AliasingEffect::Freeze {
+                        value,
+                        already_frozen,
+                        ..
+                    } => {
+                        if !already_frozen {
+                            operand_effects.insert(value.identifier, Effect::Freeze);
+                        }
                     }
                     AliasingEffect::ImmutableCapture { .. } => {
                         // no-op, Read is the default

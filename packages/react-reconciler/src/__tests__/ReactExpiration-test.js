@@ -415,7 +415,7 @@ describe('ReactExpiration', () => {
   });
 
   it('should measure callback timeout relative to current time, not start-up time', async () => {
-    // Corresponds to a bugfix: https://github.com/facebook/react/pull/15479
+    // Corresponds to a bugfix: https://github.com/react/react/pull/15479
     // The bug wasn't caught by other tests because we use virtual times that
     // default to 0, and most tests don't advance time.
 

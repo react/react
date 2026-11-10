@@ -111,7 +111,7 @@ describe('ReactDOMTextComponent', () => {
 
   /**
    * The following Node.normalize() tests are intentionally failing.
-   * See https://github.com/facebook/react/issues/9836 tracking whether we'll need to fix this or if it's unnecessary.
+   * See https://github.com/react/react/issues/9836 tracking whether we'll need to fix this or if it's unnecessary.
    */
   // @gate TODO
   it('can reconcile text merged by Node.normalize() alongside other elements', async () => {

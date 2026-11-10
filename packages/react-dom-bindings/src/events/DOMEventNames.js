@@ -13,8 +13,9 @@ export type DOMEventName =
   | 'abort'
   | 'afterblur' // Not a real event. This is used by event experiments.
   // These are vendor-prefixed so you should use the exported constants instead:
+  // 'animationcancel' |
   // 'animationiteration' |
-  // 'animationend |
+  // 'animationend' |
   // 'animationstart' |
   | 'beforeblur' // Not a real event. This is used by event experiments.
   | 'beforeinput'
@@ -115,6 +116,8 @@ export type DOMEventName =
   | 'waiting'
   | 'wheel';
 
+export const ANIMATION_CANCEL: DOMEventName =
+  getVendorPrefixedEventName('animationcancel');
 export const ANIMATION_END: DOMEventName =
   getVendorPrefixedEventName('animationend');
 export const ANIMATION_ITERATION: DOMEventName =

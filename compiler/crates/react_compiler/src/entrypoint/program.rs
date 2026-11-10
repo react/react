@@ -1105,7 +1105,7 @@ fn get_react_function_type(
 /// naming conventions and code patterns.
 ///
 /// Adapted from the ESLint rule at
-/// https://github.com/facebook/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js
+/// https://github.com/react/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js
 fn get_component_or_hook_like(
     name: Option<&str>,
     params: &[PatternLike],
@@ -1115,8 +1115,8 @@ fn get_component_or_hook_like(
     if let Some(fn_name) = name {
         if is_component_name(fn_name) {
             // Check if it actually looks like a component
-            let is_component = calls_hooks_or_creates_jsx(params, body)
-                && is_valid_component_params(params)
+            let is_component = is_valid_component_params(params)
+                && calls_hooks_or_creates_jsx(params, body)
                 && !returns_non_node_fn(params, body);
             return if is_component {
                 Some(ReactFunctionType::Component)
@@ -1191,6 +1191,8 @@ fn convert_loc(loc: &react_compiler_ast::common::SourceLocation) -> SourceLocati
             column: loc.end.column,
             index: loc.end.index,
         },
+        start_offset: None,
+        end_offset: None,
     }
 }
 
