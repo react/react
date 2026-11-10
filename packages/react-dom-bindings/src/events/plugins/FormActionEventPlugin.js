@@ -96,6 +96,13 @@ function extractEvents(
   );
 
   function submitForm() {
+    if (submitter != null && submitter.form !== form) {
+      // The submitter may have been replaced during the submit event
+      // (for example, by a flushSync update in onSubmit). If it's no
+      // longer owned by this form, passing it to FormData would throw
+      // a NotFoundError, so treat the submission as having no submitter.
+      submitter = null;
+    }
     if (nativeEvent.defaultPrevented) {
       // An earlier event prevented form submission. If a transition update was
       // also scheduled, we should trigger a pending form status — even if

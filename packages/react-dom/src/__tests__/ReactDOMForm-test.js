@@ -361,6 +361,46 @@ describe('ReactDOMForm', () => {
     expect(actionCalled).toBe(false);
   });
 
+  it('calls the form action when the submitter is replaced during onSubmit', async () => {
+    const actionCalls = [];
+
+    function App() {
+      const [submitted, setSubmitted] = useState(false);
+      return (
+        <form
+          onSubmit={() => {
+            ReactDOM.flushSync(() => setSubmitted(true));
+          }}
+          action={formData => {
+            actionCalls.push(Array.from(formData.entries()));
+          }}>
+          <input name="message" defaultValue="Initial" />
+          {submitted ? (
+            <span>Submitting</span>
+          ) : (
+            <button name="intent" value="save">
+              Save
+            </button>
+          )}
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<App />);
+    });
+    expect(container.textContent).toBe('Save');
+
+    const input = container.querySelector('input');
+    input.value = 'Updated';
+    const button = container.querySelector('button');
+    await submit(button);
+
+    expect(container.textContent).toBe('Submitting');
+    expect(actionCalls).toEqual([[['message', 'Updated']]]);
+  });
+
   it('should submit the inner of nested forms', async () => {
     const ref = React.createRef();
     let data;
