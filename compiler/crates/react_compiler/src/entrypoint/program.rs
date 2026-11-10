@@ -1835,6 +1835,13 @@ struct FunctionDiscoveryVisitor<'a, 'ast> {
     /// `Some(name)` when the callee is a React API (forwardRef/memo),
     /// `None` for other calls.
     parent_callee_stack: Vec<Option<String>>,
+    /// Functions that are direct children (callee or argument) of a CallExpression
+    /// which is itself the init of a VariableDeclarator, keyed by node address,
+    /// together with the declarator name. Mirrors the TS `getFunctionName` case
+    /// `const MyComponent = wrap(() => {})`.
+    call_wrapped_fn_names: Vec<(usize, String)>,
+    /// Address of the CallExpression that is the init of the current VariableDeclarator.
+    declarator_init_call: Option<usize>,
     /// Depth counter for loop expression positions (while.test, for-in.right, etc.).
     /// When > 0, functions are treated as non-program-scope in 'all' mode.
     loop_expression_depth: usize,
@@ -1852,6 +1859,8 @@ impl<'a, 'ast> FunctionDiscoveryVisitor<'a, 'ast> {
             queue: Vec::new(),
             current_declarator_name: None,
             parent_callee_stack: Vec::new(),
+            call_wrapped_fn_names: Vec::new(),
+            declarator_init_call: None,
             loop_expression_depth: 0,
             skip_body: false,
         }
@@ -1867,6 +1876,16 @@ impl<'a, 'ast> FunctionDiscoveryVisitor<'a, 'ast> {
     fn is_rejected_by_scope_check(&self, scope_stack: &[ScopeId]) -> bool {
         self.opts.compilation_mode == "all"
             && (scope_stack.len() > 2 || self.loop_expression_depth > 0)
+    }
+
+    /// Take the declarator name recorded for a function that is a direct child of
+    /// a declarator-initializing CallExpression (`const Foo = wrap(() => {})`).
+    fn take_call_wrapped_fn_name(&mut self, addr: usize) -> Option<String> {
+        let idx = self
+            .call_wrapped_fn_names
+            .iter()
+            .position(|(a, _)| *a == addr)?;
+        Some(self.call_wrapped_fn_names.swap_remove(idx).1)
     }
 
     /// Get the current parent callee name (forwardRef/memo) if any.
@@ -1907,6 +1926,9 @@ impl<'a, 'ast> Visitor<'ast> for FunctionDiscoveryVisitor<'a, 'ast> {
                 | Expression::ArrowFunctionExpression(_)
                 | Expression::CallExpression(_) => {
                     self.current_declarator_name = get_declarator_name(node);
+                    if let Expression::CallExpression(call) = init.as_ref() {
+                        self.declarator_init_call = Some(call as *const CallExpression as usize);
+                    }
                 }
                 _ => {}
             }
@@ -1919,9 +1941,32 @@ impl<'a, 'ast> Visitor<'ast> for FunctionDiscoveryVisitor<'a, 'ast> {
         _scope_stack: &[ScopeId],
     ) {
         self.current_declarator_name = None;
+        self.declarator_init_call = None;
     }
 
     fn enter_call_expression(&mut self, node: &'ast CallExpression, _scope_stack: &[ScopeId]) {
+        // `const MyComponent = wrap(() => {})`: TS `getFunctionName` names a function
+        // that is a direct child of a CallExpression which is the declarator's init.
+        let is_declarator_init_call =
+            self.declarator_init_call == Some(node as *const CallExpression as usize);
+        if let (true, Some(name)) = (
+            is_declarator_init_call,
+            self.current_declarator_name.as_ref(),
+        ) {
+            let direct_children =
+                std::iter::once(node.callee.as_ref()).chain(node.arguments.iter());
+            for child in direct_children {
+                match child {
+                    Expression::FunctionExpression(f) => self
+                        .call_wrapped_fn_names
+                        .push((f as *const FunctionExpression as usize, name.clone())),
+                    Expression::ArrowFunctionExpression(f) => self
+                        .call_wrapped_fn_names
+                        .push((f as *const ArrowFunctionExpression as usize, name.clone())),
+                    _ => {}
+                }
+            }
+        }
         let callee_name = get_callee_name_if_react_api(&node.callee).map(|s| s.to_string());
         // In TS, the declarator name only flows through forwardRef/memo calls
         // (path.parentPath.isCallExpression() checks the callee). For any other
@@ -1975,7 +2020,10 @@ impl<'a, 'ast> Visitor<'ast> for FunctionDiscoveryVisitor<'a, 'ast> {
         // TS getFunctionName for FunctionExpressions only returns names from parent
         // context (VariableDeclarator, AssignmentExpression, Property) — never from
         // the expression's own `id`. So we only use current_declarator_name here.
-        let inferred_name = self.current_declarator_name.take();
+        let inferred_name = self
+            .current_declarator_name
+            .take()
+            .or_else(|| self.take_call_wrapped_fn_name(node as *const FunctionExpression as usize));
         let parent_callee = self.current_parent_callee();
         let info = fn_info_from_func_expr(node, inferred_name, parent_callee);
         if let Some(source) = try_make_compile_source(info, self.opts, self.context) {
@@ -1993,7 +2041,9 @@ impl<'a, 'ast> Visitor<'ast> for FunctionDiscoveryVisitor<'a, 'ast> {
         if self.is_rejected_by_scope_check(scope_stack) {
             return;
         }
-        let inferred_name = self.current_declarator_name.take();
+        let inferred_name = self.current_declarator_name.take().or_else(|| {
+            self.take_call_wrapped_fn_name(node as *const ArrowFunctionExpression as usize)
+        });
         let parent_callee = self.current_parent_callee();
         let info = fn_info_from_arrow(node, inferred_name, parent_callee);
         if let Some(source) = try_make_compile_source(info, self.opts, self.context) {
