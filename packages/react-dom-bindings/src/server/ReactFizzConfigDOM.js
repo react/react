@@ -116,9 +116,9 @@ export type HeadersDescriptor = {
 
 // Used to distinguish these contexts from ones used in other renderers.
 // E.g. this can be used to distinguish legacy renderers from this modern one.
-export const isPrimaryRenderer = true;
+export const isPrimaryRenderer: boolean = true;
 
-export const supportsClientAPIs = true;
+export const supportsClientAPIs: boolean = true;
 
 export type StreamingFormat = 0 | 1;
 const ScriptStreamingFormat: StreamingFormat = 0;
