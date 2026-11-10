@@ -32,13 +32,10 @@ import {symbolicateSource} from '../symbolicateSource';
 
 describe('utils', () => {
   // @reactVersion >= 16.0
-  it('resolves the virtual version alongside mapped shared modules', () => {
+  it('resolves the version alongside mapped shared modules', () => {
     const {ReactVersion} = require('../../../../ReactVersions');
     jest.resetModules();
-    expect(require('shared/ReactVersion')).toEqual({
-      __esModule: true,
-      default: ReactVersion,
-    });
+    expect(require('shared/ReactVersion').default).toBe(ReactVersion);
     expect(require('shared/ReactSymbols').REACT_STRICT_MODE_TYPE).toBe(
       StrictMode,
     );

@@ -15,10 +15,7 @@ test('source modules use the canonical version after module resets', () => {
     const {ReactVersion} = require('../../../../ReactVersions');
     for (let i = 0; i < 2; i++) {
       jest.resetModules();
-      expect(require('shared/ReactVersion')).toEqual({
-        __esModule: true,
-        default: ReactVersion,
-      });
+      expect(require('shared/ReactVersion').default).toBe(ReactVersion);
       expect(require('react').version).toBe(ReactVersion);
       expect(require('react-dom').version).toBe(ReactVersion);
     }

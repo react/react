@@ -19,10 +19,6 @@ declare const __REACT_DEVTOOLS_GLOBAL_HOOK__: any; /*?{
 
 declare const reportError: (error: mixed) => void;
 
-declare module 'shared/ReactVersion' {
-  declare export default string;
-}
-
 declare module 'create-react-class' {
   declare const exports: $FlowFixMe;
 }
