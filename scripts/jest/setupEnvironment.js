@@ -1,5 +1,7 @@
 /* eslint-disable */
 
+const {ReactVersion} = require('../../ReactVersions');
+
 const NODE_ENV = process.env.NODE_ENV;
 if (NODE_ENV !== 'development' && NODE_ENV !== 'production') {
   throw new Error('NODE_ENV must either be set to development or production.');
@@ -8,6 +10,7 @@ global.__DEV__ = NODE_ENV === 'development';
 global.__EXTENSION__ = false;
 global.__TEST__ = NODE_ENV === 'test';
 global.__PROFILE__ = NODE_ENV === 'development';
+global.__REACT_VERSION__ = ReactVersion;
 
 const RELEASE_CHANNEL = process.env.RELEASE_CHANNEL;
 
