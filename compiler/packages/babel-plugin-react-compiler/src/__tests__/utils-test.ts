@@ -32,7 +32,10 @@ class CountingSet<T> implements ReadonlySet<T> {
     callbackfn: (value: T, value2: T, set: ReadonlySet<T>) => void,
     thisArg?: any,
   ): void {
-    this.#inner.forEach((value, value2) => callbackfn(value, value2, this), thisArg);
+    this.#inner.forEach(
+      (value, value2) => callbackfn(value, value2, this),
+      thisArg,
+    );
   }
 
   entries(): IterableIterator<[T, T]> {
