@@ -653,6 +653,18 @@ fn lower_member_expression_impl(
 // lower_expression
 // =============================================================================
 
+/// Non-null assertions preserve references when used as method callees or tags.
+/// Inspect the member under the assertion before lowering it to a plain value.
+fn unwrap_non_null_expression(
+    mut expression: &react_compiler_ast::expressions::Expression,
+) -> &react_compiler_ast::expressions::Expression {
+    use react_compiler_ast::expressions::Expression;
+    while let Expression::TSNonNullExpression(assertion) = expression {
+        expression = &assertion.expression;
+    }
+    expression
+}
+
 fn lower_expression(
     builder: &mut HirBuilder,
     expr: &react_compiler_ast::expressions::Expression,
@@ -820,7 +832,7 @@ fn lower_expression(
         Expression::CallExpression(call) => {
             let loc = convert_base_loc(&call.base);
             // Check if callee is a MemberExpression => MethodCall
-            if let Expression::MemberExpression(member) = call.callee.as_ref() {
+            if let Expression::MemberExpression(member) = unwrap_non_null_expression(&call.callee) {
                 let lowered = lower_member_expression(builder, member)?;
                 let property = lower_value_to_temporary(builder, lowered.value)?;
                 let args = lower_arguments(builder, &call.arguments)?;
@@ -1806,7 +1818,11 @@ fn lower_expression(
                 raw: quasi.value.raw.clone(),
                 cooked: quasi.value.cooked.clone(),
             };
-            let tag = lower_expression_to_temporary(builder, &tagged.tag)?;
+            let tag = match unwrap_non_null_expression(&tagged.tag) {
+                member @ Expression::MemberExpression(_) => member,
+                _ => &tagged.tag,
+            };
+            let tag = lower_expression_to_temporary(builder, tag)?;
             Ok(InstructionValue::TaggedTemplateExpression { tag, value, loc })
         }
         Expression::AwaitExpression(await_expr) => {
@@ -5435,7 +5451,7 @@ fn lower_optional_call_expression_impl(
     let mut callee_info: Option<CalleeInfo> = None;
 
     let test_block = builder.try_enter(BlockKind::Value, |builder, _block_id| {
-        match expr.callee.as_ref() {
+        match unwrap_non_null_expression(&expr.callee) {
             Expression::OptionalCallExpression(opt_call) => {
                 let value =
                     lower_optional_call_expression_impl(builder, opt_call, Some(alternate))?;
@@ -5460,8 +5476,8 @@ fn lower_optional_call_expression_impl(
                     property: property_place,
                 });
             }
-            other => {
-                let callee_place = lower_expression_to_temporary(builder, other)?;
+            _ => {
+                let callee_place = lower_expression_to_temporary(builder, &expr.callee)?;
                 callee_info = Some(CalleeInfo::CallExpression {
                     callee: callee_place,
                 });
