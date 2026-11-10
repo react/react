@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "private": true,
   "devEngines": {
-    "node": "20.x || 22.x"
+    "runtime": {
+      "name": "node",
+      "version": "20.x || 24.x"
+    }
   },
   "dependencies": {
     "@babel/core": "^7.16.0",
