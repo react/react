@@ -619,7 +619,8 @@ fn collect_dependencies(
                     );
                 }
                 InstructionValue::LoadContext { place, .. }
-                | InstructionValue::LoadLocal { place, .. } => {
+                | InstructionValue::LoadLocal { place, .. }
+                | InstructionValue::NonNullExpression { value: place, .. } => {
                     if let Some(temp) = temporaries.get(&place.identifier).cloned() {
                         match &temp {
                             Temporary::Local { .. } => {

@@ -383,6 +383,8 @@ fn collect_temporaries(
 
 /// Collect loads from named variables and property reads into `maybe_deps`.
 /// Returns the variable + property reads represented by the instruction value.
+/// Assertions are transparent for source dependency equivalence; hoisting safety
+/// is tracked separately by reactive scope dependency collection.
 pub fn collect_maybe_memo_dependencies(
     value: &InstructionValue,
     maybe_deps: &FxHashMap<IdentifierId, ManualMemoDependency>,
@@ -421,7 +423,9 @@ pub fn collect_maybe_memo_dependencies(
                 None
             }
         }
-        InstructionValue::LoadLocal { place, .. } | InstructionValue::LoadContext { place, .. } => {
+        InstructionValue::LoadLocal { place, .. }
+        | InstructionValue::LoadContext { place, .. }
+        | InstructionValue::NonNullExpression { value: place, .. } => {
             if let Some(source) = maybe_deps.get(&place.identifier) {
                 Some(source.clone())
             } else if matches!(

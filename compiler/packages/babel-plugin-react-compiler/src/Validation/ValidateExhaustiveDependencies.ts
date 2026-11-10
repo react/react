@@ -641,16 +641,19 @@ function collectDependencies(
           break;
         }
         case 'LoadContext':
-        case 'LoadLocal': {
-          const temp = temporaries.get(value.place.identifier.id);
+        case 'LoadLocal':
+        case 'NonNullExpression': {
+          const place =
+            value.kind === 'NonNullExpression' ? value.value : value.place;
+          const temp = temporaries.get(place.identifier.id);
           if (temp != null) {
             if (temp.kind === 'Local') {
-              const local: Temporary = {...temp, loc: value.place.loc};
+              const local: Temporary = {...temp, loc: place.loc};
               temporaries.set(lvalue.identifier.id, local);
             } else {
               temporaries.set(lvalue.identifier.id, temp);
             }
-            if (locals.has(value.place.identifier.id)) {
+            if (locals.has(place.identifier.id)) {
               locals.add(lvalue.identifier.id);
             }
           }
