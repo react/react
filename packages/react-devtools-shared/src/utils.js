@@ -205,8 +205,11 @@ export function utfEncodeString(string: string): Array<number> {
   let charCode;
   while (i < string.length) {
     charCode = string.charCodeAt(i);
-    // Handle multibyte unicode characters (like emoji).
-    if ((charCode & 0xf800) === 0xd800) {
+    // Combine valid surrogate pairs, but preserve lone surrogates.
+    if (
+      (charCode & 0xfc00) === 0xd800 &&
+      (string.charCodeAt(i + 1) & 0xfc00) === 0xdc00
+    ) {
       encoded.push(surrogatePairToCodePoint(charCode, string.charCodeAt(++i)));
     } else {
       encoded.push(charCode);
