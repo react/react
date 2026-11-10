@@ -10,12 +10,11 @@
 import typeof * as FeatureFlagsType from 'shared/ReactFeatureFlags';
 import typeof * as ExportsType from './ReactFeatureFlags.test-renderer.www';
 
-export const enableAsyncDebugInfo: boolean = true;
 export const enableSchedulingProfiler: boolean = false;
 export const enableProfilerTimer: boolean = __PROFILE__;
 export const enableProfilerCommitHooks: boolean = __PROFILE__;
 export const enableProfilerNestedUpdatePhase: boolean = __PROFILE__;
-export const enableComponentPerformanceTrack: boolean = false;
+export const enableComponentPerformanceTrack: boolean = true;
 export const enablePerformanceIssueReporting: boolean = false;
 export const enableUpdaterTracking: boolean = false;
 export const enableLegacyCache: boolean = true;
@@ -27,11 +26,9 @@ export const disableCommentsAsDOMContainers: boolean = true;
 export const disableInputAttributeSyncing: boolean = false;
 export const enableScopeAPI: boolean = true;
 export const enableCreateEventHandleAPI: boolean = false;
-export const enableBrowserAPI: boolean = true;
 export const enableSuspenseCallback: boolean = true;
 export const disableLegacyContext: boolean = false;
 export const disableLegacyContextForFunctionComponents: boolean = false;
-export const enableTrustedTypesIntegration: boolean = true;
 export const disableTextareaChildren: boolean = false;
 export const enableSuspenseAvoidThisFallback: boolean = true;
 export const enableCPUSuspense: boolean = false;
@@ -64,7 +61,6 @@ export const enableReactTestRendererWarning: boolean = false;
 export const disableLegacyMode: boolean = true;
 
 export const enableObjectFiber: boolean = false;
-export const enableEffectEventMutationPhase: boolean = true;
 
 export const enableYieldingBeforePassive: boolean = false;
 
@@ -80,14 +76,11 @@ export const enableSrcObject: boolean = false;
 export const enableHydrationChangeEvent: boolean = false;
 export const enableDefaultTransitionIndicator: boolean = true;
 
-export const enableFragmentRefsInstanceHandles: boolean = true;
-export const enableFragmentRefsTextNodes: boolean = true;
 export const ownerStackLimit = 1e4;
 
 export const enableInternalInstanceMap: boolean = false;
 
 export const enableOptimisticKey: boolean = false;
-export const enableParallelTransitions: boolean = true;
 
 export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
 export const eprh_enableVerboseNoSetStateInEffectCompilerLint: boolean = false;

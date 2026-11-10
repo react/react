@@ -353,6 +353,134 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(Array.from(await decoded.b)).toEqual(Array.from(buffer));
   });
 
+  it('supports streamed values whose entries are not contiguous in the body', async () => {
+    // The chunks of a streamed value are matched to their stream by field
+    // name, not by position, so the client may interleave the entries of
+    // multiple streams in the body FormData.
+    const flush = async () => {
+      // The serializer appends each chunk from promise continuations, so
+      // draining microtasks is enough to observe each step.
+      await null;
+    };
+
+    let controller1;
+    let controller2;
+    const stream1 = new ReadableStream({
+      start(c) {
+        controller1 = c;
+      },
+    });
+    const stream2 = new ReadableStream({
+      start(c) {
+        controller2 = c;
+      },
+    });
+    let releaseChunk1;
+    let releaseChunk2;
+    let releaseEnd;
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        await new Promise(r => (releaseChunk1 = r));
+        yield 'c1';
+        await new Promise(r => (releaseChunk2 = r));
+        yield 'c2';
+        await new Promise(r => (releaseEnd = r));
+      },
+    };
+
+    const bodyPromise = ReactServerDOMClient.encodeReply({
+      stream1,
+      stream2,
+      iterable,
+    });
+    // Let the serializer start each stream and let the iterable reach its
+    // first gate, then deliver one chunk per value at a time so that the
+    // entries of the three values interleave in the body.
+    await flush();
+    controller1.enqueue('a1');
+    await flush();
+    releaseChunk1();
+    await flush();
+    controller2.enqueue('b1');
+    await flush();
+    controller1.enqueue('a2');
+    await flush();
+    releaseChunk2();
+    await flush();
+    controller2.enqueue('b2');
+    await flush();
+    releaseEnd();
+    await flush();
+    controller1.close();
+    await flush();
+    controller2.close();
+    const body = await bodyPromise;
+
+    const entries = Array.from(body.entries());
+
+    // Decode progressively, feeding one entry at a time. Each pending read
+    // must only unblock once the entry for its own stream arrives.
+    const gates = entries.map(() => {
+      let release;
+      const promise = new Promise(r => (release = r));
+      return {promise, release};
+    });
+    const entryIterable = {
+      async *[Symbol.asyncIterator]() {
+        for (let i = 0; i < entries.length; i++) {
+          await gates[i].promise;
+          yield entries[i];
+        }
+      },
+    };
+    const replyPromise = ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      entryIterable,
+      webpackServerMap,
+    );
+
+    gates[0].release();
+    const result = await replyPromise;
+    const reader1 = result.stream1.getReader();
+    const reader2 = result.stream2.getReader();
+    const iterator = result.iterable[Symbol.asyncIterator]();
+
+    const readA1 = reader1.read();
+    gates[1].release();
+    expect(await readA1).toEqual({value: 'a1', done: false});
+
+    const readC1 = iterator.next();
+    gates[2].release();
+    expect(await readC1).toEqual({value: 'c1', done: false});
+
+    const readB1 = reader2.read();
+    gates[3].release();
+    expect(await readB1).toEqual({value: 'b1', done: false});
+
+    const readA2 = reader1.read();
+    gates[4].release();
+    expect(await readA2).toEqual({value: 'a2', done: false});
+
+    const readC2 = iterator.next();
+    gates[5].release();
+    expect(await readC2).toEqual({value: 'c2', done: false});
+
+    const readB2 = reader2.read();
+    gates[6].release();
+    expect(await readB2).toEqual({value: 'b2', done: false});
+
+    const readCDone = iterator.next();
+    gates[7].release();
+    expect(await readCDone).toEqual({value: undefined, done: true});
+
+    const readADone = reader1.read();
+    gates[8].release();
+    expect(await readADone).toEqual({value: undefined, done: true});
+
+    const readBDone = reader2.read();
+    gates[9].release();
+    expect(await readBDone).toEqual({value: undefined, done: true});
+  });
+
   it('can pass a registered server reference', async () => {
     function greet(name) {
       return 'hi, ' + name;

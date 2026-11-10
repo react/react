@@ -147,7 +147,7 @@
     "prettier-all": "node ./scripts/prettier/index.js write",
     "prettier-check": "node ./scripts/prettier/index.js",
     "version-check": "node ./scripts/tasks/version-check.js",
-    "publish-prereleases": "echo 'This command has been deprecated. Please refer to https://github.com/facebook/react/tree/main/scripts/release#trigger-an-automated-prerelease'",
+    "publish-prereleases": "echo 'This command has been deprecated. Please refer to https://github.com/react/react/tree/main/scripts/release#trigger-an-automated-prerelease'",
     "download-build": "node ./scripts/release/download-experimental-build.js",
     "download-build-for-head": "node ./scripts/release/download-experimental-build.js --commit=$(git rev-parse HEAD)",
     "download-build-in-codesandbox-ci": "yarn build --type=node react/index react.react-server react-dom/index react-dom/client react-dom/src/server react-dom/test-utils react-dom.react-server scheduler/index react/jsx-runtime react/jsx-dev-runtime react-server-dom-webpack",

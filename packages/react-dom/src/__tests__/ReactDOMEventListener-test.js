@@ -102,7 +102,7 @@ describe('ReactDOMEventListener', () => {
       }
     });
 
-    // Regression test for https://github.com/facebook/react/issues/1105
+    // Regression test for https://github.com/react/react/issues/1105
     it('should not get confused by disappearing elements', async () => {
       const container = document.createElement('div');
       document.body.appendChild(container);
@@ -330,7 +330,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  // Regression test for https://github.com/facebook/react/pull/12877
+  // Regression test for https://github.com/react/react/pull/12877
   it('should not fire form events twice', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

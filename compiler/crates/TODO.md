@@ -53,7 +53,7 @@ asserting the TS-specific output.
 
 - `use-no-forget-multiple-with-eslint-suppression.js` — spurious
 	`import { c as _c }` in the TS reference output. Fixed on `main` by
-	[react#36500](https://github.com/facebook/react/pull/36500) (merged).
+	[react#36500](https://github.com/react/react/pull/36500) (merged).
 	Will pass automatically once `pr-36173` rebases onto `main`; until then
 	the TS dist built from `pr-36173` still emits the unused import.
 

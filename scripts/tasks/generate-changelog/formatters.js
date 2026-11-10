@@ -37,10 +37,10 @@ function buildChangelogEntries({
       }
 
       const commitSha = commit.sha;
-      const commitUrl = `https://github.com/facebook/react/commit/${commitSha}`;
+      const commitUrl = `https://github.com/react/react/commit/${commitSha}`;
       const prNumber = commit.prNumber || null;
       const prUrl = prNumber
-        ? `https://github.com/facebook/react/pull/${prNumber}`
+        ? `https://github.com/react/react/pull/${prNumber}`
         : null;
       const prEntry = prNumber ? prMetadata.get(prNumber) : null;
 
