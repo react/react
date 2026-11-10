@@ -613,3 +613,12 @@ const ToggleEventInterface: EventInterfaceType = {
 };
 export const SyntheticToggleEvent: $FlowFixMe =
   createSyntheticEvent(ToggleEventInterface);
+
+const CommandEventInterface: EventInterfaceType = {
+  ...EventInterface,
+  command: 0,
+  source: 0,
+};
+export const SyntheticCommandEvent: $FlowFixMe = createSyntheticEvent(
+  CommandEventInterface,
+);
