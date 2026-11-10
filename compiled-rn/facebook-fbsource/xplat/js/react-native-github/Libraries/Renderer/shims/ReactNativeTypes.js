@@ -7,7 +7,7 @@
  * @noformat
  * @nolint
  * @flow strict
- * @generated SignedSource<<92e869744dd405a4d74b1b6f50fa8d52>>
+ * @generated SignedSource<<e98f2799fc8b1c559fda763a0c36b39f>>
  */
 
 import type {
@@ -84,7 +84,7 @@ type InspectorDataProps = Readonly<{
 }>;
 
 type InspectorDataGetter = (
-  <TElementType extends React.ElementType>(
+  f: <TElementType extends React.ElementType>(
     componentOrHandle: React.ElementRef<TElementType> | number,
   ) => ?number,
 ) => Readonly<{
