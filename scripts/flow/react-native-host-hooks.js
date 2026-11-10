@@ -59,9 +59,7 @@ declare module 'react-native/react-private-interface' {
   declare export const fabricUIManager: __FabricUIManager;
   // Feature flags owned by React Native. Each accessor is optional so that
   // removing a flag on the React Native side doesn't throw here.
-  declare export interface ReactNativeFeatureFlags {
-    +enableNativeEventTargetEventDispatching?: () => boolean;
-  }
+  declare export interface ReactNativeFeatureFlags {}
   declare export const ReactNativeFeatureFlags: ReactNativeFeatureFlags;
   declare export function deepFreezeAndThrowOnMutationInDev<T>(obj: T): T;
   declare export const ReactFiberErrorDialog: {

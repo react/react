@@ -22,7 +22,10 @@ import {
   gt,
   gte,
 } from 'react-devtools-shared/src/backend/utils';
-import {extractLocationFromComponentStack} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
+import {
+  extractLocationFromComponentStack,
+  parseStackTrace,
+} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
 import {
   REACT_SUSPENSE_LIST_TYPE as SuspenseList,
   REACT_STRICT_MODE_TYPE as StrictMode,
@@ -80,6 +83,30 @@ describe('utils', () => {
         ['header', null],
         ['div', null],
         ['App', null],
+      ]);
+    });
+  });
+
+  describe('parseStackTrace', () => {
+    it('should read file names from Hermes call sites', () => {
+      // Hermes call sites implement getFileName() but not getScriptNameOrSourceURL()
+      const callSite = {
+        getFunctionName: () => 'Foobar',
+        getFileName: () => 'http://localhost:8081/index.bundle',
+        getLineNumber: () => 103,
+        getColumnNumber: () => 74,
+        isNative: () => false,
+        toString: () => 'Foobar (http://localhost:8081/index.bundle:103:74)',
+      };
+      const error = {
+        name: 'Error',
+        message: '',
+        get stack() {
+          return Error.prepareStackTrace(this, [callSite]);
+        },
+      };
+      expect(parseStackTrace(error, 0)).toEqual([
+        ['Foobar', 'http://localhost:8081/index.bundle', 103, 74, 0, 0, false],
       ]);
     });
   });
