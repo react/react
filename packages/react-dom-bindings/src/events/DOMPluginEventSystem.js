@@ -429,6 +429,13 @@ export function listenToNativeEventForNonManagedEventTarget(
 
 const listeningMarker = '_reactListening' + Math.random().toString(36).slice(2);
 
+// The selectionchange listener is attached to the document even when the
+// root is an element. It must use its own marker so that a prior element
+// root doesn't make a later document root think it already has its
+// listeners, and vice versa.
+const selectionChangeListeningMarker =
+  '_reactSelectionchangeListening' + Math.random().toString(36).slice(2);
+
 export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
   if (!(rootContainerElement as any)[listeningMarker]) {
     (rootContainerElement as any)[listeningMarker] = true;
@@ -450,8 +457,8 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
     if (ownerDocument !== null) {
       // The selectionchange event also needs deduplication
       // but it is attached to the document.
-      if (!(ownerDocument as any)[listeningMarker]) {
-        (ownerDocument as any)[listeningMarker] = true;
+      if (!(ownerDocument as any)[selectionChangeListeningMarker]) {
+        (ownerDocument as any)[selectionChangeListeningMarker] = true;
         listenToNativeEvent('selectionchange', false, ownerDocument);
       }
     }
