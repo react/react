@@ -1571,6 +1571,23 @@ const tests = {
         function MyComponent({foo, key}) {
           useEffect(() => {
             console.log(foo?.[key]);
+          }, [foo, key, foo?.[key]]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            'React Hook useEffect has a complex expression in the dependency array. ' +
+            'Extract it to a separate variable so it can be statically checked.',
+          suggestions: undefined,
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent({foo, key}) {
+          useEffect(() => {
+            console.log(foo?.[key]);
           }, [foo?.[key]]);
         }
       `,
@@ -8146,6 +8163,40 @@ const testsTypescript = {
     },
   ],
   invalid: [
+    {
+      code: normalizeIndent`
+        function MyComponent({foo}) {
+          useEffect(() => {
+            console.log(foo?.bar);
+          }, [foo?.bar!]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has a missing dependency: 'foo?.bar'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [foo?.bar]',
+              output: normalizeIndent`
+                function MyComponent({foo}) {
+                  useEffect(() => {
+                    console.log(foo?.bar);
+                  }, [foo?.bar]);
+                }
+              `,
+            },
+          ],
+        },
+        {
+          message:
+            'React Hook useEffect has a complex expression in the dependency array. ' +
+            'Extract it to a separate variable so it can be statically checked.',
+          suggestions: undefined,
+        },
+      ],
+    },
     {
       // `local` is still non-constant, despite the cast.
       code: normalizeIndent`

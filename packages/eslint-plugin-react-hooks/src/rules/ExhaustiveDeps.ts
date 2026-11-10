@@ -1950,7 +1950,7 @@ function analyzePropertyChain(
   } else if (node.type === 'ChainExpression') {
     const expression = node.expression;
 
-    if (expression.type === 'CallExpression' || expression.computed) {
+    if (expression.type !== 'MemberExpression' || expression.computed) {
       throw new Error(`Unsupported node type: ${expression.type}`);
     }
 
