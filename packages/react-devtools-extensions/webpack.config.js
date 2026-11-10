@@ -144,7 +144,28 @@ module.exports = {
     }),
     new Webpack.SourceMapDevToolPlugin({
       filename: '[file].map',
-      include: ['installHook.js', 'react_devtools_backend_compact.js'],
+      include: ['installHook.js'],
+      noSources: !__DEV__,
+      // In production, don't append the sourceMappingURL comment. installHook.js
+      // runs in the page's MAIN world, so browsers resolve the source map URL
+      // relative to the page origin (not the extension URL), causing a failed
+      // network request and a console warning in every app with DevTools installed.
+      append: __DEV__ ? undefined : false,
+      // https://github.com/webpack/webpack/issues/3603#issuecomment-1743147144
+      moduleFilenameTemplate(info) {
+        const {absoluteResourcePath, namespace, resourcePath} = info;
+
+        if (isAbsolute(absoluteResourcePath)) {
+          return relative(__dirname + '/build', absoluteResourcePath);
+        }
+
+        // Mimic Webpack's default behavior:
+        return `webpack://${namespace}/${resourcePath}`;
+      },
+    }),
+    new Webpack.SourceMapDevToolPlugin({
+      filename: '[file].map',
+      include: ['react_devtools_backend_compact.js'],
       noSources: !__DEV__,
       // https://github.com/webpack/webpack/issues/3603#issuecomment-1743147144
       moduleFilenameTemplate(info) {
