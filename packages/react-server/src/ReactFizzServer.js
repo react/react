@@ -946,15 +946,6 @@ function createRenderTask(
   legacyContext: LegacyContext,
   debugTask: null | ConsoleTask,
 ): RenderTask {
-  request.allPendingTasks++;
-  if (blockedBoundary === null) {
-    request.pendingRootTasks++;
-  } else {
-    blockedBoundary.pendingTasks++;
-  }
-  if (row !== null) {
-    row.pendingTasks++;
-  }
   const task: RenderTask = {
     replay: null,
     node,
@@ -983,6 +974,17 @@ function createRenderTask(
     task.debugTask = debugTask;
   }
   abortSet.add(task);
+  // We count the task last so that if anything above throws, nothing is left
+  // waiting for a task that doesn't exist.
+  request.allPendingTasks++;
+  if (blockedBoundary === null) {
+    request.pendingRootTasks++;
+  } else {
+    blockedBoundary.pendingTasks++;
+  }
+  if (row !== null) {
+    row.pendingTasks++;
+  }
   return task;
 }
 
@@ -1004,16 +1006,6 @@ function createReplayTask(
   legacyContext: LegacyContext,
   debugTask: null | ConsoleTask,
 ): ReplayTask {
-  request.allPendingTasks++;
-  if (blockedBoundary === null) {
-    request.pendingRootTasks++;
-  } else {
-    blockedBoundary.pendingTasks++;
-  }
-  if (row !== null) {
-    row.pendingTasks++;
-  }
-  replay.pendingTasks++;
   const task: ReplayTask = {
     replay,
     node,
@@ -1042,6 +1034,18 @@ function createReplayTask(
     task.debugTask = debugTask;
   }
   abortSet.add(task);
+  // We count the task last so that if anything above throws, nothing is left
+  // waiting for a task that doesn't exist.
+  request.allPendingTasks++;
+  if (blockedBoundary === null) {
+    request.pendingRootTasks++;
+  } else {
+    blockedBoundary.pendingTasks++;
+  }
+  if (row !== null) {
+    row.pendingTasks++;
+  }
+  replay.pendingTasks++;
   return task;
 }
 
@@ -4355,10 +4359,7 @@ function spawnNewSuspendedRenderTask(
     // Assume we are text embedded at the trailing edge
     true,
   );
-  segment.children.push(newSegment);
-  // Reset lastPushedText for current Segment since the new Segment "consumed" it
-  segment.lastPushedText = false;
-  return createRenderTask(
+  const newTask = createRenderTask(
     request,
     thenableState,
     task.node,
@@ -4377,6 +4378,12 @@ function spawnNewSuspendedRenderTask(
     !disableLegacyContext ? task.legacyContext : emptyContextObject,
     __DEV__ ? task.debugTask : null,
   );
+  // We leave the hole last. That way, if we couldn't create the task, we
+  // don't leave behind a segment that nothing will ever fill in.
+  segment.children.push(newSegment);
+  // Reset lastPushedText for current Segment since the new Segment "consumed" it
+  segment.lastPushedText = false;
+  return newTask;
 }
 
 function postponeNewSuspendedRenderTask(
