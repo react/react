@@ -788,4 +788,48 @@ describe('ReactDOMFizzServerNode', () => {
       '<div>' + Array(700).fill('ののの').join('<!-- -->') + '</div>',
     );
   });
+
+  describe('deeply nested segments', () => {
+    // Every level suspends once while it's the only child of an array. That
+    // leaves a segment for it inside the segment of the level above, with
+    // nothing after it.
+    const depth = 5000;
+    function createNested() {
+      const suspended = new Set();
+      function Level({n}) {
+        if (!suspended.has(n)) {
+          suspended.add(n);
+          throw Promise.resolve();
+        }
+        if (n === 0) {
+          return <i>leaf</i>;
+        }
+        return [<Level key="child" n={n - 1} />];
+      }
+      return <Level n={depth} />;
+    }
+
+    function renderToString(element) {
+      return new Promise((resolve, reject) => {
+        const {writable, output, completed} = getTestWritable();
+        const errors = [];
+        const {pipe} = ReactDOMFizzServer.renderToPipeableStream(element, {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError: reject,
+          onAllReady() {
+            pipe(writable);
+            completed.then(() => resolve({html: output.result, errors}));
+          },
+        });
+      });
+    }
+
+    it('writes them without running out of stack', async () => {
+      const {html, errors} = await renderToString(createNested());
+      expect(errors).toEqual([]);
+      expect(html).toBe('<i>leaf</i>');
+    });
+  });
 });
