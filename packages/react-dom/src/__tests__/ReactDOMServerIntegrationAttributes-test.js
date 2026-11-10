@@ -119,69 +119,126 @@ describe('ReactDOMServerIntegration', () => {
 
     describe('boolean properties', function () {
       itRenders('boolean prop with true value', async render => {
-        const e = await render(<div hidden={true} />);
-        expect(e.getAttribute('hidden')).toBe('');
+        const e = await render(<button disabled={true} />);
+        expect(e.getAttribute('disabled')).toBe('');
       });
 
       itRenders('boolean prop with false value', async render => {
-        const e = await render(<div hidden={false} />);
-        expect(e.getAttribute('hidden')).toBe(null);
+        const e = await render(<button disabled={false} />);
+        expect(e.getAttribute('disabled')).toBe(null);
       });
 
       itRenders('boolean prop with self value', async render => {
-        const e = await render(<div hidden="hidden" />);
-        expect(e.getAttribute('hidden')).toBe('');
+        const e = await render(<button disabled="disabled" />);
+        expect(e.getAttribute('disabled')).toBe('');
       });
 
-      // this does not seem like correct behavior, since hidden="" in HTML indicates
+      // this does not seem like correct behavior, since disabled="" in HTML indicates
       // that the boolean property is present. however, it is how the current code
       // behaves, so the test is included here.
       itRenders('boolean prop with "" value', async render => {
-        const e = await render(<div hidden="" />);
-        expect(e.getAttribute('hidden')).toBe(null);
+        const e = await render(<button disabled="" />);
+        expect(e.getAttribute('disabled')).toBe(null);
       });
 
       // this seems like it might mask programmer error, but it's existing behavior.
       itRenders('boolean prop with string value', async render => {
-        const e = await render(<div hidden="foo" />);
-        expect(e.getAttribute('hidden')).toBe('');
+        const e = await render(<button disabled="foo" />);
+        expect(e.getAttribute('disabled')).toBe('');
       });
 
       // this seems like it might mask programmer error, but it's existing behavior.
       itRenders('boolean prop with array value', async render => {
-        const e = await render(<div hidden={['foo', 'bar']} />);
-        expect(e.getAttribute('hidden')).toBe('');
+        const e = await render(<button disabled={['foo', 'bar']} />);
+        expect(e.getAttribute('disabled')).toBe('');
       });
 
       // this seems like it might mask programmer error, but it's existing behavior.
       itRenders('boolean prop with object value', async render => {
-        const e = await render(<div hidden={{foo: 'bar'}} />);
-        expect(e.getAttribute('hidden')).toBe('');
+        const e = await render(<button disabled={{foo: 'bar'}} />);
+        expect(e.getAttribute('disabled')).toBe('');
       });
 
       // this seems like it might mask programmer error, but it's existing behavior.
       itRenders('boolean prop with non-zero number value', async render => {
-        const e = await render(<div hidden={10} />);
-        expect(e.getAttribute('hidden')).toBe('');
+        const e = await render(<button disabled={10} />);
+        expect(e.getAttribute('disabled')).toBe('');
       });
 
       // this seems like it might mask programmer error, but it's existing behavior.
       itRenders('boolean prop with zero value', async render => {
-        const e = await render(<div hidden={0} />);
-        expect(e.getAttribute('hidden')).toBe(null);
+        const e = await render(<button disabled={0} />);
+        expect(e.getAttribute('disabled')).toBe(null);
       });
 
       itRenders('no boolean prop with null value', async render => {
+        const e = await render(<button disabled={null} />);
+        expect(e.hasAttribute('disabled')).toBe(false);
+      });
+
+      itRenders('no boolean prop with function value', async render => {
+        const e = await render(<button disabled={function () {}} />, 1);
+        expect(e.hasAttribute('disabled')).toBe(false);
+      });
+
+      itRenders('no boolean prop with symbol value', async render => {
+        const e = await render(<button disabled={Symbol('foo')} />, 1);
+        expect(e.hasAttribute('disabled')).toBe(false);
+      });
+    });
+
+    describe('hidden property (combined boolean/string attribute)', function () {
+      itRenders('hidden prop with true value', async render => {
+        const e = await render(<div hidden={true} />);
+        expect(e.getAttribute('hidden')).toBe('');
+      });
+
+      itRenders('hidden prop with false value', async render => {
+        const e = await render(<div hidden={false} />);
+        expect(e.getAttribute('hidden')).toBe(null);
+      });
+
+      itRenders('hidden prop with "until-found" string value', async render => {
+        const e = await render(<div hidden="until-found" />);
+        expect(e.getAttribute('hidden')).toBe('until-found');
+      });
+
+      itRenders('hidden prop with string value', async render => {
+        const e = await render(<div hidden="hidden" />);
+        expect(e.getAttribute('hidden')).toBe('hidden');
+      });
+
+      itRenders('hidden prop with string "false" value', async render => {
+        const e = await render(<div hidden="false" />);
+        expect(e.getAttribute('hidden')).toBe('false');
+      });
+
+      itRenders('hidden prop with string "true" value', async render => {
+        const e = await render(<div hidden={'true'} />);
+        expect(e.getAttribute('hidden')).toBe('true');
+      });
+
+      itRenders('hidden prop with number 0 value', async render => {
+        const e = await render(<div hidden={0} />);
+        expect(e.getAttribute('hidden')).toBe('0');
+      });
+
+      itRenders('no hidden prop with null value', async render => {
         const e = await render(<div hidden={null} />);
         expect(e.hasAttribute('hidden')).toBe(false);
       });
 
-      itRenders('no boolean prop with function value', async render => {
+      itRenders('no hidden prop with undefined value', async render => {
+        const e = await render(<div hidden={undefined} />);
+        expect(e.hasAttribute('hidden')).toBe(false);
+      });
+
+      itRenders('no hidden prop with function value', async render => {
         const e = await render(<div hidden={function () {}} />, 1);
         expect(e.hasAttribute('hidden')).toBe(false);
       });
 
-      itRenders('no boolean prop with symbol value', async render => {
+      itRenders('no hidden prop with symbol value', async render => {
         const e = await render(<div hidden={Symbol('foo')} />, 1);
         expect(e.hasAttribute('hidden')).toBe(false);
       });
