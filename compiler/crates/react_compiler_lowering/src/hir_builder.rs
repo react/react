@@ -142,6 +142,7 @@ pub struct HirBuilder<'a> {
     completed: IndexMap<BlockId, BasicBlock, FxBuildHasher>,
     current: WipBlock,
     entry: BlockId,
+    hoisted_declarations: Vec<InstructionId>,
     scopes: Vec<Scope>,
     /// Context identifiers: variables captured from an outer scope.
     /// Maps the outer scope's BindingId to the source location where it was referenced.
@@ -205,6 +206,7 @@ impl<'a> HirBuilder<'a> {
             completed: IndexMap::default(),
             current: new_block(entry, kind),
             entry,
+            hoisted_declarations: Vec::new(),
             scopes: Vec::new(),
             context: context.unwrap_or_default(),
             bindings: bindings.unwrap_or_default(),
@@ -356,6 +358,17 @@ impl<'a> HirBuilder<'a> {
         for (binding_id, identifier_id) in child_bindings {
             self.bindings.entry(binding_id).or_insert(identifier_id);
         }
+    }
+
+    /// Declare a compiler-generated local outside expression-only blocks.
+    pub fn push_hoisted_declaration(&mut self, instruction: Instruction) {
+        debug_assert!(
+            matches!(instruction.value, InstructionValue::DeclareLocal { .. }),
+            "Only local declarations may be hoisted to the function entry"
+        );
+        let instr_id = InstructionId(self.instruction_table.len() as u32);
+        self.instruction_table.push(instruction);
+        self.hoisted_declarations.push(instr_id);
     }
 
     /// Push an instruction onto the current block.
@@ -795,6 +808,14 @@ impl<'a> HirBuilder<'a> {
         };
 
         let mut instructions = std::mem::take(&mut self.instruction_table);
+        if !self.hoisted_declarations.is_empty() {
+            let entry = hir
+                .blocks
+                .get_mut(&hir.entry)
+                .expect("Function entry must exist");
+            self.hoisted_declarations.append(&mut entry.instructions);
+            entry.instructions = self.hoisted_declarations;
+        }
 
         let rpo_blocks = get_reverse_postordered_blocks(&hir, &instructions);
 

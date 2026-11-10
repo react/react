@@ -486,7 +486,7 @@ enum LogicalAssignmentTarget {
     },
 }
 
-/// Copies `place` into a freshly promoted const temporary and returns it.
+/// Captures `place` in a function-local temporary that can be assigned in value blocks.
 /// Codegen re-emits unpromoted temporaries at each use site, so a temporary
 /// whose defining expression may have effects must be copied to a named
 /// temporary before it can be referenced more than once.
@@ -494,18 +494,33 @@ fn copy_to_promoted_temporary(
     builder: &mut HirBuilder,
     place: Place,
 ) -> Result<Place, CompilerError> {
-    let temporary = build_temporary_place(builder, place.loc.clone());
+    let temporary = build_temporary_place(builder, place.loc);
     promote_temporary(builder, temporary.identifier);
+    let declaration = Instruction {
+        id: EvaluationOrder(0),
+        lvalue: build_temporary_place(builder, temporary.loc),
+        value: InstructionValue::DeclareLocal {
+            lvalue: LValue {
+                kind: InstructionKind::Let,
+                place: temporary.clone(),
+            },
+            type_annotation: None,
+            loc: temporary.loc,
+        },
+        effects: None,
+        loc: temporary.loc,
+    };
+    builder.push_hoisted_declaration(declaration);
     lower_value_to_temporary(
         builder,
         InstructionValue::StoreLocal {
             lvalue: LValue {
-                kind: InstructionKind::Const,
+                kind: InstructionKind::Reassign,
                 place: temporary.clone(),
             },
             value: place,
             type_annotation: None,
-            loc: temporary.loc.clone(),
+            loc: temporary.loc,
         },
     )?;
     Ok(temporary)
@@ -515,7 +530,7 @@ fn copy_to_promoted_temporary(
 /// reusing the value-block structure of LogicalExpression lowering so that the
 /// right-hand side and the store only evaluate when the assignment is taken.
 /// The target reference (including the object and key of member targets) is
-/// lowered exactly once, before the logical terminal.
+/// lowered exactly once in the logical test, preserving its evaluation position.
 fn lower_logical_assignment(
     builder: &mut HirBuilder,
     expr: &react_compiler_ast::expressions::AssignmentExpression,
@@ -525,6 +540,54 @@ fn lower_logical_assignment(
     use react_compiler_ast::patterns::PatternLike;
 
     let left_loc = pattern_like_loc(&expr.left);
+    if !matches!(
+        &*expr.left,
+        PatternLike::Identifier(_) | PatternLike::MemberExpression(_)
+    ) {
+        let other = &*expr.left;
+        builder.record_error(CompilerErrorDetail {
+            reason: format!(
+                "(BuildHIR::lowerExpression) Expected Identifier or MemberExpression, got {} lval in AssignmentExpression",
+                match other {
+                    PatternLike::ObjectPattern(_) => "ObjectPattern",
+                    PatternLike::ArrayPattern(_) => "ArrayPattern",
+                    PatternLike::AssignmentPattern(_) => "AssignmentPattern",
+                    PatternLike::RestElement(_) => "RestElement",
+                    _ => "unknown",
+                }
+            ),
+            category: ErrorCategory::Todo,
+            loc: loc.clone(),
+            description: None,
+            suggestions: None,
+        })?;
+        return Ok(InstructionValue::UnsupportedNode {
+            node_type: Some("AssignmentExpression".to_string()),
+            original_node: serialize_expression(
+                &react_compiler_ast::expressions::Expression::AssignmentExpression(expr.clone()),
+            ),
+            loc,
+        });
+    }
+
+    let continuation_block = builder.reserve(builder.current_block_kind());
+    let continuation_id = continuation_block.id;
+    let test_block = builder.reserve(BlockKind::Value);
+    let test_block_id = test_block.id;
+    let place = build_temporary_place(builder, loc.clone());
+    let previous_value_place = build_temporary_place(builder, left_loc.clone());
+
+    builder.terminate_with_continuation(
+        Terminal::Logical {
+            operator,
+            test: test_block_id,
+            fallthrough: continuation_id,
+            id: EvaluationOrder(0),
+            loc: loc.clone(),
+        },
+        test_block,
+    );
+
     let (previous_value, target) = match &*expr.left {
         PatternLike::Identifier(ident) => {
             let previous_value = lower_expression_to_temporary(
@@ -535,47 +598,35 @@ fn lower_logical_assignment(
         }
         PatternLike::MemberExpression(member) => {
             let member_loc = convert_base_loc(&member.base);
-            let lowered = lower_member_expression(builder, member)?;
-            // The object (and computed key) of the target are referenced by both
-            // the load and the conditional store, but codegen re-emits unpromoted
-            // temporaries at each use site. Unless re-emitting the reference is
-            // harmless (a plain identifier), copy it into a promoted const
-            // temporary so that effectful expressions evaluate exactly once.
-            let mut target_object = lowered.object;
+            let object = lower_expression_to_temporary(builder, &member.object)?;
+            let target_object = if matches!(
+                &*member.object,
+                react_compiler_ast::expressions::Expression::Identifier(_)
+            ) {
+                object
+            } else {
+                copy_to_promoted_temporary(builder, object)?
+            };
+            // Capture the object before lowering the key, so no pending key
+            // expression has to be promoted across the capture assignment.
+            let lowered =
+                lower_member_expression_impl(builder, member, Some(target_object.clone()))?;
             let mut target_property = lowered.property;
             let mut load_value = lowered.value;
             if !matches!(load_value, InstructionValue::UnsupportedNode { .. }) {
-                let object_hopped = !matches!(
-                    &*member.object,
-                    react_compiler_ast::expressions::Expression::Identifier(_)
-                );
-                if object_hopped {
-                    target_object = copy_to_promoted_temporary(builder, target_object)?;
-                }
-                let mut property_hopped = false;
                 if let MemberProperty::Computed(prop_place) = &target_property {
                     if !matches!(
                         &*member.property,
                         react_compiler_ast::expressions::Expression::Identifier(_)
                     ) {
                         let promoted = copy_to_promoted_temporary(builder, prop_place.clone())?;
-                        target_property = MemberProperty::Computed(promoted);
-                        property_hopped = true;
+                        target_property = MemberProperty::Computed(promoted.clone());
+                        load_value = InstructionValue::ComputedLoad {
+                            object: target_object.clone(),
+                            property: promoted,
+                            loc: member_loc.clone(),
+                        };
                     }
-                }
-                if object_hopped || property_hopped {
-                    load_value = match &target_property {
-                        MemberProperty::Literal(prop_literal) => InstructionValue::PropertyLoad {
-                            object: target_object.clone(),
-                            property: prop_literal.clone(),
-                            loc: member_loc.clone(),
-                        },
-                        MemberProperty::Computed(prop_place) => InstructionValue::ComputedLoad {
-                            object: target_object.clone(),
-                            property: prop_place.clone(),
-                            loc: member_loc.clone(),
-                        },
-                    };
                 }
             }
             let previous_value = lower_value_to_temporary(builder, load_value)?;
@@ -588,41 +639,8 @@ fn lower_logical_assignment(
                 },
             )
         }
-        other => {
-            builder.record_error(CompilerErrorDetail {
-                reason: format!(
-                    "(BuildHIR::lowerExpression) Expected Identifier or MemberExpression, got {} lval in AssignmentExpression",
-                    match other {
-                        PatternLike::ObjectPattern(_) => "ObjectPattern",
-                        PatternLike::ArrayPattern(_) => "ArrayPattern",
-                        PatternLike::AssignmentPattern(_) => "AssignmentPattern",
-                        PatternLike::RestElement(_) => "RestElement",
-                        _ => "unknown",
-                    }
-                ),
-                category: ErrorCategory::Todo,
-                loc: loc.clone(),
-                description: None,
-                suggestions: None,
-            })?;
-            return Ok(InstructionValue::UnsupportedNode {
-                node_type: Some("AssignmentExpression".to_string()),
-                original_node: serialize_expression(
-                    &react_compiler_ast::expressions::Expression::AssignmentExpression(
-                        expr.clone(),
-                    ),
-                ),
-                loc,
-            });
-        }
+        _ => unreachable!("Logical assignment target was validated"),
     };
-
-    let continuation_block = builder.reserve(builder.current_block_kind());
-    let continuation_id = continuation_block.id;
-    let test_block = builder.reserve(BlockKind::Value);
-    let test_block_id = test_block.id;
-    let place = build_temporary_place(builder, loc.clone());
-    let previous_value_place = build_temporary_place(builder, left_loc.clone());
 
     // Short-circuit case: keep the previous value as the expression result
     let consequent_block = builder.try_enter(BlockKind::Value, |builder, _block_id| {
@@ -713,18 +731,7 @@ fn lower_logical_assignment(
         })
     });
 
-    builder.terminate_with_continuation(
-        Terminal::Logical {
-            operator,
-            test: test_block_id,
-            fallthrough: continuation_id,
-            id: EvaluationOrder(0),
-            loc: loc.clone(),
-        },
-        test_block,
-    );
-
-    // Now in test block: load the previously-read target value and branch
+    // Complete the test with the previously-read target value.
     builder.push(Instruction {
         id: EvaluationOrder(0),
         lvalue: previous_value_place.clone(),

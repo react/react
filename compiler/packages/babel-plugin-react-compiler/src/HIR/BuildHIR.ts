@@ -3355,7 +3355,7 @@ type LogicalAssignmentTarget =
     };
 
 /**
- * Copies `place` into a freshly promoted const temporary and returns it.
+ * Captures `place` in a function-local temporary assignable in value blocks.
  * Codegen re-emits unpromoted temporaries at each use site, so a temporary
  * whose defining expression may have effects must be copied to a named
  * temporary before it can be referenced more than once.
@@ -3363,9 +3363,21 @@ type LogicalAssignmentTarget =
 function copyToPromotedTemporary(builder: HIRBuilder, place: Place): Place {
   const temporary = buildTemporaryPlace(builder, place.loc);
   promoteTemporary(temporary.identifier);
+  builder.pushHoistedDeclaration({
+    id: makeInstructionId(0),
+    lvalue: buildTemporaryPlace(builder, place.loc),
+    value: {
+      kind: 'DeclareLocal',
+      lvalue: {kind: InstructionKind.Let, place: {...temporary}},
+      type: null,
+      loc: place.loc,
+    },
+    effects: null,
+    loc: place.loc,
+  });
   lowerValueToTemporary(builder, {
     kind: 'StoreLocal',
-    lvalue: {kind: InstructionKind.Const, place: {...temporary}},
+    lvalue: {kind: InstructionKind.Reassign, place: {...temporary}},
     value: {...place},
     type: null,
     loc: place.loc,
@@ -3378,7 +3390,7 @@ function copyToPromotedTemporary(builder: HIRBuilder, place: Place): Place {
  * reusing the value-block structure of LogicalExpression lowering so that the
  * right-hand side and the store only evaluate when the assignment is taken.
  * The target reference (including the object and key of member targets) is
- * lowered exactly once, before the logical terminal.
+ * lowered exactly once in the logical test, preserving its evaluation position.
  */
 function lowerLogicalAssignment(
   builder: HIRBuilder,
@@ -3401,51 +3413,57 @@ function lowerLogicalAssignment(
     return {kind: 'UnsupportedNode', node: expr.node, loc: exprLoc};
   }
 
+  const continuationBlock = builder.reserve(builder.currentBlockKind());
+  const testBlock = builder.reserve('value');
+  const place = buildTemporaryPlace(builder, exprLoc);
+  const previousValuePlace = buildTemporaryPlace(builder, leftLoc);
+
+  builder.terminateWithContinuation(
+    {
+      kind: 'logical',
+      fallthrough: continuationBlock.id,
+      id: makeInstructionId(0),
+      test: testBlock.id,
+      operator,
+      loc: exprLoc,
+    },
+    testBlock,
+  );
+
   let assignmentTarget: LogicalAssignmentTarget;
   let previousValue: Place;
   if (left.isIdentifier()) {
     previousValue = lowerExpressionToTemporary(builder, left);
     assignmentTarget = {kind: 'Identifier', path: left};
   } else {
-    const {object, property, value} = lowerMemberExpression(builder, left);
+    const object = lowerExpressionToTemporary(builder, left.get('object'));
+    const targetObject = left.get('object').isIdentifier()
+      ? object
+      : copyToPromotedTemporary(builder, object);
     /*
-     * The object (and computed key) of the target are referenced by both the
-     * load and the conditional store, but codegen re-emits unpromoted
-     * temporaries at each use site. Unless re-emitting the reference is
-     * harmless (a plain identifier), copy it into a promoted const temporary
-     * so that effectful expressions evaluate exactly once.
+     * Capture the object before lowering the key, so no pending key
+     * expression has to be promoted across the capture assignment.
      */
-    let targetObject = object;
+    const {property, value} = lowerMemberExpression(
+      builder,
+      left,
+      targetObject,
+    );
     let targetProperty = property;
     let loadValue = value;
-    if (value.kind !== 'UnsupportedNode') {
-      if (!left.get('object').isIdentifier()) {
-        targetObject = copyToPromotedTemporary(builder, object);
-      }
-      if (
-        typeof property !== 'string' &&
-        typeof property !== 'number' &&
-        !left.get('property').isIdentifier()
-      ) {
-        targetProperty = copyToPromotedTemporary(builder, property);
-      }
-      if (targetObject !== object || targetProperty !== property) {
-        loadValue =
-          typeof targetProperty === 'string' ||
-          typeof targetProperty === 'number'
-            ? {
-                kind: 'PropertyLoad',
-                object: {...targetObject},
-                property: makePropertyLiteral(targetProperty),
-                loc: leftLoc,
-              }
-            : {
-                kind: 'ComputedLoad',
-                object: {...targetObject},
-                property: {...targetProperty},
-                loc: leftLoc,
-              };
-      }
+    if (
+      value.kind !== 'UnsupportedNode' &&
+      typeof property !== 'string' &&
+      typeof property !== 'number' &&
+      !left.get('property').isIdentifier()
+    ) {
+      targetProperty = copyToPromotedTemporary(builder, property);
+      loadValue = {
+        kind: 'ComputedLoad',
+        object: {...targetObject},
+        property: {...targetProperty},
+        loc: leftLoc,
+      };
     }
     previousValue = lowerValueToTemporary(builder, loadValue);
     assignmentTarget = {
@@ -3455,11 +3473,6 @@ function lowerLogicalAssignment(
       loc: leftLoc,
     };
   }
-
-  const continuationBlock = builder.reserve(builder.currentBlockKind());
-  const testBlock = builder.reserve('value');
-  const place = buildTemporaryPlace(builder, exprLoc);
-  const previousValuePlace = buildTemporaryPlace(builder, leftLoc);
 
   const consequent = builder.enter('value', () => {
     lowerValueToTemporary(builder, {
@@ -3529,17 +3542,6 @@ function lowerLogicalAssignment(
     };
   });
 
-  builder.terminateWithContinuation(
-    {
-      kind: 'logical',
-      fallthrough: continuationBlock.id,
-      id: makeInstructionId(0),
-      test: testBlock.id,
-      operator,
-      loc: exprLoc,
-    },
-    testBlock,
-  );
   builder.push({
     id: makeInstructionId(0),
     lvalue: {...previousValuePlace},
