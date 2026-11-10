@@ -35,7 +35,7 @@ function useHook(t0) {
   if ($[0] !== a || $[1] !== b) {
     const y = { a };
     x = { b };
-    x.y = y;
+    x["y"] = y;
     mutate(x);
     $[0] = a;
     $[1] = b;

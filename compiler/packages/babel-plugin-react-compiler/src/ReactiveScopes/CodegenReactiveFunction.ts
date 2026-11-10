@@ -1264,9 +1264,11 @@ function codegenDependency(
     for (const path of dependency.path) {
       const property =
         typeof path.property === 'string'
-          ? t.identifier(path.property)
+          ? path.computed
+            ? t.stringLiteral(path.property)
+            : t.identifier(path.property)
           : t.numericLiteral(path.property);
-      const isComputed = typeof path.property !== 'string';
+      const isComputed = path.computed || typeof path.property !== 'string';
       if (hasOptional) {
         object = t.optionalMemberExpression(
           object,
@@ -1800,11 +1802,13 @@ function codegenInstructionValue(
     case 'PropertyLoad':
     case 'PropertyDelete': {
       let memberExpr;
+      const computed =
+        instrValue.kind !== 'PropertyDelete' && instrValue.computed;
       /*
        * We currently only lower single chains of optional memberexpr.
        * (See BuildHIR.ts for more detail.)
        */
-      if (typeof instrValue.property === 'string') {
+      if (typeof instrValue.property === 'string' && !computed) {
         memberExpr = t.memberExpression(
           codegenPlaceToExpression(cx, instrValue.object),
           t.identifier(instrValue.property),
@@ -1812,7 +1816,9 @@ function codegenInstructionValue(
       } else {
         memberExpr = t.memberExpression(
           codegenPlaceToExpression(cx, instrValue.object),
-          t.numericLiteral(instrValue.property),
+          typeof instrValue.property === 'string'
+            ? t.stringLiteral(instrValue.property)
+            : t.numericLiteral(instrValue.property),
           true,
         );
       }

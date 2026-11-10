@@ -36,7 +36,7 @@ function component(a) {
     y = {};
 
     const a_0 = y;
-    a_0.x = x;
+    a_0["x"] = x;
 
     mutate(y);
     $[0] = a;
