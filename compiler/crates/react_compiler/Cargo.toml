@@ -22,3 +22,11 @@ indexmap = "2"
 rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
+
+[dev-dependencies]
+criterion = "0.5"
+libc = "0.2"
+
+[[bench]]
+name = "compile_program"
+harness = false
