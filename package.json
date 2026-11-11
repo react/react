@@ -157,6 +157,7 @@
     "flags": "node ./scripts/flags/flags.js"
   },
   "resolutions": {
+    "**/isomorphic-fetch/node-fetch": "^2.6.7",
     "**/sockjs/uuid": "^11.1.1",
     "react-is": "npm:react-is"
   },
