@@ -68,6 +68,6 @@
     "workerize-loader": "^2.0.2"
   },
   "dependencies": {
-    "web-ext": "^8"
+    "web-ext": "^10.8.0"
   }
 }
