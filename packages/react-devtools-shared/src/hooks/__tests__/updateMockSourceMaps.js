@@ -1,5 +1,4 @@
 const {transformSync} = require('@babel/core');
-const {btoa} = require('base64');
 const {
   lstatSync,
   mkdirSync,
