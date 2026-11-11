@@ -723,6 +723,40 @@ describe('ReactDOMFizzServer', () => {
     expect(recoverableErrors).toEqual([]);
   });
 
+  it('updates browser-only fallback props while client data is pending', async () => {
+    const clientPromise = new Promise(() => {});
+
+    function ClientOnly() {
+      use(ReactDOM.browser());
+      return <span>{use(clientPromise)}</span>;
+    }
+
+    function App({fallbackText}) {
+      return (
+        <Suspense fallback={<span>{fallbackText}</span>}>
+          <ClientOnly />
+        </Suspense>
+      );
+    }
+
+    await act(() => {
+      renderToPipeableStream(<App fallbackText="Loading" />, {
+        onBrowserBailout() {},
+      }).pipe(writable);
+    });
+
+    const root = ReactDOMClient.hydrateRoot(
+      container,
+      <App fallbackText="Loading" />,
+    );
+    await waitForAll([]);
+
+    await clientAct(() => {
+      root.render(<App fallbackText="Still loading" />);
+    });
+    expect(getVisibleChildren(container)).toEqual(<span>Still loading</span>);
+  });
+
   it('can opt a component into browser-only rendering after streaming the fallback', async () => {
     let resolveServerReady;
     const serverReady = new Promise(resolve => {

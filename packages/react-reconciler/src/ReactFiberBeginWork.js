@@ -2857,14 +2857,36 @@ function updateSuspenseFallbackChildren(
   }
   let fallbackChildFragment;
   if (currentFallbackChildFragment !== null) {
-    if (currentFallbackChildFragment.tag === DehydratedFragment) {
+    if (
+      currentFallbackChildFragment.tag === DehydratedFragment &&
+      current.memoizedProps.fallback === fallbackChildren
+    ) {
       // This boundary is showing a server-rendered fallback that was kept in
-      // place instead of remounting (see updateDehydratedSuspenseComponent).
-      // Keep it as-is; there's nothing to render inside it.
+      // place instead of remounting (see updateDehydratedSuspenseComponent),
+      // and the fallback props haven't changed. Keep it as-is; there's
+      // nothing to render inside it.
       fallbackChildFragment = createWorkInProgress(
         currentFallbackChildFragment,
         null,
       );
+    } else if (currentFallbackChildFragment.tag === DehydratedFragment) {
+      // The fallback props changed while we're still showing the
+      // server-rendered fallback. The dehydrated fragment can't render new
+      // children, so delete it and mount the new fallback in its place.
+      const deletions = workInProgress.deletions;
+      if (deletions === null) {
+        workInProgress.deletions = [currentFallbackChildFragment];
+        workInProgress.flags |= ChildDeletion;
+      } else {
+        deletions.push(currentFallbackChildFragment);
+      }
+      fallbackChildFragment = createFiberFromFragment(
+        fallbackChildren,
+        mode,
+        renderLanes,
+        null,
+      );
+      fallbackChildFragment.flags |= Placement;
     } else {
       fallbackChildFragment = createWorkInProgress(
         currentFallbackChildFragment,
