@@ -10,6 +10,10 @@
 import {existsSync} from 'fs';
 import {basename, join, isAbsolute} from 'path';
 import {execSync, spawn} from 'child_process';
+// Explicitly import Node's process: the standalone bundle's ProvidePlugin
+// rewrites the free `process` global to the `process/browser` polyfill,
+// which has an empty `env` and no `platform`.
+import process from 'process';
 import {parse} from 'shell-quote';
 
 function isTerminalEditor(editor: string): boolean {
