@@ -44,7 +44,7 @@
     "file-loader": "^6.1.0",
     "filesize": "^6.0.1",
     "find": "^0.3.0",
-    "firefox-profile": "^1.0.2",
+    "firefox-profile": "^4.7.1",
     "fs-extra": "^4.0.2",
     "imagemin": "^8.0.0",
     "imagemin-gifsicle": "^7.0.0",
