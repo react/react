@@ -127,6 +127,11 @@ function prerenderToNodeStream(
         read() {
           startFlowing(request, writable);
         },
+        destroy(error, callback) {
+          stopFlowing(request);
+          abort(request, error);
+          callback(error || undefined);
+        },
       });
       const writable = createFakeWritableFromReadable(readable);
 
@@ -271,6 +276,11 @@ function resumeAndPrerenderToNodeStream(
       const readable: Readable = new Readable({
         read() {
           startFlowing(request, writable);
+        },
+        destroy(error, callback) {
+          stopFlowing(request);
+          abort(request, error);
+          callback(error || undefined);
         },
       });
       const writable = createFakeWritableFromReadable(readable);
