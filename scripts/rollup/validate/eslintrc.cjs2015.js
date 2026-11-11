@@ -33,6 +33,7 @@ module.exports = {
     Reflect: 'readonly',
     globalThis: 'readonly',
     FinalizationRegistry: 'readonly',
+    Temporal: 'readonly',
     ScrollTimeline: 'readonly',
     navigation: 'readonly',
     // Vendor specific

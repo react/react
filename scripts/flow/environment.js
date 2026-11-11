@@ -19,6 +19,46 @@ declare const __REACT_DEVTOOLS_GLOBAL_HOOK__: any; /*?{
 
 declare const reportError: (error: mixed) => void;
 
+// Flow doesn't include Temporal in its built-in library definitions yet. This
+// only declares the parts that we use.
+declare namespace Temporal {
+  declare class Instant {
+    static from(item: string): Instant;
+    toJSON(key?: mixed): string;
+  }
+  declare class ZonedDateTime {
+    static from(
+      item: string,
+      options?: {offset?: 'use' | 'ignore' | 'prefer' | 'reject', ...},
+    ): ZonedDateTime;
+    toJSON(key?: mixed): string;
+  }
+  declare class PlainDate {
+    static from(item: string): PlainDate;
+    toJSON(key?: mixed): string;
+  }
+  declare class PlainTime {
+    static from(item: string): PlainTime;
+    toJSON(key?: mixed): string;
+  }
+  declare class PlainDateTime {
+    static from(item: string): PlainDateTime;
+    toJSON(key?: mixed): string;
+  }
+  declare class PlainYearMonth {
+    static from(item: string): PlainYearMonth;
+    toJSON(key?: mixed): string;
+  }
+  declare class PlainMonthDay {
+    static from(item: string): PlainMonthDay;
+    toJSON(key?: mixed): string;
+  }
+  declare class Duration {
+    static from(item: string): Duration;
+    toJSON(key?: mixed): string;
+  }
+}
+
 declare module 'create-react-class' {
   declare const exports: $FlowFixMe;
 }

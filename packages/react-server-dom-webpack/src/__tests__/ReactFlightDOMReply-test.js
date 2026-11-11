@@ -16,6 +16,9 @@ global.ReadableStream =
   require('web-streams-polyfill/ponyfill/es6').ReadableStream;
 global.TextEncoder = require('util').TextEncoder;
 global.TextDecoder = require('util').TextDecoder;
+if (typeof Temporal === 'undefined') {
+  global.Temporal = require('temporal-polyfill').Temporal;
+}
 
 // let serverExports;
 let webpackServerMap;
@@ -246,6 +249,114 @@ describe('ReactFlightDOMReply', () => {
 
     expect(d).toEqual(d2);
     expect(d % 1000).toEqual(123); // double-check the milliseconds made it through
+  });
+
+  // @gate enableFlightTemporal
+  it('can pass Temporal objects as a reply', async () => {
+    const values = {
+      instant: Temporal.Instant.from('2009-02-13T23:31:30.123456789Z'),
+      zonedDateTime: Temporal.ZonedDateTime.from(
+        '2009-02-14T00:31:30.123456789+01:00[Europe/Berlin]',
+      ),
+      plainDate: Temporal.PlainDate.from('2009-02-13'),
+      plainTime: Temporal.PlainTime.from('23:31:30.123456789'),
+      plainDateTime: Temporal.PlainDateTime.from(
+        '2009-02-13T23:31:30.123456789',
+      ),
+      plainYearMonth: Temporal.PlainYearMonth.from('2009-02'),
+      plainMonthDay: Temporal.PlainMonthDay.from('02-13'),
+      duration: Temporal.Duration.from('P1Y2M3W4DT5H6M7.123456789S'),
+      negativeDuration: Temporal.Duration.from('-PT36H'),
+      array: [Temporal.PlainDate.from('2009-02-14')],
+    };
+    const body = await ReactServerDOMClient.encodeReply(values);
+    const values2 = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(values2.instant).toBeInstanceOf(Temporal.Instant);
+    expect(values2.instant.equals(values.instant)).toBe(true);
+    expect(values2.zonedDateTime).toBeInstanceOf(Temporal.ZonedDateTime);
+    expect(values2.zonedDateTime.equals(values.zonedDateTime)).toBe(true);
+    expect(values2.plainDate).toBeInstanceOf(Temporal.PlainDate);
+    expect(values2.plainDate.equals(values.plainDate)).toBe(true);
+    expect(values2.plainTime).toBeInstanceOf(Temporal.PlainTime);
+    expect(values2.plainTime.equals(values.plainTime)).toBe(true);
+    expect(values2.plainDateTime).toBeInstanceOf(Temporal.PlainDateTime);
+    expect(values2.plainDateTime.equals(values.plainDateTime)).toBe(true);
+    expect(values2.plainYearMonth).toBeInstanceOf(Temporal.PlainYearMonth);
+    expect(values2.plainYearMonth.equals(values.plainYearMonth)).toBe(true);
+    expect(values2.plainMonthDay).toBeInstanceOf(Temporal.PlainMonthDay);
+    expect(values2.plainMonthDay.equals(values.plainMonthDay)).toBe(true);
+    expect(values2.duration).toBeInstanceOf(Temporal.Duration);
+    expect(values2.duration.toString()).toBe('P1Y2M3W4DT5H6M7.123456789S');
+    expect(values2.negativeDuration).toBeInstanceOf(Temporal.Duration);
+    expect(values2.negativeDuration.toString()).toBe('-PT36H');
+    expect(values2.array[0]).toBeInstanceOf(Temporal.PlainDate);
+    expect(values2.array[0].equals(values.array[0])).toBe(true);
+  });
+
+  // @gate enableFlightTemporal
+  it('can pass a Temporal object as a top-level reply', async () => {
+    const instant = Temporal.Instant.from('2009-02-13T23:31:30.123456789Z');
+    const body = await ReactServerDOMClient.encodeReply(instant);
+    const instant2 = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(instant2).toBeInstanceOf(Temporal.Instant);
+    expect(instant2.equals(instant)).toBe(true);
+  });
+
+  it('does not treat strings that look like Temporal objects as Temporal objects in a reply', async () => {
+    const values = {
+      instant: '2009-02-13T23:31:30.123456789Z',
+      date: '2009-02-13',
+      duration: 'PT36H',
+      negativeDuration: '-PT36H',
+      escaped: '$ti2009-02-13T23:31:30.123456789Z',
+    };
+    const body = await ReactServerDOMClient.encodeReply(values);
+    const values2 = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(values2).toEqual(values);
+  });
+
+  // @gate enableFlightTemporal
+  it('rejects Temporal strings that are too long in a reply', async () => {
+    const body = JSON.stringify(
+      '$ti' + '2009-02-13T23:31:30.' + '1'.repeat(300),
+    );
+
+    let error;
+    try {
+      await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    } catch (x) {
+      error = x;
+    }
+
+    expect(error.message).toBe(
+      'Temporal string is too long. Received 323 characters but the limit is 300.',
+    );
+  });
+
+  // @gate enableFlightTemporal
+  it('rejects malformed Temporal strings in a reply', async () => {
+    const body = JSON.stringify('$tinot an instant');
+
+    let error;
+    try {
+      await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    } catch (x) {
+      error = x;
+    }
+
+    expect(error).toBeInstanceOf(RangeError);
   });
 
   it('can pass a Map as a reply', async () => {

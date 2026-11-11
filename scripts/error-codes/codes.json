@@ -597,5 +597,8 @@
   "609": "Cannot access %s on the client. You cannot read a Server Reference to an object on the client. You can only pass it back to the server.",
   "610": "Cannot assign to a Server Reference to an object on the client.",
   "611": "Expected a Server Reference to an object to resolve to an object.",
-  "612": "Cannot transport a detached buffer. This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`."
+  "612": "Cannot transport a detached buffer. This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.",
+  "613": "A Temporal object was received but Temporal is not available in this environment. Make sure that you load a polyfill that defines the global Temporal.",
+  "614": "Received an unknown type of Temporal object. This is likely caused by a mismatch between the versions of React used to encode and decode it.",
+  "615": "Temporal string is too long. Received %s characters but the limit is %s."
 }

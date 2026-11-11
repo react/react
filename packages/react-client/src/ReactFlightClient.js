@@ -47,6 +47,7 @@ import {
   enableComponentPerformanceTrack,
   enableFlightWeakThenables,
   enableFlightObjectReferences,
+  enableFlightTemporal,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -73,6 +74,8 @@ import {
 } from './ReactFlightReplyClient';
 
 import {readTemporaryReference} from './ReactFlightTemporaryReferences';
+
+import {parseTemporal} from 'shared/ReactFlightTemporal';
 
 import {
   markAllTracksInOrder,
@@ -2874,6 +2877,13 @@ function parseModelString(
       case 'n': {
         // BigInt
         return BigInt(value.slice(2));
+      }
+      case 't': {
+        if (enableFlightTemporal) {
+          // Temporal
+          return parseTemporal(value);
+        }
+        return undefined;
       }
       case 'P': {
         if (__DEV__) {
