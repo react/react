@@ -263,7 +263,7 @@ export default function (babel, opts = {}) {
       key: fnHookCalls.map(call => call.name + '{' + call.key + '}').join('\n'),
       customHooks: fnHookCalls
         .filter(call => !isBuiltinHook(call.name))
-        .map(call => t.cloneDeep(call.callee)),
+        .map(call => call.callee),
     };
   }
 
@@ -310,7 +310,9 @@ export default function (babel, opts = {}) {
           break;
       }
       if (scope.hasBinding(bindingName)) {
-        customHooksInScope.push(callee);
+        // The signature is emitted for the function and for each HOC call
+        // around it. Each of them needs its own node.
+        customHooksInScope.push(t.cloneDeep(callee));
       } else {
         // We don't have anything to put in the array because Hook is out of scope.
         // Since it could potentially have been edited, remount the component.
