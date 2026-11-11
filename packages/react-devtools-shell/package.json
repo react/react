@@ -21,7 +21,7 @@
     "babel-core": "^7.0.0-bridge",
     "babel-eslint": "^9.0.0",
     "babel-loader": "^8.0.4",
-    "cross-env": "^3.1.4",
+    "cross-env": "^7.0.3",
     "css-loader": "^7.1.5",
     "raw-loader": "^3.1.0",
     "style-loader": "^4.0.0",
