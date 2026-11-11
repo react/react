@@ -686,8 +686,10 @@ function serializeReadableStream(request, task, stream) {
   request.pendingChunks++;
   task = streamTask.id.toString(16) + ":" + (isByteStream ? "r" : "R") + "\n";
   request.completedRegularChunks.push(task);
-  request.cacheController.signal.addEventListener("abort", abortStream);
-  reader.read().then(progress, error);
+  request.cacheController.signal.aborted
+    ? abortStream()
+    : (request.cacheController.signal.addEventListener("abort", abortStream),
+      reader.read().then(progress, error));
   return serializeByValueID(streamTask.id);
 }
 function serializeAsyncIterable(request, task, iterable, iterator) {
@@ -770,8 +772,10 @@ function serializeAsyncIterable(request, task, iterable, iterator) {
   request.pendingChunks++;
   task = streamTask.id.toString(16) + ":" + (iterable ? "x" : "X") + "\n";
   request.completedRegularChunks.push(task);
-  request.cacheController.signal.addEventListener("abort", abortIterable);
-  iterator.next().then(progress, error);
+  request.cacheController.signal.aborted
+    ? abortIterable()
+    : (request.cacheController.signal.addEventListener("abort", abortIterable),
+      iterator.next().then(progress, error));
   return serializeByValueID(streamTask.id);
 }
 function readThenable(thenable) {
@@ -1230,8 +1234,10 @@ function serializeBlob(request, blob) {
   var model = [blob.type],
     newTask = createTask(request, model, null, !1, 0, request.abortableTasks),
     reader = blob.stream().getReader();
-  request.cacheController.signal.addEventListener("abort", abortBlob);
-  reader.read().then(progress).catch(error);
+  request.cacheController.signal.aborted
+    ? abortBlob()
+    : (request.cacheController.signal.addEventListener("abort", abortBlob),
+      reader.read().then(progress).catch(error));
   return "$B" + newTask.id.toString(16);
 }
 function escapeStringValue(value) {

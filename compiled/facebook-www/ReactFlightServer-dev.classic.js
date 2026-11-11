@@ -1112,8 +1112,13 @@ __DEV__ &&
       task =
         streamTask.id.toString(16) + ":" + (isByteStream ? "r" : "R") + "\n";
       request.completedRegularChunks.push(task);
-      request.cacheController.signal.addEventListener("abort", abortStream);
-      reader.read().then(progress, error);
+      request.cacheController.signal.aborted
+        ? abortStream()
+        : (request.cacheController.signal.addEventListener(
+            "abort",
+            abortStream
+          ),
+          reader.read().then(progress, error));
       return serializeByValueID(streamTask.id);
     }
     function serializeAsyncIterable(request, task, iterable, iterator) {
@@ -1199,8 +1204,13 @@ __DEV__ &&
       isIterator =
         streamTask.id.toString(16) + ":" + (isIterator ? "x" : "X") + "\n";
       request.completedRegularChunks.push(isIterator);
-      request.cacheController.signal.addEventListener("abort", abortIterable);
-      callIteratorInDEV(iterator, progress, error);
+      request.cacheController.signal.aborted
+        ? abortIterable()
+        : (request.cacheController.signal.addEventListener(
+            "abort",
+            abortIterable
+          ),
+          callIteratorInDEV(iterator, progress, error));
       return serializeByValueID(streamTask.id);
     }
     function readThenable(thenable) {
@@ -2066,8 +2076,10 @@ __DEV__ &&
           null
         ),
         reader = blob.stream().getReader();
-      request.cacheController.signal.addEventListener("abort", abortBlob);
-      reader.read().then(progress).catch(error);
+      request.cacheController.signal.aborted
+        ? abortBlob()
+        : (request.cacheController.signal.addEventListener("abort", abortBlob),
+          reader.read().then(progress).catch(error));
       return "$B" + newTask.id.toString(16);
     }
     function escapeStringValue(value) {
