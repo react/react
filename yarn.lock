@@ -9711,10 +9711,10 @@ immediate@~3.0.5:
   resolved "https://registry.yarnpkg.com/immediate/-/immediate-3.0.6.tgz#9db1dbd0faf8de6fbe0f5dd5e56bb606280de69b"
   integrity sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==
 
-immutable@^4.0.0-rc.12:
-  version "4.0.0-rc.12"
-  resolved "https://registry.yarnpkg.com/immutable/-/immutable-4.0.0-rc.12.tgz#ca59a7e4c19ae8d9bf74a97bdf0f6e2f2a5d0217"
-  integrity sha512-0M2XxkZLx/mi3t8NVwIm1g8nHoEmM9p9UBl/G9k4+hm0kBgOVdMV/B3CY5dQ8qG8qc80NN4gDV4HQv6FTJ5q7A==
+immutable@^4.3.9:
+  version "4.3.9"
+  resolved "https://registry.yarnpkg.com/immutable/-/immutable-4.3.9.tgz#c98349e05e9c6e2a4d8fe88ac0b363e0d536b544"
+  integrity sha512-ObHy4YN7ycwZOUCLI1/6svfyAFu7vL8RhAvVu/bh/RZW9EPlOyDaQ9jDQWCtdqzaXUjgXZCW1migtHE7YI7UGQ==
 
 import-fresh@^3.0.0:
   version "3.2.1"
@@ -13478,9 +13478,9 @@ semver@^5.1.0, semver@^5.5.0, semver@^5.6.0, semver@^5.7.0:
   integrity sha512-sauaDf/PZdVgrLTNYHRtpXa1iRiKcaebiKQ1BJdpQlWH2lCvexQdX55snPFyK7QzpudqbCI0qXFfOasHdyNDGQ==
 
 semver@^6.2.0:
-  version "6.3.0"
-  resolved "https://registry.yarnpkg.com/semver/-/semver-6.3.0.tgz#ee0a64c8af5e8ceea67687b133761e1becbd1d3d"
-  integrity sha512-b39TBaTSfV6yBrapU89p5fKekE2m/NwnDocOVruQFS1/veMgdzuPcnOM34M6CwxW8jH/lxEa5rBoDeUwu5HHTw==
+  version "6.3.2"
+  resolved "https://registry.yarnpkg.com/semver/-/semver-6.3.2.tgz#f50413fbe5a686c6379385b2e8789b61c124a3c7"
+  integrity sha512-GYrCADwpu6yV5OAvchkQ27Z5wwMxWAEMg5NNWjyHh/5DboFFqbdbvYNIvZouQpxXyeMPoTOh0vdPYKlf0ZswdQ==
 
 semver@^6.3.0, semver@^6.3.1:
   version "6.3.1"
