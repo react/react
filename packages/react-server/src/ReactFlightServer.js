@@ -1407,8 +1407,12 @@ function serializeReadableStream(
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortStream);
-  reader.read().then(progress, error);
+  if (request.cacheController.signal.aborted) {
+    abortStream();
+  } else {
+    request.cacheController.signal.addEventListener('abort', abortStream);
+    reader.read().then(progress, error);
+  }
   return serializeByValueID(streamTask.id);
 }
 
@@ -1542,11 +1546,15 @@ function serializeAsyncIterable(
       iterator.throw(reason).then(noop, noop);
     }
   }
-  request.cacheController.signal.addEventListener('abort', abortIterable);
-  if (__DEV__) {
-    callIteratorInDEV(iterator, progress, error);
+  if (request.cacheController.signal.aborted) {
+    abortIterable();
   } else {
-    iterator.next().then(progress, error);
+    request.cacheController.signal.addEventListener('abort', abortIterable);
+    if (__DEV__) {
+      callIteratorInDEV(iterator, progress, error);
+    } else {
+      iterator.next().then(progress, error);
+    }
   }
   return serializeByValueID(streamTask.id);
 }
@@ -3618,10 +3626,14 @@ function serializeBlob(request: Request, blob: Blob): string {
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortBlob);
+  if (request.cacheController.signal.aborted) {
+    abortBlob();
+  } else {
+    request.cacheController.signal.addEventListener('abort', abortBlob);
 
-  // $FlowFixMe[incompatible-type]
-  reader.read().then(progress).catch(error);
+    // $FlowFixMe[incompatible-type]
+    reader.read().then(progress).catch(error);
+  }
 
   return '$B' + newTask.id.toString(16);
 }
