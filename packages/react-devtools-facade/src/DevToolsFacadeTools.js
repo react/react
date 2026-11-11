@@ -31,6 +31,8 @@ import {createProfilerTools} from './DevToolsFacadeProfilerTools';
 export type {
   TreeNode,
   NodeInfo,
+  NodeMeta,
+  SuspenseMeta,
   HookNode,
   ComponentSource,
   SourceLocation,

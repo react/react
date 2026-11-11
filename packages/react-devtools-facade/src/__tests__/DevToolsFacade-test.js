@@ -1755,6 +1755,98 @@ describe('react-devtools-facade', () => {
       const info = getComponentByUid(div.uid, true);
       expect(info.hooks).toBeUndefined();
     });
+
+    it('meta is null for components without type-specific info', async () => {
+      function App() {
+        return <div>hello</div>;
+      }
+
+      await act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const app = getComponentTree().find(n => n.name === 'App');
+      expect(getComponentByUid(app.uid).meta).toBe(null);
+
+      const div = getComponentTree().find(n => n.name === 'div');
+      expect(getComponentByUid(div.uid).meta).toBe(null);
+    });
+
+    it('exposes suspended state for a Suspense boundary showing content', async () => {
+      function App() {
+        return (
+          <React.Suspense fallback={<div>loading</div>}>
+            <div>content</div>
+          </React.Suspense>
+        );
+      }
+
+      await act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const suspense = getComponentTree().find(n => n.type === 'suspense');
+      const info = getComponentByUid(suspense.uid);
+      expect(info.meta).toEqual({isSuspended: false});
+    });
+
+    it('exposes suspended state for a Suspense boundary showing fallback', async () => {
+      const never = new Promise(() => {});
+      function Suspender() {
+        React.use(never);
+        return null;
+      }
+      function App() {
+        return (
+          <React.Suspense fallback={<div>loading</div>}>
+            <Suspender />
+          </React.Suspense>
+        );
+      }
+
+      await act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const suspense = getComponentTree().find(n => n.type === 'suspense');
+      const info = getComponentByUid(suspense.uid);
+      expect(info.meta).toEqual({isSuspended: true});
+    });
+
+    it('updates suspended state when a Suspense boundary resolves', async () => {
+      let resolve;
+      const promise = new Promise(r => {
+        resolve = r;
+      });
+      function Suspender() {
+        React.use(promise);
+        return <div>content</div>;
+      }
+      function App() {
+        return (
+          <React.Suspense fallback={<div>loading</div>}>
+            <Suspender />
+          </React.Suspense>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<App />);
+      });
+
+      const suspense = getComponentTree().find(n => n.type === 'suspense');
+      expect(getComponentByUid(suspense.uid).meta).toEqual({
+        isSuspended: true,
+      });
+
+      await act(async () => {
+        resolve();
+      });
+      expect(getComponentByUid(suspense.uid).meta).toEqual({
+        isSuspended: false,
+      });
+    });
   });
 
   describe('getComponentByHostInstance', () => {
