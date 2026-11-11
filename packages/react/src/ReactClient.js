@@ -119,13 +119,12 @@ export {
   getCacheForType as unstable_getCacheForType,
   useCacheRefresh as unstable_useCacheRefresh,
   use,
+  REACT_VIEW_TRANSITION_TYPE as ViewTransition,
+  addTransitionType as addTransitionType,
   // enableScopeAPI
   REACT_SCOPE_TYPE as unstable_Scope,
   // enableTransitionTracing
   REACT_TRACING_MARKER_TYPE as unstable_TracingMarker,
-  // enableViewTransition
-  REACT_VIEW_TRANSITION_TYPE as ViewTransition,
-  addTransitionType as addTransitionType,
   // enableGestureTransition
   startGestureTransition as unstable_startGestureTransition,
   // enableOptimisticKey

@@ -56,7 +56,6 @@ import {
   enableLegacyHidden,
   disableLegacyMode,
   enableComponentPerformanceTrack,
-  enableViewTransition,
   enableDefaultTransitionIndicator,
 } from 'shared/ReactFeatureFlags';
 import {
@@ -355,7 +354,6 @@ export function commitBeforeMutationEffects(
   shouldFireAfterActiveInstanceBlur = false;
 
   const isViewTransitionEligible =
-    enableViewTransition &&
     includesOnlyViewTransitionEligibleLanes(committedLanes);
 
   nextEffect = firstChild;
@@ -392,11 +390,7 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
       }
     }
 
-    if (
-      enableViewTransition &&
-      fiber.alternate === null &&
-      (fiber.flags & Placement) !== NoFlags
-    ) {
+    if (fiber.alternate === null && (fiber.flags & Placement) !== NoFlags) {
       // Skip before mutation effects of the children because we don't want
       // to trigger updates of any nested view transitions and we shouldn't
       // have any other before mutation effects since snapshot effects are
@@ -409,7 +403,7 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
     }
 
     // TODO: This should really unify with the switch in commitBeforeMutationEffectsOnFiber recursively.
-    if (enableViewTransition && fiber.tag === OffscreenComponent) {
+    if (fiber.tag === OffscreenComponent) {
       const isModernRoot =
         disableLegacyMode || (fiber.mode & ConcurrentMode) !== NoMode;
       if (isModernRoot) {
@@ -531,24 +525,22 @@ function commitBeforeMutationEffectsOnFiber(
       // Nothing to do for these component types
       break;
     case ViewTransitionComponent:
-      if (enableViewTransition) {
-        if (isViewTransitionEligible) {
-          if (current === null) {
-            // This is a new mount. We should have handled this as part of the
-            // Placement effect or it is deeper inside a entering transition.
-          } else {
-            // Something may have mutated within this subtree. This might need to cause
-            // a cross-fade of this parent. We first assign old names to the
-            // previous tree in the before mutation phase in case we need to.
-            // TODO: This walks the tree that we might continue walking anyway.
-            // We should just stash the parent ViewTransitionComponent and continue
-            // walking the tree until we find HostComponent but to do that we need
-            // to use a stack which requires refactoring this phase.
-            commitBeforeUpdateViewTransition(current, finishedWork);
-          }
+      if (isViewTransitionEligible) {
+        if (current === null) {
+          // This is a new mount. We should have handled this as part of the
+          // Placement effect or it is deeper inside a entering transition.
+        } else {
+          // Something may have mutated within this subtree. This might need to cause
+          // a cross-fade of this parent. We first assign old names to the
+          // previous tree in the before mutation phase in case we need to.
+          // TODO: This walks the tree that we might continue walking anyway.
+          // We should just stash the parent ViewTransitionComponent and continue
+          // walking the tree until we find HostComponent but to do that we need
+          // to use a stack which requires refactoring this phase.
+          commitBeforeUpdateViewTransition(current, finishedWork);
         }
-        break;
       }
+      break;
     // Fallthrough
     default: {
       if ((flags & Snapshot) !== NoFlags) {
@@ -835,21 +827,18 @@ function commitLayoutEffectOnFiber(
       break;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        if (__DEV__) {
-          if (flags & ViewTransitionNamedStatic) {
-            trackNamedViewTransition(finishedWork);
-          }
+      if (__DEV__) {
+        if (flags & ViewTransitionNamedStatic) {
+          trackNamedViewTransition(finishedWork);
         }
-        recursivelyTraverseLayoutEffects(
-          finishedRoot,
-          finishedWork,
-          committedLanes,
-        );
-        if (flags & Ref) {
-          safelyAttachRef(finishedWork, finishedWork.return);
-        }
-        break;
+      }
+      recursivelyTraverseLayoutEffects(
+        finishedRoot,
+        finishedWork,
+        committedLanes,
+      );
+      if (flags & Ref) {
+        safelyAttachRef(finishedWork, finishedWork.return);
       }
       break;
     }
@@ -1749,20 +1738,18 @@ function commitDeletionEffectsOnFiber(
       break;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        if (__DEV__) {
-          if (deletedFiber.flags & ViewTransitionNamedStatic) {
-            untrackNamedViewTransition(deletedFiber);
-          }
+      if (__DEV__) {
+        if (deletedFiber.flags & ViewTransitionNamedStatic) {
+          untrackNamedViewTransition(deletedFiber);
         }
-        safelyDetachRef(deletedFiber, nearestMountedAncestor);
-        recursivelyTraverseDeletionEffects(
-          finishedRoot,
-          nearestMountedAncestor,
-          deletedFiber,
-        );
-        break;
       }
+      safelyDetachRef(deletedFiber, nearestMountedAncestor);
+      recursivelyTraverseDeletionEffects(
+        finishedRoot,
+        nearestMountedAncestor,
+        deletedFiber,
+      );
+      break;
       // Fallthrough
     }
     case Fragment: {
@@ -2659,40 +2646,35 @@ function commitMutationEffectsOnFiber(
       break;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        if (flags & Ref) {
-          if (!offscreenSubtreeWasHidden && current !== null) {
-            safelyDetachRef(current, current.return);
-          }
+      if (flags & Ref) {
+        if (!offscreenSubtreeWasHidden && current !== null) {
+          safelyDetachRef(current, current.return);
         }
-        const prevMutationContext = pushMutationContext();
-        const prevUpdate = inUpdateViewTransition;
-        const isViewTransitionEligible =
-          // $FlowFixMe[constant-condition]
-          enableViewTransition &&
-          includesOnlyViewTransitionEligibleLanes(lanes);
-        const props = finishedWork.memoizedProps;
-        inUpdateViewTransition =
-          isViewTransitionEligible &&
-          getViewTransitionClassName(props.default, props.update) !== 'none';
-        recursivelyTraverseMutationEffects(root, finishedWork, lanes);
-        commitReconciliationEffects(finishedWork, lanes);
-        if (isViewTransitionEligible) {
-          if (current === null) {
-            // This is a new mount. We should have handled this as part of the
-            // Placement effect or it is deeper inside a entering transition.
-          } else if (viewTransitionMutationContext) {
-            // Something mutated in this tree so we need to animate this regardless
-            // what the measurements say. We use the Update flag to track this.
-            // If diffing was done in the render phase, like we used, this could have
-            // been done in the render already.
-            finishedWork.flags |= Update;
-          }
-        }
-        inUpdateViewTransition = prevUpdate;
-        popMutationContext(prevMutationContext);
-        break;
       }
+      const prevMutationContext = pushMutationContext();
+      const prevUpdate = inUpdateViewTransition;
+      const isViewTransitionEligible =
+        includesOnlyViewTransitionEligibleLanes(lanes);
+      const props = finishedWork.memoizedProps;
+      inUpdateViewTransition =
+        isViewTransitionEligible &&
+        getViewTransitionClassName(props.default, props.update) !== 'none';
+      recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      commitReconciliationEffects(finishedWork, lanes);
+      if (isViewTransitionEligible) {
+        if (current === null) {
+          // This is a new mount. We should have handled this as part of the
+          // Placement effect or it is deeper inside a entering transition.
+        } else if (viewTransitionMutationContext) {
+          // Something mutated in this tree so we need to animate this regardless
+          // what the measurements say. We use the Update flag to track this.
+          // If diffing was done in the render phase, like we used, this could have
+          // been done in the render already.
+          finishedWork.flags |= Update;
+        }
+      }
+      inUpdateViewTransition = prevUpdate;
+      popMutationContext(prevMutationContext);
       break;
     }
     case ScopeComponent: {
@@ -2823,10 +2805,6 @@ export function commitAfterMutationEffects(
   finishedWork: Fiber,
   committedLanes: Lanes,
 ): void {
-  if (!enableViewTransition) {
-    // This phase is only used for view transitions.
-    return;
-  }
   commitAfterMutationEffectsOnFiber(finishedWork, root, committedLanes);
 }
 
@@ -3153,14 +3131,12 @@ function disappearLayoutEffects(
       break;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        if (__DEV__) {
-          if (finishedWork.flags & ViewTransitionNamedStatic) {
-            untrackNamedViewTransition(finishedWork);
-          }
+      if (__DEV__) {
+        if (finishedWork.flags & ViewTransitionNamedStatic) {
+          untrackNamedViewTransition(finishedWork);
         }
-        safelyDetachRef(finishedWork, finishedWork.return);
       }
+      safelyDetachRef(finishedWork, finishedWork.return);
       recursivelyTraverseDisappearLayoutEffects(
         finishedWork,
         layoutEffectTraversalFlags,
@@ -3466,20 +3442,17 @@ function reappearLayoutEffects(
       break;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        recursivelyTraverseReappearLayoutEffects(
-          finishedRoot,
-          finishedWork,
-          layoutEffectTraversalFlags,
-        );
-        if (__DEV__) {
-          if (flags & ViewTransitionNamedStatic) {
-            trackNamedViewTransition(finishedWork);
-          }
+      recursivelyTraverseReappearLayoutEffects(
+        finishedRoot,
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
+      if (__DEV__) {
+        if (flags & ViewTransitionNamedStatic) {
+          trackNamedViewTransition(finishedWork);
         }
-        safelyAttachRef(finishedWork, finishedWork.return);
-        break;
       }
+      safelyAttachRef(finishedWork, finishedWork.return);
       break;
     }
     case Fragment: {
@@ -3710,7 +3683,6 @@ function recursivelyTraversePassiveMountEffects(
   endTime: number, // Profiling-only. The start time of the next Fiber or root completion.
 ) {
   const isViewTransitionEligible =
-    enableViewTransition &&
     includesOnlyViewTransitionEligibleLanes(committedLanes);
   // TODO: We could optimize this by marking these with the Passive subtree flag in the render phase.
   const subtreeMask = isViewTransitionEligible
@@ -3774,9 +3746,8 @@ function commitPassiveMountOnFiber(
   const prevEffectDidSpawnUpdate = pushComponentEffectDidSpawnUpdate();
   const prevDeepEquality = pushDeepEquality();
 
-  const isViewTransitionEligible = enableViewTransition
-    ? includesOnlyViewTransitionEligibleLanes(committedLanes)
-    : false;
+  const isViewTransitionEligible =
+    includesOnlyViewTransitionEligibleLanes(committedLanes);
 
   if (
     isViewTransitionEligible &&
@@ -4277,28 +4248,26 @@ function commitPassiveMountOnFiber(
       break;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        if (isViewTransitionEligible) {
-          const current = finishedWork.alternate;
-          if (current === null) {
-            // This is a new mount. We should have handled this as part of the
-            // Placement effect or it is deeper inside a entering transition.
-          } else {
-            // Something mutated within this subtree. This might have caused
-            // something to cross-fade if we didn't already cancel it.
-            // If not, restore it.
-            restoreUpdateViewTransition(current, finishedWork);
-          }
+      if (isViewTransitionEligible) {
+        const current = finishedWork.alternate;
+        if (current === null) {
+          // This is a new mount. We should have handled this as part of the
+          // Placement effect or it is deeper inside a entering transition.
+        } else {
+          // Something mutated within this subtree. This might have caused
+          // something to cross-fade if we didn't already cancel it.
+          // If not, restore it.
+          restoreUpdateViewTransition(current, finishedWork);
         }
-        recursivelyTraversePassiveMountEffects(
-          finishedRoot,
-          finishedWork,
-          committedLanes,
-          committedTransitions,
-          endTime,
-        );
-        break;
       }
+      recursivelyTraversePassiveMountEffects(
+        finishedRoot,
+        finishedWork,
+        committedLanes,
+        committedTransitions,
+        endTime,
+      );
+      break;
       // Fallthrough
     }
     case TracingMarkerComponent: {
@@ -4928,27 +4897,25 @@ function accumulateSuspenseyCommitOnFiber(
       break;
     }
     case ViewTransitionComponent: {
-      if (enableViewTransition) {
-        if ((fiber.flags & suspenseyCommitFlag) !== NoFlags) {
-          const props: ViewTransitionProps = fiber.memoizedProps;
-          const name: ?string | 'auto' = props.name;
-          if (name != null && name !== 'auto') {
-            // This is a named ViewTransition being mounted or reappearing. Let's add it to
-            // the map so we can match it with deletions later.
-            const state: ViewTransitionState = fiber.stateNode;
-            // Reset the pair in case we didn't end up restoring the instance in previous commits.
-            // This shouldn't really happen anymore but just in case. We could maybe add an invariant.
-            state.paired = null;
-            trackAppearingViewTransition(name, state);
-          }
+      if ((fiber.flags & suspenseyCommitFlag) !== NoFlags) {
+        const props: ViewTransitionProps = fiber.memoizedProps;
+        const name: ?string | 'auto' = props.name;
+        if (name != null && name !== 'auto') {
+          // This is a named ViewTransition being mounted or reappearing. Let's add it to
+          // the map so we can match it with deletions later.
+          const state: ViewTransitionState = fiber.stateNode;
+          // Reset the pair in case we didn't end up restoring the instance in previous commits.
+          // This shouldn't really happen anymore but just in case. We could maybe add an invariant.
+          state.paired = null;
+          trackAppearingViewTransition(name, state);
         }
-        recursivelyAccumulateSuspenseyCommit(
-          fiber,
-          committedLanes,
-          suspendedState,
-        );
-        break;
       }
+      recursivelyAccumulateSuspenseyCommit(
+        fiber,
+        committedLanes,
+        suspendedState,
+      );
+      break;
       // Fallthrough
     }
     default: {

@@ -58,7 +58,6 @@ export const enableConditionalUseWarning: boolean = true;
 export const enableYieldingBeforePassive: boolean = true;
 
 export const enableThrottledScheduling: boolean = false;
-export const enableViewTransition: boolean = true;
 export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
 export const enableViewTransitionForPersistenceMode: boolean = false;
 export const enableGestureTransition: boolean = false;
