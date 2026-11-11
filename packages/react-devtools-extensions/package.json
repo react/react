@@ -37,7 +37,6 @@
     "babel-preset-minify": "^0.5.1",
     "buffer": "^6.0.3",
     "chalk": "^4.1.1",
-    "child-process-promise": "^2.2.1",
     "chrome-launch": "^1.1.4",
     "crx": "^5.0.0",
     "css-loader": "^7.1.5",
