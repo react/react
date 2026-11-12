@@ -7,7 +7,11 @@
  * @flow
  */
 
-import {getElementDimensions, getNestedBoundingClientRect} from '../utils';
+import {
+  getCumulativeZoom,
+  getElementDimensions,
+  getNestedBoundingClientRect,
+} from '../utils';
 
 import type {Rect} from '../utils';
 import type Agent from 'react-devtools-shared/src/backend/agent';
@@ -56,31 +60,33 @@ class OverlayRect {
     }
   }
 
-  update(box: Rect, dims: any) {
-    boxWrap(dims, 'margin', this.node);
-    boxWrap(dims, 'border', this.border);
-    boxWrap(dims, 'padding', this.padding);
+  update(box: Rect, dims: any, zoom: number = 1) {
+    boxWrap(dims, 'margin', this.node, zoom);
+    boxWrap(dims, 'border', this.border, zoom);
+    boxWrap(dims, 'padding', this.padding, zoom);
 
     assign(this.content.style, {
       height:
-        box.height -
-        dims.borderTop -
-        dims.borderBottom -
-        dims.paddingTop -
-        dims.paddingBottom +
+        (box.height -
+          dims.borderTop -
+          dims.borderBottom -
+          dims.paddingTop -
+          dims.paddingBottom) /
+          zoom +
         'px',
       width:
-        box.width -
-        dims.borderLeft -
-        dims.borderRight -
-        dims.paddingLeft -
-        dims.paddingRight +
+        (box.width -
+          dims.borderLeft -
+          dims.borderRight -
+          dims.paddingLeft -
+          dims.paddingRight) /
+          zoom +
         'px',
     });
 
     assign(this.node.style, {
-      top: box.top - dims.marginTop + 'px',
-      left: box.left - dims.marginLeft + 'px',
+      top: (box.top - dims.marginTop) / zoom + 'px',
+      left: (box.left - dims.marginLeft) / zoom + 'px',
     });
   }
 }
@@ -137,13 +143,16 @@ class OverlayTip {
       Math.round(width) + 'px × ' + Math.round(height) + 'px';
   }
 
-  updatePosition(dims: Box, bounds: Box) {
+  updatePosition(dims: Box, bounds: Box, zoom: number = 1) {
     const tipRect = this.tip.getBoundingClientRect();
     const tipPos = findTipPos(dims, bounds, {
       width: tipRect.width,
       height: tipRect.height,
     });
-    assign(this.tip.style, tipPos.style);
+    assign(this.tip.style, {
+      top: tipPos.top / zoom + 'px',
+      left: tipPos.left / zoom + 'px',
+    });
   }
 }
 
@@ -208,6 +217,15 @@ export default class Overlay {
       this.rects.push(new OverlayRect(this.window.document, this.container));
     }
 
+    // CSS `zoom` scales `position: fixed` overlays a second time (unlike
+    // `transform`), so the coordinates we measure below need to be
+    // compensated by the cumulative zoom before being applied to our
+    // injected overlay elements. We use the first element's ancestor chain
+    // as a representative sample: `zoom` is typically applied once, high up
+    // the tree (e.g. on `<html>`), so all inspected elements share the same
+    // effective zoom in practice.
+    const zoom = getCumulativeZoom(elements[0]);
+
     const outerBox = {
       top: Number.POSITIVE_INFINITY,
       right: Number.NEGATIVE_INFINITY,
@@ -230,7 +248,7 @@ export default class Overlay {
       outerBox.left = Math.min(outerBox.left, box.left - dims.marginLeft);
 
       const rect = this.rects[index];
-      rect.update(box, dims);
+      rect.update(box, dims, zoom);
     });
 
     if (!name) {
@@ -266,6 +284,7 @@ export default class Overlay {
         height: this.tipBoundsWindow.innerHeight,
         width: this.tipBoundsWindow.innerWidth,
       },
+      zoom,
     );
   }
 }
@@ -279,7 +298,7 @@ function findTipPos(
   const tipWidth = Math.max(tipSize.width, 60);
   const margin = 5;
 
-  let top: number | string;
+  let top: number;
   if (dims.top + dims.height + tipHeight <= bounds.top + bounds.height) {
     if (dims.top + dims.height < bounds.top + 0) {
       top = bounds.top + margin;
@@ -296,7 +315,7 @@ function findTipPos(
     top = bounds.top + bounds.height - tipHeight - margin;
   }
 
-  let left: number | string = dims.left + margin;
+  let left: number = dims.left + margin;
   if (dims.left < bounds.left) {
     left = bounds.left + margin;
   }
@@ -304,19 +323,15 @@ function findTipPos(
     left = bounds.left + bounds.width - tipWidth - margin;
   }
 
-  top += 'px';
-  left += 'px';
-  return {
-    style: {top, left},
-  };
+  return {top, left};
 }
 
-function boxWrap(dims: any, what: string, node: HTMLElement) {
+function boxWrap(dims: any, what: string, node: HTMLElement, zoom: number = 1) {
   assign(node.style, {
-    borderTopWidth: dims[what + 'Top'] + 'px',
-    borderLeftWidth: dims[what + 'Left'] + 'px',
-    borderRightWidth: dims[what + 'Right'] + 'px',
-    borderBottomWidth: dims[what + 'Bottom'] + 'px',
+    borderTopWidth: dims[what + 'Top'] / zoom + 'px',
+    borderLeftWidth: dims[what + 'Left'] / zoom + 'px',
+    borderRightWidth: dims[what + 'Right'] / zoom + 'px',
+    borderBottomWidth: dims[what + 'Bottom'] / zoom + 'px',
     borderStyle: 'solid',
   });
 }
