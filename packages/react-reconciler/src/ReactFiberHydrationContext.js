@@ -80,6 +80,11 @@ import {runWithFiberInDEV} from './ReactCurrentFiber';
 let hydrationParentFiber: null | Fiber = null;
 let nextHydratableInstance: null | HydratableInstance = null;
 let isHydrating: boolean = false;
+// While hydrating a Suspense boundary that the server rendered as a fallback, the
+// primary children have no server markup (only the fallback does). We pause
+// hydration while we render them so they mount as new nodes, then resume when we
+// start rendering the fallback, which claims the existing server markup.
+let isHydrationPaused: boolean = false;
 
 // This flag allows for warning supression when we expect there to be mismatches
 // due to earlier mismatches or a suspended fiber.
@@ -153,6 +158,18 @@ function warnIfHydrating() {
   }
 }
 
+export function pauseHydratingPrimaryChildren(): void {
+  isHydrationPaused = true;
+}
+
+export function resumeHydratingFallbackChildren(): void {
+  isHydrationPaused = false;
+}
+
+export function getIsHydrationPaused(): boolean {
+  return isHydrationPaused;
+}
+
 export function markDidThrowWhileHydratingDEV() {
   if (__DEV__) {
     didSuspendOrErrorDEV = true;
@@ -203,6 +220,7 @@ function reenterHydrationStateFromDehydratedSuspenseInstance(
   fiber: Fiber,
   suspenseInstance: SuspenseInstance,
   treeContext: TreeContext | null,
+  keepQueuedErrors?: boolean,
 ): boolean {
   if (!supportsHydration) {
     return false;
@@ -211,7 +229,12 @@ function reenterHydrationStateFromDehydratedSuspenseInstance(
     getFirstHydratableChildWithinSuspenseInstance(suspenseInstance);
   hydrationParentFiber = fiber;
   isHydrating = true;
-  hydrationErrors = null;
+  if (!keepQueuedErrors) {
+    // Errors queued for this boundary while rendering its primary children are
+    // still relevant, so callers that render the fallback of the same boundary
+    // keep them.
+    hydrationErrors = null;
+  }
   didSuspendOrErrorDEV = false;
   hydrationDiffRootDEV = null;
   rootOrSingletonContext = false;
@@ -414,7 +437,7 @@ function throwOnHydrationMismatch(fiber: Fiber, fromText: boolean = false) {
 
 function claimHydratableSingleton(fiber: Fiber): void {
   if (supportsSingletons) {
-    if (!isHydrating) {
+    if (!isHydrating || isHydrationPaused) {
       return;
     }
     const currentRootContainer = getRootHostContainer();
@@ -455,7 +478,7 @@ function claimHydratableSingleton(fiber: Fiber): void {
 }
 
 function tryToClaimNextHydratableInstance(fiber: Fiber): void {
-  if (!isHydrating) {
+  if (!isHydrating || isHydrationPaused) {
     return;
   }
 
@@ -480,7 +503,7 @@ function tryToClaimNextHydratableInstance(fiber: Fiber): void {
 }
 
 function tryToClaimNextHydratableTextInstance(fiber: Fiber): void {
-  if (!isHydrating) {
+  if (!isHydrating || isHydrationPaused) {
     return;
   }
   const text = fiber.pendingProps;
@@ -526,7 +549,7 @@ function claimNextHydratableSuspenseInstance(fiber: Fiber): SuspenseInstance {
 export function tryToClaimNextHydratableFormMarkerInstance(
   fiber: Fiber,
 ): boolean {
-  if (!isHydrating) {
+  if (!isHydrating || isHydrationPaused) {
     return false;
   }
   if (nextHydratableInstance) {
@@ -675,8 +698,13 @@ function prepareToHydrateHostSuspenseInstance(fiber: Fiber): void {
   }
 
   const suspenseState: null | SuspenseState = fiber.memoizedState;
+  // The boundary may have already switched away from the dehydrated state (for
+  // example if it suspended during hydration and we hydrated its server
+  // fallback), in which case the instance lives on the fiber's stateNode.
   const suspenseInstance: null | SuspenseInstance =
-    suspenseState !== null ? suspenseState.dehydrated : null;
+    suspenseState !== null && suspenseState.dehydrated !== null
+      ? suspenseState.dehydrated
+      : (fiber.stateNode: any);
 
   if (!suspenseInstance) {
     throw new Error(
@@ -715,8 +743,23 @@ function skipPastDehydratedSuspenseInstance(
     );
   }
   const suspenseState: null | SuspenseState = fiber.memoizedState;
-  const suspenseInstance: null | SuspenseInstance =
+  let suspenseInstance: null | SuspenseInstance =
     suspenseState !== null ? suspenseState.dehydrated : null;
+  if (suspenseInstance === null) {
+    // The boundary suspended during hydration and we hydrated the server
+    // fallback in place. It is no longer dehydrated, but the server instance
+    // is still parked on the fallback fragment so that we can skip past the
+    // boundary.
+    const primaryChild = fiber.child;
+    const fallbackChild = primaryChild !== null ? primaryChild.sibling : null;
+    if (fallbackChild !== null) {
+      const fallbackState: null | SuspenseState =
+        (fallbackChild.memoizedState: any);
+      if (fallbackState !== null && fallbackState.dehydrated !== null) {
+        suspenseInstance = fallbackState.dehydrated;
+      }
+    }
+  }
 
   if (!suspenseInstance) {
     throw new Error(
@@ -850,6 +893,7 @@ function resetHydrationState(): void {
   hydrationParentFiber = null;
   nextHydratableInstance = null;
   isHydrating = false;
+  isHydrationPaused = false;
   didSuspendOrErrorDEV = false;
 }
 
