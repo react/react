@@ -813,6 +813,54 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('4');
   });
 
+  // Regression test for #37967
+  it('does not lose render-phase state update when an earlier same-value setState was queued at different priority', async () => {
+    const {useState} = React;
+
+    let setValue;
+    let setFlag;
+
+    function Child({flag}) {
+      const [value, _setValue] = useState(flag);
+      const [prevFlag, setPrevFlag] = useState(flag);
+      setValue = _setValue;
+
+      if (flag !== prevFlag) {
+        setPrevFlag(flag);
+        setValue(flag);
+      }
+      return String(value);
+    }
+
+    function App() {
+      const [flag, _setFlag] = useState(true);
+      setFlag = _setFlag;
+      return <Child flag={flag} />;
+    }
+
+    const root = ReactTestRenderer.create(null, {unstable_isConcurrent: true});
+    await act(() => {
+      root.update(<App />);
+    });
+    expect(root).toMatchRenderedOutput('true');
+
+    // Step 2: Queue a same-value update at Sync priority (e.g. from flushSync or discrete event).
+    // value is already true, so React eagerly bails out without scheduling a render.
+    root.unstable_flushSync(() => {
+      setValue(true);
+    });
+    expect(root).toMatchRenderedOutput('true');
+
+    // Step 3: Trigger an update at default priority.
+    // Child sees flag !== prevFlag and calls setValue(false) during render.
+    await act(() => {
+      setFlag(false);
+    });
+
+    // The render-phase update setValue(false) must not be lost or reverted.
+    expect(root).toMatchRenderedOutput('false');
+  });
+
   it('warns for bad useImperativeHandle first arg', async () => {
     const {useImperativeHandle} = React;
     function App() {
