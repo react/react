@@ -1947,13 +1947,10 @@ function analyzePropertyChain(
     const result = `${object}.${property}`;
     markNode(node, optionalChains, result);
     return result;
-  } else if (
-    node.type === 'ChainExpression' &&
-    (!('computed' in node) || !node.computed)
-  ) {
+  } else if (node.type === 'ChainExpression') {
     const expression = node.expression;
 
-    if (expression.type === 'CallExpression') {
+    if (expression.type !== 'MemberExpression' || expression.computed) {
       throw new Error(`Unsupported node type: ${expression.type}`);
     }
 
