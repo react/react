@@ -201,7 +201,13 @@ export default class HIRBuilder {
     path: NodePath<t.Identifier | t.JSXIdentifier>,
   ): Binding | null {
     const originalName = path.node.name;
-    const binding = path.scope.getBinding(originalName);
+    let binding = path.scope.getBinding(originalName);
+    if (binding == null) {
+      const catchClause = path.findParent(p => p.isCatchClause());
+      if (catchClause != null) {
+        binding = catchClause.scope.getBinding(originalName);
+      }
+    }
     if (binding == null) {
       return null;
     }
