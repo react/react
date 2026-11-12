@@ -597,7 +597,11 @@ function createChildReconciler(
         (typeof elementType === 'object' &&
           elementType !== null &&
           elementType.$$typeof === REACT_LAZY_TYPE &&
-          resolveLazy(elementType) === current.type)
+          resolveLazy(elementType) === current.type) ||
+          (typeof current.elementType === 'object' &&
+            current.elementType !== null &&
+            current.elementType.$$typeof === REACT_LAZY_TYPE &&
+            current.type === elementType)
       ) {
         // Move based on index
         const existing = useFiber(current, element.props);
@@ -1732,7 +1736,11 @@ function createChildReconciler(
             (typeof elementType === 'object' &&
               elementType !== null &&
               elementType.$$typeof === REACT_LAZY_TYPE &&
-              resolveLazy(elementType) === child.type)
+              resolveLazy(elementType) === child.type) ||
+              (typeof child.elementType === 'object' &&
+                child.elementType !== null &&
+                child.elementType.$$typeof === REACT_LAZY_TYPE &&
+                child.type === elementType)
           ) {
             deleteRemainingChildren(returnFiber, child.sibling);
             const existing = useFiber(child, element.props);
