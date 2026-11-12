@@ -824,6 +824,347 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(root).toMatchRenderedOutput(<span prop="Down" />);
     });
 
+    it.each(['value', 'functional', 'repeated', 'transition'])(
+      'preserves render phase state after a queued %s eager bailout',
+      async kind => {
+        let setValue;
+        let setFlag;
+        let forceRender;
+
+        function Child({flag}) {
+          const [value, updateValue] = useState(flag);
+          const [previousFlag, setPreviousFlag] = useState(flag);
+          setValue = updateValue;
+          if (flag !== previousFlag) {
+            setPreviousFlag(flag);
+            updateValue(flag);
+          }
+          return <Text text={`value: ${value}`} />;
+        }
+
+        function App() {
+          const [flag, updateFlag] = useState(true);
+          const [, updateRevision] = useState(0);
+          setFlag = updateFlag;
+          forceRender = () => updateRevision(revision => revision + 1);
+          return <Child flag={flag} />;
+        }
+
+        const root = ReactNoop.createRoot();
+        await act(() => root.render(<App />));
+        assertLog(['value: true']);
+
+        await act(() => {
+          const enqueue = () => {
+            setValue(kind === 'functional' ? value => value : true);
+            if (kind === 'repeated') {
+              setValue(true);
+            }
+          };
+          if (kind === 'transition') {
+            React.startTransition(enqueue);
+          } else {
+            ReactNoop.discreteUpdates(enqueue);
+          }
+        });
+        assertLog([]);
+
+        // The parent update has a different priority from the queued bailout.
+        // Synchronizing state during render must survive all queued work.
+        await act(() => setFlag(false));
+        assertLog(['value: false']);
+        expect(root).toMatchRenderedOutput(<span prop="value: false" />);
+
+        await act(() => forceRender());
+        assertLog(['value: false']);
+        expect(root).toMatchRenderedOutput(<span prop="value: false" />);
+      },
+    );
+
+    it('does not commit a deferred update during an urgent render after an interruption', async () => {
+      let setValue;
+
+      function Child({flag}) {
+        const [value, updateValue] = useState(flag);
+        const [previousFlag, setPreviousFlag] = useState(flag);
+        setValue = updateValue;
+        if (flag !== previousFlag) {
+          setPreviousFlag(flag);
+          updateValue(flag);
+        }
+        return <Text text={`value: ${value}`} />;
+      }
+
+      function App({flag, label}) {
+        return (
+          <>
+            <Child flag={flag} />
+            <Text text={label} />
+          </>
+        );
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<App flag={false} label="initial" />));
+      assertLog(['value: false', 'initial']);
+
+      await act(async () => {
+        React.startTransition(() => {
+          root.render(<App flag={true} label="transition" />);
+        });
+        await waitFor(['value: true']);
+        expect(root).toMatchRenderedOutput(
+          <>
+            <span prop="value: false" />
+            <span prop="initial" />
+          </>,
+        );
+
+        // This matches the speculative state, but not the committed state.
+        React.startTransition(() => setValue(true));
+        ReactNoop.flushSync(() => {
+          root.render(<App flag={false} label="urgent" />);
+        });
+        const urgentLog = Scheduler.unstable_clearLog();
+        expect(root).toMatchRenderedOutput(
+          <>
+            <span prop="value: false" />
+            <span prop="urgent" />
+          </>,
+        );
+        expect(urgentLog).toEqual(['value: false', 'urgent']);
+      });
+      assertLog(['value: true']);
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="value: true" />
+          <span prop="urgent" />
+        </>,
+      );
+    });
+
+    it('retains a later eager update when an earlier update still needs rebasing', async () => {
+      let setValue;
+
+      function Child({flag}) {
+        const [value, updateValue] = useState(flag);
+        const [previousFlag, setPreviousFlag] = useState(flag);
+        setValue = updateValue;
+        if (flag !== previousFlag) {
+          setPreviousFlag(flag);
+          updateValue(flag);
+        }
+        return <Text text={`value: ${value}`} />;
+      }
+
+      function App({flag, label}) {
+        return (
+          <>
+            <Child flag={flag} />
+            <Text text={label} />
+          </>
+        );
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<App flag={false} label="initial" />));
+      assertLog(['value: false', 'initial']);
+
+      await act(async () => {
+        React.startTransition(() => {
+          root.render(<App flag={true} label="transition" />);
+        });
+        await waitFor(['value: true']);
+
+        React.startTransition(() => {
+          setValue(true);
+          // This eager result equals the committed value, but must be applied
+          // after the preceding update when the transition is replayed.
+          setValue(false);
+        });
+        ReactNoop.flushSync(() => {
+          root.render(<App flag={false} label="urgent" />);
+        });
+        assertLog(['value: false', 'urgent']);
+        expect(root).toMatchRenderedOutput(
+          <>
+            <span prop="value: false" />
+            <span prop="urgent" />
+          </>,
+        );
+      });
+      const deferredLog = Scheduler.unstable_clearLog();
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="value: false" />
+          <span prop="urgent" />
+        </>,
+      );
+      expect(deferredLog).toEqual([]);
+    });
+
+    it('applies an urgent functional update to committed state after consuming a queued no-op', async () => {
+      let setValue;
+
+      function Child({flag}) {
+        const [value, updateValue] = useState(flag);
+        const [previousFlag, setPreviousFlag] = useState(flag);
+        setValue = updateValue;
+        if (flag !== previousFlag) {
+          setPreviousFlag(flag);
+          updateValue(flag);
+        }
+        return <Text text={`value: ${value}`} />;
+      }
+
+      function App({flag, label}) {
+        return (
+          <>
+            <Child flag={flag} />
+            <Text text={label} />
+          </>
+        );
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<App flag={false} label="initial" />));
+      assertLog(['value: false', 'initial']);
+      await act(() => {
+        ReactNoop.discreteUpdates(() => setValue(false));
+      });
+      assertLog([]);
+
+      await act(async () => {
+        React.startTransition(() => {
+          root.render(<App flag={true} label="transition" />);
+        });
+        await waitFor(['value: true']);
+        expect(root).toMatchRenderedOutput(
+          <>
+            <span prop="value: false" />
+            <span prop="initial" />
+          </>,
+        );
+
+        ReactNoop.flushSync(() => {
+          setValue(value => !value);
+          root.render(<App flag={false} label="urgent" />);
+        });
+        Scheduler.unstable_clearLog();
+        expect(root).toMatchRenderedOutput(
+          <>
+            <span prop="value: true" />
+            <span prop="urgent" />
+          </>,
+        );
+      });
+      Scheduler.unstable_clearLog();
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="value: true" />
+          <span prop="urgent" />
+        </>,
+      );
+    });
+
+    it('preserves functional update ordering after interrupting a render with a queued no-op', async () => {
+      let setCount;
+      function Counter({label}) {
+        const [count, updateCount] = useState(1);
+        setCount = updateCount;
+        return <Text text={`${label}: ${count}`} />;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<Counter label="initial" />));
+      assertLog(['initial: 1']);
+      await act(() => {
+        ReactNoop.discreteUpdates(() => setCount(count => count));
+      });
+      assertLog([]);
+
+      await act(async () => {
+        React.startTransition(() => {
+          setCount(count => count + 1);
+          root.render(<Counter label="transition" />);
+        });
+        await waitFor(['transition: 2']);
+        expect(root).toMatchRenderedOutput(<span prop="initial: 1" />);
+
+        ReactNoop.flushSync(() => {
+          setCount(count => count * 10);
+          root.render(<Counter label="urgent" />);
+        });
+        Scheduler.unstable_clearLog();
+        expect(root).toMatchRenderedOutput(<span prop="urgent: 10" />);
+      });
+      Scheduler.unstable_clearLog();
+      // The increment preceded the multiplication, including during replay.
+      expect(root).toMatchRenderedOutput(<span prop="urgent: 20" />);
+    });
+
+    it('applies an urgent functional update to committed state after suspending a render with a queued no-op', async () => {
+      let setValue;
+      function Child({flag}) {
+        const [value, updateValue] = useState(flag);
+        const [previousFlag, setPreviousFlag] = useState(flag);
+        setValue = updateValue;
+        if (flag !== previousFlag) {
+          setPreviousFlag(flag);
+          updateValue(flag);
+        }
+        return <Text text={`value: ${value}`} />;
+      }
+
+      function App({flag, label}) {
+        return (
+          <Suspense fallback={<Text text="Loading" />}>
+            <Child flag={flag} />
+            {flag ? <AsyncText text="Pending" /> : <Text text={label} />}
+          </Suspense>
+        );
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<App flag={false} label="initial" />));
+      assertLog(['value: false', 'initial']);
+      await act(() => {
+        ReactNoop.discreteUpdates(() => setValue(false));
+      });
+      assertLog([]);
+
+      await act(async () => {
+        React.startTransition(() => {
+          root.render(<App flag={true} label="transition" />);
+        });
+        await waitFor(['value: true', 'Suspend! [Pending]']);
+        expect(root).toMatchRenderedOutput(
+          <>
+            <span prop="value: false" />
+            <span prop="initial" />
+          </>,
+        );
+        ReactNoop.flushSync(() => {
+          setValue(value => !value);
+          root.render(<App flag={false} label="urgent" />);
+        });
+        Scheduler.unstable_clearLog();
+        expect(root).toMatchRenderedOutput(
+          <>
+            <span prop="value: true" />
+            <span prop="urgent" />
+          </>,
+        );
+      });
+      Scheduler.unstable_clearLog();
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="value: true" />
+          <span prop="urgent" />
+        </>,
+      );
+    });
+
     // TODO: This should probably warn
     it('calling startTransition inside render phase', async () => {
       function App() {
