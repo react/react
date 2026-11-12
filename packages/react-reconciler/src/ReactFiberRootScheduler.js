@@ -201,49 +201,58 @@ function flushSyncWorkAcrossRoots_impl(
   // There may or may not be synchronous work scheduled. Let's check.
   let didPerformSomeWork;
   isFlushingWork = true;
-  do {
-    didPerformSomeWork = false;
-    let root = firstScheduledRoot;
-    while (root !== null) {
-      if (onlyLegacy && (disableLegacyMode || root.tag !== LegacyRoot)) {
-        // Skip non-legacy roots.
-      } else {
-        if (syncTransitionLanes !== NoLanes) {
-          const nextLanes = getNextLanesToFlushSync(root, syncTransitionLanes);
-          if (nextLanes !== NoLanes) {
-            // This root has pending sync work. Flush it now.
-            didPerformSomeWork = true;
-            performSyncWorkOnRoot(root, nextLanes);
-          }
+  try {
+    do {
+      didPerformSomeWork = false;
+      let root = firstScheduledRoot;
+      while (root !== null) {
+        if (onlyLegacy && (disableLegacyMode || root.tag !== LegacyRoot)) {
+          // Skip non-legacy roots.
         } else {
-          const workInProgressRoot = getWorkInProgressRoot();
-          const workInProgressRootRenderLanes =
-            getWorkInProgressRootRenderLanes();
-          const rootHasPendingCommit =
-            root.cancelPendingCommit !== null ||
-            root.timeoutHandle !== noTimeout;
-          const nextLanes = getNextLanes(
-            root,
-            root === workInProgressRoot
-              ? workInProgressRootRenderLanes
-              : NoLanes,
-            rootHasPendingCommit,
-          );
-          if (
-            (includesSyncLane(nextLanes) ||
-              (enableGestureTransition && isGestureRender(nextLanes))) &&
-            !checkIfRootIsPrerendering(root, nextLanes)
-          ) {
-            // This root has pending sync work. Flush it now.
-            didPerformSomeWork = true;
-            performSyncWorkOnRoot(root, nextLanes);
+          if (syncTransitionLanes !== NoLanes) {
+            const nextLanes = getNextLanesToFlushSync(
+              root,
+              syncTransitionLanes,
+            );
+            if (nextLanes !== NoLanes) {
+              // This root has pending sync work. Flush it now.
+              didPerformSomeWork = true;
+              performSyncWorkOnRoot(root, nextLanes);
+            }
+          } else {
+            const workInProgressRoot = getWorkInProgressRoot();
+            const workInProgressRootRenderLanes =
+              getWorkInProgressRootRenderLanes();
+            const rootHasPendingCommit =
+              root.cancelPendingCommit !== null ||
+              root.timeoutHandle !== noTimeout;
+            const nextLanes = getNextLanes(
+              root,
+              root === workInProgressRoot
+                ? workInProgressRootRenderLanes
+                : NoLanes,
+              rootHasPendingCommit,
+            );
+            if (
+              (includesSyncLane(nextLanes) ||
+                (enableGestureTransition && isGestureRender(nextLanes))) &&
+              !checkIfRootIsPrerendering(root, nextLanes)
+            ) {
+              // This root has pending sync work. Flush it now.
+              didPerformSomeWork = true;
+              performSyncWorkOnRoot(root, nextLanes);
+            }
           }
         }
+        root = root.next;
       }
-      root = root.next;
-    }
-  } while (didPerformSomeWork);
-  isFlushingWork = false;
+    } while (didPerformSomeWork);
+  } finally {
+    // If performSyncWorkOnRoot throws (e.g. a host config error during commit),
+    // the error propagates to the caller. Reset the reentrancy guard so later
+    // sync work can still be flushed; otherwise every future flush bails out.
+    isFlushingWork = false;
+  }
 }
 
 function processRootScheduleInImmediateTask() {
