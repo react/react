@@ -328,4 +328,25 @@ describe('ReactIdentity', () => {
         ' This value must be coerced to a string before using it here.',
     ]);
   });
+
+  it('should throw if key is a null-prototype object that throws on coercion', async () => {
+    const nullProto = Object.create(null);
+    nullProto.valueOf = () => {
+      throw new TypeError('cannot coerce to primitive');
+    };
+
+    const el = document.createElement('div');
+    const root = ReactDOMClient.createRoot(el);
+    await expect(() => {
+      root.render(
+        <div>
+          <span key={nullProto} />
+        </div>,
+      );
+    }).toThrow(new TypeError('cannot coerce to primitive'));
+    assertConsoleErrorDev([
+      'The provided key is an unsupported type Object.' +
+        ' This value must be coerced to a string before using it here.',
+    ]);
+  });
 });
