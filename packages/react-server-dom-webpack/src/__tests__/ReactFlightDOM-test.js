@@ -2138,6 +2138,94 @@ describe('ReactFlightDOM', () => {
     expect(hintRows.length).toEqual(6);
   });
 
+  it('does not preload a stylesheet that is already inlined as a hoistable style tag', async () => {
+    // A framework can inline a stylesheet into the document as a hoistable
+    // <style>. When a later RSC payload references the same stylesheet as a
+    // <link rel="stylesheet">, Flight emits a preload hint for it. The
+    // stylesheet dedupes against the <style>, so the preload must not be
+    // inserted either, otherwise it is never used.
+    function App({children}) {
+      return (
+        <html>
+          <head>
+            <style precedence="default" href="foo">
+              {'body { color: red; }'}
+            </style>
+          </head>
+          <body>
+            <div id="container">{children}</div>
+          </body>
+        </html>
+      );
+    }
+
+    const {writable: fizzWritable, readable: fizzReadable} = getTestStream();
+    await serverAct(() => {
+      ReactDOMFizzServer.renderToPipeableStream(<App>loading</App>).pipe(
+        fizzWritable,
+      );
+    });
+    await readInto(document, fizzReadable);
+
+    let root;
+    await act(() => {
+      root = ReactDOMClient.hydrateRoot(document, <App>loading</App>);
+    });
+
+    function Component() {
+      return <p>hello world</p>;
+    }
+
+    const ClientComponent = clientExports(Component);
+
+    function ServerComponent() {
+      return (
+        <>
+          <link rel="stylesheet" href="foo" precedence="default" />
+          <ClientComponent />
+        </>
+      );
+    }
+
+    const {writable: flightWritable, readable: flightReadable} =
+      getTestStream();
+    await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        <ServerComponent />,
+        webpackMap,
+      ).pipe(flightWritable),
+    );
+    const response =
+      ReactServerDOMClient.createFromReadableStream(flightReadable);
+
+    function Content() {
+      return use(response);
+    }
+
+    await act(() => {
+      root.render(
+        <App>
+          <Content />
+        </App>,
+      );
+    });
+
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <style data-precedence="default" data-href="foo">
+            {'body { color: red; }'}
+          </style>
+        </head>
+        <body>
+          <div id="container">
+            <p>hello world</p>
+          </div>
+        </body>
+      </html>,
+    );
+  });
+
   it('preloads resources without needing to render them', async () => {
     function NoScriptComponent() {
       return (
