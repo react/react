@@ -1951,6 +1951,86 @@ describe('ReactFlightDOMEdge', () => {
     expect(div.textContent).toBe('loading...');
   });
 
+  describe.each(['render', 'prerender'])('%s', mode => {
+    it.each(['AsyncIterable', 'ReadableStream', 'Blob'])(
+      'finishes when aborting before serializing a %s',
+      async valueType => {
+        const controller = new AbortController();
+        const reason = new Error('aborted before serialization');
+        const onAbort = jest.fn(() => Promise.resolve({done: true}));
+        let value;
+        if (valueType === 'AsyncIterable') {
+          value = {
+            [Symbol.asyncIterator]() {
+              return {
+                next() {
+                  return new Promise(() => {});
+                },
+                throw: onAbort,
+              };
+            },
+          };
+        } else {
+          const readable = new ReadableStream({cancel: onAbort});
+          if (valueType === 'Blob') {
+            value = new Blob([]);
+            jest.spyOn(value, 'stream').mockReturnValue(readable);
+          } else {
+            value = readable;
+          }
+        }
+
+        function ComponentThatAborts() {
+          controller.abort(reason);
+          return null;
+        }
+
+        const model = {abort: <ComponentThatAborts />, value};
+        const errors = [];
+        const options = {
+          signal: controller.signal,
+          onError(error) {
+            errors.push(error);
+          },
+        };
+        let stream;
+        await serverAct(() => {
+          if (mode === 'prerender') {
+            ReactServerDOMStaticServer.prerender(
+              model,
+              webpackMap,
+              options,
+            ).then(result => {
+              stream = result.prelude;
+            });
+          } else {
+            stream = ReactServerDOMServer.renderToReadableStream(
+              model,
+              webpackMap,
+              options,
+            );
+          }
+        });
+
+        expect(stream).toBeDefined();
+        let closed = false;
+        await serverAct(() => {
+          readResult(stream).then(() => {
+            closed = true;
+          });
+        });
+        expect(closed).toBe(true);
+        expect(onAbort).toHaveBeenCalledTimes(1);
+        expect(onAbort).toHaveBeenCalledWith(reason);
+        if (mode === 'prerender') {
+          expect(errors).toEqual([]);
+        } else {
+          expect(errors).toContain(reason);
+        }
+      },
+    );
+  });
+
   it('should abort parsing an incomplete prerender payload', async () => {
     const infinitePromise = new Promise(() => {});
     const controller = new AbortController();
