@@ -409,7 +409,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
     props.name,
   );
   const name = props.name;
-  if (props.type === 'radio' && name != null) {
+  if (rootNode.type === 'radio' && name != null) {
     let queryRoot: Element = rootNode;
 
     while (queryRoot.parentNode) {

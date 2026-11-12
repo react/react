@@ -1474,6 +1474,48 @@ describe('ReactDOMInput', () => {
     assertInputTrackingIsCurrent(container);
   });
 
+  ['radio', 'RADIO', 'Radio'].forEach(type => {
+    it(`should restore controlled radio buttons with type="${type}"`, async () => {
+      const onChange = jest.fn();
+      await act(() => {
+        root.render(
+          <div>
+            <input
+              type={type}
+              name="fruit"
+              checked={true}
+              onChange={onChange}
+            />
+            <input
+              type={type}
+              name="fruit"
+              checked={false}
+              onChange={onChange}
+            />
+          </div>,
+        );
+      });
+      const [aNode, bNode] = container.firstChild.childNodes;
+
+      expect(aNode.checked).toBe(true);
+      expect(bNode.checked).toBe(false);
+
+      // Selecting B unchecks A, but the controlled props keep A selected.
+      setUntrackedChecked.call(bNode, true);
+      expect(aNode.checked).toBe(false);
+      expect(bNode.checked).toBe(true);
+
+      await act(() => {
+        dispatchEventOnNode(bNode, 'click');
+      });
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(aNode.checked).toBe(true);
+      expect(bNode.checked).toBe(false);
+      assertInputTrackingIsCurrent(container);
+    });
+  });
+
   it('should hydrate controlled radio buttons', async () => {
     function App() {
       const [current, setCurrent] = React.useState('a');
