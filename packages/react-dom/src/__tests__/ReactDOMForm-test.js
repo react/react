@@ -944,6 +944,59 @@ describe('ReactDOMForm', () => {
     await act(() => resolveText('Wait'));
     assertLog(['Async action finished', 'No pending action']);
   });
+  it('useFormStatus reads the status of a pending form action even when a field is named "method"', async () => {
+    const formRef = React.createRef();
+
+    function Status() {
+      const {pending, data, action, method} = useFormStatus();
+      if (!pending) {
+        return <Text text="No pending action" />;
+      } else {
+        const foo = data.get('foo');
+        return (
+          <Text
+            text={`Pending action ${action.name}: foo is ${foo}, method is ${method}`}
+          />
+        );
+      }
+    }
+
+    async function myAction() {
+      Scheduler.log('Async action started');
+      await getText('Wait');
+      Scheduler.log('Async action finished');
+    }
+
+    function App() {
+      return (
+        <form action={myAction} ref={formRef}>
+          <input type="text" name="foo" defaultValue="bar" />
+          <input type="hidden" name="method" defaultValue="DELETE" />
+          <Status />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+    assertLog(['No pending action']);
+    expect(container.textContent).toBe('No pending action');
+
+    // Simulate browser DOM clobbering where named element is reflected as property on form
+    formRef.current.method = formRef.current.elements.namedItem('method');
+
+    await submit(formRef.current);
+    assertLog([
+      'Async action started',
+      'Pending action myAction: foo is bar, method is get',
+    ]);
+    expect(container.textContent).toBe(
+      'Pending action myAction: foo is bar, method is get',
+    );
+
+    await act(() => resolveText('Wait'));
+    assertLog(['Async action finished', 'No pending action']);
+  });
 
   it('should error if submitting a form manually', async () => {
     const ref = React.createRef();
@@ -1594,6 +1647,58 @@ describe('ReactDOMForm', () => {
     // The form was reset to the new value from the server.
     expect(inputRef.current.value).toBe('acdlite');
     expect(divRef.current.textContent).toEqual('Current username: acdlite');
+  });
+  it('uncontrolled form inputs are reset after the action completes even if a field is named "reset"', async () => {
+    const formRef = React.createRef();
+    const inputRef = React.createRef();
+
+    function App({promiseForUsername}) {
+      const username = use(promiseForUsername);
+      return (
+        <form
+          ref={formRef}
+          action={async formData => {
+            const rawUsername = formData.get('username');
+            const normalizedUsername = rawUsername.trim().toLowerCase();
+
+            Scheduler.log('Async action started');
+            await getText('Wait');
+
+            startTransition(() => {
+              root.render(
+                <App promiseForUsername={getText(normalizedUsername)} />,
+              );
+            });
+          }}>
+          <input
+            ref={inputRef}
+            type="text"
+            name="username"
+            defaultValue={username}
+          />
+          <input type="reset" name="reset" value="Reset" />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    const promiseForInitialUsername = getText('(empty)');
+    await resolveText('(empty)');
+    await act(() =>
+      root.render(<App promiseForUsername={promiseForInitialUsername} />),
+    );
+    assertLog([]);
+
+    // Simulate browser DOM clobbering where named element shadows form.reset
+    formRef.current.reset = formRef.current.elements.namedItem('reset');
+
+    inputRef.current.value = '  AcdLite  ';
+    await submit(formRef.current);
+    assertLog(['Async action started']);
+
+    await act(() => resolveText('Wait'));
+    await act(() => resolveText('acdlite'));
+    expect(inputRef.current.value).toBe('acdlite');
   });
 
   it('should fire onReset on automatic form reset', async () => {
