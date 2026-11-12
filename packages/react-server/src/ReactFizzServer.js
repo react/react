@@ -5262,9 +5262,12 @@ function completeAll(request: Request) {
 
 function queueCompletedSegment(
   boundary: SuspenseBoundary,
-  segment: Segment,
+  completedSegment: Segment,
 ): void {
-  if (
+  let segment = completedSegment;
+  // There can be a long chain of these, one inside the other, so we follow it
+  // in a loop instead of recursively.
+  while (
     segment.chunks.length === 0 &&
     segment.children.length === 1 &&
     segment.children[0].boundary === null &&
@@ -5280,12 +5283,13 @@ function queueCompletedSegment(
       childSegment.status === ABORTED ||
       childSegment.status === ERRORED
     ) {
-      queueCompletedSegment(boundary, childSegment);
+      segment = childSegment;
+    } else {
+      return;
     }
-  } else {
-    const completedSegments = boundary.completedSegments;
-    completedSegments.push(segment);
   }
+  const completedSegments = boundary.completedSegments;
+  completedSegments.push(segment);
 }
 
 function finishedSegment(
@@ -5790,21 +5794,32 @@ export function performWork(request: Request): void {
 
 function preparePreambleFromSubtree(
   request: Request,
-  segment: Segment,
+  subtreeSegment: Segment,
   collectedPreambleSegments: Array<Array<Segment>>,
 ): boolean {
-  if (segment.preambleChildren.length) {
-    collectedPreambleSegments.push(segment.preambleChildren);
-  }
   let pendingPreambles = false;
-  for (let i = 0; i < segment.children.length; i++) {
-    const nextSegment = segment.children[i];
-    pendingPreambles =
-      preparePreambleFromSegment(
-        request,
-        nextSegment,
-        collectedPreambleSegments,
-      ) || pendingPreambles;
+  // Segments can be nested arbitrarily deep, one inside the other, so we loop
+  // over the last child instead of recursing into it.
+  let segment: null | Segment = subtreeSegment;
+  while (segment !== null) {
+    if (segment.preambleChildren.length) {
+      collectedPreambleSegments.push(segment.preambleChildren);
+    }
+    const children: Array<Segment> = segment.children;
+    segment = null;
+    for (let i = 0; i < children.length; i++) {
+      const nextSegment = children[i];
+      if (i === children.length - 1 && nextSegment.boundary === null) {
+        segment = nextSegment;
+        break;
+      }
+      pendingPreambles =
+        preparePreambleFromSegment(
+          request,
+          nextSegment,
+          collectedPreambleSegments,
+        ) || pendingPreambles;
+    }
   }
   return pendingPreambles;
 }
@@ -5929,57 +5944,80 @@ function flushPreamble(
 function flushSubtree(
   request: Request,
   destination: Destination,
-  segment: Segment,
+  subtreeSegment: Segment,
   hoistableState: null | HoistableState,
 ): boolean {
-  segment.parentFlushed = true;
-  switch (segment.status) {
-    case PENDING: {
-      // We're emitting a placeholder for this segment to be filled in later.
-      // Therefore we'll need to assign it an ID - to refer to it by.
-      segment.id = request.nextSegmentId++;
-      // Fallthrough
-    }
-    case POSTPONED: {
-      const segmentID = segment.id;
-      // When this segment finally completes it won't be embedded in text since it will flush separately
-      segment.lastPushedText = false;
-      segment.textEmbedded = false;
-      return writePlaceholder(destination, request.renderState, segmentID);
-    }
-    case COMPLETED: {
-      segment.status = FLUSHED;
-      let r = true;
-      const chunks = segment.chunks;
-      let chunkIdx = 0;
-      const children = segment.children;
+  let r = true;
+  // Segments can be nested arbitrarily deep, one inside the other. When
+  // there's nothing left to write after a child segment, we loop instead of
+  // recursing so that we don't run out of stack.
+  let nextSegment: null | Segment = subtreeSegment;
+  while (nextSegment !== null) {
+    const segment: Segment = nextSegment;
+    nextSegment = null;
+    segment.parentFlushed = true;
+    switch (segment.status) {
+      case PENDING: {
+        // We're emitting a placeholder for this segment to be filled in later.
+        // Therefore we'll need to assign it an ID - to refer to it by.
+        segment.id = request.nextSegmentId++;
+        // Fallthrough
+      }
+      case POSTPONED: {
+        const segmentID = segment.id;
+        // When this segment finally completes it won't be embedded in text since it will flush separately
+        segment.lastPushedText = false;
+        segment.textEmbedded = false;
+        r = writePlaceholder(destination, request.renderState, segmentID);
+        break;
+      }
+      case COMPLETED: {
+        segment.status = FLUSHED;
+        r = true;
+        const chunks = segment.chunks;
+        let chunkIdx = 0;
+        const children = segment.children;
 
-      for (let childIdx = 0; childIdx < children.length; childIdx++) {
-        const nextChild = children[childIdx];
-        // Write all the chunks up until the next child.
-        for (; chunkIdx < nextChild.index; chunkIdx++) {
-          writeChunk(destination, chunks[chunkIdx]);
+        for (let childIdx = 0; childIdx < children.length; childIdx++) {
+          const nextChild = children[childIdx];
+          // Write all the chunks up until the next child.
+          for (; chunkIdx < nextChild.index; chunkIdx++) {
+            writeChunk(destination, chunks[chunkIdx]);
+          }
+          if (
+            childIdx === children.length - 1 &&
+            chunkIdx === chunks.length &&
+            nextChild.boundary === null
+          ) {
+            // This child is the last thing in this segment.
+            nextSegment = nextChild;
+            break;
+          }
+          r = flushSegment(request, destination, nextChild, hoistableState);
         }
-        r = flushSegment(request, destination, nextChild, hoistableState);
+        if (nextSegment === null) {
+          // Finally just write all the remaining chunks
+          for (; chunkIdx < chunks.length - 1; chunkIdx++) {
+            writeChunk(destination, chunks[chunkIdx]);
+          }
+          if (chunkIdx < chunks.length) {
+            r = writeChunkAndReturn(destination, chunks[chunkIdx]);
+          }
+        }
+        break;
       }
-      // Finally just write all the remaining chunks
-      for (; chunkIdx < chunks.length - 1; chunkIdx++) {
-        writeChunk(destination, chunks[chunkIdx]);
+      case ABORTED: {
+        r = true;
+        break;
       }
-      if (chunkIdx < chunks.length) {
-        r = writeChunkAndReturn(destination, chunks[chunkIdx]);
+      default: {
+        throw new Error(
+          'Aborted, errored or already flushed boundaries should not be flushed again. This is a bug in React.',
+        );
       }
-      return r;
-    }
-    case ABORTED: {
-      return true;
-    }
-    default: {
-      throw new Error(
-        'Aborted, errored or already flushed boundaries should not be flushed again. This is a bug in React.',
-      );
     }
   }
+  return r;
 }
 
 // Running count for how much bytes of boundaries have flushed inlined into the currently
