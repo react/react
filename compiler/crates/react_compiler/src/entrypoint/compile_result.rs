@@ -209,10 +209,16 @@ pub struct DebugLogEntry {
 
 impl DebugLogEntry {
     pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+        // The debug text is plain (non-`JsString`) output that crosses the JS bridge
+        // like everything else, where `bridge.ts`'s `restoreJsonSurrogates` turns
+        // `__SURROGATE_XXXX__` markers back into lone surrogates. Debug text can
+        // contain user string literals that merely look like a marker, so escape
+        // them (the bridge unescapes them again).
+        let value: String = value.into();
         Self {
             kind: "debug",
             name: name.into(),
-            value: value.into(),
+            value: react_compiler_diagnostics::js_string::escape_literal_markers(&value),
         }
     }
 }
