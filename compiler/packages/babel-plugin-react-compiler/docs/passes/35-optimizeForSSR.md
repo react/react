@@ -4,131 +4,107 @@
 `src/Optimization/OptimizeForSSR.ts`
 
 ## Purpose
-This pass applies Server-Side Rendering (SSR) specific optimizations. During SSR, React renders components to HTML strings without mounting them in the DOM. This means:
+This pass runs only when `outputMode` is `'ssr'`. During Server-Side Rendering (SSR), React renders each component to HTML once, without a DOM. This means:
 
-1. **Effects don't run** - `useEffect` and `useLayoutEffect` are no-ops
-2. **Event handlers aren't needed** - There's no DOM to attach handlers to
-3. **State is never updated** - Components render once with initial state
-4. **Refs aren't attached** - There's no DOM to ref
+1. **Effects don't run** - `useEffect`, `useLayoutEffect`, and `useInsertionEffect` never fire
+2. **Event handlers never fire** - There's no DOM to attach them to
+3. **Refs aren't attached** - There's no DOM node to point at
+4. **State starts at its initial value** - It can still change during that render: a component that calls its own setter during render is re-rendered with the new state, on the server too
 
-The pass leverages these SSR characteristics to inline and simplify code, removing unnecessary runtime overhead.
+The pass removes code that only matters on the client, and inlines initial state where nothing else needs the state's setter. Memoization is also disabled in SSR mode, but that is not part of this pass.
 
 ## Input Invariants
-- The function has been through type inference
-- Hook types are properly identified (useState, useReducer, useEffect, etc.)
-- Function types for callbacks are properly inferred
+- Runs after `inferMutationAliasingEffects`; `deadCodeElimination` runs right after this pass in the pipeline
+- Hook kinds and setState/startTransition types have been inferred
 
 ## Output Guarantees
-- `useState(initialValue)` is inlined to just `[initialValue, noop]`
-- `useReducer(reducer, initialArg, init?)` is inlined to `[init ? init(initialArg) : initialArg, noop]`
-- `useEffect` and `useLayoutEffect` calls are removed entirely
-- Event handler functions (functions that call setState) are replaced with empty functions
-- Ref-typed values are removed from JSX props
+- `useEffect`, `useLayoutEffect`, and `useInsertionEffect` calls become `undefined`
+- Function expressions that call setState or startTransition (event handlers) become `undefined`, unless code that runs during render calls them or passes them along
+- `useEffectEvent(fn)` becomes `fn`
+- Event handler props (`on[A-Z]...`) and `ref` props are removed from builtin elements; custom elements (tags containing `-`) keep them
+- `const [state, setState] = useState(value)` becomes `const state = value`, `useReducer(reducer, arg)` becomes `arg`, and `useReducer(reducer, arg, init)` becomes `init(arg)`, but only if the setter (or dispatch function) is no longer read once the code above is removed. While any setter in the function is still read, or the function calls a custom hook, state that is read is also only inlined if it starts at a primitive literal, and `useReducer(reducer, arg, init)` is not inlined. Otherwise the hook is left in place.
 
 ## Algorithm
 
-### Phase 1: Identify Inlinable State
-```typescript
-const inlinedState = new Map<IdentifierId, InstructionValue>();
+### Phase 1: Find State That May Be Inlined
+A candidate is a `useState(value)` call where `value` is a primitive, plain object, or array, or a `useReducer(reducer, arg)` / `useReducer(reducer, arg, init)` call. Its result must be used only by an array destructuring whose first item is an identifier: any other use of the result rules it out.
 
-for (const instr of block.instructions) {
-  if (isUseStateCall(instr)) {
-    // Store the initial value for inlining
-    inlinedState.set(instr.lvalue.id, {
-      kind: 'ArrayExpression',
-      elements: [initialValue, noopFunction],
-    });
-  }
+### Phase 2: Remove Client-Only Code
+Replace effects and event handlers with `undefined`, replace `useEffectEvent(fn)` with `fn`, and remove event handler and `ref` props from builtin elements.
 
-  if (isUseReducerCall(instr)) {
-    // Compute initial state and store for inlining
-    const initialState = init ? callInit(initialArg) : initialArg;
-    inlinedState.set(instr.lvalue.id, {
-      kind: 'ArrayExpression',
-      elements: [initialState, noopFunction],
-    });
-  }
-}
-```
+An event handler is a function expression that calls setState or startTransition and that nothing running during render uses (`findRemovableFunctions`). The compiled function runs during render, and so does every function that code running during render calls, tests, or passes along, such as a callback given to `items.map` or `items.forEach`. Functions are followed through locals, context variables, objects, and arrays. Three places are still assumed to receive event handlers, because the pass cannot see what happens to a function there: JSX attributes, the arguments of hooks other than `useState`, `useReducer`, and `useMemo`, and the compiled function's return value.
 
-### Phase 2: Inline State Hooks
-Replace useState/useReducer with their computed initial values:
-```typescript
-// Before:
-$0 = useState(0)
-[state, setState] = $0
+### Phase 3: Inline State Whose Setter Is Unread
+Find which identifiers are still read once the code removed in phase 2 is gone, the way `deadCodeElimination` would see them (`findReferencedIdentifiers`), without removing anything yet. Then a candidate is inlined if:
 
-// After (inlined):
-$0 = [0, () => {}]
-[state, setState] = $0
-```
+1. **Its setter is unread.** No destructured item after the state is still read. A setter that is still read (called during render, passed to a child, provided through context, or returned from a custom hook) would be left pointing at a variable that is no longer declared.
+2. **Its value is the same in every render pass.** A setter that is still read may update state during render. React then renders the component again with the state it already has, but inlined state recomputes its initial value. So while any state hook's setter is still read (including hooks that are not candidates), or the function calls a custom hook (which may update its own state during render, or return a setter that the function calls), a candidate whose state is read is only inlined if its initial value is a primitive literal. A `useReducer(reducer, arg, init)` keeps its hook in that case even if its state is unread, because React calls `init` only on the first pass, while `init(arg)` would run again on every pass.
 
-### Phase 3: Remove Effects
-```typescript
-if (isUseEffectCall(instr) || isUseLayoutEffectCall(instr)) {
-  // Remove the instruction entirely
-  block.instructions.splice(i, 1);
-}
-```
+The destructuring of an inlined candidate becomes `StoreLocal state` and the hook call becomes its initial value. Hook calls stay in place until this point, so `useReducer(reducer, arg, init)` with unread state still becomes `init(arg)`, which `deadCodeElimination` keeps: the initializer runs, as it does in the original component.
 
-### Phase 4: Identify and Neuter Event Handlers
-```typescript
-// Functions that capture and call setState are event handlers
-if (capturesSetState(functionExpr)) {
-  // Replace with empty function
-  instr.value = {
-    kind: 'FunctionExpression',
-    params: originalParams,
-    body: emptyBody,
-  };
-}
-```
-
-### Phase 5: Remove Ref Props
-```typescript
-if (isJSX(instr) && hasRefProp(instr)) {
-  // Remove ref={...} from JSX props
-  removeRefProp(instr.value);
-}
-```
+`deadCodeElimination` removes unused `useState` and `useRef` calls in SSR mode, and unused `useReducer` calls without an initializer. It keeps a `useReducer` call that has an initializer, so the initializer still runs when its state ends up unused.
 
 ## Edge Cases
 
-### useState with Function Initializer
-When `useState` receives a function initializer, it must be called:
+### Setter Called During Render
 ```javascript
-// useState(() => expensive())
-// SSR: Call the initializer to get the value
-const [state] = [expensiveComputation(), noop];
-```
-
-### useReducer with Init Function
-The optional `init` function is called with `initialArg`:
-```javascript
-// useReducer(reducer, arg, init)
-// SSR: [init(arg), noop]
-```
-
-### Nested State Setters
-Functions that transitively call setState are also event handlers:
-```javascript
-function outer() {
-  function inner() {
-    setState(x);  // inner is event handler
-  }
-  inner();  // outer is also event handler
+const [ready, setReady] = useState(false);
+if (!ready) {
+  setReady(true); // React re-renders with the new state: useState is kept
 }
 ```
 
-### Conditional Event Handlers
-Event handler detection is conservative - if a function might call setState, it's treated as an event handler.
-
-### Refs in Nested Objects
-Only direct `ref` props on JSX are removed:
+### Setter Passed Along
 ```javascript
-<div ref={myRef} />           // ref removed
-<div config={{ref: myRef}} /> // ref NOT removed (nested)
+const [open, setOpen] = useState(false);
+return <Dialog open={open} onOpenChange={setOpen} />; // useState is kept
 ```
+The same applies to a setter in a context value or returned from a custom hook, and to `useReducer`'s dispatch function.
+
+### Other State During a Render-Phase Update
+```javascript
+const [ready, setReady] = useState(false);
+const [snapshot] = useState({ready}); // kept: the re-render must not recompute it
+const [label] = useState('ready'); // inlined: a primitive literal is the same in every pass
+if (!ready) {
+  setReady(true);
+}
+```
+
+### Reducer Initializer With Unread State
+```javascript
+const [config] = useReducer(reducer, json, JSON.parse);
+useEffect(() => apply(config));
+// becomes:
+JSON.parse(json); // still runs (and throws for malformed JSON)
+```
+
+### Setter Only Read by Removed Code
+```javascript
+const [node, setNode] = useState(null);
+return <div ref={setNode} data-measured={node !== null} />;
+// becomes:
+const node = null;
+return <div data-measured={node !== null} />;
+```
+
+### Event Handler Detection
+A function counts as an event handler only if its own body calls setState or startTransition, and nothing that runs during render uses it. A function whose only setState call is inside a nested function is kept as is.
+
+### Functions That Update State During Render
+React supports a component updating its own state during render, including through a helper or a callback:
+```javascript
+const [groups, setGroups] = useState(new Map());
+const next = new Map(groups);
+function onRenderGroup(id, title) {
+  if (!next.has(id)) {
+    next.set(id, title);
+    setGroups(next);
+  }
+}
+sections.forEach(section => onRenderGroup(section.id, section.title)); // both functions are kept
+```
+Both functions are kept, so `setGroups` is still read and the `useState` is kept too. A function that only reaches a JSX attribute, a hook argument, or the return value is still removed. If code the pass cannot see calls it during render (for example a child component that calls a callback prop while rendering), that code gets `undefined` and throws.
 
 ## TODOs
 None in the source file.
@@ -139,10 +115,11 @@ None in the source file.
 
 **Input:**
 ```javascript
+// @outputMode:"ssr"
 function Component() {
   const [state, setState] = useState(0);
   const ref = useRef(null);
-  const onChange = (e) => {
+  const onChange = e => {
     setState(e.target.value);
   };
   useEffect(() => {
@@ -152,36 +129,17 @@ function Component() {
 }
 ```
 
-**After SSR Optimization:**
+**Output:**
 ```javascript
+// @outputMode:"ssr"
 function Component() {
-  const $ = _c(1);
-  // useState inlined to [initialValue, noop]
-  const [state] = [0, () => {}];
+  const state = 0;
 
-  // useRef returns object with current: null
-  const ref = { current: null };
-
-  // Event handler replaced with noop (it calls setState)
-  const onChange = () => {};
-
-  // useEffect removed entirely (no-op on SSR)
-
-  // ref prop removed from JSX
-  let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t0 = <input value={state} onChange={onChange} />;
-    $[0] = t0;
-  } else {
-    t0 = $[0];
-  }
-  return t0;
+  return <input value={state} />;
 }
 ```
 
 Key observations:
-- `useState(0)` becomes `[0, () => {}]` - no hook call
-- `useEffect(...)` is removed entirely
-- `onChange` is replaced with empty function since it called `setState`
-- `ref={ref}` prop is removed from JSX
-- SSR output is simpler and has less runtime overhead
+- `onChange` calls `setState`, so it is replaced with `undefined`; the `onChange` and `ref` props are removed from `<input>`
+- `setState` is then unread, so `useState(0)` is inlined to `const state = 0`
+- The effect is removed, which leaves `ref` and the `useRef` call unused, so dead code elimination removes them
