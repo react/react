@@ -9399,6 +9399,84 @@ background-color: green;
       );
     });
 
+    it('replaces a server rendered title left behind by a deleted dehydrated Suspense boundary', async () => {
+      function Title({isClient, view}) {
+        if (isClient && view === 0) {
+          // Never resolves on the client so the boundary stays dehydrated.
+          readText('never');
+        }
+        return <title>Minimal title</title>;
+      }
+
+      function App({isClient, view}) {
+        return (
+          <html>
+            <head />
+            <body>
+              <div>
+                <Suspense key={view} fallback={null}>
+                  <Title isClient={isClient} view={view} />
+                </Suspense>
+              </div>
+            </body>
+          </html>
+        );
+      }
+
+      await act(() => {
+        const {pipe} = renderToPipeableStream(
+          <App isClient={false} view={0} />,
+        );
+        pipe(writable);
+      });
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <title>Minimal title</title>
+          </head>
+          <body>
+            <div />
+          </body>
+        </html>,
+      );
+
+      const root = ReactDOMClient.hydrateRoot(
+        document,
+        <App isClient={true} view={0} />,
+      );
+      await waitForAll([]);
+      // The boundary never hydrates so the server title is not owned by any fiber.
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Minimal title</title>,
+      );
+
+      // Changing the key deletes the dehydrated boundary and mounts a new
+      // title on the client. The server title must not be left behind.
+      root.render(<App isClient={true} view={1} />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <title>Minimal title</title>
+          </head>
+          <body>
+            <div />
+          </body>
+        </html>,
+      );
+
+      root.render(
+        <html>
+          <head />
+          <body>
+            <div />
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+    });
+
     it('can hoist title tags on the client', async () => {
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
