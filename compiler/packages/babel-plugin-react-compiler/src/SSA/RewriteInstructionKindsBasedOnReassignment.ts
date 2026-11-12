@@ -55,14 +55,13 @@ export function rewriteInstructionKindsBasedOnReassignment(
       switch (value.kind) {
         case 'DeclareLocal': {
           const lvalue = value.lvalue;
-          CompilerError.invariant(
-            !declarations.has(lvalue.place.identifier.declarationId),
-            {
+          if (declarations.has(lvalue.place.identifier.declarationId)) {
+            CompilerError.invariant(false, {
               reason: `Expected variable not to be defined prior to declaration`,
               description: `${printPlace(lvalue.place)} was already defined`,
               loc: lvalue.place.loc,
-            },
-          );
+            });
+          }
           declarations.set(lvalue.place.identifier.declarationId, lvalue);
           break;
         }
@@ -73,14 +72,13 @@ export function rewriteInstructionKindsBasedOnReassignment(
               lvalue.place.identifier.declarationId,
             );
             if (declaration === undefined) {
-              CompilerError.invariant(
-                !declarations.has(lvalue.place.identifier.declarationId),
-                {
+              if (declarations.has(lvalue.place.identifier.declarationId)) {
+                CompilerError.invariant(false, {
                   reason: `Expected variable not to be defined prior to declaration`,
                   description: `${printPlace(lvalue.place)} was already defined`,
                   loc: lvalue.place.loc,
-                },
-              );
+                });
+              }
               declarations.set(lvalue.place.identifier.declarationId, lvalue);
               lvalue.kind = InstructionKind.Const;
             } else {
@@ -95,16 +93,15 @@ export function rewriteInstructionKindsBasedOnReassignment(
           let kind: InstructionKind | null = null;
           for (const place of eachPatternOperand(lvalue.pattern)) {
             if (place.identifier.name === null) {
-              CompilerError.invariant(
-                kind === null || kind === InstructionKind.Const,
-                {
+              if (kind !== null && kind !== InstructionKind.Const) {
+                CompilerError.invariant(false, {
                   reason: `Expected consistent kind for destructuring`,
                   description: `other places were \`${kind}\` but '${printPlace(
                     place,
                   )}' is const`,
                   loc: place.loc,
-                },
-              );
+                });
+              }
               kind = InstructionKind.Const;
             } else {
               const declaration = declarations.get(
@@ -116,28 +113,26 @@ export function rewriteInstructionKindsBasedOnReassignment(
                   loc: place.loc,
                 });
                 declarations.set(place.identifier.declarationId, lvalue);
-                CompilerError.invariant(
-                  kind === null || kind === InstructionKind.Const,
-                  {
+                if (kind !== null && kind !== InstructionKind.Const) {
+                  CompilerError.invariant(false, {
                     reason: `Expected consistent kind for destructuring`,
                     description: `Other places were \`${kind}\` but '${printPlace(
                       place,
                     )}' is const`,
                     loc: place.loc,
-                  },
-                );
+                  });
+                }
                 kind = InstructionKind.Const;
               } else {
-                CompilerError.invariant(
-                  kind === null || kind === InstructionKind.Reassign,
-                  {
+                if (kind !== null && kind !== InstructionKind.Reassign) {
+                  CompilerError.invariant(false, {
                     reason: `Expected consistent kind for destructuring`,
                     description: `Other places were \`${kind}\` but '${printPlace(
                       place,
                     )}' is reassigned`,
                     loc: place.loc,
-                  },
-                );
+                  });
+                }
                 kind = InstructionKind.Reassign;
                 declaration.kind = InstructionKind.Let;
               }
@@ -154,11 +149,13 @@ export function rewriteInstructionKindsBasedOnReassignment(
         case 'PrefixUpdateLocal': {
           const lvalue = value.lvalue;
           const declaration = declarations.get(lvalue.identifier.declarationId);
-          CompilerError.invariant(declaration !== undefined, {
-            reason: `Expected variable to have been defined`,
-            description: `No declaration for ${printPlace(lvalue)}`,
-            loc: lvalue.loc,
-          });
+          if (declaration === undefined) {
+            CompilerError.invariant(false, {
+              reason: `Expected variable to have been defined`,
+              description: `No declaration for ${printPlace(lvalue)}`,
+              loc: lvalue.loc,
+            });
+          }
           declaration.kind = InstructionKind.Let;
           break;
         }

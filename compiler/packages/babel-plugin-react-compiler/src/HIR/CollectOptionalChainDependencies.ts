@@ -181,15 +181,16 @@ function matchOptionalTestBlock(
       .instructions[0] as TInstruction<PropertyLoad>;
     const storeLocal: StoreLocal = consequentBlock.instructions[1].value;
     const storeLocalInstr = consequentBlock.instructions[1];
-    CompilerError.invariant(
-      propertyLoad.value.object.identifier.id === terminal.test.identifier.id,
-      {
+    if (
+      propertyLoad.value.object.identifier.id !== terminal.test.identifier.id
+    ) {
+      CompilerError.invariant(false, {
         reason:
           '[OptionalChainDeps] Inconsistent optional chaining property load',
         description: `Test=${printIdentifier(terminal.test.identifier)} PropertyLoad base=${printIdentifier(propertyLoad.value.object.identifier)}`,
         loc: propertyLoad.loc,
-      },
-    );
+      });
+    }
 
     CompilerError.invariant(
       storeLocal.value.identifier.id === propertyLoad.lvalue.identifier.id,
