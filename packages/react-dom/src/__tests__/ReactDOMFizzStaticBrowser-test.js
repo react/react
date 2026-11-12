@@ -1270,6 +1270,96 @@ describe('ReactDOMFizzStaticBrowser', () => {
     );
   });
 
+  it('keeps static children after a synchronous abort deep in the tree', async () => {
+    if (!gate(flags => flags.enableFizzRenderDepthLimit)) {
+      // Without the depth limit, a tree this deep can run out of stack.
+      return;
+    }
+    const controller = new AbortController();
+    let prerendering = true;
+    let hostCoercions = 0;
+
+    function Abort() {
+      if (prerendering) {
+        controller.abort('abort');
+      }
+      return 'Abort';
+    }
+
+    // Deep enough that the abort happens in a task that continues the one
+    // that started rendering the boundary.
+    function Deep({n}) {
+      if (n === 0) {
+        return <Abort />;
+      }
+      return <Deep n={n - 1} />;
+    }
+
+    function Later() {
+      return prerendering ? 'Later too early' : 'Later';
+    }
+
+    function Content() {
+      const children = [
+        <Deep key="deep" n={300} />,
+        'Middle',
+        <span
+          key="host"
+          title={{
+            toString() {
+              hostCoercions++;
+              return 'host';
+            },
+          }}>
+          Host
+        </span>,
+        <Later key="later" />,
+      ];
+      return <section>{children}</section>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Loading...">
+            <Content />
+          </Suspense>
+        </div>
+      );
+    }
+
+    let pendingResult;
+    await serverAct(() => {
+      pendingResult = ReactDOMFizzStatic.prerender(<App />, {
+        signal: controller.signal,
+        onError() {},
+      });
+    });
+    const prerendered = await pendingResult;
+
+    expect(hostCoercions).toBeGreaterThan(0);
+    expect(prerendered.postponed).not.toBe(null);
+    await readIntoContainer(prerendered.prelude);
+    expect(container.innerHTML.toLowerCase()).not.toContain('too early');
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+
+    prerendering = false;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(prerendered.postponed)),
+      ),
+    );
+    await readIntoContainer(resumed);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <section>
+          {['Abort', 'Middle', <span title="host">Host</span>, 'Later']}
+        </section>
+      </div>,
+    );
+  });
+
   it('keeps static children but discards user code results after a synchronous abort', async () => {
     const controller = new AbortController();
     const Context = React.createContext(null);
