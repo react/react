@@ -5753,7 +5753,36 @@ body {
         </html>,
       );
     });
+
+    it('warns without throwing when options is null or lacks Object prototype', async () => {
+      function App({url}) {
+        ReactDOM.prefetchDNS(url, null);
+        ReactDOM.prefetchDNS(url, Object.create(null));
+        return (
+          <html>
+            <body>hello world</body>
+          </html>
+        );
+      }
+
+      await act(() => {
+        renderToPipeableStream(<App url="foo" />).pipe(writable);
+      });
+      assertConsoleErrorDev([
+        'ReactDOM.prefetchDNS(): Expected only one argument, `href`, ' +
+          'but encountered `null` as a second argument instead. ' +
+          'This argument is reserved for future options and is currently disallowed. ' +
+          'Try calling ReactDOM.prefetchDNS() with just a single string argument, `href`.\n' +
+          '    in App (at **)',
+        'ReactDOM.prefetchDNS(): Expected only one argument, `href`, ' +
+          'but encountered something with type "object" as a second argument instead. ' +
+          'This argument is reserved for future options and is currently disallowed. ' +
+          'Try calling ReactDOM.prefetchDNS() with just a single string argument, `href`.\n' +
+          '    in App (at **)',
+      ]);
+    });
   });
+
 
   it('does not wait for stylesheets of completed fallbacks', async () => {
     function Unblock({value}) {
