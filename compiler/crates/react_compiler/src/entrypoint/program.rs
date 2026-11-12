@@ -1342,19 +1342,19 @@ fn log_error(
     for detail in &err.details {
         let detail_info = match detail {
             CompilerErrorOrDiagnostic::Diagnostic(d) => CompilerErrorDetailInfo {
-                category: format!("{:?}", d.category),
+                category: d.category,
                 reason: d.reason.clone(),
                 description: d.description.clone(),
-                severity: format!("{:?}", d.logged_severity()),
+                severity: d.logged_severity(),
                 suggestions: suggestions_to_logger(&d.suggestions),
                 details: diagnostic_details_to_items(d, source_filename),
                 loc: None,
             },
             CompilerErrorOrDiagnostic::ErrorDetail(d) => CompilerErrorDetailInfo {
-                category: format!("{:?}", d.category),
+                category: d.category,
                 reason: d.reason.clone(),
                 description: d.description.clone(),
-                severity: format!("{:?}", d.logged_severity()),
+                severity: d.logged_severity(),
                 suggestions: suggestions_to_logger(&d.suggestions),
                 details: None,
                 loc: d
@@ -1452,19 +1452,19 @@ fn compiler_error_to_info(err: &CompilerError, filename: Option<&str>) -> Compil
         .iter()
         .map(|d| match d {
             CompilerErrorOrDiagnostic::Diagnostic(d) => CompilerErrorDetailInfo {
-                category: format!("{:?}", d.category),
+                category: d.category,
                 reason: d.reason.clone(),
                 description: d.description.clone(),
-                severity: format!("{:?}", d.severity()),
+                severity: d.severity(),
                 suggestions: suggestions_to_logger(&d.suggestions),
                 details: diagnostic_details_to_items(d, filename),
                 loc: None,
             },
             CompilerErrorOrDiagnostic::ErrorDetail(d) => CompilerErrorDetailInfo {
-                category: format!("{:?}", d.category),
+                category: d.category,
                 reason: d.reason.clone(),
                 description: d.description.clone(),
-                severity: format!("{:?}", d.severity()),
+                severity: d.severity(),
                 suggestions: suggestions_to_logger(&d.suggestions),
                 details: None,
                 loc: d.loc.as_ref().map(|l| diag_loc_to_logger_loc(l, filename)),
