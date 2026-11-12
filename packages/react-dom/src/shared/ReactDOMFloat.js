@@ -248,6 +248,8 @@ export function preinit(href: string, options: PreinitOptions) {
             crossOrigin,
             integrity,
             fetchPriority,
+            nonce:
+              typeof options.nonce === 'string' ? options.nonce : undefined,
           },
         );
     } else if (as === 'script') {
