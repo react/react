@@ -1870,7 +1870,12 @@ function commitSuspenseHydrationCallbacks(
     return;
   }
   const newState: SuspenseState | null = finishedWork.memoizedState;
-  if (newState === null) {
+  if (
+    newState === null ||
+    // Hydrating the fallback also unblocks events. A client-rendered fallback
+    // deletes the dehydrated fragment, which already unblocks them.
+    (newState.dehydrated === null && finishedWork.deletions === null)
+  ) {
     const current = finishedWork.alternate;
     if (current !== null) {
       const prevState: SuspenseState | null = current.memoizedState;
