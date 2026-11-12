@@ -157,6 +157,16 @@ function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
           ) {
             continue;
           }
+          /*
+           * A property load that itself produces a ref (e.g. `props.myRef`
+           * passed as `ref={...}`) must not be aliased to its object: doing so
+           * would make Env.set() write the Ref type onto the object (`props`),
+           * so sibling loads like `props.className` would be typed as ref
+           * values.
+           */
+          if (isUseRefType(lvalue.identifier)) {
+            continue;
+          }
           const temp = env.lookup(value.object);
           if (temp != null) {
             env.define(lvalue, temp);
