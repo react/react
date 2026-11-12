@@ -27,6 +27,6 @@
     "internal-ip": "^6.2.0",
     "minimist": "^1.2.3",
     "react-devtools-core": "8.0.0",
-    "update-notifier": "^5.0.0"
+    "update-notifier": "^7.3.1"
   }
 }
