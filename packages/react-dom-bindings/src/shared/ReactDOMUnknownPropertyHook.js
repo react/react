@@ -227,6 +227,7 @@ function validateProperty(tagName, name, value, eventRegistry) {
           case 'scoped':
           case 'seamless':
           case 'itemScope':
+          case 'popover':
           case 'capture':
           case 'download':
           case 'inert': {
