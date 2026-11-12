@@ -44,10 +44,17 @@ describe('CSSPropertyOperations', () => {
     const styles = {
       flex: 0,
       opacity: 0.5,
+      shapeImageThreshold: 0.5,
+      mathDepth: 1,
+      maskBorderOutset: 1,
+      maskBorderSlice: 10,
+      maskBorderWidth: 2,
     };
     const div = <div style={styles} />;
     const html = ReactDOMServer.renderToString(div);
-    expect(html).toContain('"flex:0;opacity:0.5"');
+    expect(html).toContain(
+      '"flex:0;opacity:0.5;shape-image-threshold:0.5;math-depth:1;mask-border-outset:1;mask-border-slice:10;mask-border-width:2"',
+    );
   });
 
   it('should create vendor-prefixed markup correctly', () => {
