@@ -69,7 +69,7 @@ function updateOptions(
   const options: HTMLOptionsCollection = node.options;
 
   if (multiple) {
-    const selectedValues = (propValue: Array<string>);
+    const selectedValues = propValue as Array<string>;
     const selectedValue: {[string]: boolean} = {};
     for (let i = 0; i < selectedValues.length; i++) {
       // Prefix to avoid chaos with special keys.
@@ -149,7 +149,7 @@ export function initSelect(
   defaultValue: ?string,
   multiple: ?boolean,
 ) {
-  const node: HTMLSelectElement = (element: any);
+  const node: HTMLSelectElement = element as any;
   node.multiple = !!multiple;
   if (value != null) {
     updateOptions(node, !!multiple, value, false);
@@ -164,7 +164,7 @@ export function hydrateSelect(
   defaultValue: ?string,
   multiple: ?boolean,
 ): void {
-  const node: HTMLSelectElement = (element: any);
+  const node: HTMLSelectElement = element as any;
   const options: HTMLOptionsCollection = node.options;
 
   const propValue: any = value != null ? value : defaultValue;
@@ -172,7 +172,7 @@ export function hydrateSelect(
   let changed = false;
 
   if (multiple) {
-    const selectedValues = (propValue: ?Array<string>);
+    const selectedValues = propValue as ?Array<string>;
     const selectedValue: {[string]: boolean} = {};
     if (selectedValues != null) {
       for (let i = 0; i < selectedValues.length; i++) {
@@ -218,7 +218,7 @@ export function updateSelect(
   multiple: ?boolean,
   wasMultiple: ?boolean,
 ) {
-  const node: HTMLSelectElement = (element: any);
+  const node: HTMLSelectElement = element as any;
 
   if (value != null) {
     updateOptions(node, !!multiple, value, false);
@@ -234,7 +234,7 @@ export function updateSelect(
 }
 
 export function restoreControlledSelectState(element: Element, props: Object) {
-  const node: HTMLSelectElement = (element: any);
+  const node: HTMLSelectElement = element as any;
   const value = props.value;
 
   if (value != null) {

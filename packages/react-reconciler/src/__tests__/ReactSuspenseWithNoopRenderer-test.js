@@ -3724,7 +3724,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
-  // Regression: https://github.com/facebook/react/issues/18486
+  // Regression: https://github.com/react/react/issues/18486
   // @gate enableLegacyCache
   it('does not get stuck in pending state with render phase updates', async () => {
     let setTextWithShortTransition;
@@ -4054,11 +4054,20 @@ describe('ReactSuspenseWithNoopRenderer', () => {
       // microtask). But this test shows an example where that's not the case.
       //
       // The fix was to check if we're in the render phase before calling
-      // `prepareFreshStack`.
+      // `prepareFreshStack`. The synchronous ping is instead recorded so the
+      // lane can be retried.
       await act(() => {
         startTransition(() => root.render(<App showMore={true} />));
       });
-      assertLog(['Suspend! [A]', 'Loading A...', 'Loading B...']);
+      assertLog([
+        'Suspend! [A]',
+        'Loading A...',
+        'Loading B...',
+        // The synchronous ping was recorded, so B retries and renders.
+        'Suspend! [A]',
+        'Loading A...',
+        'B',
+      ]);
       expect(root).toMatchRenderedOutput(<div />);
     },
   );

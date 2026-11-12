@@ -1007,11 +1007,10 @@ class Driver {
     const test = this.visitValueBlock(testBlockId, loc);
     const testBlock = this.cx.ir.blocks.get(test.block)!;
     if (testBlock.terminal.kind !== 'branch') {
-      CompilerError.throwTodo({
-        reason: `Unexpected terminal kind \`${testBlock.terminal.kind}\` for ${terminalKind} test block`,
-        description: null,
+      CompilerError.invariant(false, {
+        reason: `Expected a branch terminal for ${terminalKind} test block`,
+        description: `Got \`${testBlock.terminal.kind}\``,
         loc: testBlock.terminal.loc,
-        suggestions: null,
       });
     }
     return {

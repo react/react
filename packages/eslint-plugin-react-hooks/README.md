@@ -74,7 +74,6 @@ export default [
       // React Compiler rules
       'react-hooks/config': 'error',
       'react-hooks/error-boundaries': 'error',
-      'react-hooks/component-hook-factories': 'error',
       'react-hooks/gating': 'error',
       'react-hooks/globals': 'error',
       'react-hooks/immutability': 'error',
@@ -108,7 +107,6 @@ export default [
     // React Compiler rules
     "react-hooks/config": "error",
     "react-hooks/error-boundaries": "error",
-    "react-hooks/component-hook-factories": "error",
     "react-hooks/gating": "error",
     "react-hooks/globals": "error",
     "react-hooks/immutability": "error",

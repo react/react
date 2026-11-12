@@ -11,15 +11,9 @@ import * as vscode from 'vscode';
 import {
   LanguageClient,
   LanguageClientOptions,
-  type Position,
   ServerOptions,
   TransportKind,
 } from 'vscode-languageclient/node';
-import {positionLiteralToVSCodePosition} from './mapping';
-import {
-  getCurrentlyDecoratedAutoDepFnLoc,
-  requestAutoDepsDecorations,
-} from './autodeps';
 
 let client: LanguageClient;
 
@@ -62,33 +56,6 @@ export function activate(context: vscode.ExtensionContext) {
     );
     return;
   }
-
-  vscode.languages.registerHoverProvider(documentSelector, {
-    provideHover(_document, position, _token) {
-      requestAutoDepsDecorations(client, position, {shouldUpdateCurrent: true});
-      return null;
-    },
-  });
-
-  vscode.workspace.onDidChangeTextDocument(async _e => {
-    const currentlyDecoratedAutoDepFnLoc = getCurrentlyDecoratedAutoDepFnLoc();
-    if (currentlyDecoratedAutoDepFnLoc !== null) {
-      requestAutoDepsDecorations(client, currentlyDecoratedAutoDepFnLoc.start, {
-        shouldUpdateCurrent: false,
-      });
-    }
-  });
-
-  vscode.commands.registerCommand(
-    'react.requestAutoDepsDecorations',
-    (position: Position) => {
-      requestAutoDepsDecorations(
-        client,
-        positionLiteralToVSCodePosition(position),
-        {shouldUpdateCurrent: true},
-      );
-    },
-  );
 
   client.registerProposedFeatures();
   client.start();

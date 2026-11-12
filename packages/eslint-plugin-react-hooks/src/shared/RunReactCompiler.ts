@@ -21,6 +21,11 @@ import type * as ESTree from 'estree';
 import * as HermesParser from 'hermes-parser';
 import {isDeepStrictEqual} from 'util';
 import type {ParseResult} from '@babel/parser';
+import {
+  eprh_enableUseKeyedStateCompilerLint,
+  eprh_enableVerboseNoSetStateInEffectCompilerLint,
+  eprh_enableExhaustiveEffectDependenciesCompilerLint,
+} from 'shared/ReactFeatureFlags';
 
 // Pattern for component names: starts with uppercase letter
 const COMPONENT_NAME_PATTERN = /^[A-Z]/;
@@ -81,10 +86,7 @@ function checkTopLevelNode(node: ESTree.Node): boolean {
   // Also handles Flow component/hook syntax transformed to FunctionDeclaration with flags
   if (node.type === 'FunctionDeclaration') {
     // Check for Hermes-added flags indicating Flow component/hook syntax
-    if (
-      '__componentDeclaration' in node ||
-      '__hookDeclaration' in node
-    ) {
+    if ('__componentDeclaration' in node || '__hookDeclaration' in node) {
       return true;
     }
     const id = (node as ESTree.FunctionDeclaration).id;
@@ -107,7 +109,10 @@ function checkTopLevelNode(node: ESTree.Node): boolean {
             init.type === 'FunctionExpression')
         ) {
           const name = decl.id.name;
-          if (COMPONENT_NAME_PATTERN.test(name) || HOOK_NAME_PATTERN.test(name)) {
+          if (
+            COMPONENT_NAME_PATTERN.test(name) ||
+            HOOK_NAME_PATTERN.test(name)
+          ) {
             return true;
           }
         }
@@ -136,10 +141,13 @@ const COMPILER_OPTIONS: PluginOptions = {
     validateNoCapitalizedCalls: [],
     validateHooksUsage: true,
     validateNoDerivedComputationsInEffects: true,
-    // Temporarily enabled for internal testing
-    enableUseKeyedState: true,
-    enableVerboseNoSetStateInEffect: true,
-    validateExhaustiveEffectDependencies: 'extra-only',
+
+    // Experimental options controlled by ReactFeatureFlags
+    enableUseKeyedState: eprh_enableUseKeyedStateCompilerLint,
+    enableVerboseNoSetStateInEffect:
+      eprh_enableVerboseNoSetStateInEffectCompilerLint,
+    validateExhaustiveEffectDependencies:
+      eprh_enableExhaustiveEffectDependenciesCompilerLint,
   },
 };
 

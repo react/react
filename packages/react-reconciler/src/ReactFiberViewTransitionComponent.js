@@ -37,7 +37,7 @@ export function getViewTransitionName(
   }
 
   // We assume we always call this in the commit phase.
-  const root = ((getCommittingRoot(): any): FiberRoot);
+  const root = getCommittingRoot() as any as FiberRoot;
   const identifierPrefix = root.identifierPrefix;
   const globalClientId = globalClientIdCounter++;
   const name =

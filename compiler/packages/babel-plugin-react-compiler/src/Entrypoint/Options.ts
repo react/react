@@ -7,12 +7,7 @@
 
 import * as t from '@babel/types';
 import {z} from 'zod/v4';
-import {
-  CompilerDiagnostic,
-  CompilerError,
-  CompilerErrorDetail,
-  CompilerErrorDetailOptions,
-} from '../CompilerError';
+import {CompilerError, CompilerErrorDetailOptions} from '../CompilerError';
 import {
   EnvironmentConfig,
   ExternalFunction,
@@ -191,7 +186,7 @@ const CompilerReactTargetSchema = z.union([
    * Used exclusively for Meta apps which are guaranteed to have compatible
    * react runtime and compiler versions. Note that only the FB-internal bundles
    * re-export useMemoCache (see
-   * https://github.com/facebook/react/blob/5b0ef217ef32333a8e56f39be04327c89efa346f/packages/react/index.fb.js#L68-L70),
+   * https://github.com/react/react/blob/5b0ef217ef32333a8e56f39be04327c89efa346f/packages/react/index.fb.js#L68-L70),
    * so this option is invalid / creates runtime errors for open-source users.
    */
   z.object({
@@ -228,8 +223,6 @@ const CompilerOutputModeSchema = z.enum([
   'ssr',
   // Build optimized for the client, with auto memoization
   'client',
-  // Build optimized for the client without auto memo
-  'client-no-memo',
   // Lint mode, the output is unused but validations should run
   'lint',
 ]);
@@ -254,15 +247,27 @@ export type LoggerEvent =
   | CompileErrorEvent
   | CompileDiagnosticEvent
   | CompileSkipEvent
+  | CompileUnexpectedThrowEvent
   | PipelineErrorEvent
-  | TimingEvent
-  | AutoDepsDecorationsEvent
-  | AutoDepsEligibleEvent;
+  | TimingEvent;
 
+export type CompileErrorDetail = {
+  category: string;
+  reason: string;
+  description: string | null;
+  severity: string;
+  suggestions: Array<unknown> | null;
+  details?: Array<{
+    kind: string;
+    loc: t.SourceLocation | null;
+    message: string | null;
+  }>;
+  loc?: t.SourceLocation | null;
+};
 export type CompileErrorEvent = {
   kind: 'CompileError';
   fnLoc: t.SourceLocation | null;
-  detail: CompilerErrorDetail | CompilerDiagnostic;
+  detail: CompileErrorDetail;
 };
 export type CompileDiagnosticEvent = {
   kind: 'CompileDiagnostic';
@@ -290,21 +295,15 @@ export type PipelineErrorEvent = {
   fnLoc: t.SourceLocation | null;
   data: string;
 };
+export type CompileUnexpectedThrowEvent = {
+  kind: 'CompileUnexpectedThrow';
+  fnLoc: t.SourceLocation | null;
+  data: string;
+};
 export type TimingEvent = {
   kind: 'Timing';
   measurement: PerformanceMeasure;
 };
-export type AutoDepsDecorationsEvent = {
-  kind: 'AutoDepsDecorations';
-  fnLoc: t.SourceLocation;
-  decorations: Array<t.SourceLocation>;
-};
-export type AutoDepsEligibleEvent = {
-  kind: 'AutoDepsEligible';
-  fnLoc: t.SourceLocation;
-  depArrayLoc: t.SourceLocation;
-};
-
 export type Logger = {
   logEvent: (filename: string | null, event: LoggerEvent) => void;
   debugLogIRs?: (value: CompilerPipelineValue) => void;

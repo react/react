@@ -1325,7 +1325,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'Form field values (value, checked, defaultValue, or defaultChecked props)' +
           ' must be strings, not TemporalLike. ' +
@@ -1353,7 +1353,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `value` attribute is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +
@@ -1380,7 +1380,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `value` attribute is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +
@@ -1415,7 +1415,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'Form field values (value, checked, defaultValue, or defaultChecked props)' +
           ' must be strings, not TemporalLike. ' +
@@ -1450,7 +1450,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `value` attribute is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +
@@ -1484,8 +1484,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(
-        // eslint-disable-next-line no-undef
+      ).rejects.toThrow(
         new AggregateError([
           new TypeError('prod message'),
           new TypeError('prod message'),
@@ -1515,7 +1514,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'Form field values (value, checked, defaultValue, or defaultChecked props)' +
           ' must be strings, not TemporalLike. ' +
@@ -1544,7 +1543,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `value` attribute is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +
@@ -1570,7 +1569,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `value` attribute is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +
@@ -1606,7 +1605,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'Form field values (value, checked, defaultValue, or defaultChecked props)' +
           ' must be strings, not TemporalLike. ' +
@@ -1647,7 +1646,7 @@ describe('ReactDOMSelect', () => {
             </select>,
           );
         }),
-      ).rejects.toThrowError(new TypeError('prod message'));
+      ).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `value` attribute is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +

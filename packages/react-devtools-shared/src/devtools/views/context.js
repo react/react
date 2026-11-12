@@ -15,11 +15,11 @@ import type {ViewAttributeSource} from 'react-devtools-shared/src/devtools/views
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
 
 export const BridgeContext: ReactContext<FrontendBridge> =
-  createContext<FrontendBridge>(((null: any): FrontendBridge));
+  createContext<FrontendBridge>(null as any as FrontendBridge);
 BridgeContext.displayName = 'BridgeContext';
 
 export const StoreContext: ReactContext<Store> = createContext<Store>(
-  ((null: any): Store),
+  null as any as Store,
 );
 StoreContext.displayName = 'StoreContext';
 

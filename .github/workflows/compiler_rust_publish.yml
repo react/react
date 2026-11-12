@@ -1,0 +1,48 @@
+name: (Compiler) Publish Rust Crates
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (do not actually publish crates)
+        type: boolean
+        required: true
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: compiler-rust-publish
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: compiler
+
+jobs:
+  publish:
+    name: Publish crates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check workspace
+        run: cargo check --locked --workspace
+      - name: Authenticate with crates.io
+        if: ${{ !inputs.dry_run }}
+        id: crates_io_auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            scripts/publish-rust-crates.sh --dry-run
+          else
+            scripts/publish-rust-crates.sh
+          fi

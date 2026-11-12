@@ -18,15 +18,18 @@ function Component() {
 ```
 Found 1 error:
 
-Todo: Support functions with unreachable code that may contain hoisted declarations
+Invariant: [InferMutationAliasingEffects] Expected value kind to be initialized
 
-error.todo-hoisted-function-in-unreachable-code.ts:6:2
+<unknown> Foo$0.
+
+error.todo-hoisted-function-in-unreachable-code.ts:3:10
+  1 | // @compilationMode:"infer"
+  2 | function Component() {
+> 3 |   return <Foo />;
+    |           ^^^ this is uninitialized
   4 |
   5 |   // This is unreachable from a control-flow perspective, but it gets hoisted
-> 6 |   function Foo() {}
-    |   ^^^^^^^^^^^^^^^^^ Support functions with unreachable code that may contain hoisted declarations
-  7 | }
-  8 |
+  6 |   function Foo() {}
 ```
           
       

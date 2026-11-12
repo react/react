@@ -5,7 +5,7 @@
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/jest-react"
   },
   "keywords": [
@@ -15,11 +15,11 @@
   ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/facebook/react/issues"
+    "url": "https://github.com/react/react/issues"
   },
   "homepage": "https://react.dev/",
   "peerDependencies": {
-    "jest": "^23.0.1 || ^24.0.0 || ^25.1.0 || ^26.0.0 || ^27.0.0 || ^28.0.0 || ^29.0.0",
+    "jest": "^23.0.1 || ^24.0.0 || ^25.1.0 || ^26.0.0 || ^27.0.0 || ^28.0.0 || ^29.0.0 || ^30.0.0",
     "react": "^19.0.0",
     "react-test-renderer": "^19.0.0"
   },

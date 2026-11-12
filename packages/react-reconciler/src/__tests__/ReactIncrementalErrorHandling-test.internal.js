@@ -287,6 +287,10 @@ describe('ReactIncrementalErrorHandling', () => {
       'commit',
       'commit',
     ]);
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
+    ]);
     expect(ReactNoop).toMatchRenderedOutput(
       <span prop="Everything is fine." />,
     );
@@ -338,6 +342,10 @@ describe('ReactIncrementalErrorHandling', () => {
       // Nothing commits until the second update completes.
       'commit',
       'commit',
+    ]);
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
     ]);
     // This should not include the offscreen content
     expect(ReactNoop).toMatchRenderedOutput(
@@ -1786,6 +1794,10 @@ describe('ReactIncrementalErrorHandling', () => {
     });
 
     // Should finish without throwing.
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
+    ]);
     expect(root).toMatchRenderedOutput('Everything is fine.');
   });
 
@@ -1832,6 +1844,10 @@ describe('ReactIncrementalErrorHandling', () => {
     });
     // Should render the final state without throwing the error.
     assertLog(['Everything is fine.']);
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
+    ]);
     expect(root).toMatchRenderedOutput('Everything is fine.');
   });
 

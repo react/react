@@ -21,9 +21,6 @@ import {monacoConfigOptions} from './monacoOptions';
 import {IconChevron} from '../Icons/IconChevron';
 import {CONFIG_PANEL_TRANSITION} from '../../lib/transitionTypes';
 
-// @ts-expect-error - webpack asset/source loader handles .d.ts files as strings
-import compilerTypeDefs from 'babel-plugin-react-compiler/dist/index.d.ts';
-
 loader.config({monaco});
 
 export default function ConfigEditor({
@@ -105,22 +102,10 @@ function ExpandedEditor({
     _: editor.IStandaloneCodeEditor,
     monaco: Monaco,
   ) => void = (_, monaco) => {
-    // Add the babel-plugin-react-compiler type definitions to Monaco
-    monaco.languages.typescript.typescriptDefaults.addExtraLib(
-      //@ts-expect-error - compilerTypeDefs is a string
-      compilerTypeDefs,
-      'file:///node_modules/babel-plugin-react-compiler/dist/index.d.ts',
-    );
-    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-      target: monaco.languages.typescript.ScriptTarget.Latest,
-      allowNonTsExtensions: true,
-      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-      module: monaco.languages.typescript.ModuleKind.ESNext,
-      noEmit: true,
-      strict: false,
-      esModuleInterop: true,
-      allowSyntheticDefaultImports: true,
-      jsx: monaco.languages.typescript.JsxEmit.React,
+    // Enable comments in JSON for JSON5-style config
+    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+      allowComments: true,
+      trailingCommas: 'ignore',
     });
   };
 
@@ -157,8 +142,8 @@ function ExpandedEditor({
             </div>
             <div className="flex-1 border border-gray-300">
               <MonacoEditor
-                path={'config.ts'}
-                language={'typescript'}
+                path={'config.json5'}
+                language={'json'}
                 value={store.config}
                 onMount={handleMount}
                 onChange={handleChange}

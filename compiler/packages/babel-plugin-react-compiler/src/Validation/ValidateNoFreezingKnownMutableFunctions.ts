@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {CompilerDiagnostic, CompilerError, Effect} from '..';
+import {CompilerDiagnostic, Effect} from '..';
 import {ErrorCategory} from '../CompilerError';
 import {
   HIRFunction,
@@ -18,7 +18,6 @@ import {
   eachTerminalOperand,
 } from '../HIR/visitors';
 import {AliasingEffect} from '../Inference/AliasingEffects';
-import {Result} from '../Utils/Result';
 
 /**
  * Validates that functions with known mutations (ie due to types) cannot be passed
@@ -43,10 +42,7 @@ import {Result} from '../Utils/Result';
  * This pass detects functions with *known* mutations (Store or Mutate, not ConditionallyMutate)
  * that are passed where a frozen value is expected and rejects them.
  */
-export function validateNoFreezingKnownMutableFunctions(
-  fn: HIRFunction,
-): Result<void, CompilerError> {
-  const errors = new CompilerError();
+export function validateNoFreezingKnownMutableFunctions(fn: HIRFunction): void {
   const contextMutationEffects: Map<
     IdentifierId,
     Extract<AliasingEffect, {kind: 'Mutate'} | {kind: 'MutateTransitive'}>
@@ -63,7 +59,7 @@ export function validateNoFreezingKnownMutableFunctions(
           place.identifier.name.kind === 'named'
             ? `\`${place.identifier.name.value}\``
             : 'a local variable';
-        errors.pushDiagnostic(
+        fn.env.recordError(
           CompilerDiagnostic.create({
             category: ErrorCategory.Immutability,
             reason: 'Cannot modify local variables after render completes',
@@ -162,5 +158,4 @@ export function validateNoFreezingKnownMutableFunctions(
       visitOperand(operand);
     }
   }
-  return errors.asResult();
 }

@@ -24,6 +24,6 @@ export function isValidContainer(node: any): boolean {
       node.nodeType === DOCUMENT_FRAGMENT_NODE ||
       (!disableCommentsAsDOMContainers &&
         node.nodeType === COMMENT_NODE &&
-        (node: any).nodeValue === ' react-mount-point-unstable '))
+        (node as any).nodeValue === ' react-mount-point-unstable '))
   );
 }

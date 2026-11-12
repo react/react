@@ -602,14 +602,10 @@ describe('ReactDOMFloat', () => {
         '>   <script href="foo">\n' +
         '\n' +
         '    in script (at **)',
-      ...(gate('enableTrustedTypesIntegration')
-        ? [
-            'Encountered a script tag while rendering React component. ' +
-              'Scripts inside React components are never executed when rendering on the client. ' +
-              'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
-              '     in script (at **)',
-          ]
-        : []),
+      'Encountered a script tag while rendering React component. ' +
+        'Scripts inside React components are never executed when rendering on the client. ' +
+        'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
+        '     in script (at **)',
     ]);
 
     root.render(
@@ -2753,14 +2749,10 @@ body {
         '>   <script itemProp="foo">\n' +
         '\n' +
         '    in script (at **)',
-      ...(gate('enableTrustedTypesIntegration')
-        ? [
-            'Encountered a script tag while rendering React component. ' +
-              'Scripts inside React components are never executed when rendering on the client. ' +
-              'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
-              '     in script (at **)',
-          ]
-        : []),
+      'Encountered a script tag while rendering React component. ' +
+        'Scripts inside React components are never executed when rendering on the client. ' +
+        'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
+        '     in script (at **)',
     ]);
   });
 
@@ -3001,7 +2993,7 @@ body {
     ]);
   });
 
-  // https://github.com/facebook/react/issues/27585
+  // https://github.com/react/react/issues/27585
   it('does not reinsert already inserted stylesheets during a delayed commit', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -3060,7 +3052,7 @@ body {
     );
 
     // In a transition we add another reference to an already loaded resource
-    // https://github.com/facebook/react/issues/27585
+    // https://github.com/react/react/issues/27585
     React.startTransition(() => {
       root.render(
         <>
@@ -3072,7 +3064,7 @@ body {
       );
     });
     await waitForAll([]);
-    // In https://github.com/facebook/react/issues/27585 the order updated
+    // In https://github.com/react/react/issues/27585 the order updated
     // to second, third, first
     expect(getMeaningfulChildren(document)).toEqual(
       <html>
@@ -3672,6 +3664,110 @@ body {
         </body>
       </html>,
     );
+  });
+
+  it('does not suspend a transition on a stylesheet whose preload has already loaded', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <body>
+          <Suspense fallback="loading...">initial</Suspense>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+
+    ReactDOM.preload('route.css', {as: 'style'});
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadPreloads(['route.css']);
+    assertLog(['load preload: route.css']);
+
+    React.startTransition(() => {
+      root.render(
+        <html>
+          <body>
+            <Suspense fallback="loading...">
+              <link rel="stylesheet" href="route.css" precedence="default" />
+              next
+            </Suspense>
+          </body>
+        </html>,
+      );
+    });
+    await waitForAll([]);
+
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
+
+    loadStylesheets(['route.css']);
+    assertLog(['load stylesheet: route.css']);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
+  });
+
+  it('suspends a transition on a stylesheet whose preload has not loaded yet', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <body>
+          <Suspense fallback="loading...">initial</Suspense>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+
+    ReactDOM.preload('route.css', {as: 'style'});
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    React.startTransition(() => {
+      root.render(
+        <html>
+          <body>
+            <Suspense fallback="loading...">
+              <link rel="stylesheet" href="route.css" precedence="default" />
+              next
+            </Suspense>
+          </body>
+        </html>,
+      );
+    });
+    await waitForAll([]);
+
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadPreloads(['route.css']);
+    assertLog(['load preload: route.css']);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadStylesheets(['route.css']);
+    assertLog(['load stylesheet: route.css']);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
   });
 
   it('can suspend commits on more than one root for the same resource at the same time', async () => {
@@ -4738,7 +4834,7 @@ body {
     );
   });
 
-  // Fixes: https://github.com/facebook/react/issues/27910
+  // Fixes: https://github.com/react/react/issues/27910
   it('omits preloads for images inside noscript tags', async () => {
     function App() {
       return (
@@ -6428,6 +6524,118 @@ body {
       );
     });
 
+    it('supports fetchPriority', async () => {
+      function Component({isServer}) {
+        const suffix = isServer ? 'server' : 'client';
+        ReactDOM.preloadModule('high' + suffix, {
+          fetchPriority: 'high',
+        });
+        ReactDOM.preloadModule('low' + suffix, {
+          fetchPriority: 'low',
+        });
+        ReactDOM.preloadModule('auto' + suffix, {
+          fetchPriority: 'auto',
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <Component isServer={true} />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link rel="modulepreload" href="highserver" fetchpriority="high" />
+            <link rel="modulepreload" href="lowserver" fetchpriority="low" />
+            <link rel="modulepreload" href="autoserver" fetchpriority="auto" />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+
+      ReactDOMClient.hydrateRoot(
+        document,
+        <html>
+          <body>
+            <Component />
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link rel="modulepreload" href="highserver" fetchpriority="high" />
+            <link rel="modulepreload" href="lowserver" fetchpriority="low" />
+            <link rel="modulepreload" href="autoserver" fetchpriority="auto" />
+            <link rel="modulepreload" href="highclient" fetchpriority="high" />
+            <link rel="modulepreload" href="lowclient" fetchpriority="low" />
+            <link rel="modulepreload" href="autoclient" fetchpriority="auto" />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+    });
+
+    it('preloads multiple non-script modules with the same as type', async () => {
+      function App() {
+        ReactDOM.preloadModule('serviceworker one', {as: 'serviceworker'});
+        ReactDOM.preloadModule('serviceworker two', {as: 'serviceworker'});
+        return <div>hello</div>;
+      }
+
+      await act(() => {
+        renderToPipeableStream(<App />).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <link
+            rel="modulepreload"
+            href="serviceworker one"
+            as="serviceworker"
+          />
+          <link
+            rel="modulepreload"
+            href="serviceworker two"
+            as="serviceworker"
+          />
+          <div>hello</div>
+        </div>,
+      );
+    });
+
+    it('supports nonce', async () => {
+      function App({ssr}) {
+        const prefix = ssr ? 'ssr ' : 'browser ';
+        ReactDOM.preloadModule(prefix + 'module', {nonce: 'abc'});
+        return <div>hello</div>;
+      }
+      await act(() => {
+        renderToPipeableStream(<App ssr={true} />).pipe(writable);
+      });
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <link rel="modulepreload" href="ssr module" nonce="abc" />
+          <div>hello</div>
+        </div>,
+      );
+
+      ReactDOMClient.hydrateRoot(container, <App />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <link rel="modulepreload" href="browser module" nonce="abc" />,
+      );
+    });
+
     it('warns if you provide invalid arguments', async () => {
       function App() {
         ReactDOM.preloadModule();
@@ -7130,6 +7338,112 @@ body {
               <div>hello</div>
             </div>
           </body>
+        </html>,
+      );
+    });
+
+    it('supports fetchPriority', async () => {
+      function Component({isServer}) {
+        const suffix = isServer ? 'server' : 'client';
+        ReactDOM.preinitModule('high' + suffix, {
+          fetchPriority: 'high',
+        });
+        ReactDOM.preinitModule('low' + suffix, {
+          fetchPriority: 'low',
+        });
+        ReactDOM.preinitModule('auto' + suffix, {
+          fetchPriority: 'auto',
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <Component isServer={true} />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <script
+              type="module"
+              src="highserver"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowserver"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoserver"
+              fetchpriority="auto"
+              async=""
+            />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+
+      ReactDOMClient.hydrateRoot(
+        document,
+        <html>
+          <body>
+            <Component />
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <script
+              type="module"
+              src="highserver"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowserver"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoserver"
+              fetchpriority="auto"
+              async=""
+            />
+            <script
+              type="module"
+              src="highclient"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowclient"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoclient"
+              fetchpriority="auto"
+              async=""
+            />
+          </head>
+          <body>hello</body>
         </html>,
       );
     });
@@ -9448,5 +9762,595 @@ background-color: green;
         <title data-foo="bar">another title</title>,
       );
     });
+
+    it('does not hoist title tags inside hidden Activity boundaries', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>Visible Title</title>
+            </Activity>
+            <Activity mode="hidden">
+              <title>Hidden Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Only the visible Activity's title should be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Visible Title</title>,
+      );
+    });
+
+    it('removes title tags when Activity transitions from visible to hidden', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>Activity Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Title should be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Activity Title</title>,
+      );
+
+      // Hide the Activity
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="hidden">
+              <title>Activity Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Title should be removed from document head
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+    });
+
+    it('adds title tags when Activity transitions from hidden to visible', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="hidden">
+              <title>Activity Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Title should not be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      // Show the Activity
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>Activity Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Title should now be hoisted
+      // The title retains an empty style attribute from being previously hidden
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title style="">Activity Title</title>,
+      );
+    });
+
+    it('handles multiple Activity boundaries with different visibility states', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>First Title</title>
+            </Activity>
+            <Activity mode="hidden">
+              <title>Second Title</title>
+            </Activity>
+            <Activity mode="visible">
+              <title>Third Title</title>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Only visible Activities' titles should be hoisted
+      // Both visible titles are hoisted, but the last one in tree order wins
+      expect(getMeaningfulChildren(document.head)).toEqual([
+        <title>Third Title</title>,
+        <title>First Title</title>,
+      ]);
+    });
+
+    it('handles nested Activity boundaries correctly', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <title>Outer Title</title>
+              <Activity mode="hidden">
+                <title>Inner Hidden Title</title>
+              </Activity>
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Only the outer visible Activity's title should be hoisted
+      // The inner hidden Activity's title should not be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Outer Title</title>,
+      );
+    });
+
+    it('handles meta tags inside hidden Activity boundaries', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <div>
+            <Activity mode="visible">
+              <meta name="visible" content="visible-content" />
+            </Activity>
+            <Activity mode="hidden">
+              <meta name="hidden" content="hidden-content" />
+            </Activity>
+          </div>,
+        );
+      });
+      await waitForAll([]);
+
+      // Only the visible Activity's meta should be hoisted
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <meta name="visible" content="visible-content" />,
+      );
+    });
+
+    it('does not hoist a hoistable nested under a HostComponent inside a hidden Activity', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <div>
+              <title>Nested Hidden Title</title>
+              <meta name="nested-hidden" content="nope" />
+            </div>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+    });
+
+    it('mounts nested hoistables when their ancestor Activity transitions to visible', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <div>
+              <title>Reveal Me</title>
+            </div>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      await act(() => {
+        root.render(
+          <Activity mode="visible">
+            <div>
+              <title>Reveal Me</title>
+            </div>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Reveal Me</title>,
+      );
+    });
+
+    it('updates a hidden title without inserting it into the head', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <title>Original Hidden</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      // Update the prop while still hidden — the head must remain empty.
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <title>Updated Hidden</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      // Now reveal — the latest text should be in the head.
+      await act(() => {
+        root.render(
+          <Activity mode="visible">
+            <title>Updated Hidden</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title style="">Updated Hidden</title>,
+      );
+    });
+
+    it('removes a previously-mounted title when its Activity is deleted while hidden', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Activity mode="visible">
+            <title>To Be Deleted</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>To Be Deleted</title>,
+      );
+
+      // Hide first — this unmounts from the head.
+      await act(() => {
+        root.render(
+          <Activity mode="hidden">
+            <title>To Be Deleted</title>
+          </Activity>,
+        );
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+
+      // Delete the entire Activity while it's hidden. This must not throw
+      // (the deletion path needs to tolerate already-detached instances).
+      await act(() => {
+        root.render(<div />);
+      });
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(undefined);
+    });
+
+    it('does not hoist hidden Activity metadata during hydration', async () => {
+      const Activity = React.Activity;
+
+      // SSR a page where the only title belongs to a VISIBLE Activity. The
+      // hidden Activity has its own <title> that must not end up in <head>.
+      await act(() => {
+        const {pipe} = renderToPipeableStream(
+          <html>
+            <body>
+              <Activity mode="visible">
+                <title>Visible Title</title>
+              </Activity>
+              <Activity mode="hidden">
+                <title>Hidden Title</title>
+              </Activity>
+            </body>
+          </html>,
+        );
+        pipe(writable);
+      });
+
+      // After SSR, only the visible title should be in the head.
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Visible Title</title>,
+      );
+
+      // Hydrate. The hidden Activity's <title> must not be inserted into the
+      // head as a side effect of hydration.
+      ReactDOMClient.hydrateRoot(
+        document,
+        <html>
+          <body>
+            <Activity mode="visible">
+              <title>Visible Title</title>
+            </Activity>
+            <Activity mode="hidden">
+              <title>Hidden Title</title>
+            </Activity>
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>Visible Title</title>,
+      );
+    });
+
+    it('handles StrictMode without leaving duplicate or missing hoistables', async () => {
+      const Activity = React.Activity;
+      const root = ReactDOMClient.createRoot(container);
+
+      // StrictMode triggers a dev-only double invoke of layout effects, which
+      // exercises our disappear/reappear hoistable handling. The final state
+      // must be a single visible title and no hidden title.
+      await act(() => {
+        root.render(
+          <React.StrictMode>
+            <div>
+              <Activity mode="visible">
+                <title>StrictMode Visible</title>
+              </Activity>
+              <Activity mode="hidden">
+                <title>StrictMode Hidden</title>
+              </Activity>
+            </div>
+          </React.StrictMode>,
+        );
+      });
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title>StrictMode Visible</title>,
+      );
+
+      // Toggle visibility — double invoke must still leave a clean head
+      // with exactly one title (no duplicates, no missing).
+      await act(() => {
+        root.render(
+          <React.StrictMode>
+            <div>
+              <Activity mode="hidden">
+                <title>StrictMode Visible</title>
+              </Activity>
+              <Activity mode="visible">
+                <title>StrictMode Hidden</title>
+              </Activity>
+            </div>
+          </React.StrictMode>,
+        );
+      });
+      await waitForAll([]);
+
+      // The previously-hidden title that just became visible carries a
+      // style="" attribute from hideInstance/unhideInstance.
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <title style="">StrictMode Hidden</title>,
+      );
+    });
+  });
+
+  it('does not outline a boundary with suspensey CSS when flushing the shell', async () => {
+    // When flushing the shell, stylesheets with precedence are emitted in the
+    // <head> which blocks paint anyway. So there's no benefit to outlining the
+    // boundary — it would just show a higher-level fallback unnecessarily.
+    // Instead, the boundary should be inlined so the innermost fallback is shown.
+    let streamedContent = '';
+    writable.on('data', chunk => (streamedContent += chunk));
+
+    await act(() => {
+      renderToPipeableStream(
+        <html>
+          <body>
+            <Suspense fallback="Outer Fallback">
+              <Suspense fallback="Middle Fallback">
+                <link rel="stylesheet" href="style.css" precedence="default" />
+                <Suspense fallback="Inner Fallback">
+                  <BlockedOn value="content">Async Content</BlockedOn>
+                </Suspense>
+              </Suspense>
+            </Suspense>
+          </body>
+        </html>,
+      ).pipe(writable);
+    });
+
+    // The middle boundary should have been inlined (not outlined) so the
+    // middle fallback text should never appear in the streamed HTML.
+    expect(streamedContent).not.toContain('Middle Fallback');
+
+    // The stylesheet is in the head (blocks paint), and the innermost
+    // fallback is visible.
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="style.css" data-precedence="default" />
+        </head>
+        <body>Inner Fallback</body>
+      </html>,
+    );
+
+    // Resolve the async content — streams in without needing to load CSS
+    // since the stylesheet was already in the head.
+    await act(() => {
+      resolveText('content');
+    });
+
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="style.css" data-precedence="default" />
+        </head>
+        <body>Async Content</body>
+      </html>,
+    );
+  });
+
+  it('outlines a boundary with suspensey CSS when flushing a streamed completion', async () => {
+    // When a boundary completes via streaming (not as part of the shell),
+    // suspensey CSS should cause the boundary to be outlined. The parent
+    // content can show sooner while the CSS loads separately.
+    let streamedContent = '';
+    writable.on('data', chunk => (streamedContent += chunk));
+
+    await act(() => {
+      renderToPipeableStream(
+        <html>
+          <body>
+            <Suspense fallback="Root Fallback">
+              <BlockedOn value="shell">
+                <Suspense fallback="Outer Fallback">
+                  <Suspense fallback="Middle Fallback">
+                    <link
+                      rel="stylesheet"
+                      href="style.css"
+                      precedence="default"
+                    />
+                    <Suspense fallback="Inner Fallback">
+                      <BlockedOn value="content">Async Content</BlockedOn>
+                    </Suspense>
+                  </Suspense>
+                </Suspense>
+              </BlockedOn>
+            </Suspense>
+          </body>
+        </html>,
+      ).pipe(writable);
+    });
+
+    // Shell is showing root fallback
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head />
+        <body>Root Fallback</body>
+      </html>,
+    );
+
+    // Unblock the shell — content streams in. The middle boundary should
+    // be outlined because the CSS arrived via streaming, not in the shell head.
+    streamedContent = '';
+    await act(() => {
+      resolveText('shell');
+    });
+
+    // The middle fallback should appear in the streamed HTML because the
+    // boundary was outlined.
+    expect(streamedContent).toContain('Middle Fallback');
+
+    // The CSS needs to load before the boundary reveals. Until then
+    // the middle fallback is visible.
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="style.css" data-precedence="default" />
+        </head>
+        <body>
+          {'Middle Fallback'}
+          <link rel="preload" href="style.css" as="style" />
+        </body>
+      </html>,
+    );
+
+    // Load the stylesheet — now the middle boundary can reveal
+    await act(() => {
+      loadStylesheets();
+    });
+    assertLog(['load stylesheet: style.css']);
+
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="style.css" data-precedence="default" />
+        </head>
+        <body>
+          {'Inner Fallback'}
+          <link rel="preload" href="style.css" as="style" />
+        </body>
+      </html>,
+    );
+
+    // Resolve the async content
+    await act(() => {
+      resolveText('content');
+    });
+
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link rel="stylesheet" href="style.css" data-precedence="default" />
+        </head>
+        <body>
+          {'Async Content'}
+          <link rel="preload" href="style.css" as="style" />
+        </body>
+      </html>,
+    );
+  });
+
+  // @gate enableViewTransition
+  it('still outlines a boundary with a suspensey image inside a ViewTransition when flushing the shell', async () => {
+    // Unlike stylesheets (which block paint from the <head> anyway), images
+    // inside ViewTransitions are outlined to enable animation reveals. This
+    // should happen even during the shell flush.
+    const ViewTransition = React.ViewTransition;
+
+    let streamedContent = '';
+    writable.on('data', chunk => (streamedContent += chunk));
+
+    await act(() => {
+      renderToPipeableStream(
+        <html>
+          <body>
+            <ViewTransition>
+              <Suspense fallback="Image Fallback">
+                <link rel="stylesheet" href="style.css" precedence="default" />
+                <img src="large-image.jpg" />
+                <div>Content</div>
+              </Suspense>
+            </ViewTransition>
+          </body>
+        </html>,
+      ).pipe(writable);
+    });
+
+    // The boundary should be outlined because the suspensey image motivates
+    // outlining for animation reveals, even during the shell flush.
+    expect(streamedContent).toContain('Image Fallback');
   });
 });

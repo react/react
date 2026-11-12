@@ -342,4 +342,41 @@ describe('ReactFragment', () => {
       __DEV__ ? componentStack(['SomethingThatErrors']) : null,
     ]);
   });
+
+  it('captures class component stacks via the no-Reflect.construct fallback', async () => {
+    class FailingClassComponent extends React.Component {
+      render() {
+        throw new Error('uh oh');
+      }
+    }
+
+    const root = ReactNoop.createRoot({onCaughtError});
+
+    const originalReflectConstruct = Reflect.construct;
+    delete Reflect.construct;
+
+    try {
+      root.render(
+        <CatchingBoundary>
+          <FailingClassComponent />
+        </CatchingBoundary>,
+      );
+      await waitForAll([]);
+    } finally {
+      Object.defineProperty(Reflect, 'construct', {
+        value: originalReflectConstruct,
+      });
+    }
+
+    expect(rootCaughtErrors).toEqual([
+      'uh oh',
+      componentStack(['FailingClassComponent', 'CatchingBoundary']),
+      __DEV__ ? componentStack(['FailingClassComponent']) : null,
+    ]);
+
+    // The throwing trap should be reset, we use props object for it
+    expect(
+      Object.getOwnPropertyDescriptor(FailingClassComponent.prototype, 'props'),
+    ).toBeUndefined();
+  });
 });

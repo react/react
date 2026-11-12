@@ -75,7 +75,7 @@ export function showOverlay(
   return isReactNativeEnvironment()
     ? showOverlayNative(elements, agent)
     : showOverlayWeb(
-        (elements: $ReadOnlyArray<any>),
+        elements as $ReadOnlyArray<any>,
         componentName,
         agent,
         hideAfterTimeout,

@@ -87,6 +87,9 @@ describe('ReactFlightDOM', () => {
     Suspense = React.Suspense;
     ReactDOMClient = require('react-dom/client');
     ReactDOMFizzServer = require('react-dom/server.node');
+    jest.mock('react-server-dom-webpack/client', () =>
+      require('react-server-dom-webpack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-webpack/client');
 
     ErrorBoundary = class extends React.Component {
@@ -733,7 +736,7 @@ describe('ReactFlightDOM', () => {
     function dotting() {
       return ClientModule.Component.deep;
     }
-    expect(dotting).toThrowError(
+    expect(dotting).toThrow(
       'Cannot access Component.deep on the server. ' +
         'You cannot dot into a client module from a server component. ' +
         'You can only pass the imported name through.',
@@ -748,7 +751,7 @@ describe('ReactFlightDOM', () => {
       const mod = await ClientModule;
       return await Promise.resolve(mod.Component);
     }
-    await expect(awaitExport()).rejects.toThrowError(
+    await expect(awaitExport()).rejects.toThrow(
       `Cannot await or return from a thenable. ` +
         `You cannot await a client module from a server component.`,
     );
@@ -762,7 +765,7 @@ describe('ReactFlightDOM', () => {
     function read() {
       return ClientModule[symbol];
     }
-    expect(read).toThrowError(
+    expect(read).toThrow(
       'Cannot read Symbol exports. ' +
         'Only named exports are supported on a client module imported on the server.',
     );
@@ -795,7 +798,7 @@ describe('ReactFlightDOM', () => {
     function dotting() {
       return ClientModule.Context.Provider;
     }
-    expect(dotting).not.toThrowError();
+    expect(dotting).not.toThrow();
   });
 
   it('can render a client Context.Provider from a server component', async () => {
@@ -1418,6 +1421,95 @@ describe('ReactFlightDOM', () => {
     expect(reportedErrors).toEqual([]);
   });
 
+  it('should not retain stale error reason after reentrant module chunk initialization', async () => {
+    function MyComponent() {
+      return <div>hello from client component</div>;
+    }
+    const ClientComponent = clientExports(MyComponent);
+
+    let resolveAsyncComponent;
+    async function AsyncComponent() {
+      await new Promise(r => {
+        resolveAsyncComponent = r;
+      });
+      return null;
+    }
+
+    function ServerComponent() {
+      return (
+        <>
+          <ClientComponent />
+          <Suspense>
+            <AsyncComponent />
+          </Suspense>
+        </>
+      );
+    }
+
+    const {writable: flightWritable, readable: flightReadable} =
+      getTestStream();
+    const {writable: fizzWritable, readable: fizzReadable} = getTestStream();
+
+    const {pipe} = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        <ServerComponent />,
+        webpackMap,
+      ),
+    );
+    pipe(flightWritable);
+
+    let response = null;
+    function getResponse() {
+      if (response === null) {
+        response =
+          ReactServerDOMClient.createFromReadableStream(flightReadable);
+      }
+      return response;
+    }
+
+    // Simulate a module that calls captureOwnerStack() during evaluation.
+    // In Fizz SSR, this causes a reentrant readChunk on the same module chunk.
+    // The reentrant require throws a TDZ error.
+    let evaluatingModuleId = null;
+    const origRequire = global.__webpack_require__;
+    global.__webpack_require__ = function (id) {
+      if (id === evaluatingModuleId) {
+        throw new ReferenceError(
+          "Cannot access 'MyComponent' before initialization",
+        );
+      }
+      const result = origRequire(id);
+      if (result === MyComponent) {
+        evaluatingModuleId = id;
+        if (__DEV__) {
+          React.captureOwnerStack();
+        }
+        evaluatingModuleId = null;
+      }
+      return result;
+    };
+
+    function App() {
+      return use(getResponse());
+    }
+
+    await serverAct(async () => {
+      ReactDOMFizzServer.renderToPipeableStream(<App />).pipe(fizzWritable);
+    });
+
+    global.__webpack_require__ = origRequire;
+
+    // Resolve the async component so the Flight stream closes after the client
+    // module chunk was initialized.
+    await serverAct(async () => {
+      resolveAsyncComponent();
+    });
+
+    const container = document.createElement('div');
+    await readInto(container, fizzReadable);
+    expect(container.innerHTML).toContain('hello from client component');
+  });
+
   it('should be able to recover from a direct reference erroring server-side', async () => {
     const reportedErrors = [];
 
@@ -1615,20 +1707,32 @@ describe('ReactFlightDOM', () => {
       FlightReactDOM.preconnect('c2 before', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l before', {as: 'style'});
       FlightReactDOM.preloadModule('lm before');
-      FlightReactDOM.preloadModule('lm2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i before', {as: 'script'});
       FlightReactDOM.preinitModule('m before');
-      FlightReactDOM.preinitModule('m2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       await 1;
       FlightReactDOM.prefetchDNS('d after');
       FlightReactDOM.preconnect('c after');
       FlightReactDOM.preconnect('c2 after', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l after', {as: 'style'});
       FlightReactDOM.preloadModule('lm after');
-      FlightReactDOM.preloadModule('lm2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i after', {as: 'script'});
       FlightReactDOM.preinitModule('m after');
-      FlightReactDOM.preinitModule('m2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       return <ClientComponent />;
     }
 
@@ -1677,19 +1781,41 @@ describe('ReactFlightDOM', () => {
           <link rel="preconnect" href="c2 before" crossorigin="" />
           <link rel="preload" as="style" href="l before" />
           <link rel="modulepreload" href="lm before" />
-          <link rel="modulepreload" href="lm2 before" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 before"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <script async="" src="i before" />
           <script type="module" async="" src="m before" />
-          <script type="module" async="" src="m2 before" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 before"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <link rel="dns-prefetch" href="d after" />
           <link rel="preconnect" href="c after" />
           <link rel="preconnect" href="c2 after" crossorigin="" />
           <link rel="preload" as="style" href="l after" />
           <link rel="modulepreload" href="lm after" />
-          <link rel="modulepreload" href="lm2 after" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 after"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <script async="" src="i after" />
           <script type="module" async="" src="m after" />
-          <script type="module" async="" src="m2 after" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 after"
+            crossorigin=""
+            fetchpriority="high"
+          />
         </head>
         <body />
       </html>,
@@ -1710,20 +1836,32 @@ describe('ReactFlightDOM', () => {
       FlightReactDOM.preconnect('c2 before', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l before', {as: 'style'});
       FlightReactDOM.preloadModule('lm before');
-      FlightReactDOM.preloadModule('lm2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i before', {as: 'script'});
       FlightReactDOM.preinitModule('m before');
-      FlightReactDOM.preinitModule('m2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       await 1;
       FlightReactDOM.prefetchDNS('d after');
       FlightReactDOM.preconnect('c after');
       FlightReactDOM.preconnect('c2 after', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l after', {as: 'style'});
       FlightReactDOM.preloadModule('lm after');
-      FlightReactDOM.preloadModule('lm2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i after', {as: 'script'});
       FlightReactDOM.preinitModule('m after');
-      FlightReactDOM.preinitModule('m2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       return <ClientComponent />;
     }
 
@@ -1777,16 +1915,38 @@ describe('ReactFlightDOM', () => {
           <link rel="preconnect" href="c2 after" crossorigin="" />
           <script async="" src="i before" />
           <script type="module" async="" src="m before" />
-          <script type="module" async="" src="m2 before" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 before"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <script async="" src="i after" />
           <script type="module" async="" src="m after" />
-          <script type="module" async="" src="m2 after" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 after"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <link rel="preload" as="style" href="l before" />
           <link rel="modulepreload" href="lm before" />
-          <link rel="modulepreload" href="lm2 before" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 before"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <link rel="preload" as="style" href="l after" />
           <link rel="modulepreload" href="lm after" />
-          <link rel="modulepreload" href="lm2 after" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 after"
+            crossorigin=""
+            fetchpriority="low"
+          />
         </head>
         <body>
           <p>hello world</p>
@@ -3075,7 +3235,7 @@ describe('ReactFlightDOM', () => {
     ]);
 
     await 1;
-    jest.advanceTimersByTime('100');
+    jest.advanceTimersByTime(100);
     expect(await race).toBe('timeout');
   });
 
@@ -3227,5 +3387,203 @@ describe('ReactFlightDOM', () => {
     expect(errors).toEqual(['STOP']);
 
     // We expect it to get to the end here rather than hang on the reader.
+  });
+
+  describe('hooks in streamed values', () => {
+    async function render(model, options) {
+      const {writable, readable} = getTestStream();
+      const {pipe} = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(model, webpackMap, {
+          identifierPrefix: 'stream-',
+          ...options,
+        }),
+      );
+      pipe(writable);
+      return ReactServerDOMClient.createFromReadableStream(readable);
+    }
+
+    function Item({children}) {
+      return <span id={FlightReact.useId()}>{children}</span>;
+    }
+
+    it('supports hooks in components yielded from an async iterable', async () => {
+      async function* items() {
+        yield <Item>first</Item>;
+        yield <Item>second</Item>;
+      }
+
+      const model = await render({items: items()});
+      const iterator = model.items[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      const second = await iterator.next();
+      expect(first.done).toBe(false);
+      expect(second.done).toBe(false);
+      expect(await iterator.next()).toEqual({done: true, value: undefined});
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div>
+            {first.value}
+            {second.value}
+          </div>,
+        );
+      });
+      expect(container.innerHTML).toBe(
+        '<div><span id="_stream-S_1_">first</span>' +
+          '<span id="_stream-S_2_">second</span></div>',
+      );
+    });
+
+    it.each([false, true])(
+      'supports hooks in an async iterator return value with a preceding yield: %s',
+      async includeYield => {
+        async function* items() {
+          if (includeYield) {
+            yield 'first';
+          }
+          return <Item>returned</Item>;
+        }
+
+        const model = await render({items: items()});
+        const iterator = model.items[Symbol.asyncIterator]();
+        if (includeYield) {
+          expect(await iterator.next()).toEqual({done: false, value: 'first'});
+        }
+        const returned = await iterator.next();
+        expect(returned.done).toBe(true);
+
+        const container = document.createElement('div');
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(returned.value);
+        });
+        expect(container.innerHTML).toBe(
+          '<span id="_stream-S_1_">returned</span>',
+        );
+      },
+    );
+
+    it('supports hooks in components emitted by a ReadableStream', async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(<Item>first</Item>);
+          controller.enqueue(<Item>second</Item>);
+          controller.close();
+        },
+      });
+
+      const model = await render({stream});
+      const reader = model.stream.getReader();
+      const first = await reader.read();
+      const second = await reader.read();
+      expect(first.done).toBe(false);
+      expect(second.done).toBe(false);
+      expect(await reader.read()).toEqual({done: true, value: undefined});
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div>
+            {first.value}
+            {second.value}
+          </div>,
+        );
+      });
+      expect(container.innerHTML).toBe(
+        '<div><span id="_stream-S_1_">first</span>' +
+          '<span id="_stream-S_2_">second</span></div>',
+      );
+    });
+
+    it('renders synchronous iterator thenables immediately and restores outer hooks', async () => {
+      const events = [];
+      function LoggedItem({children}) {
+        events.push(children);
+        return <Item>{children}</Item>;
+      }
+      const items = {
+        [Symbol.asyncIterator]() {
+          let index = 0;
+          return {
+            next() {
+              const done = index++ !== 0;
+              const label = done ? 'returned' : 'yielded';
+              return {
+                then(resolve) {
+                  events.push('before ' + label);
+                  resolve({done, value: <LoggedItem>{label}</LoggedItem>});
+                  events.push('after ' + label);
+                },
+              };
+            },
+          };
+        },
+      };
+
+      const model = await render({
+        items,
+        sibling: <LoggedItem>sibling</LoggedItem>,
+      });
+      expect(events).toEqual([
+        'before yielded',
+        'yielded',
+        'before returned',
+        'returned',
+        'after returned',
+        'after yielded',
+        'sibling',
+      ]);
+      const iterator = model.items[Symbol.asyncIterator]();
+      const yielded = await iterator.next();
+      const returned = await iterator.next();
+      expect(yielded.done).toBe(false);
+      expect(returned.done).toBe(true);
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div>
+            {yielded.value}
+            {returned.value}
+            {model.sibling}
+          </div>,
+        );
+      });
+      expect(container.innerHTML).toBe(
+        '<div><span id="_stream-S_1_">yielded</span>' +
+          '<span id="_stream-S_2_">returned</span>' +
+          '<span id="_stream-S_3_">sibling</span></div>',
+      );
+    });
+
+    // @gate __DEV__
+    it('supports hooks in the cause of an asynchronously rejected error', async () => {
+      const error = new Error('outer', {cause: <Item>cause</Item>});
+      const errors = [];
+      const model = await render(
+        {failure: Promise.reject(error)},
+        {
+          onError(reason) {
+            errors.push(reason);
+          },
+        },
+      );
+      expect(errors).toEqual([error]);
+      const failure = await Promise.resolve(model.failure).catch(
+        reason => reason,
+      );
+      expect(failure.message).toBe('outer');
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(failure.cause);
+      });
+      expect(container.innerHTML).toBe('<span id="_stream-S_1_">cause</span>');
+    });
   });
 });

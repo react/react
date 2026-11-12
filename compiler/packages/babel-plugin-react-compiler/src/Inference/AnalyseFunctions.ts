@@ -54,7 +54,7 @@ function lowerWithMutationAliasing(fn: HIRFunction): void {
   deadCodeElimination(fn);
   const functionEffects = inferMutationAliasingRanges(fn, {
     isFunctionExpression: true,
-  }).unwrap();
+  });
   rewriteInstructionKindsBasedOnReassignment(fn);
   inferReactiveScopeVariables(fn);
   fn.aliasingEffects = functionEffects;

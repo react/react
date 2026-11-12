@@ -15,6 +15,7 @@ class ToggleEvent extends Event {
     super(type, eventInit);
     this.newState = eventInit.newState;
     this.oldState = eventInit.oldState;
+    this.source = eventInit.source;
   }
 }
 
@@ -622,5 +623,40 @@ describe('SimpleEventPlugin', function () {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     const event = onSubmit.mock.calls[0][0];
     expect(event.submitter).toBe(submitter);
+  });
+
+  it('includes the source in toggle events', async function () {
+    container = document.createElement('div');
+
+    const onToggle = jest.fn();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <>
+          <button popoverTarget="popover">Toggle popover</button>
+          <div id="popover" popover="" onToggle={onToggle}>
+            popover content
+          </div>
+        </>,
+      );
+    });
+
+    const source = container.querySelector('button');
+    const target = container.querySelector('#popover');
+    await act(() => {
+      target.dispatchEvent(
+        new ToggleEvent('toggle', {
+          bubbles: false,
+          cancelable: true,
+          oldState: 'closed',
+          newState: 'open',
+          source: source,
+        }),
+      );
+    });
+
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    const event = onToggle.mock.calls[0][0];
+    expect(event.source).toBe(source);
   });
 });

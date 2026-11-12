@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "private": true,
   "devEngines": {
-    "node": "20.x || 22.x"
+    "runtime": {
+      "name": "node",
+      "version": "20.x || 24.x"
+    }
   },
   "dependencies": {
     "@babel/core": "^7.16.0",
@@ -67,7 +70,7 @@
     "webpack-manifest-plugin": "^4.0.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.51.1"
+    "@playwright/test": "^1.53.0"
   },
   "scripts": {
     "predev": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",

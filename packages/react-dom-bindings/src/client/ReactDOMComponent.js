@@ -71,8 +71,8 @@ import {
   enableHydrationChangeEvent,
   enableScrollEndPolyfill,
   enableSrcObject,
-  enableTrustedTypesIntegration,
   enableViewTransition,
+  enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
 import {
   mediaEventTypes,
@@ -240,7 +240,10 @@ function hasViewTransition(htmlElement: HTMLElement): boolean {
     htmlElement.getAttribute('vt-share') ||
     htmlElement.getAttribute('vt-exit') ||
     htmlElement.getAttribute('vt-enter') ||
-    htmlElement.getAttribute('vt-update')
+    htmlElement.getAttribute('vt-update') ||
+    (enableViewTransitionParentEnterExit &&
+      (htmlElement.getAttribute('vt-parent-enter') ||
+        htmlElement.getAttribute('vt-parent-exit')))
   );
 }
 
@@ -250,7 +253,9 @@ function isExpectedViewTransitionName(htmlElement: HTMLElement): boolean {
     return false;
   }
   const expectedVtName = htmlElement.getAttribute('vt-name');
-  const actualVtName: string = (htmlElement.style: any)['view-transition-name'];
+  const actualVtName: string = (htmlElement.style as any)[
+    'view-transition-name'
+  ];
   if (expectedVtName) {
     return expectedVtName === actualVtName;
   } else {
@@ -272,7 +277,7 @@ function warnForExtraAttributes(
           // Skip empty style. It's fine.
           return;
         }
-        const htmlElement = ((domElement: any): HTMLElement);
+        const htmlElement = domElement as any as HTMLElement;
         const style = htmlElement.style;
         const isOnlyVTStyles =
           (style.length === 1 && style[0] === 'view-transition-name') ||
@@ -321,12 +326,12 @@ function normalizeHTML(parent: Element, html: string) {
     // We could have created a separate document here to avoid
     // re-initializing custom elements if they exist. But this breaks
     // how <noscript> is being handled. So we use the same document.
-    // See the discussion in https://github.com/facebook/react/pull/11157.
+    // See the discussion in https://github.com/react/react/pull/11157.
     const testElement =
       parent.namespaceURI === MATH_NAMESPACE ||
       parent.namespaceURI === SVG_NAMESPACE
         ? parent.ownerDocument.createElementNS(
-            (parent.namespaceURI: any),
+            parent.namespaceURI as any,
             parent.tagName,
           )
         : parent.ownerDocument.createElement(parent.tagName);
@@ -347,7 +352,8 @@ function normalizeMarkupForTextOrAttribute(markup: mixed): string {
   if (__DEV__) {
     checkHtmlStringCoercion(markup);
   }
-  const markupString = typeof markup === 'string' ? markup : '' + (markup: any);
+  const markupString =
+    typeof markup === 'string' ? markup : '' + (markup as any);
   return markupString
     .replace(NORMALIZE_NEWLINES_REGEX, '\n')
     .replace(NORMALIZE_NULL_AND_REPLACEMENT_REGEX, '');
@@ -372,10 +378,16 @@ export function trapClickOnNonInteractiveElement(node: HTMLElement) {
   // listener on the target node.
   // https://www.quirksmode.org/blog/archives/2010/09/click_event_del.html
   // Just set it using the onclick property so that we don't have to manage any
-  // bookkeeping for it. Not sure if we need to clear it when the listener is
-  // removed.
+  // bookkeeping for it. HostSingleton release clears the property only if it
+  // still points to this noop.
   // TODO: Only do this for the relevant Safaris maybe?
   node.onclick = noop;
+}
+
+export function clearClickListener(node: HTMLElement) {
+  if (node.onclick === noop) {
+    node.onclick = null;
+  }
 }
 
 const xlinkNamespace = 'http://www.w3.org/1999/xlink';
@@ -398,7 +410,7 @@ function setProp(
         // Avoid setting initial textContent when the text is empty. In IE11 setting
         // textContent on a <textarea> will cause the placeholder to not
         // show within the <textarea> until it has been focused and blurred again.
-        // https://github.com/facebook/react/issues/6731#issuecomment-254874553
+        // https://github.com/react/react/issues/6731#issuecomment-254874553
         const canSetTextContent =
           tag !== 'body' && (tag !== 'textarea' || value !== '');
         if (canSetTextContent) {
@@ -464,7 +476,7 @@ function setProp(
           if (__DEV__) {
             try {
               // This should always error.
-              URL.revokeObjectURL(URL.createObjectURL((value: any)));
+              URL.revokeObjectURL(URL.createObjectURL(value as any));
               if (tag === 'source') {
                 console.error(
                   'Passing Blob, MediaSource or MediaStream to <source src> is not supported. ' +
@@ -520,14 +532,10 @@ function setProp(
         domElement.removeAttribute(key);
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = (sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value: any),
-      ): any);
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttribute(key, sanitizedValue);
       break;
     }
@@ -591,14 +599,10 @@ function setProp(
         domElement.removeAttribute(key);
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = (sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value: any),
-      ): any);
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttribute(key, sanitizedValue);
       break;
     }
@@ -608,7 +612,7 @@ function setProp(
         if (__DEV__ && typeof value !== 'function') {
           warnForInvalidEventListener(key, value);
         }
-        trapClickOnNonInteractiveElement(((domElement: any): HTMLElement));
+        trapClickOnNonInteractiveElement(domElement as any as HTMLElement);
       }
       return;
     }
@@ -650,7 +654,11 @@ function setProp(
               'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
             );
           }
-          domElement.innerHTML = nextHtml;
+          const lastHtml: any =
+            prevValue != null ? (prevValue as any).__html : undefined;
+          if (lastHtml !== nextHtml) {
+            domElement.innerHTML = nextHtml;
+          }
         }
       }
       break;
@@ -658,12 +666,12 @@ function setProp(
     // Note: `option.selected` is not updated if `select.multiple` is
     // disabled with `removeAttribute`. We have special logic for handling this.
     case 'multiple': {
-      (domElement: any).multiple =
+      (domElement as any).multiple =
         value && typeof value !== 'function' && typeof value !== 'symbol';
       break;
     }
     case 'muted': {
-      (domElement: any).muted =
+      (domElement as any).muted =
         value && typeof value !== 'function' && typeof value !== 'symbol';
       break;
     }
@@ -694,14 +702,10 @@ function setProp(
         domElement.removeAttribute('xlink:href');
         break;
       }
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
       if (__DEV__) {
         checkAttributeStringCoercion(value, key);
       }
-      const sanitizedValue = (sanitizeURL(
-        enableTrustedTypesIntegration ? value : '' + (value: any),
-      ): any);
+      const sanitizedValue = sanitizeURL(value) as any;
       domElement.setAttributeNS(xlinkNamespace, 'xlink:href', sanitizedValue);
       break;
     }
@@ -727,10 +731,7 @@ function setProp(
         if (__DEV__) {
           checkAttributeStringCoercion(value, key);
         }
-        domElement.setAttribute(
-          key,
-          enableTrustedTypesIntegration ? (value: any) : '' + (value: any),
-        );
+        domElement.setAttribute(key, value as any);
       } else {
         domElement.removeAttribute(key);
       }
@@ -756,6 +757,7 @@ function setProp(
     case 'async':
     case 'autoPlay':
     case 'controls':
+    case 'credentialless':
     case 'default':
     case 'defer':
     case 'disabled':
@@ -799,7 +801,7 @@ function setProp(
         if (__DEV__) {
           checkAttributeStringCoercion(value, key);
         }
-        domElement.setAttribute(key, (value: any));
+        domElement.setAttribute(key, value as any);
       } else {
         domElement.removeAttribute(key);
       }
@@ -815,12 +817,12 @@ function setProp(
         typeof value !== 'function' &&
         typeof value !== 'symbol' &&
         !isNaN(value) &&
-        (value: any) >= 1
+        (value as any) >= 1
       ) {
         if (__DEV__) {
           checkAttributeStringCoercion(value, key);
         }
-        domElement.setAttribute(key, (value: any));
+        domElement.setAttribute(key, value as any);
       } else {
         domElement.removeAttribute(key);
       }
@@ -838,7 +840,7 @@ function setProp(
         if (__DEV__) {
           checkAttributeStringCoercion(value, key);
         }
-        domElement.setAttribute(key, (value: any));
+        domElement.setAttribute(key, value as any);
       } else {
         domElement.removeAttribute(key);
       }
@@ -1010,7 +1012,11 @@ function setPropOnCustomElement(
               'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
             );
           }
-          domElement.innerHTML = nextHtml;
+          const lastHtml: any =
+            prevValue != null ? (prevValue as any).__html : undefined;
+          if (lastHtml !== nextHtml) {
+            domElement.innerHTML = nextHtml;
+          }
         }
       }
       break;
@@ -1054,7 +1060,7 @@ function setPropOnCustomElement(
         if (__DEV__ && typeof value !== 'function') {
           warnForInvalidEventListener(key, value);
         }
-        trapClickOnNonInteractiveElement(((domElement: any): HTMLElement));
+        trapClickOnNonInteractiveElement(domElement as any as HTMLElement);
       }
       return;
     }
@@ -1343,7 +1349,7 @@ export function setInitialProperties(
         switch (propKey) {
           case 'selected': {
             // TODO: Remove support for selected on option.
-            (domElement: any).selected =
+            (domElement as any).selected =
               propValue &&
               typeof propValue !== 'function' &&
               typeof propValue !== 'symbol';
@@ -1470,6 +1476,26 @@ export function setInitialProperties(
       continue;
     }
     setProp(domElement, tag, propKey, propValue, props, null);
+  }
+}
+
+export type SingletonType = 'html' | 'head' | 'body';
+
+const emptyProps = {};
+
+export function clearSingletonProperties(
+  domElement: Element,
+  tag: SingletonType,
+  props: Object,
+): void {
+  // This is equivalent to updating to empty props for tags without
+  // tag-specific update logic. Host singletons are limited to html, head, and
+  // body, so they always use this generic path.
+  for (const propKey in props) {
+    const propValue = props[propKey];
+    if (props.hasOwnProperty(propKey) && propValue != null) {
+      setProp(domElement, tag, propKey, null, emptyProps, propValue);
+    }
   }
 }
 
@@ -1823,7 +1849,7 @@ export function updateProperties(
           switch (propKey) {
             case 'selected': {
               // TODO: Remove support for selected on option.
-              (domElement: any).selected = false;
+              (domElement as any).selected = false;
               break;
             }
             default: {
@@ -1846,7 +1872,7 @@ export function updateProperties(
                 trackHostMutation();
               }
               // TODO: Remove support for selected on option.
-              (domElement: any).selected =
+              (domElement as any).selected =
                 nextProp &&
                 typeof nextProp !== 'function' &&
                 typeof nextProp !== 'symbol';
@@ -2020,7 +2046,7 @@ function getStylesObjectFromElement(domElement: Element): {
   [styleName: string]: string,
 } {
   const serverValueInObjectForm: {[prop: string]: string} = {};
-  const htmlElement: HTMLElement = (domElement: any);
+  const htmlElement: HTMLElement = domElement as any;
   const style = htmlElement.style;
   for (let i = 0; i < style.length; i++) {
     const styleName: string = style[i];
@@ -2073,7 +2099,7 @@ function diffHydratedStyles(
     // Trailing semi-colon means this was regenerated.
     normalizedServerValue[normalizedServerValue.length - 1] === ';' &&
     // TODO: Should we just ignore any style if the style as been manipulated?
-    hasViewTransition((domElement: any))
+    hasViewTransition(domElement as any)
   ) {
     // If this had a view transition we might have applied a view transition
     // name/class and removed it. If that happens, the style attribute gets
@@ -2119,6 +2145,7 @@ function hydrateAttribute(
           if (__DEV__) {
             checkAttributeStringCoercion(value, propKey);
           }
+          // $FlowFixMe[invalid-compare]
           if (serverValue === '' + value) {
             return;
           }
@@ -2183,6 +2210,7 @@ function hydrateOverloadedBooleanAttribute(
       case 'symbol':
         return;
       default:
+        // $FlowFixMe[invalid-compare]
         if (value === false) {
           return;
         }
@@ -2197,6 +2225,7 @@ function hydrateOverloadedBooleanAttribute(
         case 'symbol':
           break;
         case 'boolean':
+          // $FlowFixMe[invalid-compare]
           if (value === true && serverValue === '') {
             return;
           }
@@ -2205,6 +2234,7 @@ function hydrateOverloadedBooleanAttribute(
           if (__DEV__) {
             checkAttributeStringCoercion(value, propKey);
           }
+          // $FlowFixMe[invalid-compare]
           if (serverValue === '' + value) {
             return;
           }
@@ -2245,7 +2275,7 @@ function hydrateBooleanishAttribute(
           if (__DEV__) {
             checkAttributeStringCoercion(value, attributeName);
           }
-          if (serverValue === '' + (value: any)) {
+          if (serverValue === '' + (value as any)) {
             return;
           }
         }
@@ -2296,6 +2326,7 @@ function hydrateNumericAttribute(
           if (__DEV__) {
             checkAttributeStringCoercion(value, propKey);
           }
+          // $FlowFixMe[invalid-compare]
           if (serverValue === '' + value) {
             return;
           }
@@ -2347,6 +2378,7 @@ function hydratePositiveNumericAttribute(
           if (__DEV__) {
             checkAttributeStringCoercion(value, propKey);
           }
+          // $FlowFixMe[invalid-compare]
           if (serverValue === '' + value) {
             return;
           }
@@ -2532,7 +2564,7 @@ function diffHydratedCustomComponent(
         continue;
       default: {
         // This is a DEV-only path
-        const hostContextDev: HostContextDev = (hostContext: any);
+        const hostContextDev: HostContextDev = hostContext as any;
         const hostContextProd = hostContextDev.context;
         if (
           hostContextProd === HostContextNamespaceNone &&
@@ -2655,26 +2687,26 @@ function diffHydratedGenericElement(
         continue;
       case 'multiple': {
         extraAttributes.delete(propKey);
-        const serverValue = (domElement: any).multiple;
+        const serverValue = (domElement as any).multiple;
         warnForPropDifference(propKey, serverValue, value, serverDifferences);
         continue;
       }
       case 'muted': {
         extraAttributes.delete(propKey);
-        const serverValue = (domElement: any).muted;
+        const serverValue = (domElement as any).muted;
         warnForPropDifference(propKey, serverValue, value, serverDifferences);
         continue;
       }
       case 'autoFocus': {
         extraAttributes.delete('autofocus');
-        const serverValue = (domElement: any).autofocus;
+        const serverValue = (domElement as any).autofocus;
         warnForPropDifference(propKey, serverValue, value, serverDifferences);
         continue;
       }
       case 'data':
         if (tag !== 'object') {
           extraAttributes.delete(propKey);
-          const serverValue = (domElement: any).getAttribute('data');
+          const serverValue = (domElement as any).getAttribute('data');
           warnForPropDifference(propKey, serverValue, value, serverDifferences);
           continue;
         }
@@ -2685,7 +2717,7 @@ function diffHydratedGenericElement(
           if (tag === 'img' || tag === 'video' || tag === 'audio') {
             try {
               // Test if this is a compatible object
-              URL.revokeObjectURL(URL.createObjectURL((value: any)));
+              URL.revokeObjectURL(URL.createObjectURL(value as any));
               hydrateSrcObjectAttribute(
                 domElement,
                 value,
@@ -2700,7 +2732,7 @@ function diffHydratedGenericElement(
             if (__DEV__) {
               try {
                 // This should always error.
-                URL.revokeObjectURL(URL.createObjectURL((value: any)));
+                URL.revokeObjectURL(URL.createObjectURL(value as any));
                 if (tag === 'source') {
                   console.error(
                     'Passing Blob, MediaSource or MediaStream to <source src> is not supported. ' +
@@ -2849,6 +2881,7 @@ function diffHydratedGenericElement(
       case 'async':
       case 'autoPlay':
       case 'controls':
+      case 'credentialless':
       case 'default':
       case 'defer':
       case 'disabled':
@@ -3065,7 +3098,7 @@ function diffHydratedGenericElement(
         let isMismatchDueToBadCasing = false;
 
         // This is a DEV-only path
-        const hostContextDev: HostContextDev = (hostContext: any);
+        const hostContextDev: HostContextDev = hostContext as any;
         const hostContextProd = hostContextDev.context;
 
         if (
@@ -3256,7 +3289,7 @@ export function hydrateProperties(
 
   if (props.onClick != null) {
     // TODO: This cast may not be sound for SVG, MathML or custom elements.
-    trapClickOnNonInteractiveElement(((domElement: any): HTMLElement));
+    trapClickOnNonInteractiveElement(domElement as any as HTMLElement);
   }
 
   return true;
@@ -3288,6 +3321,8 @@ export function diffHydratedProperties(
         case 'vt-enter':
         case 'vt-exit':
         case 'vt-share':
+        case 'vt-parent-enter':
+        case 'vt-parent-exit':
           if (enableViewTransition) {
             // View Transition annotations are expected from the Server Runtime.
             // However, if they're also specified on the client and don't match
@@ -3297,7 +3332,7 @@ export function diffHydratedProperties(
         // Fallthrough
         default:
           // Intentionally use the original name.
-          // See discussion in https://github.com/facebook/react/pull/10676.
+          // See discussion in https://github.com/react/react/pull/10676.
           extraAttributes.add(attributes[i].name);
       }
     }

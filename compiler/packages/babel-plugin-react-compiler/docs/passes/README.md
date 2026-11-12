@@ -25,7 +25,7 @@ This directory contains detailed documentation for each pass in the React Compil
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │  PHASE 2: OPTIMIZATION                                                              │
 │                                                                                     │
-│  constantPropagation ──▶ deadCodeElimination ──▶ instructionReordering              │
+│  constantPropagation ──▶ deadCodeElimination                                         │
 │                                                                                     │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                               │
@@ -195,8 +195,6 @@ This directory contains detailed documentation for each pass in the React Compil
 
 | # | Pass | File | Description |
 |---|------|------|-------------|
-| 32 | [transformFire](32-transformFire.md) | `Transform/TransformFire.ts` | Transform `fire()` calls in effects |
-| 33 | [lowerContextAccess](33-lowerContextAccess.md) | `Optimization/LowerContextAccess.ts` | Optimize context access with selectors |
 | 34 | [optimizePropsMethodCalls](34-optimizePropsMethodCalls.md) | `Optimization/OptimizePropsMethodCalls.ts` | Normalize props method calls |
 | 35 | [optimizeForSSR](35-optimizeForSSR.md) | `Optimization/OptimizeForSSR.ts` | SSR-specific optimizations |
 | 36 | [outlineJSX](36-outlineJSX.md) | `Optimization/OutlineJsx.ts` | Outline JSX to components |
@@ -220,7 +218,6 @@ This directory contains detailed documentation for each pass in the React Compil
 | 49 | [validateNoRefAccessInRender](49-validateNoRefAccessInRender.md) | `Validation/ValidateNoRefAccessInRender.ts` | Ref access constraints |
 | 50 | [validateNoFreezingKnownMutableFunctions](50-validateNoFreezingKnownMutableFunctions.md) | `Validation/ValidateNoFreezingKnownMutableFunctions.ts` | Mutable function isolation |
 | 51 | [validateExhaustiveDependencies](51-validateExhaustiveDependencies.md) | `Validation/ValidateExhaustiveDependencies.ts` | Dependency array completeness |
-| 52 | [validateMemoizedEffectDependencies](52-validateMemoizedEffectDependencies.md) | `Validation/ValidateMemoizedEffectDependencies.ts` | Effect scope memoization |
 | 53 | [validatePreservedManualMemoization](53-validatePreservedManualMemoization.md) | `Validation/ValidatePreservedManualMemoization.ts` | Manual memo preservation |
 | 54 | [validateStaticComponents](54-validateStaticComponents.md) | `Validation/ValidateStaticComponents.ts` | Component identity stability |
 | 55 | [validateSourceLocations](55-validateSourceLocations.md) | `Validation/ValidateSourceLocations.ts` | Source location preservation |
@@ -275,8 +272,6 @@ Many passes are controlled by feature flags in `Environment.ts`:
 
 | Flag | Enables Pass |
 |------|--------------|
-| `enableFire` | transformFire |
-| `lowerContextAccess` | lowerContextAccess |
 | `enableJsxOutlining` | outlineJSX |
 | `enableFunctionOutlining` | outlineFunctions |
 | `validateNoSetStateInRender` | validateNoSetStateInRender |
@@ -306,6 +301,15 @@ yarn snap minimize <path>
 # Update expected outputs
 yarn snap -u
 ```
+
+## Fault Tolerance
+
+The pipeline is fault-tolerant: all passes run to completion, accumulating errors on `Environment` rather than aborting on the first error.
+
+- **Validation passes** are wrapped in `env.tryRecord()` in Pipeline.ts, which catches non-invariant `CompilerError`s and records them. If a validation pass throws, compilation continues.
+- **Infrastructure/transformation passes** (enterSSA, eliminateRedundantPhi, inferMutationAliasingEffects, codegen, etc.) are NOT wrapped in `tryRecord()` because subsequent passes depend on their output being structurally valid. If they fail, compilation aborts.
+- **`lower()` (BuildHIR)** always produces an `HIRFunction`, recording errors on `env` instead of returning `Err`. Unsupported constructs (e.g., `var`) are lowered best-effort.
+- At the end of the pipeline, `env.hasErrors()` determines whether to return `Ok(codegen)` or `Err(aggregatedErrors)`.
 
 ## Further Reading
 

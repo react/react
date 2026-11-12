@@ -292,7 +292,11 @@ function List({
           itemCount={filteredCommitIndices.length}
           itemData={itemData}
           itemSize={itemSize}
-          ref={(listRef: any) /* Flow bug? */}
+          ref={
+            listRef as any
+
+            /* Flow bug? */
+          }
           width={width}>
           {SnapshotCommitListItem}
         </FixedSizeList>

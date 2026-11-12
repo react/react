@@ -61,7 +61,7 @@ export function copyWithDelete(
   const updated = isArray(obj) ? obj.slice() : {...obj};
   if (index + 1 === path.length) {
     if (isArray(updated)) {
-      updated.splice(((key: any): number), 1);
+      updated.splice(key as any as number, 1);
     } else {
       delete updated[key];
     }
@@ -87,7 +87,7 @@ export function copyWithRename(
     // $FlowFixMe[incompatible-use] number or string is fine here
     updated[newKey] = updated[oldKey];
     if (isArray(updated)) {
-      updated.splice(((oldKey: any): number), 1);
+      updated.splice(oldKey as any as number, 1);
     } else {
       delete updated[oldKey];
     }
@@ -193,10 +193,16 @@ export function formatConsoleArgumentsToSingleString(
   // If the first argument is a string, check for substitutions.
   if (typeof maybeMessage === 'string') {
     if (args.length) {
-      const REGEXP = /(%?)(%([jds]))/g;
+      const REGEXP = /(%?)(%([jdisf]))/g;
 
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       formatted = formatted.replace(REGEXP, (match, escaped, ptn, flag) => {
+        if (escaped || args.length === 0) {
+          // Escaped specifiers (%%s) don't take an argument. Specifiers with no
+          // argument left stay literal, like in the browser console, rather
+          // than becoming 'undefined' or 'NaN'.
+          return match;
+        }
         let arg = args.shift();
         switch (flag) {
           case 's':
@@ -211,11 +217,7 @@ export function formatConsoleArgumentsToSingleString(
             arg = parseFloat(arg).toString();
             break;
         }
-        if (!escaped) {
-          return arg;
-        }
-        args.unshift(arg);
-        return match;
+        return arg;
       });
     }
   }

@@ -7,9 +7,8 @@
 
 import type {SourceLocation as BabelSourceLocation} from '@babel/types';
 import {
-  CompilerDiagnosticOptions,
-  CompilerErrorDetailOptions,
   CompilerSuggestionOperation,
+  type CompileErrorDetail,
 } from 'babel-plugin-react-compiler/src';
 import type {Linter, Rule} from 'eslint';
 import runReactCompiler, {RunCacheEntry} from '../shared/RunReactCompiler';
@@ -17,6 +16,7 @@ import {
   ErrorSeverity,
   LintRulePreset,
   LintRules,
+  printCodeFrame,
   type LintRule,
 } from 'babel-plugin-react-compiler/src/CompilerError';
 
@@ -24,12 +24,76 @@ function assertExhaustive(_: never, errorMsg: string): never {
   throw new Error(errorMsg);
 }
 
+/**
+ * Get the primary source location from a CompileErrorDetail.
+ * Handles both the new format (details array) and legacy format (flat loc).
+ */
+function primaryLocation(
+  detail: CompileErrorDetail,
+): BabelSourceLocation | null {
+  if (detail.details != null) {
+    const firstError = detail.details.find(d => d.kind === 'error');
+    if (firstError != null) {
+      return firstError.loc ?? null;
+    }
+  }
+  return detail.loc ?? null;
+}
+
+/**
+ * Format an error message from a CompileErrorDetail, matching the old
+ * CompilerErrorDetail.printErrorMessage() / CompilerDiagnostic.printErrorMessage() behavior.
+ */
+function printErrorMessage(source: string, error: CompileErrorDetail): string {
+  const buffer = [`[ReactCompilerError] ${error.reason}`];
+  if (error.description != null) {
+    buffer.push(`\n\n${error.description}.`);
+  }
+  /*
+   * A CompileError's source location(s) may be provided either as a `details`
+   * array (CompilerDiagnostic and the Rust compiler) or as a single flat `loc`
+   * (legacy CompilerErrorDetail). Normalize to a list so both shapes render
+   * code frames identically.
+   */
+  const details =
+    error.details ??
+    (error.loc != null
+      ? [{kind: 'error' as const, loc: error.loc, message: error.reason}]
+      : []);
+  for (const detail of details) {
+    if (detail.kind === 'error') {
+      const loc = detail.loc;
+      if (loc == null || typeof loc === 'symbol') {
+        continue;
+      }
+      let codeFrame: string;
+      try {
+        codeFrame = printCodeFrame(source, loc, detail.message ?? '');
+      } catch {
+        codeFrame = detail.message ?? '';
+      }
+      buffer.push('\n\n');
+      if (loc.filename != null) {
+        // ESLint uses 1-indexed columns
+        buffer.push(
+          `${loc.filename}:${loc.start.line}:${loc.start.column + 1}\n`,
+        );
+      }
+      buffer.push(codeFrame);
+    } else if (detail.kind === 'hint') {
+      buffer.push('\n\n');
+      buffer.push(detail.message ?? '');
+    }
+  }
+  return buffer.join('');
+}
+
 function makeSuggestions(
-  detail: CompilerErrorDetailOptions | CompilerDiagnosticOptions,
+  detail: CompileErrorDetail,
 ): Array<Rule.SuggestionReportDescriptor> {
   const suggest: Array<Rule.SuggestionReportDescriptor> = [];
   if (Array.isArray(detail.suggestions)) {
-    for (const suggestion of detail.suggestions) {
+    for (const suggestion of detail.suggestions as Array<any>) {
       switch (suggestion.op) {
         case CompilerSuggestionOperation.InsertBefore:
           suggest.push({
@@ -116,8 +180,8 @@ function makeRule(rule: LintRule): Rule.RuleModule {
       if (event.kind === 'CompileError') {
         const detail = event.detail;
         if (detail.category === rule.category) {
-          const loc = detail.primaryLocation();
-          if (loc == null || typeof loc === 'symbol') {
+          const loc = primaryLocation(detail);
+          if (loc == null) {
             continue;
           }
           if (
@@ -134,11 +198,9 @@ function makeRule(rule: LintRule): Rule.RuleModule {
            * we should deduplicate them with a "reported" set
            */
           context.report({
-            message: detail.printErrorMessage(result.sourceCode, {
-              eslint: true,
-            }),
+            message: printErrorMessage(result.sourceCode, detail),
             loc,
-            suggest: makeSuggestions(detail.options),
+            suggest: makeSuggestions(detail),
           });
         }
       }

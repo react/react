@@ -32,6 +32,7 @@
     "hermes-eslint": "^0.25.0",
     "hermes-parser": "^0.25.0",
     "invariant": "^2.2.4",
+    "json5": "^2.2.3",
     "lru-cache": "^11.2.2",
     "lz-string": "^1.5.0",
     "monaco-editor": "^0.52.0",

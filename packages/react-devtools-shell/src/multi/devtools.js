@@ -43,6 +43,12 @@ function init(appIframe, devtoolsContainer, appSource) {
       }
 
       wall._listeners.push(listener);
+      return () => {
+        const index = wall._listeners.indexOf(listener);
+        if (index !== -1) {
+          wall._listeners.splice(index, 1);
+        }
+      };
     },
     send(event, payload) {
       if (__DEBUG__) {

@@ -1,4 +1,4 @@
-// @enableOptimizeForSSR
+// @outputMode:"ssr"
 
 import {useReducer} from 'react';
 

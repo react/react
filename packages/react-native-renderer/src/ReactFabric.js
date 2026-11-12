@@ -12,8 +12,6 @@ import type {ElementRef, Element, ElementType} from 'react';
 import type {FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
 import type {RenderRootOptions} from './ReactNativeTypes';
 
-import './ReactFabricInjection';
-
 import {
   batchedUpdates as batchedUpdatesImpl,
   discreteUpdates,
@@ -27,7 +25,7 @@ import {
 } from 'react-reconciler/src/ReactFiberReconciler';
 
 import {createPortal as createPortalImpl} from 'react-reconciler/src/ReactPortal';
-import {setBatchingImplementation} from './legacy-events/ReactGenericBatching';
+import {setBatchingImplementation} from './ReactGenericBatching';
 
 import {LegacyRoot, ConcurrentRoot} from 'react-reconciler/src/ReactRootTags';
 import {
@@ -45,7 +43,7 @@ import {
   ReactFiberErrorDialog,
   createPublicRootInstance,
   type PublicRootInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+} from 'react-native/react-private-interface';
 import {
   disableLegacyMode,
   enableDefaultTransitionIndicator,
@@ -151,6 +149,7 @@ function render(
     // TODO (bvaughn): If we decide to keep the wrapper component,
     // We could create a wrapper for containerTag as well to reduce special casing.
     root = createContainer(
+      // $FlowFixMe[incompatible-type]
       rootInstance,
       concurrentRoot ? ConcurrentRoot : LegacyRoot,
       null,
@@ -166,6 +165,7 @@ function render(
 
     roots.set(containerTag, root);
   }
+  // $FlowFixMe[incompatible-type]
   updateContainer(element, root, null, callback);
 
   return getPublicRootInstance(root);

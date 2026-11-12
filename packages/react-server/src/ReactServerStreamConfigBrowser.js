@@ -6,6 +6,7 @@
  *
  * @flow
  */
+import hasOwnProperty from 'shared/hasOwnProperty';
 
 export type Destination = ReadableStreamController;
 
@@ -21,6 +22,12 @@ channel.port1.onmessage = () => {
     task();
   }
 };
+
+const supportsArrayBufferDetached = hasOwnProperty.call(
+  ArrayBuffer.prototype,
+  'detached',
+);
+let didWarnAboutMissingArrayBufferDetached = false;
 
 export function scheduleWork(callback: () => void) {
   taskQueue.push(callback);
@@ -61,6 +68,26 @@ export function writeChunk(
   chunk: PrecomputedChunk | Chunk | BinaryChunk,
 ): void {
   if (chunk.byteLength === 0) {
+    if (supportsArrayBufferDetached) {
+      // $FlowFixMe[prop-missing] -- supportsArrayBufferDetached implies it does exist.
+      if (chunk.buffer.detached) {
+        throw new Error(
+          'Cannot transport a detached buffer. ' +
+            'This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. ' +
+            'Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.',
+        );
+      }
+    } else if (__DEV__) {
+      if (!didWarnAboutMissingArrayBufferDetached) {
+        console.error(
+          'React encountered an empty buffer when writing in an environment that ' +
+            'does not support ArrayBuffer.prototype.detached. ' +
+            'This could be a security issue if the buffer was not actually empty. ' +
+            'Please use a modern browser that supports ArrayBuffer.prototype.detached.',
+        );
+        didWarnAboutMissingArrayBufferDetached = true;
+      }
+    }
     return;
   }
 
@@ -71,7 +98,7 @@ export function writeChunk(
     if (writtenBytes > 0) {
       destination.enqueue(
         new Uint8Array(
-          ((currentView: any): Uint8Array).buffer,
+          (currentView as any as Uint8Array).buffer,
           0,
           writtenBytes,
         ),
@@ -84,7 +111,8 @@ export function writeChunk(
   }
 
   let bytesToWrite = chunk;
-  const allowableBytes = ((currentView: any): Uint8Array).length - writtenBytes;
+  const allowableBytes =
+    (currentView as any as Uint8Array).length - writtenBytes;
   if (allowableBytes < bytesToWrite.byteLength) {
     // this chunk would overflow the current view. We enqueue a full view
     // and start a new view with the remaining chunk
@@ -94,7 +122,7 @@ export function writeChunk(
     } else {
       // fill up the current view and apply the remaining chunk bytes
       // to a new view.
-      ((currentView: any): Uint8Array).set(
+      (currentView as any as Uint8Array).set(
         bytesToWrite.subarray(0, allowableBytes),
         writtenBytes,
       );
@@ -105,7 +133,7 @@ export function writeChunk(
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
-  ((currentView: any): Uint8Array).set(bytesToWrite, writtenBytes);
+  (currentView as any as Uint8Array).set(bytesToWrite, writtenBytes);
   writtenBytes += bytesToWrite.byteLength;
 }
 
@@ -157,14 +185,56 @@ export function typedArrayToBinaryChunk(
   // If we passed through this straight to enqueue we wouldn't have to convert it but since
   // we need to copy the buffer in that case, we need to convert it to copy it.
   // When we copy it into another array using set() it needs to be a Uint8Array.
-  const buffer = new Uint8Array(
+  const view = new Uint8Array(
     content.buffer,
     content.byteOffset,
     content.byteLength,
   );
-  // We clone large chunks so that we can transfer them when we write them.
-  // Others get copied into the target buffer.
-  return content.byteLength > VIEW_SIZE ? buffer.slice() : buffer;
+  // A byte stream transfers, and thereby detaches, the whole ArrayBuffer of
+  // every chunk it receives. React writes a chunk larger than VIEW_SIZE
+  // directly to the destination, so such a chunk must own its whole buffer.
+  //
+  // The render consumes a typed array that spans its whole buffer, in the same
+  // way that it consumes a one shot iterable.
+  //
+  // React copies a view into a part of a buffer, because the rest of that
+  // buffer does not belong to this chunk.
+  if (content.byteLength > VIEW_SIZE) {
+    // As a heuristic we assume partial views mean multiple views on the same
+    // underlying buffer are being transported. We slice to avoid buffer detachment.
+    const isViewBufferSpanning =
+      content.byteOffset === 0 &&
+      content.byteLength === content.buffer.byteLength;
+    if (
+      !isViewBufferSpanning ||
+      // To allow resizing buffers after they have been transported.
+      // Also as a precaution in case the underlying buffer gets resized between
+      // render and write.
+      // $FlowFixMe[prop-missing] prop missing in older envs = not resizable
+      content.buffer.resizable
+    ) {
+      return view.slice();
+    }
+    if (!supportsArrayBufferDetached) {
+      // We're defensively slicing for older environments where we can't reliably
+      // check later if the ArrayBuffer became detached.
+      if (__DEV__) {
+        if (!didWarnAboutMissingArrayBufferDetached) {
+          console.error(
+            'React copied a partial view into a fresh buffer as a safety precaution ' +
+              'because the environment does not implement ArrayBuffer.prototype.detached. ' +
+              'This negatively impacts performance. ' +
+              'Please use a modern browser that supports ArrayBuffer.prototype.detached.',
+          );
+          didWarnAboutMissingArrayBufferDetached = true;
+        }
+      }
+      return view.slice();
+    }
+  }
+  // These are likely unique views on the underlying buffer so we can transfer them safely.
+  // We'll check again when writing if the underlying buffer became detached.
+  return view;
 }
 
 export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {
@@ -178,7 +248,7 @@ export function byteLengthOfBinaryChunk(chunk: BinaryChunk): number {
 export function closeWithError(destination: Destination, error: mixed): void {
   // $FlowFixMe[method-unbinding]
   if (typeof destination.error === 'function') {
-    // $FlowFixMe[incompatible-call]: This is an Error object or the destination accepts other types.
+    // $FlowFixMe[incompatible-type]: This is an Error object or the destination accepts other types.
     destination.error(error);
   } else {
     // Earlier implementations doesn't support this method. In that environment you're
@@ -196,7 +266,7 @@ export {createFastHashJS as createFastHash} from 'react-server/src/createFastHas
 export function readAsDataURL(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    // $FlowFixMe[incompatible-call]: We always expect a string result with readAsDataURL.
+    // $FlowFixMe[incompatible-type]: We always expect a string result with readAsDataURL.
     reader.onloadend = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(blob);

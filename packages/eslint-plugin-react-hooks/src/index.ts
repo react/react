@@ -15,12 +15,29 @@ import {
 } from './shared/ReactCompiler';
 import RulesOfHooks from './rules/RulesOfHooks';
 
+function makeDeprecatedRule(version: string): Rule.RuleModule {
+  return {
+    meta: {
+      type: 'suggestion',
+      docs: {
+        description: `Deprecated: this rule has been removed in ${version}.`,
+      },
+      schema: [],
+      deprecated: true,
+    },
+    create() {
+      return {};
+    },
+  };
+}
+
 const rules = {
   'exhaustive-deps': ExhaustiveDeps,
   'rules-of-hooks': RulesOfHooks,
   ...Object.fromEntries(
     Object.entries(allRules).map(([name, config]) => [name, config.rule]),
   ),
+  'component-hook-factories': makeDeprecatedRule('7.1.0'),
 } satisfies Record<string, Rule.RuleModule>;
 
 const basicRuleConfigs = {

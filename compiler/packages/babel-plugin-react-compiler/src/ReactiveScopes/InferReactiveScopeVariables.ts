@@ -25,7 +25,7 @@ import {
   eachPatternOperand,
 } from '../HIR/visitors';
 import DisjointSet from '../Utils/DisjointSet';
-import {assertExhaustive} from '../Utils/utils';
+import {Iterable_some, assertExhaustive} from '../Utils/utils';
 
 /*
  * Note: this is the 1st of 4 passes that determine how to break a function into discrete
@@ -143,7 +143,7 @@ export function inferReactiveScopeVariables(fn: HIRFunction): void {
   }
 
   /*
-   * Validate that all scopes have properly intialized, valid mutable ranges
+   * Validate that all scopes have properly initialized, valid mutable ranges
    * within the span of instructions for this function, ie from 1 to 1 past
    * the last instruction id.
    */
@@ -178,17 +178,21 @@ function mergeLocation(l: SourceLocation, r: SourceLocation): SourceLocation {
     return l;
   } else {
     return {
-      filename: l.filename,
-      identifierName: l.identifierName,
-      start: {
-        index: Math.min(l.start.index, r.start.index),
-        line: Math.min(l.start.line, r.start.line),
-        column: Math.min(l.start.column, r.start.column),
-      },
-      end: {
-        index: Math.max(l.end.index, r.end.index),
-        line: Math.max(l.end.line, r.end.line),
-        column: Math.max(l.end.column, r.end.column),
+      start: undefined,
+      end: undefined,
+      loc: {
+        filename: l.loc.filename,
+        identifierName: l.loc.identifierName,
+        start: {
+          index: Math.min(l.loc.start.index, r.loc.start.index),
+          line: Math.min(l.loc.start.line, r.loc.start.line),
+          column: Math.min(l.loc.start.column, r.loc.start.column),
+        },
+        end: {
+          index: Math.max(l.loc.end.index, r.loc.end.index),
+          line: Math.max(l.loc.end.line, r.loc.end.line),
+          column: Math.max(l.loc.end.column, r.loc.end.column),
+        },
       },
     };
   }
@@ -212,8 +216,10 @@ function mayAllocate(_env: Environment, instruction: Instruction): boolean {
     case 'Destructure': {
       return doesPatternContainSpreadElement(value.lvalue.pattern);
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate':
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext':
+    case 'PrefixUpdateLocal':
     case 'Await':
     case 'DeclareLocal':
     case 'DeclareContext':
@@ -287,12 +293,31 @@ export function findDisjointMutableValues(
      * are assigned to the same scope.
      */
     for (const phi of block.phis) {
-      if (
+      const firstInstructionIdOfBlock =
+        block.instructions.at(0)?.id ?? block.terminal.id;
+      const isPhiMutatedAfterCreation =
         phi.place.identifier.mutableRange.start + 1 !==
           phi.place.identifier.mutableRange.end &&
-        phi.place.identifier.mutableRange.end >
-          (block.instructions.at(0)?.id ?? block.terminal.id)
-      ) {
+        phi.place.identifier.mutableRange.end > firstInstructionIdOfBlock;
+      /*
+       * A phi operand defined at or after the phi's block is a loop back-edge:
+       * the variable is reassigned within the loop (eg a counter `a++` or
+       * `a = a + 1`). The reassignment must count as the loop's scope
+       * reassigning the variable, so union the phi with its operands and
+       * declaration. Otherwise the variable's pre-loop value would become a
+       * dependency of the scope even though the scope changes the value as it
+       * executes, making the scope's dependencies unstable (the cached
+       * dependency would be the post-loop value, which can never match the
+       * pre-loop value compared at the top of the scope).
+       */
+      const isLoopCarriedReassignment =
+        !isPhiMutatedAfterCreation &&
+        Iterable_some(
+          phi.operands.values(),
+          operand =>
+            operand.identifier.mutableRange.start >= firstInstructionIdOfBlock,
+        );
+      if (isPhiMutatedAfterCreation || isLoopCarriedReassignment) {
         const operands = [phi.place.identifier];
         const declaration = declarations.get(
           phi.place.identifier.declarationId,

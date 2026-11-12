@@ -16,16 +16,12 @@ import {
 } from 'react-reconciler/src/ReactFiberTreeReflection';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import {HostComponent} from 'react-reconciler/src/ReactWorkTags';
-// Module provided by RN:
+// Modules provided by RN:
 import {
-  UIManager,
   getNodeFromPublicInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
-import {getClosestInstanceFromNode} from './ReactNativeComponentTree';
-import {
-  getNodeFromInternalInstanceHandle,
-  findNodeHandle,
-} from './ReactNativePublicCompat';
+  fabricUIManager,
+} from 'react-native/react-private-interface';
+import {getNodeFromInternalInstanceHandle} from './ReactNativePublicCompat';
 import {getStackByFiberInDevAndProd} from 'react-reconciler/src/ReactFiberComponentStack';
 
 let getInspectorDataForInstance: (
@@ -43,7 +39,6 @@ if (__DEV__) {
         return {
           props: getHostProps(fiber),
           measure: callback => {
-            // If this is Fabric, we'll find a shadow node and use that to measure.
             const hostFiber = findCurrentHostFiber(fiber);
             const node =
               hostFiber != null &&
@@ -51,30 +46,12 @@ if (__DEV__) {
               hostFiber.stateNode.node;
 
             if (node) {
-              nativeFabricUIManager.measure(node, callback);
-            } else {
-              return UIManager.measure(getHostNode(fiber), callback);
+              fabricUIManager.measure(node, callback);
             }
           },
         };
       },
     }));
-  };
-
-  const getHostNode = function (fiber: Fiber | null) {
-    let hostNode;
-    // look for children first for the hostNode
-    // as composite fibers do not have a hostNode
-    while (fiber) {
-      if (fiber.stateNode !== null && fiber.tag === HostComponent) {
-        hostNode = findNodeHandle(fiber.stateNode);
-      }
-      if (hostNode) {
-        return hostNode;
-      }
-      fiber = fiber.child;
-    }
-    return null;
   };
 
   const getHostProps = function (fiber: Fiber) {
@@ -149,22 +126,11 @@ if (__DEV__) {
     hierarchy.unshift(instance);
     const owner = instance._debugOwner;
     if (owner != null && typeof owner.tag === 'number') {
-      traverseOwnerTreeUp(hierarchy, (owner: any));
+      traverseOwnerTreeUp(hierarchy, owner as any);
     } else {
       // TODO: Traverse Server Components owners.
     }
   };
-}
-
-function getInspectorDataForViewTag(viewTag: number): InspectorData {
-  if (__DEV__) {
-    const closestInstance = getClosestInstanceFromNode(viewTag);
-    return getInspectorDataForInstance(closestInstance);
-  } else {
-    throw new Error(
-      'getInspectorDataForViewTag() is not available in production',
-    );
-  }
 }
 
 function getInspectorDataForViewAtPoint(
@@ -179,7 +145,7 @@ function getInspectorDataForViewAtPoint(
     const fabricNode = getNodeFromPublicInstance(inspectedView);
     if (fabricNode) {
       // For Fabric we can look up the instance handle directly and measure it.
-      nativeFabricUIManager.findNodeAtPoint(
+      fabricUIManager.findNodeAtPoint(
         fabricNode,
         locationX,
         locationY,
@@ -206,38 +172,15 @@ function getInspectorDataForViewAtPoint(
           const nativeViewTag =
             internalInstanceHandle.stateNode.canonical.nativeTag;
 
-          nativeFabricUIManager.measure(
-            node,
-            (x, y, width, height, pageX, pageY) => {
-              const inspectorData =
-                getInspectorDataForInstance(closestInstance);
-              callback({
-                ...inspectorData,
-                pointerY: locationY,
-                frame: {left: pageX, top: pageY, width, height},
-                touchedViewTag: nativeViewTag,
-                closestPublicInstance,
-              });
-            },
-          );
-        },
-      );
-    } else if (inspectedView._internalFiberInstanceHandleDEV != null) {
-      // For Paper we fall back to the old strategy using the React tag.
-      UIManager.findSubviewIn(
-        findNodeHandle(inspectedView),
-        [locationX, locationY],
-        (nativeViewTag, left, top, width, height) => {
-          const inspectorData = getInspectorDataForInstance(
-            getClosestInstanceFromNode(nativeViewTag),
-          );
-          callback({
-            ...inspectorData,
-            pointerY: locationY,
-            frame: {left, top, width, height},
-            touchedViewTag: nativeViewTag,
-            // $FlowExpectedError[incompatible-call]
-            closestPublicInstance: nativeViewTag,
+          fabricUIManager.measure(node, (x, y, width, height, pageX, pageY) => {
+            const inspectorData = getInspectorDataForInstance(closestInstance);
+            callback({
+              ...inspectorData,
+              pointerY: locationY,
+              frame: {left: pageX, top: pageY, width, height},
+              touchedViewTag: nativeViewTag,
+              closestPublicInstance,
+            });
           });
         },
       );
@@ -255,8 +198,4 @@ function getInspectorDataForViewAtPoint(
   }
 }
 
-export {
-  getInspectorDataForInstance,
-  getInspectorDataForViewAtPoint,
-  getInspectorDataForViewTag,
-};
+export {getInspectorDataForInstance, getInspectorDataForViewAtPoint};

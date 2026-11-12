@@ -32,7 +32,8 @@ export const SUSPENSE_TREE_OPERATION_SUSPENDERS = 12;
 export const TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE = 13;
 
 export const PROFILING_FLAG_BASIC_SUPPORT /*.             */ = 0b001;
-export const PROFILING_FLAG_TIMELINE_SUPPORT /*           */ = 0b010;
+// Bit 0b010 is retired: it flagged support for the removed Timeline profiler.
+// Older backends still set it, so it must never be reused for a new flag.
 export const PROFILING_FLAG_PERFORMANCE_TRACKS_SUPPORT /* */ = 0b100;
 
 export const UNKNOWN_SUSPENDERS_NONE: UnknownSuspendersReason = 0; // If we had at least one debugInfo, then that might have been the reason.
@@ -57,8 +58,6 @@ export const LOCAL_STORAGE_PARSE_HOOK_NAMES_KEY =
   'React::DevTools::parseHookNames';
 export const SESSION_STORAGE_RECORD_CHANGE_DESCRIPTIONS_KEY =
   'React::DevTools::recordChangeDescriptions';
-export const SESSION_STORAGE_RECORD_TIMELINE_KEY =
-  'React::DevTools::recordTimeline';
 export const SESSION_STORAGE_RELOAD_AND_PROFILE_KEY =
   'React::DevTools::reloadAndProfile';
 export const LOCAL_STORAGE_BROWSER_THEME = 'React::DevTools::theme';

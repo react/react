@@ -27,7 +27,7 @@ jobs:
   check_maintainer:
     if: ${{ needs.check_access.outputs.is_member_or_collaborator == 'true' || needs.check_access.outputs.is_member_or_collaborator == true }}
     needs: [check_access]
-    uses: facebook/react/.github/workflows/shared_check_maintainer.yml@main
+    uses: react/react/.github/workflows/shared_check_maintainer.yml@main
     permissions:
       # Used by check_maintainer
       contents: read

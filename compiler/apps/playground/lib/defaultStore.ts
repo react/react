@@ -14,11 +14,9 @@ export default function MyApp() {
 `;
 
 export const defaultConfig = `\
-import type { PluginOptions } from 'babel-plugin-react-compiler/dist';
-
-({
+{
   //compilationMode: "all"
-} satisfies PluginOptions);`;
+}`;
 
 export const defaultStore: Store = {
   source: index,

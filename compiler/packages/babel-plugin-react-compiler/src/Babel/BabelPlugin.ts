@@ -11,7 +11,6 @@ import {
   injectReanimatedFlag,
   pipelineUsesReanimatedPlugin,
 } from '../Entrypoint/Reanimated';
-import validateNoUntransformedReferences from '../Entrypoint/ValidateNoUntransformedReferences';
 import {CompilerError} from '..';
 
 const ENABLE_REACT_COMPILER_TIMINGS =
@@ -64,19 +63,12 @@ export default function BabelPluginReactCompiler(
                 },
               };
             }
-            const result = compileProgram(prog, {
+            compileProgram(prog, {
               opts,
               filename: pass.filename ?? null,
               comments: pass.file.ast.comments ?? [],
               code: pass.file.code,
             });
-            validateNoUntransformedReferences(
-              prog,
-              pass.filename ?? null,
-              opts.logger,
-              opts.environment,
-              result,
-            );
             if (ENABLE_REACT_COMPILER_TIMINGS === true) {
               performance.mark(`${filename}:end`, {
                 detail: 'BabelPlugin:Program:end',

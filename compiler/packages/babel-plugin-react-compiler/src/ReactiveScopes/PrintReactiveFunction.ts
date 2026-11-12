@@ -22,6 +22,7 @@ import {
   printIdentifier,
   printInstructionValue,
   printPlace,
+  printSourceLocation,
   printType,
 } from '../HIR/PrintHIR';
 import {assertExhaustive} from '../Utils/utils';
@@ -114,7 +115,7 @@ export function printDependency(dependency: ReactiveScopeDependency): string {
   const identifier =
     printIdentifier(dependency.identifier) +
     printType(dependency.identifier.type);
-  return `${identifier}${dependency.path.map(token => `${token.optional ? '?.' : '.'}${token.property}`).join('')}`;
+  return `${identifier}${dependency.path.map(token => `${token.optional ? '?.' : '.'}${token.property}`).join('')}_${printSourceLocation(dependency.loc)}`;
 }
 
 export function printReactiveInstructions(

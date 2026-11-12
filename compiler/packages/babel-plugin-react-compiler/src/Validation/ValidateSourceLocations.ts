@@ -7,9 +7,9 @@
 
 import {NodePath} from '@babel/traverse';
 import * as t from '@babel/types';
-import {CompilerDiagnostic, CompilerError, ErrorCategory} from '..';
+import {CompilerDiagnostic, ErrorCategory} from '..';
 import {CodegenFunction} from '../ReactiveScopes';
-import {Result} from '../Utils/Result';
+import {Environment} from '../HIR/Environment';
 
 /**
  * IMPORTANT: This validation is only intended for use in unit tests.
@@ -123,9 +123,8 @@ export function validateSourceLocations(
     t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
   >,
   generatedAst: CodegenFunction,
-): Result<void, CompilerError> {
-  const errors = new CompilerError();
-
+  env: Environment,
+): void {
   /*
    * Step 1: Collect important locations from the original source
    * Note: Multiple node types can share the same location (e.g. VariableDeclarator and Identifier)
@@ -240,7 +239,7 @@ export function validateSourceLocations(
     loc: t.SourceLocation,
     nodeType: string,
   ): void => {
-    errors.pushDiagnostic(
+    env.recordError(
       CompilerDiagnostic.create({
         category: ErrorCategory.Todo,
         reason: 'Important source location missing in generated code',
@@ -260,7 +259,7 @@ export function validateSourceLocations(
     expectedType: string,
     actualTypes: Set<string>,
   ): void => {
-    errors.pushDiagnostic(
+    env.recordError(
       CompilerDiagnostic.create({
         category: ErrorCategory.Todo,
         reason:
@@ -308,6 +307,4 @@ export function validateSourceLocations(
       }
     }
   }
-
-  return errors.asResult();
 }

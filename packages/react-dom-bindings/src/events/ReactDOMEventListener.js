@@ -362,6 +362,7 @@ export function getEventPriority(domEventName: DOMEventName): EventPriority {
     case 'beforeinput':
     case 'blur':
     case 'fullscreenchange':
+    case 'fullscreenerror':
     case 'focus':
     case 'hashchange':
     case 'popstate':

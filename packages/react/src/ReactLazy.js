@@ -16,8 +16,6 @@ import type {
   ReactIOInfo,
 } from 'shared/ReactTypes';
 
-import {enableAsyncDebugInfo} from 'shared/ReactFeatureFlags';
-
 import {REACT_LAZY_TYPE} from 'shared/ReactSymbols';
 
 import noop from 'shared/noop';
@@ -69,9 +67,9 @@ export type LazyComponent<T, P> = {
 
 function lazyInitializer<T>(payload: Payload<T>): T {
   if (payload._status === Uninitialized) {
-    let resolveDebugValue: (void | T) => void = (null: any);
-    let rejectDebugValue: mixed => void = (null: any);
-    if (__DEV__ && enableAsyncDebugInfo) {
+    let resolveDebugValue: (void | T) => void = null as any;
+    let rejectDebugValue: mixed => void = null as any;
+    if (__DEV__) {
       const ioInfo = payload._ioInfo;
       if (ioInfo != null) {
         // Mark when we first kicked off the lazy request.
@@ -95,14 +93,14 @@ function lazyInitializer<T>(payload: Payload<T>): T {
     thenable.then(
       moduleObject => {
         if (
-          (payload: Payload<T>)._status === Pending ||
+          (payload as Payload<T>)._status === Pending ||
           payload._status === Uninitialized
         ) {
           // Transition to the next state.
-          const resolved: ResolvedPayload<T> = (payload: any);
+          const resolved: ResolvedPayload<T> = payload as any;
           resolved._status = Resolved;
           resolved._result = moduleObject;
-          if (__DEV__ && enableAsyncDebugInfo) {
+          if (__DEV__) {
             const ioInfo = payload._ioInfo;
             if (ioInfo != null) {
               // Mark the end time of when we resolved.
@@ -112,9 +110,11 @@ function lazyInitializer<T>(payload: Payload<T>): T {
               const debugValue =
                 moduleObject == null ? undefined : moduleObject.default;
               resolveDebugValue(debugValue);
-              // $FlowFixMe
+              // $FlowFixMe[incompatible-use]
+              // $FlowFixMe[prop-missing]
               ioInfo.value.status = 'fulfilled';
-              // $FlowFixMe
+              // $FlowFixMe[incompatible-use]
+              // $FlowFixMe[prop-missing]
               ioInfo.value.value = debugValue;
             }
           }
@@ -123,7 +123,7 @@ function lazyInitializer<T>(payload: Payload<T>): T {
           // impl or make suspendedThenable be able to be a lazy itself
           if (thenable.status === undefined) {
             const fulfilledThenable: FulfilledThenable<{default: T, ...}> =
-              (thenable: any);
+              thenable as any;
             fulfilledThenable.status = 'fulfilled';
             fulfilledThenable.value = moduleObject;
           }
@@ -131,26 +131,28 @@ function lazyInitializer<T>(payload: Payload<T>): T {
       },
       error => {
         if (
-          (payload: Payload<T>)._status === Pending ||
+          (payload as Payload<T>)._status === Pending ||
           payload._status === Uninitialized
         ) {
           // Transition to the next state.
-          const rejected: RejectedPayload = (payload: any);
+          const rejected: RejectedPayload = payload as any;
           rejected._status = Rejected;
           rejected._result = error;
-          if (__DEV__ && enableAsyncDebugInfo) {
+          if (__DEV__) {
             const ioInfo = payload._ioInfo;
             if (ioInfo != null) {
               // Mark the end time of when we rejected.
               // $FlowFixMe[cannot-write]
               ioInfo.end = performance.now();
               // Hide unhandled rejections.
-              // $FlowFixMe
+              // $FlowFixMe[incompatible-use]
               ioInfo.value.then(noop, noop);
               rejectDebugValue(error);
-              // $FlowFixMe
+              // $FlowFixMe[incompatible-use]
+              // $FlowFixMe[prop-missing]
               ioInfo.value.status = 'rejected';
-              // $FlowFixMe
+              // $FlowFixMe[incompatible-use]
+              // $FlowFixMe[prop-missing]
               ioInfo.value.reason = error;
             }
           }
@@ -159,14 +161,14 @@ function lazyInitializer<T>(payload: Payload<T>): T {
           // impl or make suspendedThenable be able to be a lazy itself
           if (thenable.status === undefined) {
             const rejectedThenable: RejectedThenable<{default: T, ...}> =
-              (thenable: any);
+              thenable as any;
             rejectedThenable.status = 'rejected';
             rejectedThenable.reason = error;
           }
         }
       },
     );
-    if (__DEV__ && enableAsyncDebugInfo) {
+    if (__DEV__) {
       const ioInfo = payload._ioInfo;
       if (ioInfo != null) {
         const displayName = thenable.displayName;
@@ -179,7 +181,7 @@ function lazyInitializer<T>(payload: Payload<T>): T {
     if (payload._status === Uninitialized) {
       // In case, we're still uninitialized, then we're waiting for the thenable
       // to resolve. Set it as pending in the meantime.
-      const pending: PendingPayload = (payload: any);
+      const pending: PendingPayload = payload as any;
       pending._status = Pending;
       pending._result = thenable;
     }
@@ -234,7 +236,7 @@ export function lazy<T>(
     _init: lazyInitializer,
   };
 
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // TODO: We should really track the owner here but currently ReactIOInfo
     // can only contain ReactComponentInfo and not a Fiber. It's unusual to
     // create a lazy inside an owner though since they should be in module scope.

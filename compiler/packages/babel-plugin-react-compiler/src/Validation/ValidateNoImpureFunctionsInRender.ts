@@ -5,11 +5,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {CompilerDiagnostic, CompilerError} from '..';
+import {CompilerDiagnostic} from '..';
 import {ErrorCategory} from '../CompilerError';
 import {HIRFunction} from '../HIR';
 import {getFunctionCallSignature} from '../Inference/InferMutationAliasingEffects';
-import {Result} from '../Utils/Result';
 
 /**
  * Checks that known-impure functions are not called during render. Examples of invalid functions to
@@ -20,10 +19,7 @@ import {Result} from '../Utils/Result';
  * this in several of our validation passes and should unify those analyses into a reusable helper
  * and use it here.
  */
-export function validateNoImpureFunctionsInRender(
-  fn: HIRFunction,
-): Result<void, CompilerError> {
-  const errors = new CompilerError();
+export function validateNoImpureFunctionsInRender(fn: HIRFunction): void {
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       const value = instr.value;
@@ -35,7 +31,7 @@ export function validateNoImpureFunctionsInRender(
           callee.identifier.type,
         );
         if (signature != null && signature.impure === true) {
-          errors.pushDiagnostic(
+          fn.env.recordError(
             CompilerDiagnostic.create({
               category: ErrorCategory.Purity,
               reason: 'Cannot call impure function during render',
@@ -55,5 +51,4 @@ export function validateNoImpureFunctionsInRender(
       }
     }
   }
-  return errors.asResult();
 }

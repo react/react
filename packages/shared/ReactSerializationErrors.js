@@ -122,10 +122,10 @@ export function describeValueForErrorMessage(value: mixed): string {
       return name;
     }
     case 'function': {
-      if ((value: any).$$typeof === CLIENT_REFERENCE_TAG) {
+      if ((value as any).$$typeof === CLIENT_REFERENCE_TAG) {
         return describeClientReference(value);
       }
-      const name = (value: any).displayName || value.name;
+      const name = (value as any).displayName || value.name;
       return name ? 'function ' + name : 'function';
     }
     default:
@@ -155,7 +155,7 @@ function describeElementType(type: any): string {
       case REACT_MEMO_TYPE:
         return describeElementType(type.type);
       case REACT_LAZY_TYPE: {
-        const lazyComponent: LazyComponent<any, any> = (type: any);
+        const lazyComponent: LazyComponent<any, any> = type as any;
         const payload = lazyComponent._payload;
         const init = lazyComponent._init;
         try {

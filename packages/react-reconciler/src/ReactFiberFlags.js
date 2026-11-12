@@ -7,10 +7,7 @@
  * @flow
  */
 
-import {
-  enableCreateEventHandleAPI,
-  enableEffectEventMutationPhase,
-} from 'shared/ReactFeatureFlags';
+import {enableCreateEventHandleAPI} from 'shared/ReactFeatureFlags';
 
 export type Flags = number;
 
@@ -83,6 +80,10 @@ export const ViewTransitionNamedStatic =
 // ViewTransitionStatic tracks whether there are an ViewTransition components from
 // the nearest HostComponent down. It resets at every HostComponent level.
 export const ViewTransitionStatic = /*         */ 0b0000010000000000000000000000000;
+// ViewTransitionStaticParent tracks whether there are ViewTransition components
+// with parentEnter/parentExit props. Unlike ViewTransitionStatic, this is NOT
+// cleared by HostComponents so it can be used to skip subtrees in parent walks.
+export const ViewTransitionStaticParent = /*   */ 0b1000000000000000000000000000000;
 // Tracks whether a HostPortal is present in the tree.
 export const PortalStatic = /*                 */ 0b0000100000000000000000000000000;
 
@@ -102,11 +103,7 @@ export const BeforeMutationMask: number =
       // TODO: Only need to visit Deletions during BeforeMutation phase if an
       // element is focused.
       Update | ChildDeletion | Visibility
-    : // useEffectEvent uses the snapshot phase,
-      // but we're moving it to the mutation phase.
-      enableEffectEventMutationPhase
-      ? 0
-      : Update);
+    : 0);
 
 // For View Transition support we use the snapshot phase to scan the tree for potentially
 // affected ViewTransition components.
@@ -140,6 +137,7 @@ export const StaticMask =
   RefStatic |
   MaySuspendCommit |
   ViewTransitionStatic |
+  ViewTransitionStaticParent |
   ViewTransitionNamedStatic |
   PortalStatic |
   Forked;

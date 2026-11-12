@@ -8,17 +8,23 @@
  */
 
 import * as React from 'react';
-import RecordToggle from './RecordToggle';
+import {useContext} from 'react';
+import {ProfilerContext} from './ProfilerContext';
 
 import styles from './Profiler.css';
 
 export default function RecordingInProgress(): React.Node {
+  const {stopProfiling} = useContext(ProfilerContext);
+
   return (
     <div className={styles.Column}>
       <div className={styles.Header}>Profiling is in progress...</div>
-      <div className={styles.Row}>
-        Click the record button <RecordToggle /> to stop recording.
-      </div>
+      <button
+        className={styles.CTAButton}
+        onClick={stopProfiling}
+        type="button">
+        Stop recording
+      </button>
     </div>
   );
 }

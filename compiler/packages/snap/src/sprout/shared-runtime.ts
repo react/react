@@ -421,4 +421,10 @@ export function typedMutate(x: any, v: any = null): void {
   x.property = v;
 }
 
+export const PanResponder = {
+  create(obj: any): any {
+    return obj;
+  },
+};
+
 export default typedLog;

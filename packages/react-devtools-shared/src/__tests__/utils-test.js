@@ -11,7 +11,9 @@ import {
   getDisplayName,
   getDisplayNameForReactElement,
   isPlainObject,
+  printOperationsArray,
 } from 'react-devtools-shared/src/utils';
+import {TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE} from 'react-devtools-shared/src/constants';
 import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
 import {
   formatConsoleArguments,
@@ -20,7 +22,10 @@ import {
   gt,
   gte,
 } from 'react-devtools-shared/src/backend/utils';
-import {extractLocationFromComponentStack} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
+import {
+  extractLocationFromComponentStack,
+  parseStackTrace,
+} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
 import {
   REACT_SUSPENSE_LIST_TYPE as SuspenseList,
   REACT_STRICT_MODE_TYPE as StrictMode,
@@ -54,7 +59,7 @@ describe('utils', () => {
     });
 
     // Simulate a reported bug:
-    // https://github.com/facebook/react/issues/16685
+    // https://github.com/react/react/issues/16685
     // @reactVersion >= 16.0
     it('should return a fallback when the name prop is not a string', () => {
       const FauxComponent = {name: {}};
@@ -78,6 +83,30 @@ describe('utils', () => {
         ['header', null],
         ['div', null],
         ['App', null],
+      ]);
+    });
+  });
+
+  describe('parseStackTrace', () => {
+    it('should read file names from Hermes call sites', () => {
+      // Hermes call sites implement getFileName() but not getScriptNameOrSourceURL()
+      const callSite = {
+        getFunctionName: () => 'Foobar',
+        getFileName: () => 'http://localhost:8081/index.bundle',
+        getLineNumber: () => 103,
+        getColumnNumber: () => 74,
+        isNative: () => false,
+        toString: () => 'Foobar (http://localhost:8081/index.bundle:103:74)',
+      };
+      const error = {
+        name: 'Error',
+        message: '',
+        get stack() {
+          return Error.prepareStackTrace(this, [callSite]);
+        },
+      };
+      expect(parseStackTrace(error, 0)).toEqual([
+        ['Foobar', 'http://localhost:8081/index.bundle', 103, 74, 0, 0, false],
       ]);
     });
   });
@@ -145,6 +174,40 @@ describe('utils', () => {
       expect(
         formatConsoleArgumentsToSingleString('a %s b %s c', 123, true),
       ).toEqual('a 123 b true c');
+    });
+
+    it('should support integer substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('%i', 3.14)).toEqual('3');
+    });
+
+    it('should support float substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('%f', 3.5)).toEqual('3.5');
+    });
+
+    it('should keep argument alignment across mixed substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('a %i b %s', 7, 'x')).toEqual(
+        'a 7 b x',
+      );
+    });
+
+    it('should keep specifiers literal when no argument is supplied', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%d %d', 1)).toEqual('1 %d');
+      expect(formatConsoleArgumentsToSingleString('%i %i', 1)).toEqual('1 %i');
+      expect(formatConsoleArgumentsToSingleString('%f %f', 1.5)).toEqual(
+        '1.5 %f',
+      );
+    });
+
+    it('should not consume arguments for escaped specifiers', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %%s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%%d %s', 'abc')).toEqual(
+        '%d abc',
+      );
     });
 
     it('should gracefully handle Symbol types', () => {
@@ -379,6 +442,19 @@ describe('utils', () => {
       ]);
     });
 
+    it('should strip the async prefix from a frame name', () => {
+      expect(
+        extractLocationFromComponentStack(
+          '    at async Comments (https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js:5:9236)',
+        ),
+      ).toEqual([
+        'Comments',
+        'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
+        5,
+        9236,
+      ]);
+    });
+
     it('should support Firefox stack', () => {
       expect(
         extractLocationFromComponentStack(
@@ -500,6 +576,57 @@ function f() { }
       expect(
         formatConsoleArguments('This is the %s template', undefined),
       ).toEqual(['This is the undefined template']);
+    });
+
+    it('keeps a trailing percent sign', () => {
+      expect(formatConsoleArguments('Progress 100%', 'extra')).toEqual([
+        'Progress 100%',
+        'extra',
+      ]);
+      expect(formatConsoleArguments('%s 100%', 'done')).toEqual(['done 100%']);
+    });
+
+    it('keeps specifiers literal when no argument is supplied', () => {
+      expect(formatConsoleArguments('%s %s', 'the')).toEqual(['the %s']);
+      expect(formatConsoleArguments('%s %d', 'value')).toEqual(['value %d']);
+      expect(formatConsoleArguments('%s %i', 'value')).toEqual(['value %i']);
+      expect(formatConsoleArguments('%s %f', 'value')).toEqual(['value %f']);
+    });
+  });
+
+  describe('printOperationsArray', () => {
+    let log;
+    beforeEach(() => {
+      log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      log.mockRestore();
+    });
+
+    // The operation is [opcode, activitySliceID] (2 slots). A trailing operation
+    // after it verifies that the reader advances past the value slot instead of
+    // re-reading it as the next opcode.
+    it('should log an applied activity slice change and advance past its value', () => {
+      const rendererID = 1;
+      const rootID = 1;
+      const stringTableSize = 0;
+      const operations = [
+        rendererID,
+        rootID,
+        stringTableSize,
+        TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE,
+        42,
+        TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE,
+        0,
+      ];
+
+      expect(() => printOperationsArray(operations)).not.toThrow();
+
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0][0]).toContain(
+        'Applied activity slice change to 42',
+      );
+      expect(log.mock.calls[0][0]).toContain('Reset applied activity slice');
     });
   });
 });

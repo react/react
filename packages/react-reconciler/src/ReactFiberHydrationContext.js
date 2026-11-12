@@ -257,8 +257,10 @@ function tryHydrateInstance(
     fiber.pendingProps,
     rootOrSingletonContext,
   );
+  // $FlowFixMe[invalid-compare]
+  // $FlowFixMe[invalid-compare]
   if (instance !== null) {
-    fiber.stateNode = (instance: Instance);
+    fiber.stateNode = instance as Instance;
 
     if (__DEV__) {
       if (!didSuspendOrErrorDEV) {
@@ -267,7 +269,9 @@ function tryHydrateInstance(
           fiber.type,
           fiber.pendingProps,
           hostContext,
+          // $FlowFixMe[invalid-compare]
         );
+        // $FlowFixMe[invalid-compare]
         if (differences !== null) {
           const diffNode = buildHydrationDiffNode(fiber, 0);
           diffNode.serverProps = differences;
@@ -289,10 +293,12 @@ function tryHydrateText(fiber: Fiber, nextInstance: any) {
   const textInstance = canHydrateTextInstance(
     nextInstance,
     text,
+    // $FlowFixMe[invalid-compare]
     rootOrSingletonContext,
   );
+  // $FlowFixMe[invalid-compare]
   if (textInstance !== null) {
-    fiber.stateNode = (textInstance: TextInstance);
+    fiber.stateNode = textInstance as TextInstance;
     hydrationParentFiber = fiber;
     // Text Instances don't have children so there's nothing to hydrate.
     nextHydratableInstance = null;
@@ -307,9 +313,11 @@ function tryHydrateActivity(
 ): null | ActivityInstance {
   // fiber is a ActivityComponent Fiber
   const activityInstance = canHydrateActivityInstance(
+    // $FlowFixMe[invalid-compare]
     nextInstance,
     rootOrSingletonContext,
   );
+  // $FlowFixMe[invalid-compare]
   if (activityInstance !== null) {
     const activityState: ActivityState = {
       dehydrated: activityInstance,
@@ -339,10 +347,12 @@ function tryHydrateSuspense(
   nextInstance: any,
 ): null | SuspenseInstance {
   // fiber is a SuspenseComponent Fiber
+  // $FlowFixMe[invalid-compare]
   const suspenseInstance = canHydrateSuspenseInstance(
     nextInstance,
     rootOrSingletonContext,
   );
+  // $FlowFixMe[invalid-compare]
   if (suspenseInstance !== null) {
     const suspenseState: SuspenseState = {
       dehydrated: suspenseInstance,
@@ -420,11 +430,13 @@ function claimHydratableSingleton(fiber: Fiber): void {
     if (__DEV__) {
       if (!didSuspendOrErrorDEV) {
         const differences = diffHydratedPropsForDevWarnings(
+          // $FlowFixMe[invalid-compare]
           instance,
           fiber.type,
           fiber.pendingProps,
           currentHostContext,
         );
+        // $FlowFixMe[invalid-compare]
         if (differences !== null) {
           const diffNode = buildHydrationDiffNode(fiber, 0);
           diffNode.serverProps = differences;
@@ -582,12 +594,14 @@ function prepareToHydrateHostTextInstance(fiber: Fiber): void {
     switch (returnFiber.tag) {
       case HostRoot: {
         if (__DEV__) {
+          // $FlowFixMe[invalid-compare]
           if (shouldWarnIfMismatchDev) {
             const difference = diffHydratedTextForDevWarnings(
               textInstance,
               textContent,
               parentProps,
             );
+            // $FlowFixMe[invalid-compare]
             if (difference !== null) {
               const diffNode = buildHydrationDiffNode(fiber, 0);
               diffNode.serverProps = difference;
@@ -599,6 +613,7 @@ function prepareToHydrateHostTextInstance(fiber: Fiber): void {
       case HostSingleton:
       case HostComponent: {
         parentProps = returnFiber.memoizedProps;
+        // $FlowFixMe[invalid-compare]
         if (__DEV__) {
           if (shouldWarnIfMismatchDev) {
             const difference = diffHydratedTextForDevWarnings(
@@ -606,6 +621,7 @@ function prepareToHydrateHostTextInstance(fiber: Fiber): void {
               textContent,
               parentProps,
             );
+            // $FlowFixMe[invalid-compare]
             if (difference !== null) {
               const diffNode = buildHydrationDiffNode(fiber, 0);
               diffNode.serverProps = difference;
@@ -805,6 +821,7 @@ function popHydrationState(fiber: Fiber): boolean {
   return true;
 }
 
+// $FlowFixMe[invalid-compare]
 function warnIfUnhydratedTailNodes(fiber: Fiber) {
   if (__DEV__) {
     let nextInstance = nextHydratableInstance;
@@ -813,8 +830,9 @@ function warnIfUnhydratedTailNodes(fiber: Fiber) {
       const description =
         describeHydratableInstanceForDevWarnings(nextInstance);
       diffNode.serverTail.push(description);
+      // $FlowFixMe[invalid-compare]
       if (description.type === 'Suspense') {
-        const suspenseInstance: SuspenseInstance = (nextInstance: any);
+        const suspenseInstance: SuspenseInstance = nextInstance as any;
         nextInstance =
           getNextHydratableInstanceAfterSuspenseInstance(suspenseInstance);
       } else {

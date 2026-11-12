@@ -369,7 +369,7 @@ describe('ReactScope', () => {
       await act(() => ReactDOMClient.hydrateRoot(container2, <App />));
 
       // This should not cause a runtime exception, see:
-      // https://github.com/facebook/react/pull/18184
+      // https://github.com/react/react/pull/18184
       scopeRef.current.DO_NOT_USE_queryAllNodes(testScopeQuery);
       expect(ref.current).toBe(null);
 

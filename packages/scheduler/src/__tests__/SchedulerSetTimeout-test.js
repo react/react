@@ -97,7 +97,7 @@ describe('SchedulerNoDOM', () => {
   });
 });
 
-// See: https://github.com/facebook/react/pull/13088
+// See: https://github.com/react/react/pull/13088
 describe('does not crash non-node SSR environments', () => {
   it('if setTimeout is undefined', () => {
     jest.resetModules();

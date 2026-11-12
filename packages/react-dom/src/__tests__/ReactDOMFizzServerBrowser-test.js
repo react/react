@@ -20,6 +20,7 @@ let React;
 let ReactDOMFizzServer;
 let Suspense;
 let serverAct;
+let assertConsoleErrorDev;
 
 describe('ReactDOMFizzServerBrowser', () => {
   beforeEach(() => {
@@ -27,6 +28,8 @@ describe('ReactDOMFizzServerBrowser', () => {
 
     patchMessageChannel();
     serverAct = require('internal-test-utils').serverAct;
+    assertConsoleErrorDev =
+      require('internal-test-utils').assertConsoleErrorDev;
 
     React = require('react');
     ReactDOMFizzServer = require('react-dom/server.browser');
@@ -221,7 +224,9 @@ describe('ReactDOMFizzServerBrowser', () => {
       ),
     );
 
-    controller.abort();
+    await serverAct(() => {
+      controller.abort();
+    });
 
     const result = await readResult(stream);
     expect(result).toContain('Loading');
@@ -247,7 +252,9 @@ describe('ReactDOMFizzServerBrowser', () => {
     );
 
     const theReason = new Error('aborted for reasons');
-    controller.abort(theReason);
+    await serverAct(() => {
+      controller.abort(theReason);
+    });
 
     let caughtError = null;
     try {
@@ -364,7 +371,7 @@ describe('ReactDOMFizzServerBrowser', () => {
 
     const reader = stream.getReader();
     await reader.read();
-    await reader.cancel();
+    await serverAct(() => reader.cancel());
 
     expect(errors).toEqual([
       'The render was aborted by the server without a reason.',
@@ -411,6 +418,13 @@ describe('ReactDOMFizzServerBrowser', () => {
       // eslint-disable-next-line jest/no-interpolation-in-snapshots
       `"<div><span></span></div><div>${str492}</div><div>${str492}</div>"`,
     );
+    if (!ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      assertConsoleErrorDev([
+        'React encountered an empty buffer when writing in an environment that does not support ArrayBuffer.prototype.detached. ' +
+          'This could be a security issue if the buffer was not actually empty. ' +
+          'Please use a modern browser that supports ArrayBuffer.prototype.detached.',
+      ]);
+    }
 
     // this size 2049 was chosen to be a couple base 2 orders larger than the current view
     // size. if the size changes in the future hopefully this will still exercise
@@ -463,7 +477,9 @@ describe('ReactDOMFizzServerBrowser', () => {
       }),
     );
 
-    controller.abort('foobar');
+    await serverAct(() => {
+      controller.abort('foobar');
+    });
 
     expect(errors).toEqual(['foobar', 'foobar']);
   });
@@ -502,12 +518,14 @@ describe('ReactDOMFizzServerBrowser', () => {
       }),
     );
 
-    controller.abort(new Error('uh oh'));
+    await serverAct(() => {
+      controller.abort(new Error('uh oh'));
+    });
 
     expect(errors).toEqual(['uh oh', 'uh oh']);
   });
 
-  // https://github.com/facebook/react/pull/25534/files - fix transposed escape functions
+  // https://github.com/react/react/pull/25534/files - fix transposed escape functions
   it('should encode title properly', async () => {
     const stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(

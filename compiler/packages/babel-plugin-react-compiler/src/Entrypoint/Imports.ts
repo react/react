@@ -19,7 +19,7 @@ import {getOrInsertWith} from '../Utils/utils';
 import {ExternalFunction, isHookName} from '../HIR/Environment';
 import {Err, Ok, Result} from '../Utils/Result';
 import {LoggerEvent, ParsedPluginOptions} from './Options';
-import {BabelFn, getReactCompilerRuntimeModule} from './Program';
+import {getReactCompilerRuntimeModule} from './Program';
 import {SuppressionRange} from './Suppression';
 
 export function validateRestrictedImports(
@@ -84,12 +84,6 @@ export class ProgramContext {
   // generated imports
   imports: Map<string, Map<string, NonLocalImportSpecifier>> = new Map();
 
-  /**
-   * Metadata from compilation
-   */
-  retryErrors: Array<{fn: BabelFn; error: CompilerError}> = [];
-  inferredEffectLocations: Set<t.SourceLocation> = new Set();
-
   constructor({
     program,
     suppressions,
@@ -108,14 +102,7 @@ export class ProgramContext {
   }
 
   isHookName(name: string): boolean {
-    if (this.opts.environment.hookPattern == null) {
-      return isHookName(name);
-    } else {
-      const match = new RegExp(this.opts.environment.hookPattern).exec(name);
-      return (
-        match != null && typeof match[1] === 'string' && isHookName(match[1])
-      );
-    }
+    return isHookName(name);
   }
 
   hasReference(name: string): boolean {
@@ -162,6 +149,17 @@ export class ProgramContext {
       },
       '_c',
     );
+  }
+
+  removeMemoCacheImport(): void {
+    const moduleImports = this.imports.get(this.reactRuntimeModule);
+    if (moduleImports == null) {
+      return;
+    }
+    moduleImports.delete('c');
+    if (moduleImports.size === 0) {
+      this.imports.delete(this.reactRuntimeModule);
+    }
   }
 
   /**

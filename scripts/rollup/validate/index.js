@@ -17,6 +17,11 @@ function getFormat(filepath) {
       // TODO: Should we lint them?
       return null;
     }
+    if (filepath.includes('ESLintPluginReactHooks')) {
+      // The ESLint plugin bundles compiler code with modern syntax that
+      // doesn't need to conform to the ES5 www lint rules.
+      return null;
+    }
     return 'fb';
   }
   if (filepath.includes('react-native')) {

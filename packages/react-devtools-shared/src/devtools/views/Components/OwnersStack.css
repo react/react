@@ -34,6 +34,7 @@
 
 .OwnerStackFlatListContainer {
   display: inline-flex;
+  align-items: baseline;
 }
 
 .OwnerStackFlatListSeparator {

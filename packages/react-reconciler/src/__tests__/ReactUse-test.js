@@ -81,6 +81,30 @@ describe('ReactUse', () => {
     });
   }
 
+  function normalizeCodeLocInfo(str) {
+    return (
+      str &&
+      str.replace(
+        /^ +(?:at|in) ([\S]+)([^\n]*)(\n?)/gm,
+        function (m, name, location, eol) {
+          if (location.indexOf(__filename) === -1) {
+            // ignore frames from library code
+            return '';
+          }
+          return (
+            '    in ' +
+            name +
+            (/:\d+:\d+/.test(m)
+              ? ' ' +
+                location.replace(__dirname, '~').replace(/:\d+:\d+/, ':*:*')
+              : '') +
+            eol
+          );
+        },
+      )
+    );
+  }
+
   function Text({text}) {
     Scheduler.log(text);
     return text;
@@ -2189,4 +2213,138 @@ describe('ReactUse', () => {
       expect(root).toMatchRenderedOutput('Updated');
     },
   );
+
+  it('throws a descriptive error when a rejected promise without a reason property is passed to use()', async () => {
+    const badThenable = Promise.resolve();
+    // Simulate bad instrumentation: status is 'rejected' but the reason is not
+    // in the `reason` property as intended.
+    badThenable.status = 'rejected';
+    badThenable.error = new Error('Something went wrong');
+
+    function Child() {
+      return use(badThenable);
+    }
+
+    function App({
+      // Intentionally destrucutring a prop here so that our production error
+      // stack trick is triggered at the beginning of the function
+      prop,
+    }) {
+      return <Child />;
+    }
+
+    const uncaughtErrors = [];
+    const root = ReactNoop.createRoot({
+      onUncaughtError(error, errorInfo) {
+        uncaughtErrors.push({
+          callStack: normalizeCodeLocInfo(error.stack),
+          ownerStack: React.captureOwnerStack
+            ? normalizeCodeLocInfo(React.captureOwnerStack())
+            : null,
+          componentStack: normalizeCodeLocInfo(errorInfo.componentStack),
+        });
+      },
+    });
+
+    await act(() => {
+      root.render(<App />);
+    });
+
+    expect(uncaughtErrors).toEqual([
+      {
+        callStack:
+          'Error: A rejected Promise was passed to React without a `reason` property. ' +
+          'React threw a generic error from where the Promise was used to assist in identifying the problematic Promise. ' +
+          "Make sure that instrumented Promises correctly set the `reason` property when setting `status` to `'rejected'`." +
+          '\n    in Child  (~/ReactUse-test.js:*:*)' +
+          '\n    in Object.<anonymous>  (~/ReactUse-test.js:*:*)',
+        componentStack:
+          '\n    in Child  (~/ReactUse-test.js:*:*)' +
+          '\n    in App  (~/ReactUse-test.js:*:*)',
+        ownerStack: __DEV__ ? '\n    in App  (~/ReactUse-test.js:*:*)' : null,
+      },
+    ]);
+  });
+
+  it('throws a descriptive error when a rejected promise without a reason property is used as a child', async () => {
+    const badThenable = Promise.resolve();
+    // Simulate bad instrumentation: status is 'rejected' but the reason is not
+    // in the `reason` property as intended.
+    badThenable.status = 'rejected';
+    badThenable.error = new Error('Something went wrong');
+
+    function Child() {
+      return <div>{badThenable}</div>;
+    }
+
+    function App({
+      // Intentionally destrucutring a prop here so that our production error
+      // stack trick is triggered at the beginning of the function
+      prop,
+    }) {
+      return <Child />;
+    }
+
+    const uncaughtErrors = [];
+    const root = ReactNoop.createRoot({
+      onUncaughtError(error, errorInfo) {
+        uncaughtErrors.push({
+          callStack: normalizeCodeLocInfo(error.stack),
+          ownerStack: React.captureOwnerStack
+            ? normalizeCodeLocInfo(React.captureOwnerStack())
+            : null,
+          componentStack: normalizeCodeLocInfo(errorInfo.componentStack),
+        });
+      },
+    });
+
+    await act(() => {
+      root.render(<App />);
+    });
+
+    expect(uncaughtErrors).toEqual([
+      {
+        callStack:
+          'Error: A rejected Promise was passed to React without a `reason` property. ' +
+          'React threw a generic error from where the Promise was used to assist in identifying the problematic Promise. ' +
+          "Make sure that instrumented Promises correctly set the `reason` property when setting `status` to `'rejected'`." +
+          '\n    in Object.<anonymous>  (~/ReactUse-test.js:*:*)',
+        componentStack: '\n    in App  (~/ReactUse-test.js:*:*)',
+        ownerStack: __DEV__
+          ? // TODO: Should start in Child since that's the owner.
+            '\n    in App  (~/ReactUse-test.js:*:*)'
+          : null,
+      },
+    ]);
+  });
+
+  it('does not crash when a frozen, userspace-instrumented thenable is passed to use()', async () => {
+    // A userspace implementation can pre-instrument a thenable with a status
+    // before passing it to `use`. Freezing such a thenable (e.g. an immutable
+    // cache that shares its entries) must not crash React's DEV-only debug
+    // info instrumentation, which attaches a `_debugInfo` expando.
+    const frozenThenable = Promise.resolve('Hi');
+    frozenThenable.status = 'fulfilled';
+    frozenThenable.value = 'Hi';
+    Object.freeze(frozenThenable);
+
+    function Child() {
+      return <Text text={use(frozenThenable)} />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Child />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog(['Hi']);
+    expect(root).toMatchRenderedOutput('Hi');
+  });
 });

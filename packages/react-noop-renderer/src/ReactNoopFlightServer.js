@@ -20,10 +20,12 @@ import {saveModule} from 'react-noop-renderer/flight-modules';
 
 import ReactFlightServer from 'react-server/flight';
 
-type Destination = Array<Uint8Array>;
+type Destination = Array<Uint8Array | string>;
 
 const textEncoder = new TextEncoder();
 
+// $FlowFixMe[prop-missing]
+// $FlowFixMe[incompatible-type]
 const ReactNoopFlightServer = ReactFlightServer({
   scheduleMicrotask(callback: () => void) {
     callback();
@@ -48,6 +50,9 @@ const ReactNoopFlightServer = ReactFlightServer({
   },
   stringToPrecomputedChunk(content: string): Uint8Array {
     return textEncoder.encode(content);
+  },
+  byteLengthOfChunk(chunk: Uint8Array): number {
+    return chunk.byteLength;
   },
   isClientReference(reference: Object): boolean {
     return reference.$$typeof === Symbol.for('react.client.reference');
@@ -81,6 +86,7 @@ function render(model: ReactClientValue, options?: Options): Destination {
   const bundlerConfig = undefined;
   const request = ReactNoopFlightServer.createRequest(
     model,
+    // $FlowFixMe[incompatible-type]
     bundlerConfig,
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
@@ -88,19 +94,12 @@ function render(model: ReactClientValue, options?: Options): Destination {
     options ? options.startTime : undefined,
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
+    // $FlowFixMe[incompatible-type]
     __DEV__ && options && options.debugChannel !== undefined,
   );
   const signal = options ? options.signal : undefined;
   if (signal) {
-    if (signal.aborted) {
-      ReactNoopFlightServer.abort(request, (signal: any).reason);
-    } else {
-      const listener = () => {
-        ReactNoopFlightServer.abort(request, (signal: any).reason);
-        signal.removeEventListener('abort', listener);
-      };
-      signal.addEventListener('abort', listener);
-    }
+    ReactNoopFlightServer.attachAbortSignal(request, signal);
   }
   if (__DEV__ && options && options.debugChannel !== undefined) {
     options.debugChannel.onMessage = message => {
@@ -108,7 +107,11 @@ function render(model: ReactClientValue, options?: Options): Destination {
     };
   }
   ReactNoopFlightServer.startWork(request);
-  ReactNoopFlightServer.startFlowing(request, destination);
+  ReactNoopFlightServer.startFlowing(
+    request,
+    // $FlowFixMe[incompatible-type]
+    destination,
+  );
   return destination;
 }
 

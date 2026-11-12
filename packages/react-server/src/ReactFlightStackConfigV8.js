@@ -93,12 +93,12 @@ function collectStackTracePrivate(
       const enclosingLine: number =
         // $FlowFixMe[prop-missing]
         typeof callSite.getEnclosingLineNumber === 'function'
-          ? (callSite: any).getEnclosingLineNumber() || 0
+          ? (callSite as any).getEnclosingLineNumber() || 0
           : 0;
       const enclosingCol: number =
         // $FlowFixMe[prop-missing]
         typeof callSite.getEnclosingColumnNumber === 'function'
-          ? (callSite: any).getEnclosingColumnNumber() || 0
+          ? (callSite as any).getEnclosingColumnNumber() || 0
           : 0;
       // $FlowFixMe[prop-missing]
       const isAsync = callSite.isAsync();
@@ -149,7 +149,7 @@ const frameRegExp =
 // DEV-only cache of parsed and filtered stack frames.
 const stackTraceCache: WeakMap<Error, ReactStackTrace> = __DEV__
   ? new WeakMap()
-  : (null: any);
+  : (null as any);
 
 // This version is only used when React fully owns the Error object and there's no risk of it having
 // been already initialized and no risky that anyone else will initialize it later.
@@ -237,7 +237,7 @@ export function parseStackTrace(
     if (name === '<anonymous>') {
       name = '';
     } else if (name.startsWith('async ')) {
-      name = name.slice(5);
+      name = name.slice(6);
       isAsync = true;
     }
     let filename = parsed[2] || parsed[5] || '';

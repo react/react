@@ -9,4 +9,4 @@
 
 // This is forked in server builds where the default stack frame may be source mapped.
 
-export default ((undefined: any): (Error, CallSite[]) => string);
+export default undefined as any as (Error, Array<CallSite>) => string;

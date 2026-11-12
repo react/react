@@ -1,0 +1,106 @@
+name: (Runtime) Sizebot Comment
+
+# Posts the build size comparison comment on pull requests.
+#
+# This has to be a separate `workflow_run` workflow rather than a job inside
+# (Runtime) Build and Test: that workflow runs on the `pull_request` trigger, so
+# a pull request from a fork gets a read-only token and cannot comment. A
+# `workflow_run` workflow always runs in the context of this repository, on the
+# default branch, with a writable token.
+#
+# The measurement happens on the other side of that boundary, in the unprivileged
+# sizebot job, which uploads a `sizebot-results` artifact. This workflow only
+# downloads that small JSON file and renders it. It deliberately never unpacks a
+# build produced by a fork, because it holds a token that can write to the
+# repository.
+
+on:
+  workflow_run:
+    workflows: ['(Runtime) Build and Test']
+    types: [requested, completed]
+
+permissions: {}
+
+concurrency:
+  # Serialize per pull request. Both the requested and completed handlers read
+  # the existing comment, decide against it and write it back, so they must not
+  # interleave. Never cancel: every event either updates the comment or is
+  # deliberately skipped, and dropping one loses a state transition.
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+env:
+  TZ: /usr/share/zoneinfo/America/Los_Angeles
+
+jobs:
+  comment:
+    # Only pull request builds get a size comment. Runs from `push` and
+    # `workflow_dispatch` have no pull request to comment on.
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    name: Comment with size changes
+    runs-on: ubuntu-latest
+    permissions:
+      # We use github.token to download the sizebot results artifact from the
+      # triggering runtime_build_and_test.yml run
+      actions: read
+      # Used to check out the renderer this workflow runs
+      contents: read
+      # Used to create and update the sizebot comment on the pull request
+      pull-requests: write
+    steps:
+      # No `ref`, so this is the default branch rather than the pull request.
+      # The thresholds, the critical bundle list and the comment template all
+      # come from here and cannot be changed by the pull request being measured.
+      - uses: actions/checkout@v4
+        with:
+          # This job holds a token that can write to the repository, and it has
+          # no use for git credentials after the checkout.
+          persist-credentials: false
+
+      - name: Resolve pull request and existing comment
+        id: resolve
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {resolve} = require(`${process.env.GITHUB_WORKSPACE}/scripts/sizebot/pull-request-comment.js`);
+            await resolve({github, context, core});
+
+      - name: Download sizebot results
+        if: ${{ steps.resolve.outputs.action == 'continue' && steps.resolve.outputs.download_results == 'true' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: sizebot-results
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Render comment
+        if: ${{ steps.resolve.outputs.action == 'continue' }}
+        run: node ./scripts/sizebot/render-comment.js
+
+      - name: Archive full size report
+        # Only written when the report is too large to fit in a comment, in which
+        # case the comment links to this artifact.
+        if: ${{ steps.resolve.outputs.action == 'continue' && hashFiles('sizebot-message.md') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sizebot-message
+          path: sizebot-message.md
+
+      - name: Post comment
+        if: ${{ steps.resolve.outputs.action == 'continue' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {post} = require(`${process.env.GITHUB_WORKSPACE}/scripts/sizebot/pull-request-comment.js`);
+            await post({github, context, core});
+
+      - name: Fail if sizebot reported a problem
+        # The comment is posted first, so it explains the problem on the pull
+        # request itself. This step exists so the problem (build configuration
+        # drift, or no base build to compare against) also shows up as a
+        # failed run rather than only in a comment.
+        if: ${{ steps.resolve.outputs.action == 'continue' && hashFiles('sizebot-problem.txt') != '' }}
+        run: |
+          cat sizebot-problem.txt
+          exit 1

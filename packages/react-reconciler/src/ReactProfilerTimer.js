@@ -107,7 +107,7 @@ export let idleClampTime: number = -0;
 export let animatingLanes: Lanes = NoLanes;
 export let animatingTask: null | ConsoleTask = null; // First ViewTransition applying an Animation.
 
-export let yieldReason: SuspendedReason = (0: any);
+export let yieldReason: SuspendedReason = 0 as any;
 export let yieldStartTime: number = -1.1; // The time when we yielded to the event loop
 
 export function startYieldTimer(reason: SuspendedReason) {
@@ -590,7 +590,7 @@ export function startProfilerTimer(fiber: Fiber): void {
 
   profilerStartTime = now();
 
-  if (((fiber.actualStartTime: any): number) < 0) {
+  if ((fiber.actualStartTime as any as number) < 0) {
     fiber.actualStartTime = profilerStartTime;
   }
 }

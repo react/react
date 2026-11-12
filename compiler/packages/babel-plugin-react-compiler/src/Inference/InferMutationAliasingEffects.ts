@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {areSourceLocationsEqual} from '../HIR/SourceLocation';
 import {
   CompilerDiagnostic,
   CompilerError,
@@ -45,7 +46,7 @@ import {
   eachTerminalOperand,
   eachTerminalSuccessor,
 } from '../HIR/visitors';
-import {Ok, Result} from '../Utils/Result';
+
 import {
   assertExhaustive,
   getOrInsertDefault,
@@ -100,7 +101,7 @@ export function inferMutationAliasingEffects(
   {isFunctionExpression}: {isFunctionExpression: boolean} = {
     isFunctionExpression: false,
   },
-): Result<void, CompilerError> {
+): void {
   const initialState = InferenceState.empty(fn.env, isFunctionExpression);
 
   // Map of blocks to the last (merged) incoming state that was processed
@@ -220,7 +221,7 @@ export function inferMutationAliasingEffects(
       }
     }
   }
-  return Ok(undefined);
+  return;
 }
 
 function findHoistedContextDeclarations(
@@ -513,7 +514,7 @@ function inferBlock(
     if (handlerParam != null) {
       CompilerError.invariant(state.kind(handlerParam) != null, {
         reason:
-          'Expected catch binding to be intialized with a DeclareLocal Catch instruction',
+          'Expected catch binding to be initialized with a DeclareLocal Catch instruction',
         loc: terminal.loc,
       });
       const effects: Array<AliasingEffect> = [];
@@ -686,6 +687,9 @@ function applyEffect(
       const didFreeze = state.freeze(effect.value, effect.reason);
       if (didFreeze) {
         effects.push(effect);
+      } else {
+        // Ref validation needs the declared effect even if already frozen.
+        effects.push({...effect, alreadyFrozen: true});
       }
       break;
     }
@@ -1221,7 +1225,10 @@ function applyEffect(
             reason: 'Cannot access variable before it is declared',
             description: `${variable ?? 'This variable'} is accessed before it is declared, which prevents the earlier access from updating when this value changes over time`,
           });
-          if (hoistedAccess != null && hoistedAccess.loc != effect.value.loc) {
+          if (
+            hoistedAccess != null &&
+            !areSourceLocationsEqual(hoistedAccess.loc, effect.value.loc)
+          ) {
             diagnostic.withDetails({
               kind: 'error',
               loc: hoistedAccess.loc,
@@ -1315,7 +1322,7 @@ class InferenceState {
   #values: Map<InstructionValue, AbstractValue>;
   /*
    * The set of values pointed to by each identifier. This is a set
-   * to accomodate phi points (where a variable may have different
+   * to accommodate phi points (where a variable may have different
    * values from different control flow paths).
    */
   #variables: Map<IdentifierId, Set<InstructionValue>>;
@@ -2213,8 +2220,8 @@ function computeSignatureForInstruction(
       effects.push({kind: 'Assign', from: value.value, into: lvalue});
       break;
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PrefixUpdateLocal': {
       effects.push({
         kind: 'Create',
         into: lvalue,
@@ -2227,6 +2234,17 @@ function computeSignatureForInstruction(
         value: ValueKind.Primitive,
         reason: ValueReason.Other,
       });
+      break;
+    }
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext': {
+      effects.push({
+        kind: 'Create',
+        into: lvalue,
+        value: ValueKind.Primitive,
+        reason: ValueReason.Other,
+      });
+      effects.push({kind: 'Mutate', value: value.lvalue});
       break;
     }
     case 'StoreGlobal': {
@@ -2329,7 +2347,11 @@ function computeEffectsForLegacySignature(
     value: signature.returnValueKind,
     reason: returnValueReason,
   });
-  if (signature.impure && state.env.config.validateNoImpureFunctionsInRender) {
+  if (
+    signature.impure &&
+    state.env.config.validateNoImpureFunctionsInRender &&
+    (!signature.impureIfNoArgs || args.length === 0)
+  ) {
     effects.push({
       kind: 'Impure',
       place: receiver,

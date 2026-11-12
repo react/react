@@ -14,14 +14,14 @@ export type MessagePayload =
   | MessagePayload[];
 export type Message = {event: string; payload?: MessagePayload};
 
-export type WallListener = (message: Message) => void;
+export type WallListener = (message: unknown) => void;
 export type Wall = {
-  listen: (fn: WallListener) => Function;
+  listen: (fn: WallListener) => () => void;
   send: (event: string, payload?: MessagePayload) => void;
 };
 
 export type Bridge = {
-  addListener(event: string, listener: (params: unknown) => any): void;
+  addListener(event: string, listener: (params: unknown) => unknown): void;
   removeListener(event: string, listener: Function): void;
   shutdown: () => void;
 };
@@ -78,6 +78,10 @@ export function initializeComponents(
   options: InitializationOptions,
 ): void;
 export function initializeProfiler(
+  node: Element | Document,
+  options: InitializationOptions,
+): void;
+export function initializeSuspense(
   node: Element | Document,
   options: InitializationOptions,
 ): void;

@@ -30,6 +30,7 @@ let Stream;
 let use;
 let assertConsoleErrorDev;
 let serverAct;
+let getDebugInfo;
 
 // We test pass-through without encoding strings but it should work without it too.
 const streamOptions = {
@@ -77,6 +78,10 @@ describe('ReactFlightDOMNode', () => {
 
     const InternalTestUtils = require('internal-test-utils');
     assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
+    getDebugInfo = InternalTestUtils.getDebugInfo.bind(null, {
+      ignoreProps: false,
+      useFixedTime: true,
+    });
   });
 
   function filterStackFrame(filename, functionName) {
@@ -202,6 +207,28 @@ describe('ReactFlightDOMNode', () => {
       },
     });
     return {delayedStream, resolveDelayedStream};
+  }
+
+  // Runs an action that makes a Node stream emit, and flushes the ticks inside
+  // the act scope so that act sees the work the delivery triggers. Node streams
+  // hand data over through `process.nextTick`, which the fake timers mock.
+  function actOnStream(action: () => mixed): Promise<void> {
+    return serverAct(() => {
+      action();
+      jest.runAllTicks();
+    });
+  }
+
+  // The Node client resolves client references through a server consumer
+  // manifest, which maps each client module id to the module the SSR bundle
+  // loads for it. These tests use the same module on both sides.
+  function createIdentityServerConsumerManifest(...clientReferences) {
+    const moduleMap = {};
+    for (let i = 0; i < clientReferences.length; i++) {
+      const metadata = webpackMap[clientReferences[i].$$id];
+      moduleMap[metadata.id] = {'*': metadata};
+    }
+    return {moduleMap, moduleLoading: webpackModuleLoading};
   }
 
   it('should support web streams in node', async () => {
@@ -335,6 +362,31 @@ describe('ReactFlightDOMNode', () => {
 
     const result = await parsedResult;
     // Should still match the result when parsed
+    expect(result.text).toBe(testString);
+  });
+
+  it('round-trips long multi-byte strings using true UTF-8 byte length', async () => {
+    // Strings >= 1024 chars are emitted out-of-band with a binary length
+    // prefix (`id:T<byteLength>,`). The client reads exactly that many bytes,
+    // so the prefix must be the true UTF-8 byte length. These are three-byte
+    // characters: byte length is 3x the code unit count. A string.length
+    // shortcut for byteLengthOfChunk would undercount and truncate parsing.
+    const testString = '✓'.repeat(1100);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({
+        text: testString,
+      }),
+    );
+
+    const readable = new Stream.PassThrough(streamOptions);
+    const parsedResult = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+
+    const result = await parsedResult;
     expect(result.text).toBe(testString);
   });
 
@@ -777,8 +829,7 @@ describe('ReactFlightDOMNode', () => {
     if (__DEV__) {
       expect(normalizeCodeLocInfo(componentStack)).toBe(
         '\n' +
-          '    in Component' +
-          (gate(flags => flags.enableAsyncDebugInfo) ? ' (at **)\n' : '\n') +
+          '    in Component (at **)\n' +
           '    in Suspense\n' +
           '    in body\n' +
           '    in html\n' +
@@ -795,13 +846,9 @@ describe('ReactFlightDOMNode', () => {
     }
 
     if (__DEV__) {
-      if (gate(flags => flags.enableAsyncDebugInfo)) {
-        expect(normalizeCodeLocInfo(ownerStack)).toBe(
-          '\n    in Component (at **)\n    in App (at **)',
-        );
-      } else {
-        expect(normalizeCodeLocInfo(ownerStack)).toBe('\n    in App (at **)');
-      }
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '\n    in Component (at **)\n    in App (at **)',
+      );
     } else {
       expect(ownerStack).toBeNull();
     }
@@ -928,9 +975,7 @@ describe('ReactFlightDOMNode', () => {
       expect(normalizeCodeLocInfo(componentStack)).toBe(
         '\n' +
           '    in SharedComponent (at **)\n' +
-          '    in ServerComponent' +
-          (gate(flags => flags.enableAsyncDebugInfo) ? ' (at **)' : '') +
-          '\n' +
+          '    in ServerComponent (at **)\n' +
           '    in Suspense\n' +
           '    in body\n' +
           '    in html\n' +
@@ -950,15 +995,12 @@ describe('ReactFlightDOMNode', () => {
 
     if (__DEV__) {
       expect(ignoreListStack(ownerStack)).toBe(
-        // eslint-disable-next-line react-internal/safe-string-coercion
         '' +
           // The concrete location may change as this test is updated.
           // Just make sure they still point at React.use(p2)
-          (gate(flags => flags.enableAsyncDebugInfo)
-            ? '\n    at SharedComponent (./ReactFlightDOMNode-test.js:813:7)'
-            : '') +
-          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:835:26)' +
-          '\n    at App (file://./ReactFlightDOMNode-test.js:852:25)',
+          '\n    at SharedComponent (./ReactFlightDOMNode-test.js:860:7)' +
+          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:882:26)' +
+          '\n    at App (file://./ReactFlightDOMNode-test.js:899:25)',
       );
     } else {
       expect(ownerStack).toBeNull();
@@ -1087,8 +1129,7 @@ describe('ReactFlightDOMNode', () => {
     if (__DEV__) {
       expect(normalizeCodeLocInfo(componentStack)).toBe(
         '\n' +
-          '    in Component' +
-          (gate(flags => flags.enableAsyncDebugInfo) ? ' (at **)\n' : '\n') +
+          '    in Component (at **)\n' +
           '    in Suspense\n' +
           '    in body\n' +
           '    in html\n' +
@@ -1105,18 +1146,12 @@ describe('ReactFlightDOMNode', () => {
     }
 
     if (__DEV__) {
-      if (gate(flags => flags.enableAsyncDebugInfo)) {
-        expect(normalizeCodeLocInfo(ownerStack)).toBe(
-          '' +
-            '\n    in getData (at **)' +
-            '\n    in Component (at **)' +
-            '\n    in App (at **)',
-        );
-      } else {
-        expect(normalizeCodeLocInfo(ownerStack)).toBe(
-          '' + '\n    in App (at **)',
-        );
-      }
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '' +
+          '\n    in getData (at **)' +
+          '\n    in Component (at **)' +
+          '\n    in App (at **)',
+      );
     } else {
       expect(ownerStack).toBeNull();
     }
@@ -1355,14 +1390,14 @@ describe('ReactFlightDOMNode', () => {
   // perform Construct on a detached ArrayBuffer") for chunks that are using
   // Node's internal Buffer pool.
   it('should not corrupt the Node.js Buffer pool by detaching ArrayBuffers when using Web Streams', async () => {
-    // Create a temp file smaller than 4KB to ensure it uses the Buffer pool.
+    // Create a file that is small enough to be served from the Buffer pool.
     const file = path.join(os.tmpdir(), 'test.bin');
-    fs.writeFileSync(file, Buffer.alloc(4095));
+    fs.writeFileSync(file, Buffer.alloc((Buffer.poolSize >>> 1) - 1));
     const fileChunk = fs.readFileSync(file);
     fs.unlinkSync(file);
 
-    // Verify this chunk uses the Buffer pool (8192 bytes for files < 4KB).
-    expect(fileChunk.buffer.byteLength).toBe(8192);
+    // Verify that this chunk is a view into the shared Buffer pool slab.
+    expect(fileChunk.buffer.byteLength).toBe(Buffer.poolSize);
 
     const readable = await serverAct(() =>
       ReactServerDOMServer.renderToReadableStream(fileChunk, webpackMap),
@@ -1540,14 +1575,11 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in Dynamic' +
-            (gate(flags => flags.enableAsyncDebugInfo)
-              ? ' (file://ReactFlightDOMNode-test.js:1416:27)\n'
-              : '\n') +
+            '    in Dynamic (file://ReactFlightDOMNode-test.js:1451:27)\n' +
             '    in body\n' +
             '    in html\n' +
-            '    in App (file://ReactFlightDOMNode-test.js:1429:25)\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1504:16)',
+            '    in App (file://ReactFlightDOMNode-test.js:1464:25)\n' +
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1539:16)',
         );
       } else {
         expect(
@@ -1556,28 +1588,195 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in body\n' +
             '    in html\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1504:16)',
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1539:16)',
         );
       }
 
       if (__DEV__) {
-        if (gate(flags => flags.enableAsyncDebugInfo)) {
-          expect(
-            normalizeCodeLocInfo(ownerStack, {preserveLocation: true}),
-          ).toBe(
-            '\n' +
-              '    in Dynamic (file://ReactFlightDOMNode-test.js:1416:27)\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1429:25)',
+        expect(normalizeCodeLocInfo(ownerStack, {preserveLocation: true})).toBe(
+          '\n' +
+            '    in Dynamic (file://ReactFlightDOMNode-test.js:1451:27)\n' +
+            '    in App (file://ReactFlightDOMNode-test.js:1464:25)',
+        );
+      } else {
+        expect(ownerStack).toBeNull();
+      }
+    });
+
+    it('should use late-arriving I/O debug info from rejected server promises to enhance component and owner stacks when aborting a prerender', async () => {
+      let rejectHangingPromise;
+
+      async function makeHangingPromise() {
+        return new Promise((resolve, reject) => {
+          rejectHangingPromise = reject;
+        });
+      }
+
+      async function getRoot() {
+        return {promise: makeHangingPromise()};
+      }
+
+      let staticEndTime = -1;
+      const staticChunks = [];
+      const dynamicChunks = [];
+
+      const serverAbortController = new AbortController();
+      await new Promise(resolve => {
+        setTimeout(async () => {
+          const stream = ReactServerDOMServer.renderToPipeableStream(
+            getRoot(),
+            webpackMap,
+            {
+              filterStackFrame,
+              onError(err) {
+                if (serverAbortController.signal.aborted) {
+                  return;
+                }
+                console.error(err);
+              },
+            },
           );
-        } else {
-          expect(
-            normalizeCodeLocInfo(ownerStack, {preserveLocation: true}),
-          ).toBe(
-            '' +
-              '\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1429:25)',
+          serverAbortController.signal.addEventListener(
+            'abort',
+            () => {
+              stream.abort(serverAbortController.signal.reason);
+
+              // Only reject the promise after the render is aborted
+              // so that it's no longer observable
+              rejectHangingPromise(
+                new Error(
+                  'Hanging promise was rejected after the prerender finished',
+                ),
+              );
+            },
+            {once: true},
           );
-        }
+
+          const passThrough = new Stream.PassThrough(streamOptions);
+          stream.pipe(passThrough);
+
+          passThrough.on('data', chunk => {
+            if (staticEndTime < 0) {
+              staticChunks.push(chunk);
+            } else {
+              dynamicChunks.push(chunk);
+            }
+          });
+
+          passThrough.on('end', resolve);
+        });
+        setTimeout(() => {
+          staticEndTime = performance.now() + performance.timeOrigin;
+          serverAbortController.abort();
+        });
+      });
+
+      const clientAbortController = new AbortController();
+
+      const serverStream = createReadableWithLateRelease(
+        staticChunks,
+        dynamicChunks,
+        clientAbortController.signal,
+      );
+
+      const response = await ReactServerDOMClient.createFromNodeStream(
+        serverStream,
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+        {
+          // Debug info arriving after this end time will be ignored, e.g. the
+          // I/O info for the second dynamic data.
+          endTime: staticEndTime,
+        },
+      );
+
+      const resolvedPromise = Promise.resolve('hello');
+      function ClientDynamic() {
+        use(resolvedPromise);
+        use(response.promise); // unresolved ReactPromise (becomes rejected when we abort)
+      }
+
+      function ClientRoot() {
+        return React.createElement(
+          'html',
+          null,
+          React.createElement(
+            'body',
+            null,
+            React.createElement(
+              React.Suspense,
+              {fallback: 'Loading...'},
+              React.createElement(ClientDynamic),
+            ),
+          ),
+        );
+      }
+
+      let ownerStack;
+      let componentStack;
+
+      const {prelude} = await new Promise(resolve => {
+        let result;
+
+        setTimeout(() => {
+          result = ReactDOMFizzStatic.prerenderToNodeStream(
+            React.createElement(ClientRoot),
+            {
+              signal: clientAbortController.signal,
+              onError(error, errorInfo) {
+                componentStack = errorInfo.componentStack;
+                ownerStack = React.captureOwnerStack
+                  ? React.captureOwnerStack()
+                  : null;
+              },
+            },
+          );
+        });
+
+        setTimeout(() => {
+          clientAbortController.abort();
+          resolve(result);
+        });
+      });
+
+      const prerenderHTML = await readResult(prelude);
+
+      expect(prerenderHTML).toContain('Loading...');
+
+      if (__DEV__) {
+        expect(
+          normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
+        ).toBe(
+          '\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1699:9)\n' +
+            '    in Suspense\n' +
+            '    in body\n' +
+            '    in html\n' +
+            '    in ClientRoot',
+        );
+      } else {
+        expect(
+          normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
+        ).toBe(
+          '\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1699:9)\n' +
+            '    in Suspense\n' +
+            '    in body\n' +
+            '    in html\n' +
+            '    in ClientRoot',
+        );
+      }
+
+      if (__DEV__) {
+        expect(ignoreListStack(ownerStack)).toBe(
+          '\n' +
+            '    at ClientDynamic (./ReactFlightDOMNode-test.js:1700:9)\n' +
+            '    at ClientRoot (./ReactFlightDOMNode-test.js:1713:21)',
+        );
       } else {
         expect(ownerStack).toBeNull();
       }
@@ -1858,18 +2057,158 @@ describe('ReactFlightDOMNode', () => {
           '    in ClientRoot (at **)',
       );
       expect(normalizeCodeLocInfo(ownerStack)).toBe(
-        '\n' +
-          gate(flags =>
-            flags.enableAsyncDebugInfo
-              ? '    in Dynamic (at **)\n'
-              : '    in section\n',
-          ) +
-          '    in App (at **)',
+        '\n    in Dynamic (at **)\n    in App (at **)',
       );
 
       expect(result).toContain(
-        'Switched to client rendering because the server rendering aborted due to:\n\n' +
+        'Switched to client rendering because the server rendering aborted due to:\\n\\n' +
           'ssr-abort',
+      );
+    });
+
+    // @gate __DEV__
+    it('filters parsed debug info when the Flight stream errors', async () => {
+      let resolveInitialData;
+      const laterDataResolvers = [];
+
+      async function getInitialData() {
+        return new Promise(resolve => {
+          resolveInitialData = resolve;
+        });
+      }
+
+      async function loadInitialData() {
+        return await getInitialData();
+      }
+
+      async function loadLaterData() {
+        for (let i = 0; i < 40; i++) {
+          await new Promise(resolve => {
+            laterDataResolvers[i] = resolve;
+          });
+        }
+      }
+
+      async function Dynamic() {
+        await loadInitialData();
+        await loadLaterData();
+        return ReactServer.createElement('p', null, 'Done');
+      }
+
+      function App() {
+        return ReactServer.createElement(
+          'html',
+          null,
+          ReactServer.createElement(
+            'body',
+            null,
+            ReactServer.createElement(Dynamic),
+          ),
+        );
+      }
+
+      let staticEndTime = -1;
+      const chunks = [];
+
+      await new Promise(resolve => {
+        setTimeout(() => {
+          const flightStream = ReactServerDOMServer.renderToPipeableStream(
+            ReactServer.createElement(App),
+            webpackMap,
+            {
+              filterStackFrame,
+            },
+          );
+
+          const passThrough = new Stream.PassThrough(streamOptions);
+          flightStream.pipe(passThrough);
+          passThrough.on('data', chunk => {
+            chunks.push(chunk);
+          });
+          passThrough.on('end', resolve);
+        });
+
+        setTimeout(() => {
+          staticEndTime = performance.now() + performance.timeOrigin;
+          resolveInitialData();
+
+          let index = 0;
+          function resolveNext() {
+            setTimeout(() => {
+              laterDataResolvers[index++]();
+              if (index < 40) {
+                resolveNext();
+              }
+            });
+          }
+          setTimeout(resolveNext);
+        });
+      });
+
+      const contentStream = new Stream.Readable({
+        ...streamOptions,
+        read() {},
+      });
+      const response = ReactServerDOMClient.createFromNodeStream(
+        contentStream,
+        {
+          moduleMap: null,
+          moduleLoading: null,
+          serverModuleMap: null,
+        },
+        {
+          endTime: staticEndTime,
+        },
+      );
+      // The final write contains the completed model. The preceding writes
+      // contain the debug rows produced while rendering it.
+      for (let i = 0; i < chunks.length - 1; i++) {
+        contentStream.push(chunks[i]);
+      }
+
+      const decoded = await response;
+
+      function ClientRoot() {
+        return decoded;
+      }
+
+      const flightError = new Error('Flight stream errored');
+      const fizzAbortController = new AbortController();
+      let caughtError;
+      let ownerStack;
+      const {prelude} = await new Promise(resolve => {
+        let result;
+
+        setTimeout(() => {
+          result = ReactDOMFizzStatic.prerenderToNodeStream(
+            React.createElement(ClientRoot),
+            {
+              signal: fizzAbortController.signal,
+              onError(error) {
+                caughtError = error;
+                ownerStack = React.captureOwnerStack
+                  ? React.captureOwnerStack()
+                  : null;
+              },
+            },
+          );
+        });
+
+        setTimeout(() => {
+          contentStream.emit('error', flightError);
+          contentStream.push(null);
+          fizzAbortController.abort(new Error('Fizz aborted'));
+          resolve(result);
+        });
+      });
+
+      expect(await readResult(prelude)).toBe('');
+      expect(caughtError).toBe(flightError);
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '\n' +
+          '    in loadInitialData (at **)\n' +
+          '    in Dynamic (at **)\n' +
+          '    in App (at **)',
       );
     });
   });
@@ -1908,5 +2247,826 @@ describe('ReactFlightDOMNode', () => {
       // eslint-disable-next-line no-eval
       globalThis.eval = previousEval;
     }
+  });
+
+  // Shared scenario for the two regression tests below. Both guard against
+  // the same destination-backpressure bug — emitTextChunk and
+  // emitTypedArrayChunk each push a [headerChunk, contentChunk] pair into
+  // completedRegularChunks. Before the fix, a flush that broke between the
+  // two writes left the content chunk stranded at the head of the queue,
+  // and the next flush emitted any newly-arrived Import rows ahead of it —
+  // splicing Import bytes into the position the Flight Client expects to
+  // read as the row's content.
+  //
+  // The scenario embeds `payload` in the model under the key `payload` and
+  // returns the deserialized model. Each test asserts that result.payload
+  // round-trips identically to what the Flight Server emitted.
+  async function runScenarioWithBackpressureBetweenHeaderAndContent(payload) {
+    function Client1() {
+      return <span>client1</span>;
+    }
+    // Client1's Import row must exceed VIEW_SIZE (4096) so writeStringChunk
+    // takes its BIG path and calls destination.write directly. That write
+    // returning false is what triggers the backpressure we want to test.
+    const Client1Reference = clientExports(
+      Client1,
+      1,
+      '/' + 'a'.repeat(5000),
+      Promise.resolve(),
+    );
+
+    function Client2() {
+      return <span>client2</span>;
+    }
+    const Client2Reference = clientExports(
+      Client2,
+      2,
+      '/client2.js',
+      Promise.resolve(),
+    );
+
+    let resolveAsync;
+    const asyncPromise = new Promise(resolve => {
+      resolveAsync = resolve;
+    });
+
+    async function AsyncWrapper() {
+      await asyncPromise;
+      return <Client2Reference />;
+    }
+
+    const model = {
+      client: <Client1Reference />,
+      payload,
+      async: <AsyncWrapper />,
+    };
+
+    const heldCallbacks = [];
+    const collectedChunks = [];
+
+    // A destination that returns false from every write (highWaterMark: 1 in
+    // byte mode) and never completes any of them until the test releases the
+    // stored callback. This gives us deterministic control over when each write
+    // finishes and when 'drain' fires.
+    const destination = new Stream.Writable({
+      highWaterMark: 1,
+      write(chunk, encoding, callback) {
+        collectedChunks.push(
+          Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding),
+        );
+        heldCallbacks.push(callback);
+      },
+    });
+
+    const finished = new Promise((resolve, reject) => {
+      destination.on('finish', resolve);
+      destination.on('error', reject);
+    });
+
+    // First flush: Client1's huge Import row hits backpressure, so the flush
+    // loop reaches the payload row's [headerChunk, contentChunk] pair while
+    // destinationHasCapacity is already false. Before the fix, this would
+    // have encoded just the header into currentView, broken the loop, and
+    // let completeWriting flush the header as its own write — stranding
+    // the content chunk at the front of completedRegularChunks.
+    const {pipe} = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(model, webpackMap),
+    );
+    await serverAct(() => {
+      pipe(destination);
+    });
+
+    // While the destination is still paused, push Client2's Import row into
+    // completedImportChunks. No flush runs (request.destination is null after
+    // the first flush's backpressure break).
+    await serverAct(() => {
+      resolveAsync();
+    });
+
+    // Release callbacks one at a time. The drain that empties the writable
+    // buffer triggers flushCompletedChunks; before the fix, this is where
+    // Client2's newly-queued Import row would have been emitted ahead of
+    // the still-orphaned payload content chunk.
+    while (heldCallbacks.length > 0) {
+      await serverAct(() => {
+        const cb = heldCallbacks.shift();
+        cb();
+      });
+    }
+
+    await finished;
+
+    const readable = new Stream.Readable({read() {}});
+    for (let i = 0; i < collectedChunks.length; i++) {
+      readable.push(collectedChunks[i]);
+    }
+    readable.push(null);
+
+    const response = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: null,
+      moduleLoading: null,
+    });
+    return await response;
+  }
+
+  it("keeps a Text row's header and content chunks adjacent when a flush hits backpressure between them", async () => {
+    // length >= 1024 makes the Flight Server outline this as a Text row via
+    // serializeLargeTextString, which is where emitTextChunk pushes its
+    // [headerChunk, textChunk] pair.
+    const largeText = 'x'.repeat(2048);
+
+    const result =
+      await runScenarioWithBackpressureBetweenHeaderAndContent(largeText);
+
+    // Before the fix, the Flight Client would have framed Client2's Import
+    // row bytes as text-row content, making result.payload `<id>:I[...]...`
+    // garbage rather than the x's the Flight Server emitted.
+    expect(result.payload).toBe(largeText);
+  });
+
+  it("keeps a TypedArray row's header and content chunks adjacent when a flush hits backpressure between them", async () => {
+    // emitTypedArrayChunk pushes the same [headerChunk, contentChunk] pair as
+    // emitTextChunk. Before the fix, a flush break after the header would have
+    // stranded the content chunk in exactly the same way.
+    const binaryData = new Uint8Array(1024);
+    for (let i = 0; i < binaryData.length; i++) {
+      binaryData[i] = i % 256;
+    }
+
+    const result =
+      await runScenarioWithBackpressureBetweenHeaderAndContent(binaryData);
+
+    // Before the fix, the typed array's bytes would have been replaced by
+    // Client2's Import row bytes followed by whatever happened to land in
+    // the next 1024-byte window.
+    expect(result.payload).toEqual(binaryData);
+  });
+
+  // A Node.js Buffer carries a `toJSON` method, so Flight serializes it through
+  // that method instead of as binary, and warns. It is therefore deserialized
+  // as a plain `{type: 'Buffer', data: [...]}` object rather than a
+  // Buffer/Uint8Array.
+  it('serializes a Node Buffer through its toJSON and warns', async () => {
+    const buffer = Buffer.from([1, 2, 3, 4]);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({font: buffer}),
+    );
+    assertConsoleErrorDev([
+      'Binary data with a toJSON method, such as a Node.js Buffer, is ' +
+        'serialized through toJSON instead of as binary. Pass a ' +
+        'Uint8Array or ArrayBuffer to send binary data.\n' +
+        '  {font: Uint8Array}\n' +
+        '         ^^^^^^^^^^',
+    ]);
+    const readable = new Stream.PassThrough(streamOptions);
+    const promise = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+    const result = await promise;
+    expect(Buffer.isBuffer(result.font)).toBe(false);
+    expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
+  });
+
+  it('detaches the abort listener from a composite signal once the prerender completes', async () => {
+    // A composite signal from AbortSignal.any() is retained by the runtime for
+    // as long as it has an abort listener attached, so a listener left behind
+    // by a completed render keeps that render reachable for the lifetime of the
+    // source signals.
+    //
+    // React bounds its listener with a lifetime signal, so the runtime removes
+    // the listener rather than React calling removeEventListener. This test
+    // observes the registration itself through a Node API, which is the only
+    // way to see that removal. The suites that run under jsdom assert on the
+    // lifetime signal instead.
+    const {getEventListeners} = require('node:events');
+
+    const outer = new AbortController();
+    const timeout = new AbortController();
+    const composite = AbortSignal.any([outer.signal, timeout.signal]);
+
+    function App() {
+      return <div>hello world</div>;
+    }
+
+    const {prelude} = await serverAct(() =>
+      ReactServerDOMStaticServer.prerenderToNodeStream(<App />, webpackMap, {
+        signal: composite,
+      }),
+    );
+    expect(getEventListeners(composite, 'abort')).toHaveLength(1);
+
+    await serverAct(
+      () =>
+        new Promise(resolve => {
+          prelude.resume();
+          prelude.on('end', resolve);
+        }),
+    );
+
+    expect(getEventListeners(composite, 'abort')).toHaveLength(0);
+  });
+
+  // @gate __DEV__
+  it('does not expose a debug-tree element whose props still hold an unresolved reference', async () => {
+    // Regression test for react/react#37361.
+    //
+    // A server component element sits in its parent's componentInfo. Its props
+    // object is shared with its own componentInfo, so the debug channel
+    // outlines the props into a separate row. The client parses the props row
+    // nested inside the parent's componentInfo row, and registers the element's
+    // reference to the props row while that parse is still running.
+    //
+    // The client must not hand the element the props object at that point. The
+    // props row still waits on a client module reference, and the element is
+    // not part of that wait, so the lazy that wraps the element has to stay
+    // pending until the props row completes. An element initialized early
+    // carries the null placeholder where `ClientModule` belongs, which is what
+    // DevTools reads. In DEV its props are also frozen, so the module write
+    // that lands later throws, and the response rejects.
+    //
+    // The Suspense boundary inside PassthroughServerComponent keeps
+    // PassthroughServerComponent's componentInfo on row 0 and moves
+    // AsyncServerComponent's to the outlined row. Row 0 then resolves before
+    // the module loads, and the element is observable through the root's debug
+    // info while its props row is still waiting.
+    const received = [];
+    let resolveClientModuleChunk;
+    const ClientModule = clientExports(
+      {label: 'module'},
+      '43',
+      '/client-module.js',
+      new Promise(resolve => (resolveClientModuleChunk = resolve)),
+    );
+    const ClientComponent = clientExports(function ClientComponent(props) {
+      received.push({
+        module:
+          props.module === null
+            ? 'null'
+            : props.module === undefined
+              ? 'undefined'
+              : 'object',
+        shared:
+          props.shared === null
+            ? 'null'
+            : props.shared === undefined
+              ? 'undefined'
+              : 'object',
+      });
+      return React.createElement('span', null, 'client');
+    });
+
+    const shared = {};
+    const longText = 'a'.repeat(4000);
+
+    let resolveIo;
+    async function AsyncServerComponent(props) {
+      await new Promise(resolve => {
+        resolveIo = resolve;
+      });
+      return ReactServer.createElement(
+        'div',
+        null,
+        longText,
+        ReactServer.createElement(ClientComponent, {
+          shared: props.shared,
+          module: props.ClientModule,
+        }),
+      );
+    }
+
+    function PassthroughServerComponent({children}) {
+      return ReactServer.createElement(
+        ReactServer.Suspense,
+        {fallback: 'loading'},
+        children,
+      );
+    }
+
+    function App() {
+      return ReactServer.createElement(PassthroughServerComponent, {
+        shared,
+        children: ReactServer.createElement(AsyncServerComponent, {
+          shared,
+          ClientModule,
+        }),
+      });
+    }
+
+    let debugText = '';
+    const rscStream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        ReactServer.createElement(App, null),
+        webpackMap,
+        {
+          debugChannel: new Stream.Writable({
+            write(chunk, encoding, callback) {
+              debugText += Buffer.from(chunk).toString('utf8');
+              callback();
+            },
+          }),
+        },
+      ),
+    );
+
+    const rscChunks = [];
+    rscStream.pipe(
+      new Stream.Writable({
+        write(chunk, encoding, callback) {
+          rscChunks.push(Buffer.from(chunk));
+          callback();
+        },
+      }),
+    );
+    await actOnStream(() => resolveIo('io'));
+
+    const debugReadable = new Stream.PassThrough(streamOptions);
+    const rscReadable = new Stream.PassThrough(streamOptions);
+    const response = ReactServerDOMClient.createFromNodeStream(
+      rscReadable,
+      createIdentityServerConsumerManifest(ClientComponent, ClientModule),
+      {debugChannel: debugReadable},
+    );
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    // The SSR render runs ClientComponent, which records the props it receives.
+    const ssrErrors = [];
+    const ssrStream = ReactDOMServer.renderToPipeableStream(
+      React.createElement(ClientRoot),
+      {
+        onError(error) {
+          ssrErrors.push(String(error).slice(0, 80));
+        },
+      },
+    );
+    await actOnStream(() =>
+      ssrStream.pipe(new Stream.PassThrough(streamOptions)),
+    );
+
+    const debugRows = debugText.split('\n');
+    for (let i = 0; i < debugRows.length; i++) {
+      if (debugRows[i].length > 0) {
+        await actOnStream(() => debugReadable.write(debugRows[i] + '\n'));
+      }
+    }
+    await actOnStream(() => debugReadable.end());
+
+    for (let i = 0; i < rscChunks.length; i++) {
+      await actOnStream(() => rscReadable.write(rscChunks[i]));
+    }
+    await actOnStream(() => rscReadable.end());
+
+    // Row 0 resolves before the module loads, because the boundary keeps
+    // AsyncServerComponent's blocked debug chain off it.
+    await expect(response).resolves.toBeDefined();
+    const root = await response;
+
+    // DevTools reads the element from the componentInfo's `children`, through
+    // the payload of the lazy that wraps it. The status is recorded here and
+    // asserted after the module resolves, so that a regression fails on the
+    // frozen-props error first.
+    const passthroughInfo = getDebugInfo(root).find(
+      entry => entry.name === 'PassthroughServerComponent',
+    );
+    const asyncServerElementLazy = passthroughInfo.props.children;
+    const payloadStatusBeforeModule = asyncServerElementLazy._payload.status;
+
+    await actOnStream(() => resolveClientModuleChunk());
+
+    // Without the fix, the element was initialized before the module arrived,
+    // and writing the module into its frozen props throws. The SSR render
+    // reports the error.
+    expect(ssrErrors).toEqual([]);
+    expect(received).toEqual([{module: 'object', shared: 'object'}]);
+
+    // An element initialized before the module arrived carries the null
+    // placeholder that DevTools reads, whether or not the write throws. The
+    // lazy must not have resolved while its props row was waiting.
+    expect(payloadStatusBeforeModule).not.toBe('fulfilled');
+
+    // Resolve the lazy the way a renderer does. It holds the module now.
+    const asyncServerElement = asyncServerElementLazy._init(
+      asyncServerElementLazy._payload,
+    );
+    expect(asyncServerElement.props.ClientModule).toEqual({label: 'module'});
+  });
+
+  it.each([false, true])(
+    'preserves leading U+FEFF in outlined text rows (split chunks: %s)',
+    async splitChunks => {
+      const model = {
+        inline: '\uFEFFshort',
+        outlined: '\uFEFF' + 'x'.repeat(1024),
+        repeated: '\uFEFF\uFEFF' + 'y'.repeat(1024),
+      };
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(model),
+      );
+      const readable = new Stream.Transform({
+        transform(chunk, encoding, callback) {
+          if (splitChunks) {
+            for (let i = 0; i < chunk.length; i++) {
+              this.push(chunk.subarray(i, i + 1));
+            }
+          } else {
+            this.push(chunk);
+          }
+          callback();
+        },
+      });
+      const response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: webpackModuleLoading,
+      });
+      stream.pipe(readable);
+
+      const result = await response;
+      expect(result).toEqual(model);
+    },
+  );
+
+  // @gate __DEV__
+  it('consumes a leading byte order mark on the debug channel', async () => {
+    let resolveModel;
+    const model = new Promise(resolve => {
+      resolveModel = resolve;
+    });
+    const onError = jest.fn();
+    const debugChannel = new ReadableStream({
+      start(controller) {
+        const bytes = new TextEncoder().encode('\uFEFFQ:0\n');
+        for (let i = 0; i < bytes.length; i++) {
+          controller.enqueue(bytes.subarray(i, i + 1));
+        }
+        controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap, {
+        debugChannel: {readable: debugChannel},
+        onError,
+      }),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    await serverAct(() => resolveModel('hello'));
+    expect(await response).toBe('hello');
+    expect(onError).not.toHaveBeenCalled();
+    expect(debugChannel.locked).toBe(true);
+  });
+
+  it('consumes a typed array that spans its whole buffer', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigNode, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    const bytes = new Uint8Array(LARGE).fill(7);
+    const expected = bytes.slice();
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream({bytes}, webpackMap);
+    });
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    expect(result.bytes).toEqual(expected);
+    if (ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      // The render transfers the buffer to the stream, in the same way that it
+      // consumes a one shot iterable, so the caller's view is now detached.
+      expect(bytes.byteLength).toBe(0);
+    } else {
+      // In environments where React can't detect detachment, we defensively copy the buffer.
+      expect(bytes).toEqual(new Uint8Array(LARGE).fill(7));
+      assertConsoleErrorDev([
+        'React copied a partial view into a fresh buffer as a safety precaution because the environment does not implement ArrayBuffer.prototype.detached. ' +
+          'This negatively impacts performance. ' +
+          'Please upgrade to a modern Node.js version.',
+      ]);
+    }
+  });
+
+  it('does not detach a buffer that the rendered view is only a part of', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigNode, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    const buffer = new ArrayBuffer(LARGE * 2);
+    const renderedView = new Uint8Array(buffer, 0, LARGE).fill(1);
+    const siblingView = new Uint8Array(buffer, LARGE, LARGE).fill(2);
+    const expected = renderedView.slice();
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(
+        {renderedView},
+        webpackMap,
+      );
+    });
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    expect(result.renderedView).toEqual(expected);
+    expect(siblingView.byteLength).toBe(LARGE);
+  });
+
+  // Node serves an allocation below `Buffer.poolSize >>> 1` from a slab that
+  // it shares between unrelated Buffers. Detaching that slab breaks every one
+  // of them. The default pool size has changed before, so the sizes here are
+  // derived from it instead of being hard-coded.
+  //
+  // The second case covers the 64 KiB pool of Node 26 on older Node versions.
+  // `Buffer.allocUnsafe` reads `Buffer.poolSize` for both its threshold check
+  // and the size of the next slab that it allocates.
+  it.each([
+    ['the ambient pool size', null],
+    ['a 64 KiB pool', 65536],
+  ])('does not detach a Buffer pool slab with %s', async (_, poolSize) => {
+    const previousPoolSize = Buffer.poolSize;
+    if (poolSize !== null) {
+      Buffer.poolSize = poolSize;
+    }
+    try {
+      // The largest size that Node still serves from the pool.
+      const size = (Buffer.poolSize >>> 1) - 1;
+      const pooled = Buffer.allocUnsafe(size).fill(1);
+      const slab = pooled.buffer;
+
+      // This is the conversion that React's own warning about Buffer's toJSON
+      // method asks users to perform.
+      const bytes = new Uint8Array(
+        pooled.buffer,
+        pooled.byteOffset,
+        pooled.byteLength,
+      );
+
+      // Only a view into a shared slab exercises the case.
+      expect(slab.byteLength).toBeGreaterThan(bytes.byteLength);
+
+      const stream = await serverAct(() => {
+        return ReactServerDOMServer.renderToReadableStream({bytes}, webpackMap);
+      });
+      const result = await ReactServerDOMClient.createFromReadableStream(
+        stream,
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      );
+
+      expect(result.bytes.byteLength).toBe(size);
+
+      // A detached slab makes every later pooled allocation fail.
+      expect(slab.byteLength).toBe(Buffer.poolSize);
+      expect(Buffer.allocUnsafe(1).byteLength).toBe(1);
+    } finally {
+      Buffer.poolSize = previousPoolSize;
+    }
+  });
+
+  it('should transport promised subarrays sharing an ArrayBuffer', async () => {
+    async function getResult() {
+      const backing = new ArrayBuffer(10_000);
+      const bytes = new Uint8Array(backing);
+      const first = bytes.subarray(0, 5_000);
+      const second = bytes.subarray(5_000);
+      first.fill(1);
+      second.fill(2);
+
+      return {
+        first: first,
+        second: second,
+      };
+    }
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(
+        getResult(),
+        webpackMap,
+      );
+    });
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    expect(await result.first).toEqual(new Uint8Array(5_000).fill(1));
+    expect(await result.second).toEqual(new Uint8Array(5_000).fill(2));
+  });
+
+  it('cannot transport multiple buffer-spanning view on the same underlying buffer', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigNode, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    async function getResult() {
+      const backing = new ArrayBuffer(LARGE);
+      const first = new Uint8Array(backing);
+      const second = new Uint8Array(backing);
+      first.fill(1);
+
+      return {
+        first: first,
+        second: second,
+      };
+    }
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(
+        getResult(),
+        webpackMap,
+      );
+    });
+    const result = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    if (ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      await expect(result).rejects.toThrow(
+        'Cannot transport a detached buffer. ' +
+          'This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. ' +
+          'Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.',
+      );
+      assertConsoleErrorDev([
+        'Error: Cannot transport a detached buffer. ' +
+          'This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. ' +
+          'Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.' +
+          '\n    in <stack>',
+      ]);
+    } else {
+      const {first, second} = await result;
+      expect(first).toEqual(new Uint8Array(LARGE).fill(1));
+      expect(second).toEqual(new Uint8Array(LARGE).fill(1));
+
+      assertConsoleErrorDev([
+        'React copied a partial view into a fresh buffer as a safety precaution because the environment does not implement ArrayBuffer.prototype.detached. ' +
+          'This negatively impacts performance. ' +
+          'Please upgrade to a modern Node.js version.',
+      ]);
+    }
+  });
+
+  it('copies resizable buffers', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigNode, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    const buffer = new ArrayBuffer(LARGE, {maxByteLength: LARGE});
+    const first = new Uint8Array(buffer);
+    first.fill(1);
+
+    let sendSecond;
+    const model = {
+      first: Promise.resolve(first),
+      second: new Promise(resolve => {
+        sendSecond = resolve;
+      }),
+    };
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(model, webpackMap);
+    });
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    expect(await result.first).toEqual(new Uint8Array(LARGE).fill(1));
+    await serverAct(async () => {
+      buffer.resize(LARGE - 1);
+      const second = new Uint8Array(buffer);
+      await sendSecond(second);
+    });
+    expect(await result.second).toEqual(new Uint8Array(LARGE - 1).fill(1));
+  });
+
+  it('interrupts the stream when a write fails', async () => {
+    // Larger than VIEW_SIZE in ReactServerStreamConfigEdge, so that the chunk
+    // is written to the destination instead of being copied into React's
+    // internal view.
+    const LARGE = 10000;
+    // We're simulating a bug where React attempts to write a detached buffer
+    // or a SharedArrayBuffer. In newer environments we'd just use SharedArrayBuffer.
+    // In older environments React will defensively copy the view which means
+    // the underlying buffer will be a ArrayBuffer that can be safely written.
+    // We just need to smuggle a chunk into the stream that we can identify to
+    // throw at a specific time.
+    const faultyBuffer = new ArrayBuffer(LARGE);
+    const view = new Uint8Array(faultyBuffer);
+    view.set([0xe, 0xa, 0xc, 0x7]);
+
+    const originalEnqueue = ReadableByteStreamController.prototype.enqueue;
+    jest
+      .spyOn(ReadableByteStreamController.prototype, 'enqueue')
+      .mockImplementation(function mockedEnqueue(chunk) {
+        // the original view may have been copied so we need to match the marker
+        if (
+          chunk[0] === 0xe &&
+          chunk[1] === 0xa &&
+          chunk[2] === 0xc &&
+          chunk[3] === 0x7
+        ) {
+          throw new TypeError(
+            "The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+          );
+        }
+        return originalEnqueue.call(this, chunk);
+      });
+
+    let sendMore;
+    const model = {
+      first: Promise.resolve(view),
+      second: new Promise(resolve => {
+        sendMore = resolve;
+      }),
+    };
+
+    const stream = await serverAct(() => {
+      return ReactServerDOMServer.renderToReadableStream(model, webpackMap);
+    });
+
+    const [stream1, stream2] = stream.tee();
+
+    let payload = '';
+    const decoder = new TextDecoder();
+    const reader = stream2.getReader();
+    let readError;
+    reader.read().then(function process({done, value}) {
+      if (done) return;
+      payload += decoder.decode(value, {stream: true});
+      return reader.read().then(process, reason => {
+        readError = reason;
+      });
+    });
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream1,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+
+    // This must fail. Adjust the mock above to be able to throw at a specific
+    // point.
+    await expect(result.first).rejects.toThrow(
+      "The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+    );
+
+    if (ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      assertConsoleErrorDev([
+        // React will not defensively copy when we can determine if the buffer is
+        // detached later.
+        "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer." +
+          '\n    in <stack>',
+      ]);
+    } else {
+      assertConsoleErrorDev([
+        'React copied a partial view into a fresh buffer as a safety precaution because the environment does not implement ArrayBuffer.prototype.detached. ' +
+          'This negatively impacts performance. ' +
+          'Please upgrade to a modern Node.js version.',
+        "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer." +
+          '\n    in <stack>',
+      ]);
+    }
+
+    const partialPayload = payload;
+
+    await sendMore('foo');
+    await expect(result.second).rejects.toThrow(
+      "The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+    );
+    // an errored stream emitted incomplete data. Continuing to emit more would
+    // produce a corrupted stream
+    expect(payload).toBe(partialPayload);
+    expect(readError.stack).toMatch(
+      "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
+    );
   });
 });

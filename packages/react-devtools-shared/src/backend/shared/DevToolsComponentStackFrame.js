@@ -129,8 +129,33 @@ export function describeNativeComponentFrame(
               } catch (x) {
                 control = x;
               }
-              // $FlowFixMe[prop-missing] found when upgrading Flow
-              fn.call(Fake.prototype);
+
+              let prototypeModified = false;
+              let prevProps;
+              try {
+                prevProps = Object.getOwnPropertyDescriptor(
+                  fn.prototype,
+                  'props',
+                );
+                Object.defineProperty(fn.prototype, 'props', {
+                  configurable: true,
+                  set() {
+                    throw Error();
+                  },
+                });
+                prototypeModified = true;
+
+                // eslint-disable-next-line no-new
+                new fn();
+              } finally {
+                if (prototypeModified) {
+                  if (prevProps !== undefined) {
+                    Object.defineProperty(fn.prototype, 'props', prevProps);
+                  } else {
+                    delete fn.prototype.props;
+                  }
+                }
+              }
             }
           } else {
             try {

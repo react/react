@@ -89,6 +89,7 @@ export default function Element({data, index, style}: Props): React.Node {
 
   // $FlowFixMe[missing-local-annot]
   const handleClick = ({metaKey, button}) => {
+    // $FlowFixMe[invalid-compare]
     if (id !== null && button === 0) {
       logEvent({
         event_name: 'select-element',
@@ -103,6 +104,7 @@ export default function Element({data, index, style}: Props): React.Node {
 
   const handleMouseEnter = () => {
     setIsHovered(true);
+    // $FlowFixMe[invalid-compare]
     if (id !== null) {
       onElementMouseEnter(id);
     }
@@ -126,6 +128,8 @@ export default function Element({data, index, style}: Props): React.Node {
     displayName,
     hocDisplayNames,
     isStrictModeNonCompliant,
+    isActivityHidden,
+    isInsideHiddenActivity,
     key,
     nameProp,
     compiledWithForget,
@@ -168,9 +172,15 @@ export default function Element({data, index, style}: Props): React.Node {
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleClick}
       onDoubleClick={handleDoubleClick}
+      title={
+        isInsideHiddenActivity
+          ? 'This component is inside a hidden Activity subtree.'
+          : undefined
+      }
       style={{
         ...style,
         paddingLeft: elementOffset,
+        opacity: isInsideHiddenActivity ? 0.75 : 1,
       }}
       data-testname="ComponentTreeListItem">
       {/* This wrapper is used by Tree for measurement purposes. */}
@@ -202,6 +212,18 @@ export default function Element({data, index, style}: Props): React.Node {
               title={nameProp}
               onDoubleClick={handleKeyDoubleClick}>
               <IndexableDisplayName displayName={nameProp} id={id} />
+            </span>
+            "
+          </Fragment>
+        )}
+
+        {element.type === ElementTypeActivity && (
+          <Fragment>
+            &nbsp;<span className={styles.KeyName}>mode</span>="
+            <span
+              className={styles.KeyValue}
+              title={isActivityHidden ? 'hidden' : 'visible'}>
+              {isActivityHidden ? 'hidden' : 'visible'}
             </span>
             "
           </Fragment>

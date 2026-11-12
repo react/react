@@ -331,6 +331,11 @@ export type FunctionSignature = {
   mutableOnlyIfOperandsAreMutable?: boolean;
 
   impure?: boolean;
+  /**
+   * When true, `impure` only applies if the call/construct has no arguments.
+   * Used for `Date`: `new Date()` reads the clock, `new Date(timestamp)` does not.
+   */
+  impureIfNoArgs?: boolean;
   knownIncompatible?: string | null | undefined;
 
   canonicalName?: string;
@@ -383,12 +388,8 @@ export const BuiltInUseTransitionId = 'BuiltInUseTransition';
 export const BuiltInUseOptimisticId = 'BuiltInUseOptimistic';
 export const BuiltInSetOptimisticId = 'BuiltInSetOptimistic';
 export const BuiltInStartTransitionId = 'BuiltInStartTransition';
-export const BuiltInFireId = 'BuiltInFire';
-export const BuiltInFireFunctionId = 'BuiltInFireFunction';
 export const BuiltInUseEffectEventId = 'BuiltInUseEffectEvent';
 export const BuiltInEffectEventId = 'BuiltInEffectEventFunction';
-export const BuiltInAutodepsId = 'BuiltInAutoDepsId';
-export const BuiltInEventHandlerId = 'BuiltInEventHandlerId';
 
 // See getReanimatedModuleType() in Globals.ts — this is part of supporting Reanimated's ref-like types
 export const ReanimatedSharedValueId = 'ReanimatedSharedValueId';
@@ -1247,19 +1248,6 @@ addFunction(
     returnValueKind: ValueKind.Mutable,
   },
   BuiltInEffectEventId,
-);
-
-addFunction(
-  BUILTIN_SHAPES,
-  [],
-  {
-    positionalParams: [],
-    restParam: Effect.ConditionallyMutate,
-    returnType: {kind: 'Poly'},
-    calleeEffect: Effect.ConditionallyMutate,
-    returnValueKind: ValueKind.Mutable,
-  },
-  BuiltInEventHandlerId,
 );
 
 /**

@@ -363,8 +363,7 @@ describe('console', () => {
 
   it('should double log if hideConsoleLogsInStrictMode is disabled in Strict mode', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = false;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -405,8 +404,7 @@ describe('console', () => {
 
   it('should not double log if hideConsoleLogsInStrictMode is enabled in Strict mode', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      true;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = true;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -433,8 +431,7 @@ describe('console', () => {
 
   it('should double log from Effects if hideConsoleLogsInStrictMode is disabled in Strict mode', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = false;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -481,8 +478,7 @@ describe('console', () => {
 
   it('should not double log from Effects if hideConsoleLogsInStrictMode is enabled in Strict mode', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      true;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = true;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -518,8 +514,7 @@ describe('console', () => {
 
   it('should double log from useMemo if hideConsoleLogsInStrictMode is disabled in Strict mode', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = false;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -562,8 +557,7 @@ describe('console', () => {
 
   it('should not double log from useMemo fns if hideConsoleLogsInStrictMode is enabled in Strict mode', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      true;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = true;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -592,8 +586,7 @@ describe('console', () => {
 
   it('should double log in Strict mode initial render for extension', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = false;
 
     // This simulates a render that happens before React DevTools have finished
     // their handshake to attach the React DOM renderer functions to DevTools
@@ -638,8 +631,7 @@ describe('console', () => {
 
   it('should not double log in Strict mode initial render for extension', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      true;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = true;
 
     // This simulates a render that happens before React DevTools have finished
     // their handshake to attach the React DOM renderer functions to DevTools
@@ -670,8 +662,7 @@ describe('console', () => {
 
   it('should properly dim component stacks during strict mode double log', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = true;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = false;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -736,10 +727,8 @@ describe('console', () => {
 
   it('should not dim console logs if disableSecondConsoleLogDimmingInStrictMode is enabled', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.disableSecondConsoleLogDimmingInStrictMode =
-      true;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.disableSecondConsoleLogDimmingInStrictMode = true;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -772,10 +761,8 @@ describe('console', () => {
 
   it('should dim console logs if disableSecondConsoleLogDimmingInStrictMode is disabled', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode =
-      false;
-    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.disableSecondConsoleLogDimmingInStrictMode =
-      false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.disableSecondConsoleLogDimmingInStrictMode = false;
 
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);

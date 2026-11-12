@@ -61,7 +61,7 @@ export const setRefreshHandler = (handler: RefreshHandler | null): void => {
   }
 };
 
-export function resolveFunctionForHotReloading(type: any): any {
+export function resolveTypeForHotReloading(type: any): any {
   if (__DEV__) {
     if (resolveFamily === null) {
       // Hot reloading is disabled.
@@ -69,49 +69,6 @@ export function resolveFunctionForHotReloading(type: any): any {
     }
     const family = resolveFamily(type);
     if (family === undefined) {
-      return type;
-    }
-    // Use the latest known implementation.
-    return family.current;
-  } else {
-    return type;
-  }
-}
-
-export function resolveClassForHotReloading(type: any): any {
-  // No implementation differences.
-  return resolveFunctionForHotReloading(type);
-}
-
-export function resolveForwardRefForHotReloading(type: any): any {
-  if (__DEV__) {
-    if (resolveFamily === null) {
-      // Hot reloading is disabled.
-      return type;
-    }
-    const family = resolveFamily(type);
-    if (family === undefined) {
-      // Check if we're dealing with a real forwardRef. Don't want to crash early.
-      if (
-        type !== null &&
-        type !== undefined &&
-        typeof type.render === 'function'
-      ) {
-        // ForwardRef is special because its resolved .type is an object,
-        // but it's possible that we only have its inner render function in the map.
-        // If that inner render function is different, we'll build a new forwardRef type.
-        const currentRender = resolveFunctionForHotReloading(type.render);
-        if (type.render !== currentRender) {
-          const syntheticType = {
-            $$typeof: REACT_FORWARD_REF_TYPE,
-            render: currentRender,
-          };
-          if (type.displayName !== undefined) {
-            (syntheticType: any).displayName = type.displayName;
-          }
-          return syntheticType;
-        }
-      }
       return type;
     }
     // Use the latest known implementation.
@@ -130,6 +87,7 @@ export function isCompatibleFamilyForHotReloading(
       // Hot reloading is disabled.
       return false;
     }
+    const resolve = resolveFamily;
 
     const prevType = fiber.elementType;
     const nextType = element.type;
@@ -172,8 +130,6 @@ export function isCompatibleFamilyForHotReloading(
       case MemoComponent:
       case SimpleMemoComponent: {
         if ($$typeofNextType === REACT_MEMO_TYPE) {
-          // TODO: if it was but can no longer be simple,
-          // we shouldn't set this.
           needsCompareFamilies = true;
         } else if ($$typeofNextType === REACT_LAZY_TYPE) {
           needsCompareFamilies = true;
@@ -191,9 +147,8 @@ export function isCompatibleFamilyForHotReloading(
       // If we unwrapped and compared the inner types for wrappers instead,
       // then we would risk falsely saying two separate memo(Foo)
       // calls are equivalent because they wrap the same Foo function.
-      const prevFamily = resolveFamily(prevType);
-      // $FlowFixMe[not-a-function] found when upgrading Flow
-      if (prevFamily !== undefined && prevFamily === resolveFamily(nextType)) {
+      const prevFamily = resolve(prevType);
+      if (prevFamily !== undefined && prevFamily === resolve(nextType)) {
         return true;
       }
     }
@@ -262,17 +217,30 @@ function scheduleFibersWithFamiliesRecursively(
 ): void {
   if (__DEV__) {
     do {
-      const {alternate, child, sibling, tag, type} = fiber;
+      const {alternate, child, sibling, tag, type, elementType} = fiber;
 
       let candidateType = null;
+      // Wrapper fibers (memo, forwardRef) resolve their family through the
+      // inner implementation, but an edit that changes the kind of the type
+      // (e.g. memo to a plain function) is only recorded on the family of the
+      // outer type. Check the outer type too so such edits trigger a remount.
+      let outerCandidateType = null;
       switch (tag) {
         case FunctionComponent:
-        case SimpleMemoComponent:
         case ClassComponent:
           candidateType = type;
           break;
+        case SimpleMemoComponent:
+          candidateType = type;
+          outerCandidateType = elementType;
+          break;
+        case MemoComponent:
+          // Edits to the inner implementation are handled by the inner fiber.
+          outerCandidateType = elementType;
+          break;
         case ForwardRef:
           candidateType = type.render;
+          outerCandidateType = elementType;
           break;
         default:
           break;
@@ -281,11 +249,12 @@ function scheduleFibersWithFamiliesRecursively(
       if (resolveFamily === null) {
         throw new Error('Expected resolveFamily to be set during hot reload.');
       }
+      const resolve = resolveFamily;
 
       let needsRender = false;
       let needsRemount = false;
       if (candidateType !== null) {
-        const family = resolveFamily(candidateType);
+        const family = resolve(candidateType);
         if (family !== undefined) {
           if (staleFamilies.has(family)) {
             needsRemount = true;
@@ -294,6 +263,23 @@ function scheduleFibersWithFamiliesRecursively(
               needsRemount = true;
             } else {
               needsRender = true;
+            }
+          }
+        }
+      }
+      if (!needsRemount && outerCandidateType !== null) {
+        const outerFamily = resolve(outerCandidateType);
+        if (outerFamily !== undefined && staleFamilies.has(outerFamily)) {
+          needsRemount = true;
+        } else if (
+          typeof outerCandidateType === 'object' &&
+          outerCandidateType.$$typeof === REACT_LAZY_TYPE
+        ) {
+          const payload = outerCandidateType._payload;
+          if (payload._status === 1 /* Resolved; see ReactLazy */) {
+            const middleFamily = resolve(payload._result.default);
+            if (middleFamily !== undefined && staleFamilies.has(middleFamily)) {
+              needsRemount = true;
             }
           }
         }

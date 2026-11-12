@@ -13,13 +13,18 @@ import {
   pruneUnusedLabels,
   renameVariables,
 } from '.';
-import {CompilerError, ErrorCategory} from '../CompilerError';
+import {
+  CompilerError,
+  CompilerErrorDetail,
+  ErrorCategory,
+} from '../CompilerError';
 import {Environment, ExternalFunction} from '../HIR';
 import {
   ArrayPattern,
   BlockId,
   DeclarationId,
   GeneratedSource,
+  getSourceLocation,
   Identifier,
   IdentifierId,
   InstructionKind,
@@ -46,13 +51,13 @@ import {
 } from '../HIR/HIR';
 import {printIdentifier, printInstruction, printPlace} from '../HIR/PrintHIR';
 import {eachPatternOperand} from '../HIR/visitors';
-import {Err, Ok, Result} from '../Utils/Result';
+
 import {GuardKind} from '../Utils/RuntimeDiagnosticConstants';
 import {assertExhaustive} from '../Utils/utils';
 import {buildReactiveFunction} from './BuildReactiveFunction';
 import {SINGLE_CHILD_FBT_TAGS} from './MemoizeFbtAndMacroOperandsInSameScope';
 import {ReactiveFunctionVisitor, visitReactiveFunction} from './visitors';
-import {EMIT_FREEZE_GLOBAL_GATING, ReactFunctionType} from '../HIR/Environment';
+import {ReactFunctionType} from '../HIR/Environment';
 import {ProgramContext} from '../Entrypoint';
 
 export const MEMO_CACHE_SENTINEL = 'react.memo_cache_sentinel';
@@ -100,17 +105,6 @@ export type CodegenFunction = {
     fn: CodegenFunction;
     type: ReactFunctionType | null;
   }>;
-
-  /**
-   * This is true if the compiler has compiled inferred effect dependencies
-   */
-  hasInferredEffect: boolean;
-  inferredEffectLocations: Set<SourceLocation>;
-
-  /**
-   * This is true if the compiler has compiled a fire to a useFire call
-   */
-  hasFireRewrite: boolean;
 };
 
 export function codegenFunction(
@@ -122,7 +116,7 @@ export function codegenFunction(
     uniqueIdentifiers: Set<string>;
     fbtOperands: Set<IdentifierId>;
   },
-): Result<CodegenFunction, CompilerError> {
+): CodegenFunction {
   const cx = new Context(
     fn.env,
     fn.id ?? '[[ anonymous ]]',
@@ -152,11 +146,7 @@ export function codegenFunction(
     };
   }
 
-  const compileResult = codegenReactiveFunction(cx, fn);
-  if (compileResult.isErr()) {
-    return compileResult;
-  }
-  const compiled = compileResult.unwrap();
+  const compiled = codegenReactiveFunction(cx, fn);
 
   const hookGuard = fn.env.config.enableEmitHookGuards;
   if (hookGuard != null && fn.env.outputMode === 'client') {
@@ -284,7 +274,7 @@ export function codegenFunction(
         emitInstrumentForget.globalGating,
       );
       if (assertResult.isErr()) {
-        return assertResult;
+        fn.env.recordErrors(assertResult.unwrapErr());
       }
     }
 
@@ -334,20 +324,17 @@ export function codegenFunction(
       ),
       reactiveFunction,
     );
-    if (codegen.isErr()) {
-      return codegen;
-    }
-    outlined.push({fn: codegen.unwrap(), type});
+    outlined.push({fn: codegen, type});
   }
   compiled.outlined = outlined;
 
-  return compileResult;
+  return compiled;
 }
 
 function codegenReactiveFunction(
   cx: Context,
   fn: ReactiveFunction,
-): Result<CodegenFunction, CompilerError> {
+): CodegenFunction {
   for (const param of fn.params) {
     const place = param.kind === 'Identifier' ? param : param.place;
     cx.temp.set(place.identifier.declarationId, null);
@@ -365,14 +352,10 @@ function codegenReactiveFunction(
     }
   }
 
-  if (cx.errors.hasAnyErrors()) {
-    return Err(cx.errors);
-  }
-
   const countMemoBlockVisitor = new CountMemoBlockVisitor(fn.env);
   visitReactiveFunction(fn, countMemoBlockVisitor, undefined);
 
-  return Ok({
+  return {
     type: 'CodegenFunction',
     loc: fn.loc,
     id: fn.id !== null ? t.identifier(fn.id) : null,
@@ -387,10 +370,7 @@ function codegenReactiveFunction(
     prunedMemoBlocks: countMemoBlockVisitor.prunedMemoBlocks,
     prunedMemoValues: countMemoBlockVisitor.prunedMemoValues,
     outlined: [],
-    hasFireRewrite: fn.env.hasFireRewrite,
-    hasInferredEffect: fn.env.hasInferredEffect,
-    inferredEffectLocations: fn.env.inferredEffectLocations,
-  });
+  };
 }
 
 class CountMemoBlockVisitor extends ReactiveFunctionVisitor<void> {
@@ -441,7 +421,6 @@ class Context {
    */
   #declarations: Set<DeclarationId> = new Set();
   temp: Temporaries;
-  errors: CompilerError = new CompilerError();
   objectMethods: Map<IdentifierId, ObjectMethod> = new Map();
   uniqueIdentifiers: Set<string>;
   fbtOperands: Set<IdentifierId>;
@@ -460,6 +439,11 @@ class Context {
     this.fbtOperands = fbtOperands;
     this.temp = temporaries !== null ? new Map(temporaries) : new Map();
   }
+
+  recordError(error: CompilerErrorDetail): void {
+    this.env.recordError(error);
+  }
+
   get nextCacheIndex(): number {
     return this.#nextCacheIndex++;
   }
@@ -574,30 +558,6 @@ function codegenBlockNoReset(
   return t.blockStatement(statements);
 }
 
-function wrapCacheDep(cx: Context, value: t.Expression): t.Expression {
-  if (
-    cx.env.config.enableEmitFreeze != null &&
-    cx.env.outputMode === 'client'
-  ) {
-    const emitFreezeIdentifier = cx.env.programContext.addImportSpecifier(
-      cx.env.config.enableEmitFreeze,
-    ).name;
-    cx.env.programContext
-      .assertGlobalBinding(EMIT_FREEZE_GLOBAL_GATING, cx.env.scope)
-      .unwrap();
-    return t.conditionalExpression(
-      t.identifier(EMIT_FREEZE_GLOBAL_GATING),
-      t.callExpression(t.identifier(emitFreezeIdentifier), [
-        value,
-        t.stringLiteral(cx.fnName),
-      ]),
-      value,
-    );
-  } else {
-    return value;
-  }
-}
-
 function codegenReactiveScope(
   cx: Context,
   statements: Array<t.Statement>,
@@ -612,12 +572,9 @@ function codegenReactiveScope(
     value: t.Expression;
   }> = [];
   const changeExpressions: Array<t.Expression> = [];
-  const changeExpressionComments: Array<string> = [];
-  const outputComments: Array<string> = [];
 
   for (const dep of [...scope.dependencies].sort(compareScopeDependency)) {
     const index = cx.nextCacheIndex;
-    changeExpressionComments.push(printDependencyComment(dep));
     const comparison = t.binaryExpression(
       '!==',
       t.memberExpression(
@@ -627,18 +584,7 @@ function codegenReactiveScope(
       ),
       codegenDependency(cx, dep),
     );
-
-    if (cx.env.config.enableChangeVariableCodegen) {
-      const changeIdentifier = t.identifier(cx.synthesizeName(`c_${index}`));
-      statements.push(
-        t.variableDeclaration('const', [
-          t.variableDeclarator(changeIdentifier, comparison),
-        ]),
-      );
-      changeExpressions.push(changeIdentifier);
-    } else {
-      changeExpressions.push(comparison);
-    }
+    changeExpressions.push(comparison);
     /*
      * Adding directly to cacheStoreStatements rather than cacheLoads, because there
      * is no corresponding cacheLoadStatement for dependencies
@@ -676,13 +622,14 @@ function codegenReactiveScope(
     });
 
     const name = convertIdentifier(identifier);
-    outputComments.push(name.name);
     if (!cx.hasDeclared(identifier)) {
       statements.push(
-        t.variableDeclaration('let', [createVariableDeclarator(name, null)]),
+        t.variableDeclaration('let', [
+          createVariableDeclarator(identifier.loc, name, null),
+        ]),
       );
     }
-    cacheLoads.push({name, index, value: wrapCacheDep(cx, name)});
+    cacheLoads.push({name, index, value: name});
     cx.declare(identifier);
   }
   for (const reassignment of scope.reassignments) {
@@ -691,8 +638,7 @@ function codegenReactiveScope(
       firstOutputIndex = index;
     }
     const name = convertIdentifier(reassignment);
-    outputComments.push(name.name);
-    cacheLoads.push({name, index, value: wrapCacheDep(cx, name)});
+    cacheLoads.push({name, index, value: name});
   }
 
   let testCondition = (changeExpressions as Array<t.Expression>).reduce(
@@ -724,187 +670,44 @@ function codegenReactiveScope(
     );
   }
 
-  if (cx.env.config.disableMemoizationForDebugging) {
-    CompilerError.invariant(
-      cx.env.config.enableChangeDetectionForDebugging == null,
-      {
-        reason: `Expected to not have both change detection enabled and memoization disabled`,
-        description: `Incompatible config options`,
-        loc: GeneratedSource,
-      },
-    );
-    testCondition = t.logicalExpression(
-      '||',
-      testCondition,
-      t.booleanLiteral(true),
-    );
-  }
   let computationBlock = codegenBlock(cx, block);
 
   let memoStatement;
-  const detectionFunction = cx.env.config.enableChangeDetectionForDebugging;
-  if (detectionFunction != null && changeExpressions.length > 0) {
-    const loc =
-      typeof scope.loc === 'symbol'
-        ? 'unknown location'
-        : `(${scope.loc.start.line}:${scope.loc.end.line})`;
-    const importedDetectionFunctionIdentifier =
-      cx.env.programContext.addImportSpecifier(detectionFunction).name;
-    const cacheLoadOldValueStatements: Array<t.Statement> = [];
-    const changeDetectionStatements: Array<t.Statement> = [];
-    const idempotenceDetectionStatements: Array<t.Statement> = [];
-
-    for (const {name, index, value} of cacheLoads) {
-      const loadName = cx.synthesizeName(`old$${name.name}`);
-      const slot = t.memberExpression(
-        t.identifier(cx.synthesizeName('$')),
-        t.numericLiteral(index),
-        true,
-      );
-      cacheStoreStatements.push(
-        t.expressionStatement(t.assignmentExpression('=', slot, value)),
-      );
-      cacheLoadOldValueStatements.push(
-        t.variableDeclaration('let', [
-          t.variableDeclarator(t.identifier(loadName), slot),
-        ]),
-      );
-      changeDetectionStatements.push(
-        t.expressionStatement(
-          t.callExpression(t.identifier(importedDetectionFunctionIdentifier), [
-            t.identifier(loadName),
-            t.cloneNode(name, true),
-            t.stringLiteral(name.name),
-            t.stringLiteral(cx.fnName),
-            t.stringLiteral('cached'),
-            t.stringLiteral(loc),
-          ]),
+  for (const {name, index, value} of cacheLoads) {
+    cacheStoreStatements.push(
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.memberExpression(
+            t.identifier(cx.synthesizeName('$')),
+            t.numericLiteral(index),
+            true,
+          ),
+          value,
         ),
-      );
-      idempotenceDetectionStatements.push(
-        t.expressionStatement(
-          t.callExpression(t.identifier(importedDetectionFunctionIdentifier), [
-            t.cloneNode(slot, true),
-            t.cloneNode(name, true),
-            t.stringLiteral(name.name),
-            t.stringLiteral(cx.fnName),
-            t.stringLiteral('recomputed'),
-            t.stringLiteral(loc),
-          ]),
-        ),
-      );
-      idempotenceDetectionStatements.push(
-        t.expressionStatement(t.assignmentExpression('=', name, slot)),
-      );
-    }
-    const condition = cx.synthesizeName('condition');
-    const recomputationBlock = t.cloneNode(computationBlock, true);
-    memoStatement = t.blockStatement([
-      ...computationBlock.body,
-      t.variableDeclaration('let', [
-        t.variableDeclarator(t.identifier(condition), testCondition),
-      ]),
-      t.ifStatement(
-        t.unaryExpression('!', t.identifier(condition)),
-        t.blockStatement([
-          ...cacheLoadOldValueStatements,
-          ...changeDetectionStatements,
-        ]),
       ),
-      ...cacheStoreStatements,
-      t.ifStatement(
-        t.identifier(condition),
-        t.blockStatement([
-          ...recomputationBlock.body,
-          ...idempotenceDetectionStatements,
-        ]),
-      ),
-    ]);
-  } else {
-    for (const {name, index, value} of cacheLoads) {
-      cacheStoreStatements.push(
-        t.expressionStatement(
-          t.assignmentExpression(
-            '=',
-            t.memberExpression(
-              t.identifier(cx.synthesizeName('$')),
-              t.numericLiteral(index),
-              true,
-            ),
-            value,
+    );
+    cacheLoadStatements.push(
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          name,
+          t.memberExpression(
+            t.identifier(cx.synthesizeName('$')),
+            t.numericLiteral(index),
+            true,
           ),
         ),
-      );
-      cacheLoadStatements.push(
-        t.expressionStatement(
-          t.assignmentExpression(
-            '=',
-            name,
-            t.memberExpression(
-              t.identifier(cx.synthesizeName('$')),
-              t.numericLiteral(index),
-              true,
-            ),
-          ),
-        ),
-      );
-    }
-    computationBlock.body.push(...cacheStoreStatements);
-    memoStatement = t.ifStatement(
-      testCondition,
-      computationBlock,
-      t.blockStatement(cacheLoadStatements),
+      ),
     );
   }
+  computationBlock.body.push(...cacheStoreStatements);
+  memoStatement = t.ifStatement(
+    testCondition,
+    computationBlock,
+    t.blockStatement(cacheLoadStatements),
+  );
 
-  if (cx.env.config.enableMemoizationComments) {
-    if (changeExpressionComments.length) {
-      t.addComment(
-        memoStatement,
-        'leading',
-        ` check if ${printDelimitedCommentList(
-          changeExpressionComments,
-          'or',
-        )} changed`,
-        true,
-      );
-      t.addComment(
-        memoStatement,
-        'leading',
-        ` "useMemo" for ${printDelimitedCommentList(outputComments, 'and')}:`,
-        true,
-      );
-    } else {
-      t.addComment(
-        memoStatement,
-        'leading',
-        ' cache value with no dependencies',
-        true,
-      );
-      t.addComment(
-        memoStatement,
-        'leading',
-        ` "useMemo" for ${printDelimitedCommentList(outputComments, 'and')}:`,
-        true,
-      );
-    }
-    if (computationBlock.body.length > 0) {
-      t.addComment(
-        computationBlock.body[0]!,
-        'leading',
-        ` Inputs changed, recompute`,
-        true,
-      );
-    }
-    if (cacheLoadStatements.length > 0) {
-      t.addComment(
-        cacheLoadStatements[0]!,
-        'leading',
-        ` Inputs did not change, use cached value`,
-        true,
-      );
-    }
-  }
   statements.push(memoStatement);
 
   const earlyReturnValue = scope.earlyReturnValue;
@@ -979,12 +782,15 @@ function codegenTerminal(
         loc: terminal.init.loc,
       });
       if (terminal.init.instructions.length !== 2) {
-        CompilerError.throwTodo({
-          reason: 'Support non-trivial for..in inits',
-          description: null,
-          loc: terminal.init.loc,
-          suggestions: null,
-        });
+        cx.recordError(
+          new CompilerErrorDetail({
+            reason: 'Support non-trivial for..in inits',
+            category: ErrorCategory.Todo,
+            loc: terminal.init.loc,
+            suggestions: null,
+          }),
+        );
+        return t.emptyStatement();
       }
       const iterableCollection = terminal.init.instructions[0];
       const iterableItem = terminal.init.instructions[1];
@@ -999,12 +805,15 @@ function codegenTerminal(
           break;
         }
         case 'StoreContext': {
-          CompilerError.throwTodo({
-            reason: 'Support non-trivial for..in inits',
-            description: null,
-            loc: terminal.init.loc,
-            suggestions: null,
-          });
+          cx.recordError(
+            new CompilerErrorDetail({
+              reason: 'Support non-trivial for..in inits',
+              category: ErrorCategory.Todo,
+              loc: terminal.init.loc,
+              suggestions: null,
+            }),
+          );
+          return t.emptyStatement();
         }
         default:
           CompilerError.invariant(false, {
@@ -1074,12 +883,15 @@ function codegenTerminal(
         loc: terminal.test.loc,
       });
       if (terminal.test.instructions.length !== 2) {
-        CompilerError.throwTodo({
-          reason: 'Support non-trivial for..of inits',
-          description: null,
-          loc: terminal.init.loc,
-          suggestions: null,
-        });
+        cx.recordError(
+          new CompilerErrorDetail({
+            reason: 'Support non-trivial for..of inits',
+            category: ErrorCategory.Todo,
+            loc: terminal.init.loc,
+            suggestions: null,
+          }),
+        );
+        return t.emptyStatement();
       }
       const iterableItem = terminal.test.instructions[1];
       let lval: t.LVal;
@@ -1093,12 +905,15 @@ function codegenTerminal(
           break;
         }
         case 'StoreContext': {
-          CompilerError.throwTodo({
-            reason: 'Support non-trivial for..of inits',
-            description: null,
-            loc: terminal.init.loc,
-            suggestions: null,
-          });
+          cx.recordError(
+            new CompilerErrorDetail({
+              reason: 'Support non-trivial for..of inits',
+              category: ErrorCategory.Todo,
+              loc: terminal.init.loc,
+              suggestions: null,
+            }),
+          );
+          return t.emptyStatement();
         }
         default:
           CompilerError.invariant(false, {
@@ -1277,7 +1092,11 @@ function codegenInstructionNullable(
           loc: instr.value.loc,
         });
         return createVariableDeclaration(instr.loc, 'const', [
-          createVariableDeclarator(codegenLValue(cx, lvalue), value),
+          createVariableDeclarator(
+            instr.value.loc,
+            codegenLValue(cx, lvalue),
+            value,
+          ),
         ]);
       }
       case InstructionKind.Function: {
@@ -1311,7 +1130,11 @@ function codegenInstructionNullable(
           loc: instr.value.loc,
         });
         return createVariableDeclaration(instr.loc, 'let', [
-          createVariableDeclarator(codegenLValue(cx, lvalue), value),
+          createVariableDeclarator(
+            instr.value.loc,
+            codegenLValue(cx, lvalue),
+            value,
+          ),
         ]);
       }
       case InstructionKind.Reassign: {
@@ -1431,41 +1254,6 @@ function codegenForInit(
   }
 }
 
-function printDependencyComment(dependency: ReactiveScopeDependency): string {
-  const identifier = convertIdentifier(dependency.identifier);
-  let name = identifier.name;
-  if (dependency.path !== null) {
-    for (const path of dependency.path) {
-      name += `.${path.property}`;
-    }
-  }
-  return name;
-}
-
-function printDelimitedCommentList(
-  items: Array<string>,
-  finalCompletion: string,
-): string {
-  if (items.length === 2) {
-    return items.join(` ${finalCompletion} `);
-  } else if (items.length <= 1) {
-    return items.join('');
-  }
-
-  let output = [];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]!;
-    if (i < items.length - 2) {
-      output.push(`${item}, `);
-    } else if (i === items.length - 2) {
-      output.push(`${item}, ${finalCompletion} `);
-    } else {
-      output.push(item);
-    }
-  }
-  return output.join('');
-}
-
 function codegenDependency(
   cx: Context,
   dependency: ReactiveScopeDependency,
@@ -1494,6 +1282,26 @@ function codegenDependency(
   return object;
 }
 
+function setSourceLocation(
+  node: t.Node,
+  source: SourceLocation | null | undefined,
+): void {
+  if (source == null || source === GeneratedSource) {
+    return;
+  }
+  node.loc = source.loc;
+  if (source.start === undefined) {
+    delete node.start;
+  } else {
+    node.start = source.start;
+  }
+  if (source.end === undefined) {
+    delete node.end;
+  } else {
+    node.end = source.end;
+  }
+}
+
 function withLoc<T extends (...args: Array<any>) => t.Node>(
   fn: T,
 ): (
@@ -1505,9 +1313,7 @@ function withLoc<T extends (...args: Array<any>) => t.Node>(
     ...args: Parameters<T>
   ): ReturnType<T> => {
     const node = fn(...args);
-    if (loc != null && loc != GeneratedSource) {
-      node.loc = loc;
-    }
+    setSourceLocation(node, loc);
     return node as ReturnType<T>;
   };
 }
@@ -1519,6 +1325,7 @@ const createBinaryExpression = withLoc(t.binaryExpression);
 const createExpressionStatement = withLoc(t.expressionStatement);
 const _createLabelledStatement = withLoc(t.labeledStatement);
 const createVariableDeclaration = withLoc(t.variableDeclaration);
+const createVariableDeclarator = withLoc(t.variableDeclarator);
 const createFunctionDeclaration = withLoc(t.functionDeclaration);
 const createWhileStatement = withLoc(t.whileStatement);
 const createDoWhileStatement = withLoc(t.doWhileStatement);
@@ -1546,31 +1353,6 @@ const createTryStatement = withLoc(t.tryStatement);
 const createBreakStatement = withLoc(t.breakStatement);
 const createContinueStatement = withLoc(t.continueStatement);
 const createReturnStatement = withLoc(t.returnStatement);
-
-function createVariableDeclarator(
-  id: t.LVal,
-  init?: t.Expression | null,
-): t.VariableDeclarator {
-  const node = t.variableDeclarator(id, init);
-
-  /*
-   * The variable declarator location is not preserved in HIR, however, we can use the
-   * start location of the id and the end location of the init to recreate the
-   * exact original variable declarator location.
-   *
-   * Or if init is null, we likely have a declaration without an initializer, so we can use the id.loc.end as the end location.
-   */
-  if (id.loc && (init === null || init?.loc)) {
-    node.loc = {
-      start: id.loc.start,
-      end: init?.loc?.end ?? id.loc.end,
-      filename: id.loc.filename,
-      identifierName: undefined,
-    };
-  }
-
-  return node;
-}
 
 function createHookGuard(
   guard: ExternalFunction,
@@ -1620,9 +1402,7 @@ function createCallExpression(
   isHook: boolean,
 ): t.CallExpression {
   const callExpr = t.callExpression(callee, args);
-  if (loc != null && loc != GeneratedSource) {
-    callExpr.loc = loc;
-  }
+  setSourceLocation(callExpr, loc);
 
   const hookGuard = env.config.enableEmitHookGuards;
   if (hookGuard != null && isHook && env.outputMode === 'client') {
@@ -1680,6 +1460,7 @@ function codegenInstruction(
     } else {
       return createVariableDeclaration(instr.loc, 'const', [
         createVariableDeclarator(
+          instr.loc,
           convertIdentifier(instr.lvalue.identifier),
           expressionValue,
         ),
@@ -1692,7 +1473,7 @@ function convertValueToExpression(
   value: t.JSXText | t.Expression,
 ): t.Expression {
   if (value.type === 'JSXText') {
-    return createStringLiteral(value.loc, value.value);
+    return createStringLiteral(getSourceLocation(value), value.value);
   }
   return value;
 }
@@ -1871,7 +1652,8 @@ function codegenInstructionValue(
                   key,
                   value,
                   property.key.kind === 'computed',
-                  key.type === 'Identifier' &&
+                  property.key.kind !== 'computed' &&
+                    key.type === 'Identifier' &&
                     value.type === 'Identifier' &&
                     value.name === key.name,
                 ),
@@ -1897,7 +1679,7 @@ function codegenInstructionValue(
                   cx.temp,
                 ),
                 reactiveFunction,
-              ).unwrap();
+              );
 
               /*
                * ObjectMethod builder must be backwards compatible with older versions of babel.
@@ -2096,7 +1878,7 @@ function codegenInstructionValue(
           cx.temp,
         ),
         reactiveFunction,
-      ).unwrap();
+      );
 
       if (instrValue.type === 'ArrowFunctionExpression') {
         let body: t.BlockStatement | t.Expression = fn.body;
@@ -2192,22 +1974,26 @@ function codegenInstructionValue(
         } else {
           if (t.isVariableDeclaration(stmt)) {
             const declarator = stmt.declarations[0];
-            cx.errors.push({
-              reason: `(CodegenReactiveFunction::codegenInstructionValue) Cannot declare variables in a value block, tried to declare '${
-                (declarator.id as t.Identifier).name
-              }'`,
-              category: ErrorCategory.Todo,
-              loc: declarator.loc ?? null,
-              suggestions: null,
-            });
+            cx.recordError(
+              new CompilerErrorDetail({
+                reason: `(CodegenReactiveFunction::codegenInstructionValue) Cannot declare variables in a value block, tried to declare '${
+                  (declarator.id as t.Identifier).name
+                }'`,
+                category: ErrorCategory.Todo,
+                loc: declarator.loc ?? null,
+                suggestions: null,
+              }),
+            );
             return t.stringLiteral(`TODO handle ${declarator.id}`);
           } else {
-            cx.errors.push({
-              reason: `(CodegenReactiveFunction::codegenInstructionValue) Handle conversion of ${stmt.type} to expression`,
-              category: ErrorCategory.Todo,
-              loc: stmt.loc ?? null,
-              suggestions: null,
-            });
+            cx.recordError(
+              new CompilerErrorDetail({
+                reason: `(CodegenReactiveFunction::codegenInstructionValue) Handle conversion of ${stmt.type} to expression`,
+                category: ErrorCategory.Todo,
+                loc: stmt.loc ?? null,
+                suggestions: null,
+              }),
+            );
             return t.stringLiteral(`TODO handle ${stmt.type}`);
           }
         }
@@ -2261,7 +2047,8 @@ function codegenInstructionValue(
       value = codegenPlaceToExpression(cx, instrValue.value);
       break;
     }
-    case 'PostfixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext': {
       value = t.updateExpression(
         instrValue.operation,
         codegenPlaceToExpression(cx, instrValue.lvalue),
@@ -2269,7 +2056,8 @@ function codegenInstructionValue(
       );
       break;
     }
-    case 'PrefixUpdate': {
+    case 'PrefixUpdateLocal':
+    case 'PrefixUpdateContext': {
       value = t.updateExpression(
         instrValue.operation,
         codegenPlaceToExpression(cx, instrValue.lvalue),
@@ -2320,9 +2108,7 @@ function codegenInstructionValue(
       );
     }
   }
-  if (instrValue.loc != null && instrValue.loc != GeneratedSource) {
-    value.loc = instrValue.loc;
-  }
+  setSourceLocation(value, instrValue.loc);
   return value;
 }
 
@@ -2368,7 +2154,10 @@ function codegenJsxAttribute(
             STRING_REQUIRES_EXPR_CONTAINER_PATTERN.test(value.value) &&
             !cx.fbtOperands.has(attribute.place.identifier.id)
           ) {
-            value = createJsxExpressionContainer(value.loc, value);
+            value = createJsxExpressionContainer(
+              getSourceLocation(value),
+              value,
+            );
           }
           break;
         }
@@ -2556,7 +2345,8 @@ function codegenLValue(
               key,
               value,
               property.key.kind === 'computed',
-              key.type === 'Identifier' &&
+              property.key.kind !== 'computed' &&
+                key.type === 'Identifier' &&
                 value.type === 'Identifier' &&
                 value.name === key.name,
             );
@@ -2587,11 +2377,12 @@ function codegenValue(
   value: boolean | number | string | null | undefined,
 ): t.Expression {
   if (typeof value === 'number') {
-    if (value < 0) {
+    if (value < 0 || Object.is(value, -0)) {
       /**
        * Babel's code generator produces invalid JS for negative numbers when
        * run with { compact: true }.
        * See repro https://codesandbox.io/p/devbox/5d47fr
+       * An explicit unary expression also preserves the sign of negative zero.
        */
       return t.unaryExpression('-', t.numericLiteral(-value), false);
     } else {
@@ -2638,12 +2429,13 @@ function codegenPlace(cx: Context, place: Place): t.Expression | t.JSXText {
     )}' was not set in the codegen context`,
     loc: place.loc,
   });
-  const identifier = convertIdentifier(place.identifier);
-  identifier.loc = place.loc as any;
-  return identifier;
+  return convertIdentifier(place.identifier, place.loc);
 }
 
-function convertIdentifier(identifier: Identifier): t.Identifier {
+function convertIdentifier(
+  identifier: Identifier,
+  loc: SourceLocation = identifier.loc,
+): t.Identifier {
   CompilerError.invariant(
     identifier.name !== null && identifier.name.kind === 'named',
     {
@@ -2652,7 +2444,7 @@ function convertIdentifier(identifier: Identifier): t.Identifier {
       loc: GeneratedSource,
     },
   );
-  return createIdentifier(identifier.loc, identifier.name.value);
+  return createIdentifier(loc, identifier.name.value);
 }
 
 function compareScopeDependency(

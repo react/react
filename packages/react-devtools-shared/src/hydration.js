@@ -26,15 +26,15 @@ import type {
 import noop from 'shared/noop';
 
 export const meta = {
-  inspectable: (Symbol('inspectable'): symbol),
-  inspected: (Symbol('inspected'): symbol),
-  name: (Symbol('name'): symbol),
-  preview_long: (Symbol('preview_long'): symbol),
-  preview_short: (Symbol('preview_short'): symbol),
-  readonly: (Symbol('readonly'): symbol),
-  size: (Symbol('size'): symbol),
-  type: (Symbol('type'): symbol),
-  unserializable: (Symbol('unserializable'): symbol),
+  inspectable: Symbol('inspectable') as symbol,
+  inspected: Symbol('inspected') as symbol,
+  name: Symbol('name') as symbol,
+  preview_long: Symbol('preview_long') as symbol,
+  preview_short: Symbol('preview_short') as symbol,
+  readonly: Symbol('readonly') as symbol,
+  size: Symbol('size') as symbol,
+  type: Symbol('type') as symbol,
+  unserializable: Symbol('unserializable') as symbol,
 };
 
 export type Dehydrated = {
@@ -596,6 +596,7 @@ export function dehydrate(
       return value;
     }
     case 'infinity':
+    case '-infinity':
     case 'nan':
     case 'undefined':
       // Some values are lossy when sent through a WebSocket.
@@ -704,6 +705,8 @@ export function hydrate(
       return;
     } else if (value.type === 'infinity') {
       parent[last] = Infinity;
+    } else if (value.type === '-infinity') {
+      parent[last] = -Infinity;
     } else if (value.type === 'nan') {
       parent[last] = NaN;
     } else if (value.type === 'undefined') {

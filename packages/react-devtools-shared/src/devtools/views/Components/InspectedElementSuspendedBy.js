@@ -9,7 +9,7 @@
 
 import {copy} from 'clipboard-js';
 import * as React from 'react';
-import {useState, useTransition} from 'react';
+import {use, useContext, useState, useTransition} from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import KeyValue from './KeyValue';
@@ -17,10 +17,13 @@ import {serializeDataForCopy, pluralize} from '../utils';
 import Store from '../../store';
 import styles from './InspectedElementSharedStyles.css';
 import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
-import StackTraceView from './StackTraceView';
+import FetchFileWithCachingContext from './FetchFileWithCachingContext';
+import StackTraceView, {IgnoreListToggleButton} from './StackTraceView';
 import OwnerView from './OwnerView';
 import {meta} from '../../../hydration';
+import Skeleton from './Skeleton';
 import useInferredName from '../useInferredName';
+import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
 
 import {getClassNameForEnvironment} from '../SuspenseTab/SuspenseEnvironmentColors.js';
 
@@ -29,6 +32,8 @@ import type {
   SerializedAsyncInfo,
 } from 'react-devtools-shared/src/frontend/types';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
+import type {ReactStackTrace} from 'shared/ReactTypes';
+import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
 
 import {
   UNKNOWN_SUSPENDERS_NONE,
@@ -92,6 +97,78 @@ function formatBytes(bytes: number) {
     return (bytes / 1_000_000).toFixed(1) + ' mB';
   }
   return (bytes / 1_000_000_000).toFixed(1) + ' gB';
+}
+
+type StackTraceGroupProps = {
+  children: (showIgnoreList: boolean) => React.Node,
+  ioStack: null | ReactStackTrace,
+  asyncInfoStack: null | ReactStackTrace,
+};
+
+function StackTraceGroup({
+  children,
+  ioStack,
+  asyncInfoStack,
+}: StackTraceGroupProps): React.Node {
+  const [showIgnoreList, setShowIgnoreList] = useState(false);
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  const ioStackHasIgnoredFrames =
+    ioStack !== null &&
+    ioStack.some(callSite => {
+      const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+      // symbolicated output is cached
+      const symbolicatedCallSite: null | SourceMappedLocation =
+        fetchFileWithCaching !== null
+          ? use(
+              symbolicateSourceWithCache(
+                fetchFileWithCaching,
+                virtualURL,
+                virtualLine,
+                virtualColumn,
+              ),
+            )
+          : null;
+
+      return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+    });
+
+  const asyncInfoStackHasIgnoredFrames =
+    asyncInfoStack !== null &&
+    asyncInfoStack.some(callSite => {
+      const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+      // symbolicated output is cached
+      const symbolicatedCallSite: null | SourceMappedLocation =
+        fetchFileWithCaching !== null
+          ? use(
+              symbolicateSourceWithCache(
+                fetchFileWithCaching,
+                virtualURL,
+                virtualLine,
+                virtualColumn,
+              ),
+            )
+          : null;
+
+      return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+    });
+
+  const hasIgnoredFrames =
+    ioStackHasIgnoredFrames || asyncInfoStackHasIgnoredFrames;
+
+  return (
+    <>
+      {children(showIgnoreList)}
+      {hasIgnoredFrames && (
+        <IgnoreListToggleButton
+          onClick={() => setShowIgnoreList(prev => !prev)}
+          showIgnoreList={showIgnoreList}
+        />
+      )}
+    </>
+  );
 }
 
 function SuspendedByRow({
@@ -203,102 +280,126 @@ function SuspendedByRow({
       </Button>
       {isOpen && (
         <div className={styles.CollapsableContent}>
-          {showIOStack && (
-            <StackTraceView
-              stack={ioInfo.stack}
-              environmentName={
-                ioOwner !== null && ioOwner.env === ioInfo.env
-                  ? null
-                  : ioInfo.env
-              }
-            />
-          )}
-          {ioOwner !== null &&
-          ioOwner.id !== inspectedElement.id &&
-          (showIOStack ||
-            !showAwaitStack ||
-            asyncOwner === null ||
-            ioOwner.id !== asyncOwner.id) ? (
-            <OwnerView
-              key={ioOwner.id}
-              displayName={ioOwner.displayName || 'Anonymous'}
-              environmentName={
-                ioOwner.env === inspectedElement.env &&
-                ioOwner.env === ioInfo.env
-                  ? null
-                  : ioOwner.env
-              }
-              hocDisplayNames={ioOwner.hocDisplayNames}
-              compiledWithForget={ioOwner.compiledWithForget}
-              id={ioOwner.id}
-              isInStore={store.containsElement(ioOwner.id)}
-              type={ioOwner.type}
-            />
-          ) : null}
-          {showAwaitStack ? (
-            <>
-              <div className={styles.SmallHeader}>awaited at:</div>
-              {asyncInfo.stack !== null && asyncInfo.stack.length > 0 && (
-                <StackTraceView
-                  stack={asyncInfo.stack}
-                  environmentName={
-                    asyncOwner !== null && asyncOwner.env === asyncInfo.env
-                      ? null
-                      : asyncInfo.env
-                  }
-                />
+          <React.Suspense
+            fallback={
+              <div className={styles.SuspendedBySkeleton}>
+                <Skeleton height={16} width="40%" />
+              </div>
+            }>
+            <StackTraceGroup
+              ioStack={showIOStack ? ioInfo.stack : null}
+              asyncInfoStack={showAwaitStack ? asyncInfo.stack : null}>
+              {(showIgnoreList: boolean) => (
+                <>
+                  {showIOStack && (
+                    <StackTraceView
+                      stack={ioInfo.stack}
+                      environmentName={
+                        ioOwner !== null && ioOwner.env === ioInfo.env
+                          ? null
+                          : ioInfo.env
+                      }
+                      showIgnoreList={showIgnoreList}
+                    />
+                  )}
+                  {ioOwner !== null &&
+                  ioOwner.id !== inspectedElement.id &&
+                  (showIOStack ||
+                    !showAwaitStack ||
+                    asyncOwner === null ||
+                    ioOwner.id !== asyncOwner.id) ? (
+                    <OwnerView
+                      key={ioOwner.id}
+                      displayName={ioOwner.displayName || 'Anonymous'}
+                      environmentName={
+                        ioOwner.env === inspectedElement.env &&
+                        ioOwner.env === ioInfo.env
+                          ? null
+                          : ioOwner.env
+                      }
+                      hocDisplayNames={ioOwner.hocDisplayNames}
+                      compiledWithForget={ioOwner.compiledWithForget}
+                      id={ioOwner.id}
+                      isInStore={store.containsElement(ioOwner.id)}
+                      type={ioOwner.type}
+                    />
+                  ) : null}
+                  {showAwaitStack ? (
+                    <>
+                      <div className={styles.SmallHeader}>awaited at:</div>
+                      {asyncInfo.stack !== null &&
+                        asyncInfo.stack.length > 0 && (
+                          <StackTraceView
+                            stack={asyncInfo.stack}
+                            environmentName={
+                              asyncOwner !== null &&
+                              asyncOwner.env === asyncInfo.env
+                                ? null
+                                : asyncInfo.env
+                            }
+                            showIgnoreList={showIgnoreList}
+                          />
+                        )}
+                      {asyncOwner !== null &&
+                      asyncOwner.id !== inspectedElement.id ? (
+                        <OwnerView
+                          key={asyncOwner.id}
+                          displayName={asyncOwner.displayName || 'Anonymous'}
+                          environmentName={
+                            asyncOwner.env === inspectedElement.env &&
+                            asyncOwner.env === asyncInfo.env
+                              ? null
+                              : asyncOwner.env
+                          }
+                          hocDisplayNames={asyncOwner.hocDisplayNames}
+                          compiledWithForget={asyncOwner.compiledWithForget}
+                          id={asyncOwner.id}
+                          isInStore={store.containsElement(asyncOwner.id)}
+                          type={asyncOwner.type}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+                  <div className={styles.PreviewContainer}>
+                    <KeyValue
+                      alphaSort={true}
+                      bridge={bridge}
+                      canDeletePaths={false}
+                      canEditValues={false}
+                      canRenamePaths={false}
+                      depth={1}
+                      element={element}
+                      hidden={false}
+                      inspectedElement={inspectedElement}
+                      name={
+                        isFulfilled
+                          ? 'awaited value'
+                          : isRejected
+                            ? 'rejected with'
+                            : 'pending value'
+                      }
+                      path={
+                        isFulfilled
+                          ? [index, 'awaited', 'value', 'value']
+                          : isRejected
+                            ? [index, 'awaited', 'value', 'reason']
+                            : [index, 'awaited', 'value']
+                      }
+                      pathRoot="suspendedBy"
+                      store={store}
+                      value={
+                        isFulfilled
+                          ? value.value
+                          : isRejected
+                            ? value.reason
+                            : value
+                      }
+                    />
+                  </div>
+                </>
               )}
-              {asyncOwner !== null && asyncOwner.id !== inspectedElement.id ? (
-                <OwnerView
-                  key={asyncOwner.id}
-                  displayName={asyncOwner.displayName || 'Anonymous'}
-                  environmentName={
-                    asyncOwner.env === inspectedElement.env &&
-                    asyncOwner.env === asyncInfo.env
-                      ? null
-                      : asyncOwner.env
-                  }
-                  hocDisplayNames={asyncOwner.hocDisplayNames}
-                  compiledWithForget={asyncOwner.compiledWithForget}
-                  id={asyncOwner.id}
-                  isInStore={store.containsElement(asyncOwner.id)}
-                  type={asyncOwner.type}
-                />
-              ) : null}
-            </>
-          ) : null}
-          <div className={styles.PreviewContainer}>
-            <KeyValue
-              alphaSort={true}
-              bridge={bridge}
-              canDeletePaths={false}
-              canEditValues={false}
-              canRenamePaths={false}
-              depth={1}
-              element={element}
-              hidden={false}
-              inspectedElement={inspectedElement}
-              name={
-                isFulfilled
-                  ? 'awaited value'
-                  : isRejected
-                    ? 'rejected with'
-                    : 'pending value'
-              }
-              path={
-                isFulfilled
-                  ? [index, 'awaited', 'value', 'value']
-                  : isRejected
-                    ? [index, 'awaited', 'value', 'reason']
-                    : [index, 'awaited', 'value']
-              }
-              pathRoot="suspendedBy"
-              store={store}
-              value={
-                isFulfilled ? value.value : isRejected ? value.reason : value
-              }
-            />
-          </div>
+            </StackTraceGroup>
+          </React.Suspense>
         </div>
       )}
     </div>
@@ -584,6 +685,9 @@ export default function InspectedElementSuspendedBy({
       break;
   }
 
+  if (groups.length === 0) {
+    return null;
+  }
   return (
     <div>
       <div className={styles.HeaderRow}>

@@ -16,14 +16,13 @@ import {
   IdentifierId,
   SourceLocation,
 } from '../HIR';
+import {Environment} from '../HIR/Environment';
 import {
   eachInstructionValueOperand,
   eachTerminalOperand,
 } from '../HIR/visitors';
-import {Result} from '../Utils/Result';
 
-export function validateUseMemo(fn: HIRFunction): Result<void, CompilerError> {
-  const errors = new CompilerError();
+export function validateUseMemo(fn: HIRFunction): void {
   const voidMemoErrors = new CompilerError();
   const useMemos = new Set<IdentifierId>();
   const react = new Set<IdentifierId>();
@@ -91,7 +90,7 @@ export function validateUseMemo(fn: HIRFunction): Result<void, CompilerError> {
               firstParam.kind === 'Identifier'
                 ? firstParam.loc
                 : firstParam.place.loc;
-            errors.pushDiagnostic(
+            fn.env.recordError(
               CompilerDiagnostic.create({
                 category: ErrorCategory.UseMemo,
                 reason: 'useMemo() callbacks may not accept parameters',
@@ -107,7 +106,7 @@ export function validateUseMemo(fn: HIRFunction): Result<void, CompilerError> {
           }
 
           if (body.loweredFunc.func.async || body.loweredFunc.func.generator) {
-            errors.pushDiagnostic(
+            fn.env.recordError(
               CompilerDiagnostic.create({
                 category: ErrorCategory.UseMemo,
                 reason:
@@ -123,7 +122,7 @@ export function validateUseMemo(fn: HIRFunction): Result<void, CompilerError> {
             );
           }
 
-          validateNoContextVariableAssignment(body.loweredFunc.func, errors);
+          validateNoContextVariableAssignment(body.loweredFunc.func, fn.env);
 
           if (fn.env.config.validateNoVoidUseMemo) {
             if (!hasNonVoidReturn(body.loweredFunc.func)) {
@@ -177,12 +176,11 @@ export function validateUseMemo(fn: HIRFunction): Result<void, CompilerError> {
     }
   }
   fn.env.logErrors(voidMemoErrors.asResult());
-  return errors.asResult();
 }
 
 function validateNoContextVariableAssignment(
   fn: HIRFunction,
-  errors: CompilerError,
+  env: Environment,
 ): void {
   const context = new Set(fn.context.map(place => place.identifier.id));
   for (const block of fn.body.blocks.values()) {
@@ -191,7 +189,7 @@ function validateNoContextVariableAssignment(
       switch (value.kind) {
         case 'StoreContext': {
           if (context.has(value.lvalue.place.identifier.id)) {
-            errors.pushDiagnostic(
+            env.recordError(
               CompilerDiagnostic.create({
                 category: ErrorCategory.UseMemo,
                 reason:

@@ -43,11 +43,6 @@ module.exports = {
     __REACT_DEVTOOLS_GLOBAL_HOOK__: 'readonly',
     // FB
     __DEV__: 'readonly',
-    // Fabric. See https://github.com/facebook/react/pull/15490
-    // for more information
-    nativeFabricUIManager: 'readonly',
-    // RN flag to enable microtasks
-    RN$enableMicrotasksInReact: 'readonly',
     // Trusted Types
     trustedTypes: 'readonly',
     // RN supports this

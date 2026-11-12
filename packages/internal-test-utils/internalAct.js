@@ -34,7 +34,6 @@ async function waitForMicrotasks() {
 
 function aggregateErrors(errors: Array<mixed>): mixed {
   if (errors.length > 1 && typeof AggregateError === 'function') {
-    // eslint-disable-next-line no-undef
     return new AggregateError(errors);
   }
   return errors[0];
@@ -164,7 +163,7 @@ export async function act<T>(scope: () => Thenable<T>): Thenable<T> {
       throw thrownError;
     }
 
-    // $FlowFixMe[incompatible-return]
+    // $FlowFixMe[incompatible-type]
     return result;
   } finally {
     const depth = actingUpdatesScopeDepth;
@@ -286,7 +285,7 @@ export async function serverAct<T>(scope: () => Thenable<T>): Thenable<T> {
       throw thrownError;
     }
 
-    // $FlowFixMe[incompatible-return]
+    // $FlowFixMe[incompatible-type]
     return result;
   } finally {
     if (typeof process === 'object') {

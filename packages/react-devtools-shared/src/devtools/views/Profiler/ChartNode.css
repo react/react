@@ -13,6 +13,15 @@
   transition: all ease-in-out 250ms;
 }
 
+.Highlight {
+  border-radius: 0.125rem;
+  background-color: var(--color-search-match);
+}
+.CurrentHighlight {
+  border-radius: 0.125rem;
+  background-color: var(--color-search-match-current);
+}
+
 .Div {
   pointer-events: none;
   white-space: nowrap;

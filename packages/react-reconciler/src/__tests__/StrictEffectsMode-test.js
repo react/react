@@ -628,6 +628,72 @@ describe('StrictEffectsMode', () => {
     }
   });
 
+  it('reordering keyed children does not re-run effects', async () => {
+    const log = [];
+    function Child({label}) {
+      React.useEffect(() => {
+        log.push(`${label} useEffect mount`);
+        return () => log.push(`${label} useEffect unmount`);
+      }, []);
+      React.useLayoutEffect(() => {
+        log.push(`${label} useLayoutEffect mount`);
+        return () => log.push(`${label} useLayoutEffect unmount`);
+      }, []);
+
+      return null;
+    }
+
+    function App({keys}) {
+      return keys.map(key => <Child key={key} label={key} />);
+    }
+
+    await act(() => {
+      ReactNoop.render(
+        <React.StrictMode>
+          <App keys={['a', 'b']} />
+        </React.StrictMode>,
+      );
+    });
+
+    if (__DEV__) {
+      expect(log).toEqual([
+        'a useLayoutEffect mount',
+        'b useLayoutEffect mount',
+        'a useEffect mount',
+        'b useEffect mount',
+        'a useLayoutEffect unmount',
+        'b useLayoutEffect unmount',
+        'a useEffect unmount',
+        'b useEffect unmount',
+        'a useLayoutEffect mount',
+        'b useLayoutEffect mount',
+        'a useEffect mount',
+        'b useEffect mount',
+      ]);
+    } else {
+      expect(log).toEqual([
+        'a useLayoutEffect mount',
+        'b useLayoutEffect mount',
+        'a useEffect mount',
+        'b useEffect mount',
+      ]);
+    }
+
+    // Reordering existing children must not re-run their effects. The
+    // components are neither unmounted nor remounted, and their effect
+    // dependencies have not changed.
+    log.length = 0;
+    await act(() => {
+      ReactNoop.render(
+        <React.StrictMode>
+          <App keys={['b', 'a']} />
+        </React.StrictMode>,
+      );
+    });
+
+    expect(log).toEqual([]);
+  });
+
   it('classes and functions are double invoked together correctly', async () => {
     const log = [];
     class ClassChild extends React.PureComponent {

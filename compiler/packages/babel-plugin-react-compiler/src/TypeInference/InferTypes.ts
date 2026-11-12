@@ -8,7 +8,6 @@
 import * as t from '@babel/types';
 import {CompilerError} from '../CompilerError';
 import {Environment} from '../HIR';
-import {lowerType} from '../HIR/BuildHIR';
 import {
   GeneratedSource,
   HIRFunction,
@@ -26,7 +25,6 @@ import {
 } from '../HIR/HIR';
 import {
   BuiltInArrayId,
-  BuiltInEventHandlerId,
   BuiltInFunctionId,
   BuiltInJsxId,
   BuiltInMixedReadonlyId,
@@ -223,22 +221,11 @@ function* generateInstructionTypes(
     }
 
     case 'StoreLocal': {
-      if (env.config.enableUseTypeAnnotations) {
-        yield equation(
-          value.lvalue.place.identifier.type,
-          value.value.identifier.type,
-        );
-        const valueType =
-          value.type === null ? makeType() : lowerType(value.type);
-        yield equation(valueType, value.lvalue.place.identifier.type);
-        yield equation(left, valueType);
-      } else {
-        yield equation(left, value.value.identifier.type);
-        yield equation(
-          value.lvalue.place.identifier.type,
-          value.value.identifier.type,
-        );
-      }
+      yield equation(left, value.value.identifier.type);
+      yield equation(
+        value.lvalue.place.identifier.type,
+        value.value.identifier.type,
+      );
       break;
     }
 
@@ -256,8 +243,10 @@ function* generateInstructionTypes(
       break;
     }
 
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext':
+    case 'PrefixUpdateLocal': {
       yield equation(value.value.identifier.type, {kind: 'Primitive'});
       yield equation(value.lvalue.identifier.type, {kind: 'Primitive'});
       yield equation(left, {kind: 'Primitive'});
@@ -277,7 +266,7 @@ function* generateInstructionTypes(
       /*
        * TODO: callee could be a hook or a function, so this type equation isn't correct.
        * We should change Hook to a subtype of Function or change unifier logic.
-       * (see https://github.com/facebook/react-forget/pull/1427)
+       * (see https://github.com/react/react-forget/pull/1427)
        */
       let shapeId: string | null = null;
       if (env.config.enableTreatSetIdentifiersAsStateSetters) {
@@ -301,7 +290,7 @@ function* generateInstructionTypes(
       /*
        * TODO: callee could be a hook or a function, so this type equation isn't correct.
        * We should change Hook to a subtype of Function or change unifier logic.
-       * (see https://github.com/facebook/react-forget/pull/1427)
+       * (see https://github.com/react/react-forget/pull/1427)
        */
       yield equation(value.tag.identifier.type, {
         kind: 'Function',
@@ -422,12 +411,7 @@ function* generateInstructionTypes(
     }
 
     case 'TypeCastExpression': {
-      if (env.config.enableUseTypeAnnotations) {
-        yield equation(value.type, value.value.identifier.type);
-        yield equation(left, value.type);
-      } else {
-        yield equation(left, value.value.identifier.type);
-      }
+      yield equation(left, value.value.identifier.type);
       break;
     }
 
@@ -468,41 +452,6 @@ function* generateInstructionTypes(
               yield equation(prop.place.identifier.type, {
                 kind: 'Object',
                 shapeId: BuiltInUseRefId,
-              });
-            }
-          }
-        }
-      }
-      if (env.config.enableInferEventHandlers) {
-        if (
-          value.kind === 'JsxExpression' &&
-          value.tag.kind === 'BuiltinTag' &&
-          !value.tag.name.includes('-')
-        ) {
-          /*
-           * Infer event handler types for built-in DOM elements.
-           * Props starting with "on" (e.g., onClick, onSubmit) on primitive tags
-           * are inferred as event handlers. This allows functions with ref access
-           * to be passed to these props, since DOM event handlers are guaranteed
-           * by React to only execute in response to events, never during render.
-           *
-           * We exclude tags with hyphens to avoid web components (custom elements),
-           * which are required by the HTML spec to contain a hyphen. Web components
-           * may call event handler props during their lifecycle methods (e.g.,
-           * connectedCallback), which would be unsafe for ref access.
-           */
-          for (const prop of value.props) {
-            if (
-              prop.kind === 'JsxAttribute' &&
-              prop.name.startsWith('on') &&
-              prop.name.length > 2 &&
-              prop.name[2] === prop.name[2].toUpperCase()
-            ) {
-              yield equation(prop.place.identifier.type, {
-                kind: 'Function',
-                shapeId: BuiltInEventHandlerId,
-                return: makeType(),
-                isConstructor: false,
               });
             }
           }

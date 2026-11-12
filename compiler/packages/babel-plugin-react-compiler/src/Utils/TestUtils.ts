@@ -39,14 +39,6 @@ function tryParseTestPragmaValue(val: string): Result<unknown, unknown> {
 
 const testComplexConfigDefaults: PartialEnvironmentConfig = {
   validateNoCapitalizedCalls: [],
-  enableChangeDetectionForDebugging: {
-    source: 'react-compiler-runtime',
-    importSpecifierName: '$structuralCheck',
-  },
-  enableEmitFreeze: {
-    source: 'react-compiler-runtime',
-    importSpecifierName: 'makeReadOnly',
-  },
   enableEmitInstrumentForget: {
     fn: {
       source: 'react-compiler-runtime',
@@ -62,37 +54,6 @@ const testComplexConfigDefaults: PartialEnvironmentConfig = {
     source: 'react-compiler-runtime',
     importSpecifierName: '$dispatcherGuard',
   },
-  inlineJsxTransform: {
-    elementSymbol: 'react.transitional.element',
-    globalDevVar: 'DEV',
-  },
-  lowerContextAccess: {
-    source: 'react-compiler-runtime',
-    importSpecifierName: 'useContext_withSelector',
-  },
-  inferEffectDependencies: [
-    {
-      function: {
-        source: 'react',
-        importSpecifierName: 'useEffect',
-      },
-      autodepsIndex: 1,
-    },
-    {
-      function: {
-        source: 'shared-runtime',
-        importSpecifierName: 'useSpecialEffect',
-      },
-      autodepsIndex: 2,
-    },
-    {
-      function: {
-        source: 'useEffectWrapper',
-        importSpecifierName: 'default',
-      },
-      autodepsIndex: 1,
-    },
-  ],
 };
 
 function* splitPragma(

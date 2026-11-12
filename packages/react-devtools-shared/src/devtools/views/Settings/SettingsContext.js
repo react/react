@@ -56,7 +56,7 @@ type Context = {
 };
 
 const SettingsContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 SettingsContext.displayName = 'SettingsContext';
 
@@ -116,24 +116,24 @@ function SettingsContextController({
 
   const documentElements = useMemo<DocumentElements>(() => {
     const array: Array<HTMLElement> = [
-      ((document.documentElement: any): HTMLElement),
+      document.documentElement as any as HTMLElement,
     ];
     if (componentsPortalContainer != null) {
       array.push(
-        ((componentsPortalContainer.ownerDocument
-          .documentElement: any): HTMLElement),
+        componentsPortalContainer.ownerDocument
+          .documentElement as any as HTMLElement,
       );
     }
     if (profilerPortalContainer != null) {
       array.push(
-        ((profilerPortalContainer.ownerDocument
-          .documentElement: any): HTMLElement),
+        profilerPortalContainer.ownerDocument
+          .documentElement as any as HTMLElement,
       );
     }
     if (suspensePortalContainer != null) {
       array.push(
-        ((suspensePortalContainer.ownerDocument
-          .documentElement: any): HTMLElement),
+        suspensePortalContainer.ownerDocument
+          .documentElement as any as HTMLElement,
       );
     }
     return array;
@@ -218,11 +218,11 @@ export function updateDisplayDensity(
 ): void {
   // Sizes and paddings/margins are all rem-based,
   // so update the root font-size as well when the display preference changes.
-  const computedStyle = getComputedStyle((document.body: any));
+  const computedStyle = getComputedStyle(document.body as any);
   const fontSize = computedStyle.getPropertyValue(
     `--${displayDensity}-root-font-size`,
   );
-  const root = ((document.querySelector(':root'): any): HTMLElement);
+  const root = document.querySelector(':root') as any as HTMLElement;
   root.style.fontSize = fontSize;
 }
 

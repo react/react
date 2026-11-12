@@ -12,6 +12,7 @@
 
 let React;
 let ReactNoop;
+let assertConsoleErrorDev;
 let waitForAll;
 let waitForThrow;
 
@@ -22,6 +23,7 @@ describe('ReactIncrementalErrorReplay', () => {
     ReactNoop = require('react-noop-renderer');
 
     const InternalTestUtils = require('internal-test-utils');
+    assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
     waitForAll = InternalTestUtils.waitForAll;
     waitForThrow = InternalTestUtils.waitForThrow;
   });
@@ -50,5 +52,9 @@ describe('ReactIncrementalErrorReplay', () => {
     }
     ReactNoop.render(<App />);
     await waitForAll([]);
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
+    ]);
   });
 });

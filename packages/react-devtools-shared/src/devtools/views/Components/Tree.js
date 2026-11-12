@@ -132,7 +132,7 @@ export default function Tree(): React.Node {
         Math.min(0, elementLeft - viewportLeft) +
         Math.max(0, elementRight - viewportRight);
 
-      // $FlowExpectedError[incompatible-call] Flow doesn't support instant as an option for behavior.
+      // $FlowExpectedError[incompatible-type] Flow doesn't support instant as an option for behavior.
       listDOMElement.scrollBy({
         left: horizontalDelta,
         behavior: 'instant',
@@ -181,7 +181,7 @@ export default function Tree(): React.Node {
         Math.min(0, elementLeft - viewportLeft) +
         Math.max(0, elementRight - viewportRight);
 
-      // $FlowExpectedError[incompatible-call] Flow doesn't support instant as an option for behavior.
+      // $FlowExpectedError[incompatible-type] Flow doesn't support instant as an option for behavior.
       listDOMElement.scrollBy({
         top: verticalDelta,
         left: horizontalDelta,
@@ -215,7 +215,7 @@ export default function Tree(): React.Node {
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event: any).target.tagName === 'INPUT' || event.defaultPrevented) {
+      if ((event as any).target.tagName === 'INPUT' || event.defaultPrevented) {
         return;
       }
 
@@ -237,6 +237,7 @@ export default function Tree(): React.Node {
               : null;
           if (element !== null) {
             if (event.altKey) {
+              // $FlowFixMe[invalid-compare]
               if (element.ownerID !== null) {
                 dispatch({type: 'SELECT_OWNER_LIST_PREVIOUS_ELEMENT_IN_TREE'});
               }
@@ -384,6 +385,23 @@ export default function Tree(): React.Node {
 
   const handleMouseLeave = clearHighlightHostInstance;
 
+  // The synthetic onMouseLeave on the tree div only fires within the document,
+  // so we need a native listener on the document itself.
+  useEffect(() => {
+    const container = focusTargetRef.current;
+    if (container == null) {
+      return;
+    }
+    const ownerDocument = container.ownerDocument;
+    ownerDocument.addEventListener('mouseleave', clearHighlightHostInstance);
+    return () => {
+      ownerDocument.removeEventListener(
+        'mouseleave',
+        clearHighlightHostInstance,
+      );
+    };
+  }, [clearHighlightHostInstance]);
+
   // Let react-window know to re-render any time the underlying tree data changes.
   // This includes the owner context, since it controls a filtered view of the tree.
   const itemData = useMemo<ItemData>(
@@ -440,7 +458,7 @@ export default function Tree(): React.Node {
         If this seems stuck, please follow the{' '}
         <a
           className={styles.Link}
-          href="https://github.com/facebook/react/blob/main/packages/react-devtools/README.md#the-react-tab-shows-no-components"
+          href="https://github.com/react/react/blob/main/packages/react-devtools/README.md#the-react-tab-shows-no-components"
           target="_blank">
           troubleshooting instructions
         </a>

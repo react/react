@@ -7,10 +7,18 @@
 
 import * as t from '@babel/types';
 import {codeFrameColumns} from '@babel/code-frame';
-import {type SourceLocation} from './HIR';
+import {
+  getBabelLocation,
+  type SourceLocation,
+  type GeneratedSource,
+} from './HIR/SourceLocation';
+
 import {Err, Ok, Result} from './Utils/Result';
 import {assertExhaustive} from './Utils/utils';
 import invariant from 'invariant';
+
+type DiagnosticSourceLocation = t.SourceLocation | SourceLocation;
+type BabelSourceLocation = t.SourceLocation | typeof GeneratedSource;
 
 // Number of context lines to display above the source of an error
 const CODEFRAME_LINES_ABOVE = 2;
@@ -70,7 +78,7 @@ export type CompilerDiagnosticDetail =
    */
   | {
       kind: 'error';
-      loc: SourceLocation | null;
+      loc: DiagnosticSourceLocation | null;
       message: string | null;
     }
   | {
@@ -107,7 +115,7 @@ export type CompilerErrorDetailOptions = {
   category: ErrorCategory;
   reason: string;
   description?: string | null | undefined;
-  loc: SourceLocation | null;
+  loc: DiagnosticSourceLocation | null;
   suggestions?: Array<CompilerSuggestion> | null | undefined;
 };
 
@@ -119,11 +127,32 @@ export type PrintErrorMessageOptions = {
   eslint: boolean;
 };
 
+type BabelDiagnosticDetail =
+  | {kind: 'error'; loc: BabelSourceLocation | null; message: string | null}
+  | {kind: 'hint'; message: string};
+
+function toBabelDiagnosticDetail(
+  detail: CompilerDiagnosticDetail,
+): BabelDiagnosticDetail {
+  if (detail.kind === 'hint') {
+    return detail;
+  }
+  return {
+    ...detail,
+    loc: detail.loc != null ? getBabelLocation(detail.loc) : null,
+  };
+}
+
 export class CompilerDiagnostic {
-  options: CompilerDiagnosticOptions;
+  options: Omit<CompilerDiagnosticOptions, 'details'> & {
+    details: Array<BabelDiagnosticDetail>;
+  };
 
   constructor(options: CompilerDiagnosticOptions) {
-    this.options = options;
+    this.options = {
+      ...options,
+      details: options.details.map(toBabelDiagnosticDetail),
+    };
   }
 
   static create(
@@ -149,11 +178,13 @@ export class CompilerDiagnostic {
   }
 
   withDetails(...details: Array<CompilerDiagnosticDetail>): CompilerDiagnostic {
-    this.options.details.push(...details);
+    for (const detail of details) {
+      this.options.details.push(toBabelDiagnosticDetail(detail));
+    }
     return this;
   }
 
-  primaryLocation(): SourceLocation | null {
+  primaryLocation(): BabelSourceLocation | null {
     const firstErrorDetail = this.options.details.filter(
       d => d.kind === 'error',
     )[0];
@@ -227,10 +258,15 @@ export class CompilerDiagnostic {
  * @deprecated use {@link CompilerDiagnostic} instead
  */
 export class CompilerErrorDetail {
-  options: CompilerErrorDetailOptions;
+  options: Omit<CompilerErrorDetailOptions, 'loc'> & {
+    loc: BabelSourceLocation | null;
+  };
 
   constructor(options: CompilerErrorDetailOptions) {
-    this.options = options;
+    this.options = {
+      ...options,
+      loc: options.loc != null ? getBabelLocation(options.loc) : null,
+    };
   }
 
   get reason(): CompilerErrorDetailOptions['reason'] {
@@ -242,7 +278,7 @@ export class CompilerErrorDetail {
   get severity(): ErrorSeverity {
     return getRuleForCategory(this.category).severity;
   }
-  get loc(): CompilerErrorDetailOptions['loc'] {
+  get loc(): BabelSourceLocation | null {
     return this.options.loc;
   }
   get suggestions(): CompilerErrorDetailOptions['suggestions'] {
@@ -252,7 +288,7 @@ export class CompilerErrorDetail {
     return this.options.category;
   }
 
-  primaryLocation(): SourceLocation | null {
+  primaryLocation(): BabelSourceLocation | null {
     return this.loc;
   }
 
@@ -310,7 +346,7 @@ export class CompilerError extends Error {
       reason: CompilerDiagnosticOptions['reason'];
       description?: CompilerDiagnosticOptions['description'];
       message?: string | null;
-      loc: SourceLocation;
+      loc: DiagnosticSourceLocation;
     },
   ): asserts condition {
     if (!condition) {
@@ -522,7 +558,7 @@ export class CompilerError extends Error {
   }
 }
 
-function printCodeFrame(
+export function printCodeFrame(
   source: string,
   loc: t.SourceLocation,
   message: string,
@@ -565,15 +601,12 @@ function printCodeFrame(
 function printErrorSummary(category: ErrorCategory, message: string): string {
   let heading: string;
   switch (category) {
-    case ErrorCategory.AutomaticEffectDependencies:
     case ErrorCategory.CapitalizedCalls:
     case ErrorCategory.Config:
     case ErrorCategory.EffectDerivationsOfState:
     case ErrorCategory.EffectSetState:
     case ErrorCategory.ErrorBoundaries:
-    case ErrorCategory.Factories:
     case ErrorCategory.FBT:
-    case ErrorCategory.Fire:
     case ErrorCategory.Gating:
     case ErrorCategory.Globals:
     case ErrorCategory.Hooks:
@@ -637,10 +670,6 @@ export enum ErrorCategory {
    * Checking that useMemos always return a value
    */
   VoidUseMemo = 'VoidUseMemo',
-  /**
-   * Checking for higher order functions acting as factories for components/hooks
-   */
-  Factories = 'Factories',
   /**
    * Checks that manual memoization is preserved
    */
@@ -719,14 +748,6 @@ export enum ErrorCategory {
    */
   Suppression = 'Suppression',
   /**
-   * Issues with auto deps
-   */
-  AutomaticEffectDependencies = 'AutomaticEffectDependencies',
-  /**
-   * Issues with `fire`
-   */
-  Fire = 'Fire',
-  /**
    * fbt-specific issues
    */
   FBT = 'FBT',
@@ -790,16 +811,6 @@ export function getRuleForCategory(category: ErrorCategory): LintRule {
 
 function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
   switch (category) {
-    case ErrorCategory.AutomaticEffectDependencies: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'automatic-effect-dependencies',
-        description:
-          'Verifies that automatic effect dependencies are compiled if opted-in',
-        preset: LintRulePreset.Off,
-      };
-    }
     case ErrorCategory.CapitalizedCalls: {
       return {
         category,
@@ -870,32 +881,12 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         preset: LintRulePreset.Recommended,
       };
     }
-    case ErrorCategory.Factories: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'component-hook-factories',
-        description:
-          'Validates against higher order functions defining nested components or hooks. ' +
-          'Components and hooks should be defined at the module level',
-        preset: LintRulePreset.Recommended,
-      };
-    }
     case ErrorCategory.FBT: {
       return {
         category,
         severity: ErrorSeverity.Error,
         name: 'fbt',
         description: 'Validates usage of fbt',
-        preset: LintRulePreset.Off,
-      };
-    }
-    case ErrorCategory.Fire: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'fire',
-        description: 'Validates usage of `fire`',
         preset: LintRulePreset.Off,
       };
     }

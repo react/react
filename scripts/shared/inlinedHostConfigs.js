@@ -327,6 +327,36 @@ module.exports = [
     isServerSupported: true,
   },
   {
+    shortName: 'dom-browser-fb',
+    entryPoints: ['react-flight-server-fb/client.browser'],
+    paths: [
+      'react-dom',
+      'react-dom/src/ReactDOMReactServer.js',
+      'react-dom/client',
+      'react-dom/profiling',
+      'react-dom/server',
+      'react-dom/server.node',
+      'react-dom-bindings',
+      'react-dom-bindings/src/server/ReactDOMFlightServerHostDispatcher.js',
+      'react-dom-bindings/src/server/ReactFlightServerConfigDOM.js',
+      'react-dom-bindings/src/shared/ReactFlightClientConfigDOM.js',
+      'react-flight-server-fb',
+      'react-flight-server-fb/client',
+      'react-flight-server-fb/client.browser',
+      'react-flight-server-fb/src/client/ReactFlightDOMClientBrowser.js', // react-flight-server-fb/client.browser
+      'react-flight-server-fb/src/server/react-flight-dom-server.node',
+      'react-flight-server-fb/src/server/ReactFlightDOMServerNode.js', // react-flight-server-fb/src/server/react-flight-dom-server.node
+      'react-devtools',
+      'react-devtools-core',
+      'react-devtools-shell',
+      'react-devtools-shared',
+      'shared/ReactDOMSharedInternals',
+      'react-server/src/ReactFlightServerConfigDebugNoop.js',
+    ],
+    isFlowTyped: true,
+    isServerSupported: true,
+  },
+  {
     shortName: 'dom-browser-turbopack',
     entryPoints: [
       'react-server-dom-turbopack/src/client/react-flight-dom-client.browser',
@@ -565,6 +595,40 @@ module.exports = [
     isServerSupported: true,
   },
   {
+    shortName: 'dom-node-fb',
+    entryPoints: [
+      'react-flight-server-fb/src/server/react-flight-dom-server.node',
+    ],
+    paths: [
+      'react-dom',
+      'react-dom/src/ReactDOMReactServer.js',
+      'react-dom-bindings',
+      'react-dom/client',
+      'react-dom/profiling',
+      'react-dom/server',
+      'react-dom/server.node',
+      'react-dom/static',
+      'react-dom/static.node',
+      'react-dom/src/server/react-dom-server.node',
+      'react-dom/src/server/ReactDOMFizzServerNode.js', // react-dom/server.node
+      'react-dom/src/server/ReactDOMFizzStaticNode.js',
+      'react-dom-bindings/src/server/ReactDOMFlightServerHostDispatcher.js',
+      'react-dom-bindings/src/server/ReactFlightServerConfigDOM.js',
+      'react-dom-bindings/src/shared/ReactFlightClientConfigDOM.js',
+      'react-flight-server-fb',
+      'react-flight-server-fb/src/server/react-flight-dom-server.node',
+      'react-flight-server-fb/src/server/ReactFlightDOMServerNode.js', // react-flight-server-fb/src/server/react-flight-dom-server.node
+      'react-devtools',
+      'react-devtools-core',
+      'react-devtools-shell',
+      'react-devtools-shared',
+      'shared/ReactDOMSharedInternals',
+      'react-server/src/ReactFlightServerConfigDebugNoop.js',
+    ],
+    isFlowTyped: true,
+    isServerSupported: true,
+  },
+  {
     shortName: 'dom-legacy',
     entryPoints: [
       'react-dom/src/server/ReactDOMLegacyServerBrowser.js', // react-dom/server.browser
@@ -622,16 +686,6 @@ module.exports = [
     isFlightSupported: false,
   },
   {
-    shortName: 'native',
-    entryPoints: ['react-native-renderer'],
-    paths: [
-      'react-native-renderer',
-      'react-server/src/ReactFlightServerConfigDebugNoop.js',
-    ],
-    isFlowTyped: true,
-    isServerSupported: false,
-  },
-  {
     shortName: 'fabric',
     entryPoints: ['react-native-renderer/fabric'],
     paths: [
@@ -660,6 +714,25 @@ module.exports = [
     ],
     isFlowTyped: false, // TODO: type it.
     isServerSupported: false,
+  },
+  {
+    shortName: 'noop',
+    entryPoints: [
+      'react-noop-renderer',
+      'react-noop-renderer/persistent',
+      'react-noop-renderer/server',
+      'react-noop-renderer/flight-server',
+      'react-noop-renderer/flight-client',
+    ],
+    paths: [
+      'react-noop-renderer',
+      'react-client/flight',
+      'react-server/flight',
+      'react-server/src/ReactFlightServerConfigDebugNoop.js',
+    ],
+    isFlowTyped: true,
+    isServerSupported: true,
+    isFlightSupported: true,
   },
   {
     shortName: 'custom',

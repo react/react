@@ -47,15 +47,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
-          cache: yarn
-          cache-dependency-path: compiler/yarn.lock
-      - name: Restore cached node_modules
+      - name: Cache node_modules
         uses: actions/cache@v4
         id: node_modules
         with:
           path: |
             **/node_modules
-          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/yarn.lock') }}
+          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'compiler/yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - if: inputs.dry_run == true

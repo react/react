@@ -229,9 +229,9 @@ describe('Store component filters', () => {
 
       expect(store).toMatchInlineSnapshot(`
         [root]
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
               <div>
-            <Activity>
+          ▸ <Activity mode="hidden">
       `);
 
       await actAsync(
@@ -244,6 +244,7 @@ describe('Store component filters', () => {
       expect(store).toMatchInlineSnapshot(`
         [root]
             <div>
+            <div>
       `);
 
       await actAsync(
@@ -255,9 +256,9 @@ describe('Store component filters', () => {
 
       expect(store).toMatchInlineSnapshot(`
         [root]
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
               <div>
-            <Activity>
+          ▸ <Activity mode="hidden">
       `);
     }
   });
@@ -571,6 +572,78 @@ describe('Store component filters', () => {
     `);
   });
 
+  // @reactVersion >= 19.0
+  it('stays in sync when a filtered boundary suspends during a sibling restructure', async () => {
+    const neverResolves = new Promise(() => {});
+
+    function Reader() {
+      React.use(neverResolves);
+      return <div>read</div>;
+    }
+
+    function A({collapsed}) {
+      if (collapsed) {
+        return (
+          <React.Suspense fallback={<div>a-fb</div>}>
+            <Reader />
+          </React.Suspense>
+        );
+      }
+      return (
+        <React.Suspense fallback={<div>a-outer-fb</div>}>
+          <React.Suspense fallback={<div>a-inner-fb</div>}>
+            <Reader />
+          </React.Suspense>
+          <React.Suspense fallback={<div>a-sib-fb</div>}>
+            <div>a-sibling</div>
+          </React.Suspense>
+        </React.Suspense>
+      );
+    }
+
+    function App({collapsed, extra}) {
+      return (
+        <div>
+          {extra ? <em key="s">side</em> : null}
+          <A key="a" collapsed={collapsed} />
+        </div>
+      );
+    }
+
+    store.componentFilters = [
+      utils.createElementTypeFilter(Types.ElementTypeSuspense),
+    ];
+
+    await actAsync(() => render(<App collapsed={false} extra={false} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <div>
+            ▾ <A key="a">
+                <div>
+                <div>
+    `);
+
+    await actAsync(() => render(<App collapsed={true} extra={true} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <div>
+              <em key="s">
+            ▾ <A key="a">
+                <div>
+    `);
+
+    await actAsync(() => render(<App collapsed={true} extra={false} />));
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <div>
+            ▾ <A key="a">
+                <div>
+    `);
+  });
+
   describe('inline errors and warnings', () => {
     const {render: legacyRender} = getLegacyRenderImplementation();
 
@@ -871,12 +944,12 @@ describe('Store component filters', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Root>
-          ▾ <Activity name="/">
+          ▾ <Activity name="/" mode="visible">
             ▾ <Suspense>
                 <h1>
               ▾ <main>
                 ▾ <Layout>
-                  ▾ <Activity name="/blog">
+                  ▾ <Activity name="/blog" mode="visible">
                       <h2>
                     ▾ <section>
                       ▾ <Page>
@@ -896,12 +969,12 @@ describe('Store component filters', () => {
 
     expect(store).toMatchInlineSnapshot(`
       [root]
-        ▾ <Activity name="/">
+        ▾ <Activity name="/" mode="visible">
           ▾ <Suspense>
               <h1>
             ▾ <main>
               ▾ <Layout>
-                ▸ <Activity name="/blog">
+                ▸ <Activity name="/blog" mode="visible">
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}
         <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
           <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
@@ -912,12 +985,12 @@ describe('Store component filters', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Root>
-          ▾ <Activity name="/">
+          ▾ <Activity name="/" mode="visible">
             ▾ <Suspense>
                 <h1>
               ▾ <main>
                 ▾ <Layout>
-                  ▾ <Activity name="/blog">
+                  ▾ <Activity name="/blog" mode="visible">
                       <h2>
                     ▾ <section>
                       ▾ <Page>

@@ -425,9 +425,6 @@ export function exportImportHelper(bridge: FrontendBridge, store: Store): void {
   expect(profilingDataFrontendInitial.dataForRoots).toEqual(
     profilingDataFrontend.dataForRoots,
   );
-  expect(profilingDataFrontendInitial.timelineData).toEqual(
-    profilingDataFrontend.timelineData,
-  );
 
   // Snapshot the JSON-parsed object, rather than the raw string, because Jest formats the diff nicer.
   // expect(parsedProfilingDataExport).toMatchSnapshot('imported data');

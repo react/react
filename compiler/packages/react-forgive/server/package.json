@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/facebook/react.git",
+    "url": "git+https://github.com/react/react.git",
     "directory": "compiler/packages/react-forgive"
   },
   "dependencies": {

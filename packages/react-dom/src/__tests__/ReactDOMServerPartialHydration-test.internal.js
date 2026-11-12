@@ -20,6 +20,7 @@ let Scheduler;
 let Suspense;
 let SuspenseList;
 let useSyncExternalStore;
+let use;
 let act;
 let IdleEventPriority;
 let waitForAll;
@@ -116,6 +117,7 @@ describe('ReactDOMServerPartialHydration', () => {
     Activity = React.Activity;
     Suspense = React.Suspense;
     useSyncExternalStore = React.useSyncExternalStore;
+    use = React.use;
     if (gate(flags => flags.enableSuspenseList)) {
       SuspenseList = React.unstable_SuspenseList;
     }
@@ -254,6 +256,77 @@ describe('ReactDOMServerPartialHydration', () => {
     await waitForAll([]);
     // Hydration should not change anything.
     expect(container.textContent).toBe('HelloHello');
+  });
+
+  it('replays effects when a suspended boundary hydrates in StrictMode', async () => {
+    const log = [];
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+
+    function EffectfulChild() {
+      React.useLayoutEffect(() => {
+        log.push('layout mount');
+        return () => log.push('layout unmount');
+      }, []);
+      React.useEffect(() => {
+        log.push('effect mount');
+        return () => log.push('effect unmount');
+      }, []);
+      return 'Hello';
+    }
+
+    function Child() {
+      if (suspend) {
+        use(promise);
+      }
+      return <EffectfulChild />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback="Loading...">
+          <Child />
+        </Suspense>
+      );
+    }
+
+    const element = (
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(element);
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    expect(container.textContent).toBe('Hello');
+
+    suspend = true;
+    ReactDOMClient.hydrateRoot(container, element);
+    await waitForAll([]);
+    expect(log).toEqual([]);
+    expect(container.textContent).toBe('Hello');
+
+    suspend = false;
+    resolve();
+    await promise;
+    await waitForAll([]);
+
+    expect(container.textContent).toBe('Hello');
+    if (__DEV__) {
+      expect(log).toEqual([
+        'layout mount',
+        'effect mount',
+        'layout unmount',
+        'effect unmount',
+        'layout mount',
+        'effect mount',
+      ]);
+    } else {
+      expect(log).toEqual(['layout mount', 'effect mount']);
+    }
   });
 
   it('falls back to client rendering boundary on mismatch', async () => {
@@ -2108,6 +2181,111 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(span.className).toBe('hi');
     expect(ref.current).toBe(span);
     expect(container.textContent).toBe('Hi');
+  });
+
+  it('commits a transition that gave up hydrating after a throttled retry is interrupted by a ping', async () => {
+    // This test intentionally flushes work without `act`. Inside an `act`
+    // scope, React commits retries immediately instead of throttling them, so
+    // the throttled retry that this test depends on would never happen.
+    const Context = React.createContext('Hello');
+
+    let resolveChild;
+    const childPromise = new Promise(resolve => (resolveChild = resolve));
+    let resolveSibling;
+    const siblingPromise = new Promise(resolve => (resolveSibling = resolve));
+
+    function Child() {
+      return 'World';
+    }
+    let LazyChild = Child;
+
+    function Sibling() {
+      return <p>Sibling</p>;
+    }
+    const LazySibling = React.lazy(() =>
+      siblingPromise.then(() => ({default: Sibling})),
+    );
+
+    function Text() {
+      return <span>{React.useContext(Context)}</span>;
+    }
+
+    function ChildSlot() {
+      return <LazyChild />;
+    }
+
+    const boundary = (
+      <Suspense fallback="Loading...">
+        <Text />
+        <ChildSlot />
+      </Suspense>
+    );
+
+    let setCount;
+    const Parent = React.memo(function Parent() {
+      const [count, _setCount] = React.useState(0);
+      setCount = _setCount;
+      return (
+        <div>
+          {count}
+          {boundary}
+        </div>
+      );
+    });
+
+    function App({text}) {
+      return (
+        <Context.Provider value={text}>
+          <Parent />
+          {text === 'Hello' ? null : (
+            <Suspense fallback={null}>
+              <LazySibling />
+            </Suspense>
+          )}
+        </Context.Provider>
+      );
+    }
+
+    const container = document.createElement('div');
+    container.innerHTML = ReactDOMServer.renderToString(<App text="Hello" />);
+    const span = container.getElementsByTagName('span')[0];
+
+    LazyChild = React.lazy(() => childPromise.then(() => ({default: Child})));
+    const root = ReactDOMClient.hydrateRoot(container, <App text="Hello" />, {
+      onRecoverableError(error) {
+        Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
+      },
+    });
+    await waitForPaint([]);
+
+    // The context change reaches the dehydrated boundary. Hydrating it at a
+    // higher priority suspends on the lazy child, so the transition gives up
+    // on hydrating the boundary and waits for it.
+    React.startTransition(() => root.render(<App text="Hi" />));
+    await waitForAll([]);
+
+    // An unrelated update re-renders the parent of the dehydrated boundary.
+    setCount(1);
+    await waitForAll([]);
+
+    // The boundary hydrates in a retry, whose commit is throttled.
+    resolveChild();
+    await childPromise;
+    await waitForAll([]);
+
+    // Before the throttled retry commits, the transition is pinged by other
+    // data it was waiting on.
+    resolveSibling();
+    await siblingPromise;
+    await waitForAll([]);
+
+    jest.advanceTimersByTime(5000);
+    await waitForAll([]);
+
+    expect(container.getElementsByTagName('span')[0]).toBe(span);
+    expect(span.textContent).toBe('Hi');
+    expect(container.getElementsByTagName('p')[0].textContent).toBe('Sibling');
+    expect(container.firstChild.firstChild.textContent).toBe('1');
   });
 
   it('replaces the fallback with client content if it is not rendered by the server', async () => {
@@ -4062,7 +4240,7 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(ref.current).toBe(span);
   });
 
-  // Regression for https://github.com/facebook/react/issues/35210 and other issues where lazy elements created in flight
+  // Regression for https://github.com/react/react/issues/35210 and other issues where lazy elements created in flight
   // caused hydration issues b/c the replay pathway did not correctly reset the hydration cursor
   it('Can hydrate even when lazy content resumes immediately inside a HostComponent', async () => {
     let resolve;
@@ -4226,5 +4404,137 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(container.innerHTML).toEqual('<!--&-->value<!--/&-->');
     root.unmount();
     expect(container.innerHTML).toEqual('<!--&--><!--/&-->');
+  });
+
+  it('recovers when an update changes a dehydrated boundary inside a suspended parent boundary', async () => {
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+
+    function Sibling() {
+      if (suspend) {
+        throw promise;
+      }
+      return <span id="sibling">Sibling</span>;
+    }
+
+    function App({showSiblingOnMount}) {
+      const [showSibling, setShowSibling] = React.useState(false);
+      React.useEffect(() => {
+        if (showSiblingOnMount) {
+          // Not a transition: this update reaches the dehydrated inner
+          // boundary at default priority, before it has hydrated.
+          setShowSibling(true);
+        }
+      }, [showSiblingOnMount]);
+      return (
+        <div>
+          <Suspense fallback={null}>
+            {showSibling ? <Sibling /> : null}
+            <Suspense fallback={null}>
+              <span id="content">{showSibling ? 'b' : 'a'}</span>
+            </Suspense>
+          </Suspense>
+        </div>
+      );
+    }
+
+    // Don't suspend on the server.
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(
+      <App showSiblingOnMount={false} />,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    expect(container.textContent).toBe('a');
+
+    // Hydrate. The first effect mounts a suspending sibling in the outer
+    // boundary (so the outer boundary shows its fallback and its primary
+    // content is hidden), and at the same time changes the input of the
+    // inner boundary, which is still dehydrated.
+    suspend = true;
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App showSiblingOnMount={true} />);
+    });
+
+    // The sibling's data arrives.
+    suspend = false;
+    await act(async () => {
+      resolve();
+      await promise;
+    });
+
+    // The outer boundary should reveal both the sibling and the updated
+    // inner content.
+    const sibling = container.querySelector('#sibling');
+    const content = container.querySelector('#content');
+    expect(sibling).not.toBe(null);
+    expect(sibling.style.display).not.toBe('none');
+    expect(content).not.toBe(null);
+    expect(content.style.display).not.toBe('none');
+    expect(content.textContent).toBe('b');
+  });
+
+  it('recovers when a transition changes a dehydrated boundary inside a suspended parent boundary', async () => {
+    // Same as the previous test, except the update is wrapped
+    // in startTransition.
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+
+    function Sibling() {
+      if (suspend) {
+        throw promise;
+      }
+      return <span id="sibling">Sibling</span>;
+    }
+
+    function App({showSiblingOnMount}) {
+      const [showSibling, setShowSibling] = React.useState(false);
+      React.useEffect(() => {
+        if (showSiblingOnMount) {
+          React.startTransition(() => {
+            setShowSibling(true);
+          });
+        }
+      }, [showSiblingOnMount]);
+      return (
+        <div>
+          <Suspense fallback={null}>
+            {showSibling ? <Sibling /> : null}
+            <Suspense fallback={null}>
+              <span id="content">{showSibling ? 'b' : 'a'}</span>
+            </Suspense>
+          </Suspense>
+        </div>
+      );
+    }
+
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(
+      <App showSiblingOnMount={false} />,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    expect(container.textContent).toBe('a');
+
+    suspend = true;
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App showSiblingOnMount={true} />);
+    });
+
+    suspend = false;
+    await act(async () => {
+      resolve();
+      await promise;
+    });
+
+    const sibling = container.querySelector('#sibling');
+    const content = container.querySelector('#content');
+    expect(sibling).not.toBe(null);
+    expect(sibling.style.display).not.toBe('none');
+    expect(content).not.toBe(null);
+    expect(content.style.display).not.toBe('none');
+    expect(content.textContent).toBe('b');
   });
 });

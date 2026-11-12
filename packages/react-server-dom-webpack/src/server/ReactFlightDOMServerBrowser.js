@@ -23,6 +23,7 @@ import {
   startFlowingDebug,
   stopFlowing,
   abort,
+  attachAbortSignal,
   resolveDebugMessage,
   closeDebugChannel,
 } from 'react-server/src/ReactFlightServer';
@@ -82,7 +83,7 @@ function startReadingFromDebugChannelReadableStream(
     value: ?any,
     ...
   }): void | Promise<void> {
-    const buffer: Uint8Array = (value: any);
+    const buffer: Uint8Array = value as any;
     stringBuffer += done
       ? readFinalStringChunk(stringDecoder, new Uint8Array(0))
       : readPartialStringChunk(stringDecoder, buffer);
@@ -133,16 +134,7 @@ function renderToReadableStream(
     debugChannelReadable !== undefined,
   );
   if (options && options.signal) {
-    const signal = options.signal;
-    if (signal.aborted) {
-      abort(request, (signal: any).reason);
-    } else {
-      const listener = () => {
-        abort(request, (signal: any).reason);
-        signal.removeEventListener('abort', listener);
-      };
-      signal.addEventListener('abort', listener);
-    }
+    attachAbortSignal(request, options.signal);
   }
   if (debugChannelWritable !== undefined) {
     const debugStream = new ReadableStream(
@@ -153,6 +145,7 @@ function renderToReadableStream(
         },
       },
       // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+      // $FlowFixMe[incompatible-type]
       {highWaterMark: 0},
     );
     debugStream.pipeTo(debugChannelWritable);
@@ -175,6 +168,7 @@ function renderToReadableStream(
       },
     },
     // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+    // $FlowFixMe[incompatible-type]
     {highWaterMark: 0},
   );
   return stream;
@@ -204,6 +198,7 @@ function prerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
       resolve({prelude: stream});
@@ -222,18 +217,7 @@ function prerender(
       false,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        const reason = (signal: any).reason;
-        abort(request, reason);
-      } else {
-        const listener = () => {
-          const reason = (signal: any).reason;
-          abort(request, reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });

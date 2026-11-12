@@ -75,6 +75,7 @@ import {
   restoreUpdateViewTransitionForGesture,
   appearingViewTransitions,
   commitEnterViewTransitions,
+  commitParentExitViewTransitions,
   measureNestedViewTransitions,
   measureUpdateViewTransition,
   viewTransitionCancelableChildren,
@@ -93,6 +94,7 @@ import {
 import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
+  enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
 import {trackAnimatingTask} from './ReactProfilerTimer';
 import {scheduleGestureTransitionEvent} from './ReactFiberWorkLoop';
@@ -327,6 +329,9 @@ function applyExitViewTransition(placement: Fiber): void {
       scheduleGestureTransitionEvent(placement, props.onGestureShare);
     } else {
       scheduleGestureTransitionEvent(placement, props.onGestureExit);
+      if (enableViewTransitionParentEnterExit) {
+        commitParentExitViewTransitions(placement, true);
+      }
     }
   }
 }
@@ -502,6 +507,7 @@ function recursivelyInsertNewFiber(
     }
     case HostText: {
       const textInstance: TextInstance = finishedWork.stateNode;
+      // $FlowFixMe[invalid-compare]
       if (textInstance === null) {
         throw new Error(
           'This should have a text node initialized. This error is likely ' +
@@ -643,6 +649,7 @@ function recursivelyInsertClonesFromExistingTree(
       }
       case HostText: {
         const textInstance: TextInstance = child.stateNode;
+        // $FlowFixMe[invalid-compare]
         if (textInstance === null) {
           throw new Error(
             'This should have a text node initialized. This error is likely ' +
@@ -916,6 +923,7 @@ function insertDestinationClonesOfFiber(
     }
     case HostText: {
       const textInstance: TextInstance = finishedWork.stateNode;
+      // $FlowFixMe[invalid-compare]
       if (textInstance === null) {
         throw new Error(
           'This should have a text node initialized. This error is likely ' +
@@ -960,6 +968,7 @@ function insertDestinationClonesOfFiber(
           parentViewTransition,
           nextPhase,
         );
+        // $FlowFixMe[invalid-compare]
       } else if (current !== null && current.memoizedState === null) {
         // Was previously mounted as visible but is now hidden.
         trackEnterViewTransitions(current);
@@ -1244,9 +1253,9 @@ export function applyDepartureTransitions(
     if (cancelableChildren !== null) {
       for (let i = 0; i < cancelableChildren.length; i += 3) {
         cancelViewTransitionName(
-          ((cancelableChildren[i]: any): Instance),
-          ((cancelableChildren[i + 1]: any): string),
-          ((cancelableChildren[i + 2]: any): Props),
+          cancelableChildren[i] as any as Instance,
+          cancelableChildren[i + 1] as any as string,
+          cancelableChildren[i + 2] as any as Props,
         );
       }
     }
@@ -1307,6 +1316,7 @@ function restoreViewTransitionsOnFiber(finishedWork: Fiber) {
         const isHidden = newState !== null;
         if (!isHidden) {
           restoreEnterOrExitViewTransitions(finishedWork);
+          // $FlowFixMe[invalid-compare]
         } else if (current !== null && current.memoizedState === null) {
           // Was previously mounted as visible but is now hidden.
           restoreEnterOrExitViewTransitions(current);

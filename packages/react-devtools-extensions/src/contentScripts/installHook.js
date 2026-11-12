@@ -10,6 +10,7 @@ import {
   getProfilingSettings,
 } from 'react-devtools-shared/src/utils';
 import {postMessage} from './messages';
+import {createReactRendererListener} from './reactBuildType';
 
 let resolveHookSettingsInjection: (settings: DevToolsHookSettings) => void;
 let resolveComponentFiltersInjection: (filters: Array<ComponentFilter>) => void;
@@ -67,17 +68,6 @@ if (!window.hasOwnProperty('__REACT_DEVTOOLS_GLOBAL_HOOK__')) {
   // Detect React
   window.__REACT_DEVTOOLS_GLOBAL_HOOK__.on(
     'renderer',
-    function ({reactBuildType}) {
-      window.postMessage(
-        {
-          source: 'react-devtools-hook',
-          payload: {
-            type: 'react-renderer-attached',
-            reactBuildType,
-          },
-        },
-        '*',
-      );
-    },
+    createReactRendererListener(window),
   );
 }

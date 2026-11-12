@@ -7,12 +7,14 @@
  * @flow
  */
 
+import reportGlobalError from 'shared/reportGlobalError';
+
 export default class EventEmitter<Events: Object> {
   listenersMap: Map<string, Array<Function>> = new Map();
 
   addListener<Event: $Keys<Events>>(
     event: Event,
-    listener: (...Events[Event]) => any,
+    listener: (...Events[Event]) => mixed,
   ): void {
     const listeners = this.listenersMap.get(event);
     if (listeners === undefined) {
@@ -42,9 +44,13 @@ export default class EventEmitter<Events: Object> {
           try {
             listener.apply(null, args);
           } catch (error) {
-            if (caughtError === null) {
+            if (!didThrow) {
               didThrow = true;
               caughtError = error;
+            } else {
+              // Continue notifying the remaining listeners, but do not hide
+              // additional failures behind the first one.
+              reportGlobalError(error);
             }
           }
         }
@@ -60,7 +66,10 @@ export default class EventEmitter<Events: Object> {
     this.listenersMap.clear();
   }
 
-  removeListener(event: $Keys<Events>, listener: Function): void {
+  removeListener<Event: $Keys<Events>>(
+    event: Event,
+    listener: (...Events[Event]) => mixed,
+  ): void {
     const listeners = this.listenersMap.get(event);
     if (listeners !== undefined) {
       const index = listeners.indexOf(listener);

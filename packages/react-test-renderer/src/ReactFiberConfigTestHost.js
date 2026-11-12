@@ -275,7 +275,7 @@ export const noTimeout: -1 = -1;
 //     Mutation
 // -------------------
 
-export const supportsMutation = true;
+export const supportsMutation: boolean = true;
 
 export function commitUpdate(
   instance: Instance,
@@ -612,8 +612,8 @@ export function getSuspendedCommitReason(
 export const NotPendingTransition: TransitionStatus = null;
 export const HostTransitionContext: ReactContext<TransitionStatus> = {
   $$typeof: REACT_CONTEXT_TYPE,
-  Provider: (null: any),
-  Consumer: (null: any),
+  Provider: null as any,
+  Consumer: null as any,
   _currentValue: NotPendingTransition,
   _currentValue2: NotPendingTransition,
   _threadCount: 0,

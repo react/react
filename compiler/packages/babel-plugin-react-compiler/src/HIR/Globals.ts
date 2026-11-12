@@ -9,9 +9,6 @@ import {Effect, ValueKind, ValueReason} from './HIR';
 import {
   BUILTIN_SHAPES,
   BuiltInArrayId,
-  BuiltInAutodepsId,
-  BuiltInFireFunctionId,
-  BuiltInFireId,
   BuiltInMapId,
   BuiltInMixedReadonlyId,
   BuiltInObjectId,
@@ -283,22 +280,40 @@ const TYPED_GLOBALS: Array<[string, BuiltInType]> = [
   ],
   [
     'Date',
-    addObject(DEFAULT_SHAPES, 'Date', [
-      // Static methods (TODO)
+    addFunction(
+      DEFAULT_SHAPES,
       [
-        'now',
-        // Date.now()
-        addFunction(DEFAULT_SHAPES, [], {
-          positionalParams: [],
-          restParam: Effect.Read,
-          returnType: {kind: 'Poly'}, // TODO: could be Primitive, but that would change existing compilation
-          calleeEffect: Effect.Read,
-          returnValueKind: ValueKind.Mutable, // same here
-          impure: true,
-          canonicalName: 'Date.now',
-        }),
+        // Static methods (TODO)
+        [
+          'now',
+          // Date.now()
+          addFunction(DEFAULT_SHAPES, [], {
+            positionalParams: [],
+            restParam: Effect.Read,
+            returnType: {kind: 'Poly'}, // TODO: could be Primitive, but that would change existing compilation
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Mutable, // same here
+            impure: true,
+            canonicalName: 'Date.now',
+          }),
+        ],
       ],
-    ]),
+      {
+        positionalParams: [],
+        restParam: Effect.Read,
+        returnType: {kind: 'Poly'},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+        /*
+         * Zero-arg `new Date()` / `Date()` reads the current clock.
+         * `new Date(timestamp)` is treated as pure via `impureIfNoArgs`.
+         */
+        impure: true,
+        impureIfNoArgs: true,
+        canonicalName: 'Date',
+      },
+      'Date',
+    ),
   ],
   [
     'Math',
@@ -623,6 +638,99 @@ const TYPED_GLOBALS: Array<[string, BuiltInType]> = [
       true,
     ),
   ],
+  [
+    'IntersectionObserver',
+    addFunction(
+      DEFAULT_SHAPES,
+      [],
+      {
+        // The callback is retained for later delivery, not invoked by construction.
+        positionalParams: [Effect.Freeze, Effect.Read],
+        restParam: null,
+        returnType: {kind: 'Poly'},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+      },
+      null,
+      true,
+    ),
+  ],
+  [
+    'ResizeObserver',
+    addFunction(
+      DEFAULT_SHAPES,
+      [],
+      {
+        /*
+         * The callback is retained for later delivery, not invoked by construction.
+         * Unlike IntersectionObserver, the options object is not a constructor
+         * argument; it belongs to `observe(target, options)`.
+         */
+        positionalParams: [Effect.Freeze],
+        restParam: null,
+        returnType: {kind: 'Poly'},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+      },
+      null,
+      true,
+    ),
+  ],
+  [
+    'MutationObserver',
+    addFunction(
+      DEFAULT_SHAPES,
+      [],
+      {
+        // The callback is retained for later delivery, not invoked by construction.
+        positionalParams: [Effect.Freeze],
+        restParam: null,
+        returnType: {kind: 'Poly'},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+      },
+      null,
+      true,
+    ),
+  ],
+  [
+    'PerformanceObserver',
+    addFunction(
+      DEFAULT_SHAPES,
+      [],
+      {
+        // The callback is retained for later delivery, not invoked by construction.
+        positionalParams: [Effect.Freeze],
+        restParam: null,
+        returnType: {kind: 'Poly'},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+      },
+      null,
+      true,
+    ),
+  ],
+  [
+    'ReportingObserver',
+    addFunction(
+      DEFAULT_SHAPES,
+      [],
+      {
+        /*
+         * The callback is retained for later delivery, not invoked by construction.
+         * The `observe()` options are a separate constructor argument here, unlike
+         * PerformanceObserver, so they are read instead of being retained.
+         */
+        positionalParams: [Effect.Freeze, Effect.Read],
+        restParam: null,
+        returnType: {kind: 'Poly'},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+      },
+      null,
+      true,
+    ),
+  ],
   // TODO: rest of Global objects
 ];
 
@@ -847,26 +955,6 @@ const REACT_APIS: Array<[string, BuiltInType]> = [
     ),
   ],
   [
-    'fire',
-    addFunction(
-      DEFAULT_SHAPES,
-      [],
-      {
-        positionalParams: [],
-        restParam: null,
-        returnType: {
-          kind: 'Function',
-          return: {kind: 'Poly'},
-          shapeId: BuiltInFireFunctionId,
-          isConstructor: false,
-        },
-        calleeEffect: Effect.Read,
-        returnValueKind: ValueKind.Frozen,
-      },
-      BuiltInFireId,
-    ),
-  ],
-  [
     'useEffectEvent',
     addHook(
       DEFAULT_SHAPES,
@@ -887,7 +975,6 @@ const REACT_APIS: Array<[string, BuiltInType]> = [
       BuiltInUseEffectEventId,
     ),
   ],
-  ['AUTODEPS', addObject(DEFAULT_SHAPES, BuiltInAutodepsId, [])],
 ];
 
 TYPED_GLOBALS.push(

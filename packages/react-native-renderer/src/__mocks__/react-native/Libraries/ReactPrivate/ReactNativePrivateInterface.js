@@ -8,38 +8,20 @@
  */
 
 module.exports = {
-  get BatchedBridge() {
-    return require('./BatchedBridge.js');
-  },
-  get Platform() {
-    return require('./Platform');
-  },
-  get RCTEventEmitter() {
-    return require('./RCTEventEmitter');
+  get fabricUIManager() {
+    return global.nativeFabricUIManager;
   },
   get ReactFiberErrorDialog() {
     return require('./ReactFiberErrorDialog');
   },
+  get ReactNativeFeatureFlags() {
+    return require('./ReactNativeFeatureFlags');
+  },
   get ReactNativeViewConfigRegistry() {
     return require('./ReactNativeViewConfigRegistry');
   },
-  get TextInputState() {
-    return require('./TextInputState');
-  },
-  get UIManager() {
-    return require('./UIManager');
-  },
-  get deepDiffer() {
-    return require('./deepDiffer');
-  },
   get deepFreezeAndThrowOnMutationInDev() {
     return require('./deepFreezeAndThrowOnMutationInDev');
-  },
-  get flattenStyle() {
-    return require('./flattenStyle');
-  },
-  get legacySendAccessibilityEvent() {
-    return require('./legacySendAccessibilityEvent');
   },
   get RawEventEmitter() {
     return require('./RawEventEmitter').default;
@@ -65,4 +47,5 @@ module.exports = {
   get diffAttributePayloads() {
     return require('./diffAttributePayloads').default;
   },
+  dispatchNativeEvent() {},
 };

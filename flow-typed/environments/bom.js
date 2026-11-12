@@ -682,11 +682,11 @@ declare class FormData {
   get(name: string): ?FormDataEntryValue;
   getAll(name: string): Array<FormDataEntryValue>;
 
-  set(name: string, value: string): void;
+  set(name: string, value: FormDataEntryValue): void;
   set(name: string, value: Blob, filename?: string): void;
   set(name: string, value: File, filename?: string): void;
 
-  append(name: string, value: string): void;
+  append(name: string, value: FormDataEntryValue): void;
   append(name: string, value: Blob, filename?: string): void;
   append(name: string, value: File, filename?: string): void;
 
@@ -874,6 +874,7 @@ declare class SharedWorker extends EventTarget {
 declare function importScripts(...urls: Array<string | TrustedScriptURL>): void;
 
 declare class WorkerGlobalScope extends EventTarget {
+  // $FlowFixMe[incompatible-variance]
   self: this;
   location: WorkerLocation;
   navigator: WorkerNavigator;
@@ -2028,7 +2029,7 @@ type TextDecoder$availableEncodings =
 declare class TextDecoder {
   constructor(
     encoding?: TextDecoder$availableEncodings,
-    options?: {fatal: boolean, ...}
+    options?: {fatal?: boolean, ignoreBOM?: boolean, ...}
   ): void;
   encoding: TextDecoder$availableEncodings;
   fatal: boolean;

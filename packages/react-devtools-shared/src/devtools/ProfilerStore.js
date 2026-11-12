@@ -195,7 +195,6 @@ export default class ProfilerStore extends EventEmitter<{
 
     this._bridge.send('startProfiling', {
       recordChangeDescriptions: this._store.recordChangeDescriptions,
-      recordTimeline: this._store.supportsTimeline,
     });
 
     this._isProfilingBasedOnUserInput = true;

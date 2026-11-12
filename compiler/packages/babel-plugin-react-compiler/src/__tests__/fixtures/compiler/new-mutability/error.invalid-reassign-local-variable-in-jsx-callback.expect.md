@@ -42,7 +42,7 @@ function Component() {
 ## Error
 
 ```
-Found 1 error:
+Found 2 errors:
 
 Error: Cannot reassign variable after render completes
 
@@ -53,6 +53,27 @@ error.invalid-reassign-local-variable-in-jsx-callback.ts:6:4
   5 |   const reassignLocal = newValue => {
 > 6 |     local = newValue;
     |     ^^^^^ Cannot reassign `local` after render completes
+  7 |   };
+  8 |
+  9 |   const onClick = newValue => {
+
+Error: Cannot modify local variables after render completes
+
+This argument is a function which may reassign or mutate `local` after render, which can cause inconsistent behavior on subsequent renders. Consider using state instead.
+
+error.invalid-reassign-local-variable-in-jsx-callback.ts:32:26
+  30 |   };
+  31 |
+> 32 |   return <button onClick={onClick}>Submit</button>;
+     |                           ^^^^^^^ This function may (indirectly) reassign or modify `local` after render
+  33 | }
+  34 |
+
+error.invalid-reassign-local-variable-in-jsx-callback.ts:6:4
+  4 |
+  5 |   const reassignLocal = newValue => {
+> 6 |     local = newValue;
+    |     ^^^^^ This modifies `local`
   7 |   };
   8 |
   9 |   const onClick = newValue => {

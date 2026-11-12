@@ -28,6 +28,7 @@ import {
   useFormStatus,
   useFormState,
 } from 'react-dom-bindings/src/shared/ReactDOMFormActions';
+import {browser} from './ReactDOMBrowser';
 
 if (__DEV__) {
   if (
@@ -63,12 +64,13 @@ function createPortal(
   }
 
   // TODO: pass ReactDOM portal implementation as third argument
-  // $FlowFixMe[incompatible-return] The Flow type is opaque but there's no way to actually create it.
+  // $FlowFixMe[incompatible-type] The Flow type is opaque but there's no way to actually create it.
   return createPortalImpl(children, container, null, key);
 }
 
 export {
   ReactVersion as version,
+  browser,
   createPortal,
   flushSync,
   batchedUpdates as unstable_batchedUpdates,

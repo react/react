@@ -6,7 +6,6 @@ const PACKAGE_PATHS = [
   'packages/react-devtools/package.json',
   'packages/react-devtools-core/package.json',
   'packages/react-devtools-inline/package.json',
-  'packages/react-devtools-timeline/package.json',
 ];
 
 const MANIFEST_PATHS = [
@@ -23,7 +22,7 @@ const NPM_PACKAGES = [
 
 const CHANGELOG_PATH = 'packages/react-devtools/CHANGELOG.md';
 
-const PULL_REQUEST_BASE_URL = 'https://github.com/facebook/react/pull/';
+const PULL_REQUEST_BASE_URL = 'https://github.com/react/react/pull/';
 
 const RELEASE_SCRIPT_TOKEN = '<!-- RELEASE_SCRIPT_TOKEN -->';
 

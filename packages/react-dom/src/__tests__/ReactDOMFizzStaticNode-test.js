@@ -14,6 +14,35 @@ let React;
 let ReactDOMFizzStatic;
 let Suspense;
 
+function normalizeCodeLocInfo(str) {
+  return (
+    str &&
+    str.replace(/^ +(?:at|in) ([\S]+)[^\n]*/gm, function (m, name) {
+      const dot = name.lastIndexOf('.');
+      if (dot !== -1) {
+        name = name.slice(dot + 1);
+      }
+      return '    in ' + name + (/\d/.test(m) ? ' (at **)' : '');
+    })
+  );
+}
+
+function ignoreListStack(str) {
+  if (!str) {
+    return str;
+  }
+
+  let ignoreListedStack = '';
+  const lines = str.split('\n');
+  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+  for (const line of lines) {
+    if (line.indexOf(__filename) !== -1) {
+      ignoreListedStack += '\n' + line;
+    }
+  }
+  return ignoreListedStack;
+}
+
 describe('ReactDOMFizzStaticNode', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -216,6 +245,7 @@ describe('ReactDOMFizzStaticNode', () => {
     await jest.runAllTimers();
 
     controller.abort();
+    await jest.runAllTimers();
 
     const result = await resultPromise;
 
@@ -223,6 +253,63 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(prelude).toContain('Loading');
 
     expect(errors).toEqual(['This operation was aborted']);
+  });
+
+  it('flushes all partial content before closing a prerender under backpressure', async () => {
+    const Stream = require('stream');
+    const Readable = Stream.Readable;
+    const createReadable = jest
+      .spyOn(Stream, 'Readable')
+      .mockImplementation(
+        options => new Readable({...options, highWaterMark: 1}),
+      );
+
+    try {
+      // Each payload exceeds Fizz's 4096-byte write buffer.
+      const firstContent = 'A'.repeat(5000);
+      const secondContent = 'B'.repeat(5000);
+      const controller = new AbortController();
+      const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(
+        <main>
+          <Suspense fallback="Loading A">
+            <section>
+              {firstContent}
+              <InfiniteSuspend />
+            </section>
+          </Suspense>
+          <Suspense fallback="Loading B">
+            <section>
+              {secondContent}
+              <InfiniteSuspend />
+            </section>
+          </Suspense>
+        </main>,
+        {
+          signal: controller.signal,
+          onError() {},
+        },
+      );
+
+      await jest.runAllTimers();
+      controller.abort();
+      await jest.runAllTimers();
+
+      const {prelude, postponed} = await resultPromise;
+      expect(postponed).not.toBe(null);
+      expect(prelude.readableHighWaterMark).toBe(1);
+
+      const push = jest.spyOn(prelude, 'push');
+      prelude.read(0);
+      expect(push).toHaveReturnedWith(false);
+
+      const content = await readContent(prelude);
+      expect(content).toContain('Loading A');
+      expect(content).toContain('Loading B');
+      expect(content.includes(firstContent)).toBe(true);
+      expect(content.includes(secondContent)).toBe(true);
+    } finally {
+      createReadable.mockRestore();
+    }
   });
 
   it('should resolve an empty shell if aborting before the shell is complete', async () => {
@@ -244,6 +331,7 @@ describe('ReactDOMFizzStaticNode', () => {
 
     const theReason = new Error('aborted for reasons');
     controller.abort(theReason);
+    await jest.runAllTimers();
 
     let didThrow = false;
     let prelude;
@@ -281,10 +369,35 @@ describe('ReactDOMFizzStaticNode', () => {
       },
     );
 
+    await jest.runAllTimers();
     const {prelude} = await streamPromise;
     const content = await readContent(prelude);
     expect(errors).toEqual(['This operation was aborted']);
     expect(content).toBe('');
+  });
+
+  it('reports the abort reason if a task suspends after aborting a prerender', async () => {
+    const promise = new Promise(() => {});
+    const errors = [];
+    const controller = new AbortController();
+    function App() {
+      controller.abort(new Error('abort reason'));
+      React.use(promise);
+      return null;
+    }
+
+    const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
+      signal: controller.signal,
+      onError(error) {
+        errors.push(error.message);
+      },
+    });
+
+    await jest.runAllTimers();
+    const result = await resultPromise;
+
+    expect(errors).toEqual(['abort reason']);
+    expect(await readContent(result.prelude)).toBe('');
   });
 
   it('should resolve with an empty prelude if passing an already aborted signal', async () => {
@@ -309,6 +422,7 @@ describe('ReactDOMFizzStaticNode', () => {
 
     // Technically we could still continue rendering the shell but currently the
     // semantics mean that we also abort any pending CPU work.
+    await jest.runAllTimers();
 
     let didThrow = false;
     let prelude;
@@ -358,6 +472,7 @@ describe('ReactDOMFizzStaticNode', () => {
     await jest.runAllTimers();
 
     controller.abort('foobar');
+    await jest.runAllTimers();
 
     await resultPromise;
 
@@ -399,9 +514,113 @@ describe('ReactDOMFizzStaticNode', () => {
     await jest.runAllTimers();
 
     controller.abort(new Error('uh oh'));
+    await jest.runAllTimers();
 
     await resultPromise;
 
     expect(errors).toEqual(['uh oh', 'uh oh']);
+  });
+
+  it('uses a rejection reason when an abort listener rejects pending work before the abort finishes', async () => {
+    let reject;
+    const rejectedPromise = new Promise((resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    const haltedPromise = new Promise(() => {});
+    function RejectedWait() {
+      React.use(rejectedPromise);
+      return null;
+    }
+    function HaltedWait() {
+      React.use(haltedPromise);
+      return null;
+    }
+
+    const errors = [];
+    const controller = new AbortController();
+    const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(
+      <>
+        <Suspense fallback="Loading rejected">
+          <RejectedWait />
+        </Suspense>
+        <Suspense fallback="Loading halted">
+          <HaltedWait />
+        </Suspense>
+      </>,
+      {
+        signal: controller.signal,
+        onError(error) {
+          errors.push(error.message);
+        },
+      },
+    );
+
+    await jest.runAllTimers();
+
+    controller.signal.addEventListener('abort', () => {
+      reject(new Error('rejected during abort'));
+    });
+    controller.abort(new Error('abort reason'));
+
+    await Promise.resolve();
+    await jest.runAllTimers();
+    await resultPromise;
+
+    expect(errors).toEqual(['rejected during abort', 'abort reason']);
+  });
+
+  describe('with real timers', () => {
+    beforeEach(() => {
+      jest.useRealTimers();
+    });
+
+    afterEach(() => {
+      jest.useFakeTimers();
+    });
+
+    it('includes the suspended call site when aborting in the same rendering task', async () => {
+      const promise = new Promise(() => {});
+      const controller = new AbortController();
+      let caughtError;
+      let componentStack;
+      let ownerStack;
+
+      function AbortAndSuspend() {
+        controller.abort(new Error('abort reason'));
+        React.use(promise);
+        return null;
+      }
+
+      function App() {
+        return <AbortAndSuspend />;
+      }
+
+      const {prelude} = await ReactDOMFizzStatic.prerenderToNodeStream(
+        <App />,
+        {
+          signal: controller.signal,
+          onError(error, errorInfo) {
+            caughtError = error;
+            componentStack = errorInfo.componentStack;
+            ownerStack = __DEV__ ? React.captureOwnerStack() : null;
+          },
+        },
+      );
+
+      expect(caughtError).toEqual(
+        expect.objectContaining({message: 'abort reason'}),
+      );
+      expect(await readContent(prelude)).toBe('');
+      if (__DEV__) {
+        expect(normalizeCodeLocInfo(componentStack)).toBe(
+          '\n    in AbortAndSuspend (at **)\n    in App',
+        );
+        expect(normalizeCodeLocInfo(ignoreListStack(ownerStack))).toBe(
+          '\n    in AbortAndSuspend (at **)\n    in App (at **)',
+        );
+      } else {
+        expect(ownerStack).toBeNull();
+      }
+    });
   });
 });

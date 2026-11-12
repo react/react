@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees @enableOptionalDependencies @enableTreatFunctionDepsAsConditional:false
+// @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees @enableOptionalDependencies
 
 import {useMemo} from 'react';
 import {identity, ValidateMemoization} from 'shared-runtime';
@@ -43,7 +43,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees @enableOptionalDependencies @enableTreatFunctionDepsAsConditional:false
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees @enableOptionalDependencies
 
 import { useMemo } from "react";
 import { identity, ValidateMemoization } from "shared-runtime";

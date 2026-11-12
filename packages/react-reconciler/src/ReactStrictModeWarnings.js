@@ -321,7 +321,7 @@ if (__DEV__) {
   };
 
   ReactStrictModeWarnings.flushLegacyContextWarning = () => {
-    ((pendingLegacyContextWarning: any): FiberToFiberComponentsMap).forEach(
+    (pendingLegacyContextWarning as any as FiberToFiberComponentsMap).forEach(
       (fiberArray: FiberArray, strictRoot) => {
         if (fiberArray.length === 0) {
           return;

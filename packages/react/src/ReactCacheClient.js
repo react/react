@@ -27,7 +27,7 @@ function noopCache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
   // preserved, the length of the new function is 0, etc. That way apps can't
   // accidentally depend on those details.
   return function () {
-    // $FlowFixMe[incompatible-call]: We don't want to use rest arguments since we transpile the code.
+    // $FlowFixMe[incompatible-type]: We don't want to use rest arguments since we transpile the code.
     return fn.apply(null, arguments);
   };
 }

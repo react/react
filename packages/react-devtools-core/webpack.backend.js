@@ -44,6 +44,7 @@ module.exports = {
     // This name is important; standalone references it in order to connect.
     library: 'ReactDevToolsBackend',
     libraryTarget: 'umd',
+    umdNamedDefine: true,
   },
   resolve: {
     alias: {

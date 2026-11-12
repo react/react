@@ -25,7 +25,7 @@ import {HostComponent, ScopeComponent, ContextProvider} from './ReactWorkTags';
 import {enableScopeAPI} from 'shared/ReactFeatureFlags';
 
 function getSuspenseFallbackChild(fiber: Fiber): Fiber | null {
-  return ((((fiber.child: any): Fiber).sibling: any): Fiber).child;
+  return ((fiber.child as any as Fiber).sibling as any as Fiber).child;
 }
 
 const emptyObject = {};
@@ -40,6 +40,7 @@ function collectScopedNodes(
       const {type, memoizedProps, stateNode} = node;
       const instance = getPublicInstance(stateNode);
       if (
+        // $FlowFixMe[invalid-compare]
         instance !== null &&
         fn(type, memoizedProps || emptyObject, instance) === true
       ) {
@@ -65,6 +66,7 @@ function collectFirstScopedNode(
     if (node.tag === HostComponent) {
       const {type, memoizedProps, stateNode} = node;
       const instance = getPublicInstance(stateNode);
+      // $FlowFixMe[invalid-compare]
       if (instance !== null && fn(type, memoizedProps, instance) === true) {
         return instance;
       }
@@ -145,11 +147,13 @@ function DO_NOT_USE_queryAllNodes(
   fn: ReactScopeQuery,
 ): null | Array<Object> {
   const currentFiber = getInstanceFromScope(this);
+  // $FlowFixMe[invalid-compare]
   if (currentFiber === null) {
     return null;
   }
   const child = currentFiber.child;
   const scopedNodes: Array<any> = [];
+  // $FlowFixMe[invalid-compare]
   if (child !== null) {
     collectScopedNodesFromChildren(child, fn, scopedNodes);
   }
@@ -161,10 +165,12 @@ function DO_NOT_USE_queryFirstNode(
   fn: ReactScopeQuery,
 ): null | Object {
   const currentFiber = getInstanceFromScope(this);
+  // $FlowFixMe[invalid-compare]
   if (currentFiber === null) {
     return null;
   }
   const child = currentFiber.child;
+  // $FlowFixMe[invalid-compare]
   if (child !== null) {
     return collectFirstScopedNodeFromChildren(child, fn);
   }
@@ -187,11 +193,13 @@ function getChildContextValues<T>(
   context: ReactContext<T>,
 ): Array<T> {
   const currentFiber = getInstanceFromScope(this);
+  // $FlowFixMe[invalid-compare]
   if (currentFiber === null) {
     return [];
   }
   const child = currentFiber.child;
   const childContextValues: Array<T> = [];
+  // $FlowFixMe[invalid-compare]
   if (child !== null) {
     collectNearestChildContextValues(child, context, childContextValues);
   }

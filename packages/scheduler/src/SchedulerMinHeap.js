@@ -33,7 +33,7 @@ export function pop<T: Node>(heap: Heap<T>): T | null {
   if (last !== first) {
     // $FlowFixMe[incompatible-type]
     heap[0] = last;
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     siftDown(heap, last, 0);
   }
   return first;

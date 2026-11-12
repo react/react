@@ -234,7 +234,7 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   it('throws when called outside the render phase', async () => {
     expect(() => useState(0)).toThrow(
-      "Cannot read property 'useState' of null",
+      "Cannot read properties of null (reading 'useState')",
     );
     assertConsoleErrorDev([
       'Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for' +
@@ -732,6 +732,61 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
+    it(
+      'preserves pending updates on later hooks that were not processed ' +
+        'before unwind',
+      async () => {
+        const thenable = {then() {}};
+
+        let setLabel;
+        function Foo({suspend}) {
+          return (
+            <Suspense fallback="Loading...">
+              <Bar suspend={suspend} />
+            </Suspense>
+          );
+        }
+
+        function Bar({suspend}) {
+          const [counter, setCounter] = useState(0);
+
+          if (suspend) {
+            setCounter(c => c + 1);
+            Scheduler.log('Suspend!');
+            throw thenable;
+          }
+
+          const [label, _setLabel] = useState('A');
+          setLabel = _setLabel;
+
+          return <Text text={`${label}:${counter}`} />;
+        }
+
+        const root = ReactNoop.createRoot();
+        root.render(<Foo suspend={false} />);
+
+        await waitForAll(['A:0']);
+        expect(root).toMatchRenderedOutput(<span prop="A:0" />);
+
+        await act(async () => {
+          React.startTransition(() => {
+            root.render(<Foo suspend={true} />);
+            setLabel('B');
+          });
+
+          await waitForAll(['Suspend!']);
+          expect(root).toMatchRenderedOutput(<span prop="A:0" />);
+
+          React.startTransition(() => {
+            root.render(<Foo suspend={false} />);
+          });
+
+          await waitForAll(['B:0']);
+          expect(root).toMatchRenderedOutput(<span prop="B:0" />);
+        });
+      },
+    );
+
     it('regression: render phase updates cause lower pri work to be dropped', async () => {
       let setRow;
       function ScrollView() {
@@ -873,7 +928,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 8" />);
     });
 
-    // Regression test for https://github.com/facebook/react/issues/14360
+    // Regression test for https://github.com/react/react/issues/14360
     it('handles dispatches with mixed priorities', async () => {
       const INCREMENT = 'INCREMENT';
 
@@ -3070,14 +3125,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       await act(() => {
         root.render(<Activity mode="hidden" />);
       });
-      assertConsoleErrorDev(
-        gate('enableHiddenSubtreeInsertionEffectCleanup')
-          ? [
-              'useInsertionEffect must not schedule updates.\n' +
-                '    in App (at **)',
-            ]
-          : [],
-      );
+      assertConsoleErrorDev([
+        'useInsertionEffect must not schedule updates.\n' +
+          '    in App (at **)',
+      ]);
 
       // Should not warn for regular effects after throw.
       function NotInsertion() {
@@ -3495,7 +3546,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(counter.current.count).toBe(0);
     });
 
-    // Regression test for https://github.com/facebook/react/issues/14782
+    // Regression test for https://github.com/react/react/issues/14782
     it('automatically updates when deps are not specified', async () => {
       const INCREMENT = 'INCREMENT';
 

@@ -63,6 +63,7 @@ export function taintUniqueValue(
   // eslint-disable-next-line react-internal/safe-string-coercion
   message = '' + (message || defaultMessage);
   if (
+    // $FlowFixMe[invalid-compare]
     lifetime === null ||
     (typeof lifetime !== 'object' && typeof lifetime !== 'function')
   ) {
@@ -86,6 +87,7 @@ export function taintUniqueValue(
     TaintRegistryByteLengths.add(value.byteLength);
     entryValue = binaryToComparableString(value);
   } else {
+    // $FlowFixMe[invalid-compare]
     const kind = value === null ? 'null' : typeof value;
     if (kind === 'object' || kind === 'function') {
       throw new Error(
@@ -127,6 +129,7 @@ export function taintObjectReference(
     );
   }
   if (
+    // $FlowFixMe[invalid-compare]
     object === null ||
     (typeof object !== 'object' && typeof object !== 'function')
   ) {

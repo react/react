@@ -2,6 +2,7 @@ let React;
 let ReactNoop;
 let Scheduler;
 let act;
+let use;
 let useState;
 let useContext;
 let Suspense;
@@ -19,6 +20,7 @@ describe('ReactLazyContextPropagation', () => {
     ReactNoop = require('react-noop-renderer');
     Scheduler = require('scheduler');
     act = require('internal-test-utils').act;
+    use = React.use;
     useState = React.useState;
     useContext = React.useContext;
     Suspense = React.Suspense;
@@ -936,5 +938,179 @@ describe('ReactLazyContextPropagation', () => {
     });
     assertLog(['B', 'B']);
     expect(root).toMatchRenderedOutput('BB');
+  });
+
+  it('regression: context change triggers retry of suspended Suspense boundary on initial mount', async () => {
+    // Regression test for a bug where a context change above a suspended
+    // Suspense boundary would fail to trigger a retry. When a Suspense
+    // boundary suspends during initial mount, the primary children's fibers
+    // are discarded because there is no current tree to preserve them. If
+    // the suspended promise never resolves, the only way to retry is
+    // something external — like a context change. Context propagation must
+    // mark suspended Suspense boundaries for retry even though the consumer
+    // fibers no longer exist in the tree.
+    //
+    // The Provider component owns the state update. The children are
+    // passed in from above, so they are not re-created when the Provider
+    // re-renders — this means the Suspense boundary bails out, exercising
+    // the lazy context propagation path where the bug manifests.
+    const Context = React.createContext(null);
+    const neverResolvingPromise = new Promise(() => {});
+    const resolvedThenable = {status: 'fulfilled', value: 'Result', then() {}};
+
+    function Consumer() {
+      return <Text text={use(use(Context))} />;
+    }
+
+    let setPromise;
+    function Provider({children}) {
+      const [promise, _setPromise] = useState(neverResolvingPromise);
+      setPromise = _setPromise;
+      return <Context.Provider value={promise}>{children}</Context.Provider>;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(
+        <Provider>
+          <Suspense fallback={<Text text="Loading" />}>
+            <Consumer />
+          </Suspense>
+        </Provider>,
+      );
+    });
+    assertLog(['Loading']);
+    expect(root).toMatchRenderedOutput('Loading');
+
+    await act(() => {
+      setPromise(resolvedThenable);
+    });
+    assertLog(['Result']);
+    expect(root).toMatchRenderedOutput('Result');
+  });
+
+  it('regression: context change triggers retry of suspended Suspense boundary on initial mount (nested)', async () => {
+    // Same as above, but with an additional indirection component between
+    // the provider and the Suspense boundary. This exercises the
+    // propagateContextChanges walker path rather than the
+    // propagateParentContextChanges path.
+    const Context = React.createContext(null);
+    const neverResolvingPromise = new Promise(() => {});
+    const resolvedThenable = {status: 'fulfilled', value: 'Result', then() {}};
+
+    function Consumer() {
+      return <Text text={use(use(Context))} />;
+    }
+
+    function Indirection({children}) {
+      Scheduler.log('Indirection');
+      return children;
+    }
+
+    let setPromise;
+    function Provider({children}) {
+      const [promise, _setPromise] = useState(neverResolvingPromise);
+      setPromise = _setPromise;
+      return <Context.Provider value={promise}>{children}</Context.Provider>;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(
+        <Provider>
+          <Indirection>
+            <Suspense fallback={<Text text="Loading" />}>
+              <Consumer />
+            </Suspense>
+          </Indirection>
+        </Provider>,
+      );
+    });
+    assertLog(['Indirection', 'Loading']);
+    expect(root).toMatchRenderedOutput('Loading');
+
+    // Indirection should not re-render — only the Suspense boundary
+    // should be retried.
+    await act(() => {
+      setPromise(resolvedThenable);
+    });
+    assertLog(['Result']);
+    expect(root).toMatchRenderedOutput('Result');
+  });
+
+  // @gate enableLegacyCache
+  it('context change propagates to Suspense fallback (memo boundary)', async () => {
+    // When a context change occurs above a Suspense boundary that is currently
+    // showing its fallback, the fallback's context consumers should re-render
+    // with the updated value — even if there's a memo boundary between the
+    // provider and the Suspense boundary that prevents the fallback element
+    // references from changing.
+    const root = ReactNoop.createRoot();
+    const Context = React.createContext('A');
+
+    let setContext;
+    function App() {
+      const [value, _setValue] = useState('A');
+      setContext = _setValue;
+      return (
+        <Context.Provider value={value}>
+          <MemoizedWrapper />
+          <Text text={value} />
+        </Context.Provider>
+      );
+    }
+
+    const MemoizedWrapper = React.memo(function MemoizedWrapper() {
+      return (
+        <Suspense fallback={<FallbackConsumer />}>
+          <AsyncChild />
+        </Suspense>
+      );
+    });
+
+    function FallbackConsumer() {
+      const value = useContext(Context);
+      return <Text text={'Fallback: ' + value} />;
+    }
+
+    function AsyncChild() {
+      readText('async');
+      return <Text text="Content" />;
+    }
+
+    // Initial render — primary content suspends, fallback is shown
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog([
+      'Suspend! [async]',
+      'Fallback: A',
+      'A',
+      // pre-warming
+      'Suspend! [async]',
+    ]);
+    expect(root).toMatchRenderedOutput('Fallback: AA');
+
+    // Update context while still suspended. The fallback consumer should
+    // re-render with the new value.
+    await act(() => {
+      setContext('B');
+    });
+    assertLog([
+      // The Suspense boundary retries the primary children first
+      'Suspend! [async]',
+      'Fallback: B',
+      'B',
+      // pre-warming
+      'Suspend! [async]',
+    ]);
+    expect(root).toMatchRenderedOutput('Fallback: BB');
+
+    // Unsuspend. The primary content should render with the latest context.
+    await act(async () => {
+      await resolveText('async');
+    });
+    assertLog(['Content']);
+    expect(root).toMatchRenderedOutput('ContentB');
   });
 });

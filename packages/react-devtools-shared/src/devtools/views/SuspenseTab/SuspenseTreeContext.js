@@ -97,11 +97,11 @@ export type SuspenseTreeAction =
 export type SuspenseTreeDispatch = (action: SuspenseTreeAction) => void;
 
 const SuspenseTreeStateContext: ReactContext<SuspenseTreeState> =
-  createContext<SuspenseTreeState>(((null: any): SuspenseTreeState));
+  createContext<SuspenseTreeState>(null as any as SuspenseTreeState);
 SuspenseTreeStateContext.displayName = 'SuspenseTreeStateContext';
 
 const SuspenseTreeDispatcherContext: ReactContext<SuspenseTreeDispatch> =
-  createContext<SuspenseTreeDispatch>(((null: any): SuspenseTreeDispatch));
+  createContext<SuspenseTreeDispatch>(null as any as SuspenseTreeDispatch);
 SuspenseTreeDispatcherContext.displayName = 'SuspenseTreeDispatcherContext';
 
 type Props = {
@@ -168,15 +168,16 @@ function SuspenseTreeContextController({children}: Props): React.Node {
             }
 
             const selectedTimelineStep =
+              // $FlowFixMe[invalid-compare]
               state.timeline === null || state.timelineIndex === -1
                 ? null
                 : state.timeline[state.timelineIndex];
             let selectedTimelineID: null | number = null;
             if (selectedTimelineStep !== null) {
               selectedTimelineID = selectedTimelineStep.id;
-              // $FlowFixMe
+              // $FlowFixMe[incompatible-type]
               while (removedIDs.has(selectedTimelineID)) {
-                // $FlowFixMe
+                // $FlowFixMe[incompatible-type]
                 selectedTimelineID = removedIDs.get(selectedTimelineID);
               }
             }
@@ -258,7 +259,9 @@ function SuspenseTreeContextController({children}: Props): React.Node {
             // Try to reconcile the new timeline with the previous index.
             if (
               nextRootID === null &&
+              // $FlowFixMe[invalid-compare]
               previousTimeline !== null &&
+              // $FlowFixMe[invalid-compare]
               previousMilestoneIndex !== null
             ) {
               const previousMilestoneID =

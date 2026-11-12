@@ -11,6 +11,7 @@ let startTransition;
 let textCache;
 let waitFor;
 let waitForPaint;
+let waitForMicrotasks;
 let assertLog;
 let use;
 
@@ -33,6 +34,7 @@ describe('Activity Suspense', () => {
     const InternalTestUtils = require('internal-test-utils');
     waitFor = InternalTestUtils.waitFor;
     waitForPaint = InternalTestUtils.waitForPaint;
+    waitForMicrotasks = InternalTestUtils.waitForMicrotasks;
     assertLog = InternalTestUtils.assertLog;
 
     textCache = new Map();
@@ -41,47 +43,39 @@ describe('Activity Suspense', () => {
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
+      const promise = Promise.resolve(text);
+      promise.status = 'fulfilled';
+      promise.value = text;
       const newRecord = {
-        status: 'resolved',
-        value: text,
+        promise,
       };
       textCache.set(text, newRecord);
-    } else if (record.status === 'pending') {
+    } else if (record.promise.status === 'pending') {
       const resolve = record.resolve;
-      record.status = 'resolved';
-      record.value = text;
-      resolve();
+      record.promise.status = 'fulfilled';
+      record.promise.value = text;
+      resolve(text);
     }
   }
 
   function readText(text) {
-    const record = textCache.get(text);
-    if (record !== undefined) {
-      switch (record.status) {
-        case 'pending':
-          Scheduler.log(`Suspend! [${text}]`);
-          return use(record.value);
-        case 'rejected':
-          throw record.value;
-        case 'resolved':
-          return record.value;
-      }
-    } else {
-      Scheduler.log(`Suspend! [${text}]`);
+    let record = textCache.get(text);
+    if (record === undefined) {
       let resolve;
       const promise = new Promise(_resolve => {
         resolve = _resolve;
       });
-
-      const newRecord = {
-        status: 'pending',
-        value: promise,
+      promise.status = 'pending';
+      record = {
+        promise,
         resolve,
       };
-      textCache.set(text, newRecord);
-
-      return use(promise);
+      textCache.set(text, record);
     }
+    if (record.promise.status === 'pending') {
+      Scheduler.log(`Suspend! [${text}]`);
+    }
+    return use(record.promise);
   }
 
   function Text({text}) {
@@ -463,6 +457,47 @@ describe('Activity Suspense', () => {
     });
     assertLog(['B1']);
     expect(root).toMatchRenderedOutput(<span hidden={true}>B1</span>);
+  });
+
+  test('deleting a hidden tree that suspended does not throw when the data resolves', async () => {
+    function App({showHidden}) {
+      return (
+        <>
+          <span>
+            <Text text="Visible" />
+          </span>
+          {showHidden ? (
+            <Activity mode="hidden">
+              <AsyncText text="Hidden" />
+            </Activity>
+          ) : null}
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App showHidden={true} />);
+    });
+    assertLog(['Visible', 'Suspend! [Hidden]']);
+    expect(root).toMatchRenderedOutput(<span>Visible</span>);
+
+    // Delete the hidden tree while it's still suspended.
+    await act(() => {
+      root.render(<App showHidden={false} />);
+    });
+    assertLog(['Visible']);
+    expect(root).toMatchRenderedOutput(<span>Visible</span>);
+
+    // The retry listener attached to the deleted Offscreen boundary still
+    // fires when the data resolves. It should not schedule any work.
+    await act(async () => {
+      resolveText('Hidden');
+      await waitForMicrotasks();
+      expect(Scheduler.unstable_hasPendingWork()).toBe(false);
+    });
+    assertLog([]);
+    expect(root).toMatchRenderedOutput(<span>Visible</span>);
   });
 
   test('detect updates to a hidden tree during a concurrent event', async () => {

@@ -72,6 +72,7 @@ function renderToStringImpl(
     Infinity,
     onError,
     undefined,
+    undefined,
     onShellReady,
     undefined,
     undefined,

@@ -16,7 +16,6 @@ module.exports = {
     '@babel/plugin-transform-block-scoped-functions',
     '@babel/plugin-transform-object-super',
     '@babel/plugin-transform-shorthand-properties',
-    '@babel/plugin-transform-computed-properties',
     '@babel/plugin-transform-for-of',
     ['@babel/plugin-transform-spread', {loose: true, useBuiltIns: true}],
     '@babel/plugin-transform-parameters',

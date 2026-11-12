@@ -1092,7 +1092,7 @@ describe('ReactDOMForm', () => {
     const root = ReactDOMClient.createRoot(container);
     await act(async () => {
       root.render(<App />);
-      await waitForThrow('Cannot update form state while rendering.');
+      await waitForThrow('Cannot update action state while rendering.');
     });
   });
 
@@ -2328,7 +2328,8 @@ describe('ReactDOMForm', () => {
     await submit(formRef.current);
     assertLog([actionFn]);
 
-    // Everything else is toString-ed, unless trusted types are enabled.
+    // Everything else is passed through without being stringified, so that
+    // Trusted Types values reach the DOM as-is.
     class MyAction {
       toString() {
         return 'stringified action';
@@ -2338,11 +2339,7 @@ describe('ReactDOMForm', () => {
 
     await act(() => root.render(<Form action={instance} />));
     await submit(formRef.current);
-    assertLog(
-      gate('enableTrustedTypesIntegration')
-        ? [instance]
-        : ['stringified action'],
-    );
+    assertLog([instance]);
   });
 
   it('form actions should retain status when nested state changes', async () => {

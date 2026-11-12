@@ -146,7 +146,7 @@ export function attach(
     new WeakMap();
 
   let getElementIDForHostInstance: GetElementIDForHostInstance =
-    ((null: any): GetElementIDForHostInstance);
+    null as any as GetElementIDForHostInstance;
   let findHostInstanceForInternalID: (id: number) => ?HostInstance;
   let getNearestMountedDOMNode = (node: Element): null | Element => {
     // Not implemented.
@@ -198,7 +198,7 @@ export function attach(
       internalInstanceToIDMap.set(internalInstance, id);
       idToInternalInstanceMap.set(id, internalInstance);
     }
-    return ((internalInstanceToIDMap.get(internalInstance): any): number);
+    return internalInstanceToIDMap.get(internalInstance) as any as number;
   }
 
   function areEqualArrays(a: Array<any>, b: Array<any>) {
@@ -390,6 +390,7 @@ export function attach(
   ) {
     const isRoot = parentID === 0;
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log(
         '%crecordMount()',
@@ -472,6 +473,7 @@ export function attach(
     parentID: number,
     rootID: number,
   ) {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.group('crawlAndRecordInitialMounts() id:', id);
     }
@@ -485,6 +487,7 @@ export function attach(
       );
     }
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.groupEnd();
     }
@@ -584,6 +587,7 @@ export function attach(
     }
     i += pendingOperations.length;
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       printOperationsArray(operations);
     }
@@ -828,7 +832,7 @@ export function attach(
 
       let owner = element._owner;
       if (owner) {
-        owners = ([]: Array<SerializedElement>);
+        owners = [] as Array<SerializedElement>;
         while (owner != null) {
           owners.push({
             displayName: getData(owner).displayName || 'Unknown',

@@ -81,8 +81,6 @@ function getTestFlags() {
       fb: www || xplat,
 
       // These aren't flags, just a useful aliases for tests.
-      // TODO: Clean this up.
-      enableActivity: true,
       enableSuspenseList: releaseChannel === 'experimental' || www || xplat,
       enableLegacyHidden: www,
       // TODO: Suspending the work loop during the render phase is currently

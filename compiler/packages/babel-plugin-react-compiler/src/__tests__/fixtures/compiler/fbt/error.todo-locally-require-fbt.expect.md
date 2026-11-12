@@ -23,7 +23,7 @@ Local variables named `fbt` may conflict with the fbt plugin and are not yet sup
 error.todo-locally-require-fbt.ts:2:8
   1 | function Component(props) {
 > 2 |   const fbt = require('fbt');
-    |         ^^^ Rename to avoid conflict with fbt plugin
+    |         ^^^ Support local variables named `fbt`
   3 |
   4 |   return <fbt desc="Description">{'Text'}</fbt>;
   5 | }

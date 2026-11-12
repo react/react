@@ -12,12 +12,12 @@
     "postinstall": "./scripts/link-react-compiler-runtime.sh && perl -p -i -e 's/react\\.element/react.transitional.element/' ../../node_modules/fbt/lib/FbtReactUtil.js && perl -p -i -e 's/didWarnAboutUsingAct = false;/didWarnAboutUsingAct = true;/' ../../node_modules/react-dom/cjs/react-dom-test-utils.development.js",
     "build": "rimraf dist && concurrently -n snap,runtime \"tsc --build\" \"yarn --silent workspace react-compiler-runtime build\"",
     "snap": "node dist/main.js",
-    "test": "echo 'no tests'",
+    "test": "yarn build && node --test dist/__tests__/*.js",
     "prettier": "prettier --write 'src/**/*.ts'"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/facebook/react.git",
+    "url": "git+https://github.com/react/react.git",
     "directory": "compiler/packages/snap"
   },
   "dependencies": {
@@ -33,7 +33,7 @@
     "chalk": "4",
     "fbt": "^1.0.2",
     "glob": "^10.3.10",
-    "hermes-parser": "^0.25.1",
+    "hermes-parser": "^0.32.0",
     "jsdom": "^22.1.0",
     "react": "0.0.0-experimental-4beb1fd8-20241118",
     "react-dom": "0.0.0-experimental-4beb1fd8-20241118",

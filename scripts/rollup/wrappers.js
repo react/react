@@ -510,7 +510,8 @@ function wrapWithTopLevelDefinitions(
   globalName,
   filename,
   moduleType,
-  wrapWithModuleBoundaries
+  wrapWithModuleBoundaries,
+  wrapWithNodeDevGuard
 ) {
   if (wrapWithModuleBoundaries) {
     switch (bundleType) {
@@ -553,8 +554,14 @@ function wrapWithTopLevelDefinitions(
     return wrapper(source, globalName, filename, moduleType);
   }
 
+  // Node.js build tools (e.g. ESLint plugins) use process.env.NODE_ENV instead
+  // of __DEV__ even when building for FB_WWW, since they run in Node.js where
+  // __DEV__ is not defined.
+  const effectiveBundleType =
+    wrapWithNodeDevGuard && bundleType === FB_WWW_DEV ? NODE_DEV : bundleType;
+
   // All the other packages.
-  const wrapper = topLevelDefinitionWrappers[bundleType];
+  const wrapper = topLevelDefinitionWrappers[effectiveBundleType];
   if (typeof wrapper !== 'function') {
     throw new Error(`Unsupported build type: ${bundleType}.`);
   }

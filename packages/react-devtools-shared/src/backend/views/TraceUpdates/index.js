@@ -47,7 +47,7 @@ export type Data = {
 
 const nodeToData: Map<HostInstance, Data> = new Map();
 
-let agent: Agent = ((null: any): Agent);
+let agent: Agent = null as any as Agent;
 let drawAnimationFrameID: AnimationFrameID | null = null;
 let isEnabled: boolean = false;
 let redrawTimeoutID: TimeoutID | null = null;

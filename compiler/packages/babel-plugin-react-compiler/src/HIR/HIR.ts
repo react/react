@@ -20,6 +20,7 @@ import {z} from 'zod/v4';
 import type {AliasingEffect} from '../Inference/AliasingEffects';
 import {isReservedWord} from '../Utils/Keyword';
 import {Err, Ok, Result} from '../Utils/Result';
+import {GeneratedSource, type SourceLocation} from './SourceLocation';
 
 /*
  * *******************************************************************************************
@@ -37,8 +38,11 @@ import {Err, Ok, Result} from '../Utils/Result';
  *
  * `GeneratedSource` indicates that there is no single source location from which the code derives.
  */
-export const GeneratedSource = Symbol();
-export type SourceLocation = t.SourceLocation | typeof GeneratedSource;
+export {
+  GeneratedSource,
+  getSourceLocation,
+  type SourceLocation,
+} from './SourceLocation';
 
 /*
  * A React function defines a computation that takes some set of reactive inputs
@@ -826,6 +830,7 @@ export type StartMemoize = {
    * emitting diagnostics with a suggested replacement
    */
   depsLoc: SourceLocation | null;
+  hasInvalidDeps?: true;
   loc: SourceLocation;
 };
 export type FinishMemoize = {
@@ -1081,7 +1086,14 @@ export type InstructionValue =
    * but evaluates to the value of <value> prior to the update.
    */
   | {
-      kind: 'PrefixUpdate';
+      kind: 'PrefixUpdateLocal';
+      lvalue: Place;
+      operation: t.UpdateExpression['operator'];
+      value: Place;
+      loc: SourceLocation;
+    }
+  | {
+      kind: 'PrefixUpdateContext';
       lvalue: Place;
       operation: t.UpdateExpression['operator'];
       value: Place;
@@ -1093,7 +1105,14 @@ export type InstructionValue =
    * and evaluates to the value after the update
    */
   | {
-      kind: 'PostfixUpdate';
+      kind: 'PostfixUpdateLocal';
+      lvalue: Place;
+      operation: t.UpdateExpression['operator'];
+      value: Place;
+      loc: SourceLocation;
+    }
+  | {
+      kind: 'PostfixUpdateContext';
       lvalue: Place;
       operation: t.UpdateExpression['operator'];
       value: Place;
@@ -1639,6 +1658,7 @@ export function makePropertyLiteral(value: string | number): PropertyLiteral {
 export type DependencyPathEntry = {
   property: PropertyLiteral;
   optional: boolean;
+  loc: SourceLocation;
 };
 export type DependencyPath = Array<DependencyPathEntry>;
 export type ReactiveScopeDependency = {
@@ -1656,6 +1676,7 @@ export type ReactiveScopeDependency = {
    */
   reactive: boolean;
   path: DependencyPath;
+  loc: SourceLocation;
 };
 
 export function areEqualPaths(a: DependencyPath, b: DependencyPath): boolean {
@@ -1884,12 +1905,6 @@ export function isUseReducerType(id: Identifier): boolean {
 
 export function isDispatcherType(id: Identifier): boolean {
   return id.type.kind === 'Function' && id.type.shapeId === 'BuiltInDispatch';
-}
-
-export function isFireFunctionType(id: Identifier): boolean {
-  return (
-    id.type.kind === 'Function' && id.type.shapeId === 'BuiltInFireFunction'
-  );
 }
 
 export function isEffectEventFunctionType(id: Identifier): boolean {

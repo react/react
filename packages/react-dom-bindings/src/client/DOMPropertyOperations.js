@@ -8,7 +8,6 @@
  */
 
 import isAttributeNameSafe from '../shared/isAttributeNameSafe';
-import {enableTrustedTypesIntegration} from 'shared/ReactFeatureFlags';
 import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
 import {getFiberCurrentPropsFromNode} from './ReactDOMComponentTree';
 import {trackHostMutation} from 'react-reconciler/src/ReactFiberMutationTracking';
@@ -42,11 +41,15 @@ export function getValueForAttribute(
       }
       return expected === undefined ? undefined : null;
     }
-    const value = node.getAttribute(name);
+    // When CSP is enabled, browsers hide the nonce attribute
+    // so we need to access the nonce property directly
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#cryptographicnonce
+    const isNonce = name.toLowerCase() === 'nonce';
+    const value = isNonce ? (node as any).nonce : node.getAttribute(name);
     if (__DEV__) {
       checkAttributeStringCoercion(expected, name);
     }
-    if (value === '' + (expected: any)) {
+    if (value === '' + (expected as any)) {
       return expected;
     }
     return value;
@@ -79,7 +82,11 @@ export function getValueForAttributeOnCustomComponent(
       }
       return expected === undefined ? undefined : null;
     }
-    const value = node.getAttribute(name);
+    // When CSP is enabled, browsers hide the nonce attribute
+    // so we need to access the nonce property directly
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#cryptographicnonce
+    const isNonce = name.toLowerCase() === 'nonce';
+    const value = isNonce ? (node as any).nonce : node.getAttribute(name);
 
     if (value === '' && expected === true) {
       return true;
@@ -88,7 +95,7 @@ export function getValueForAttributeOnCustomComponent(
     if (__DEV__) {
       checkAttributeStringCoercion(expected, name);
     }
-    if (value === '' + (expected: any)) {
+    if (value === '' + (expected as any)) {
       return expected;
     }
     return value;
@@ -124,10 +131,7 @@ export function setValueForAttribute(
     if (__DEV__) {
       checkAttributeStringCoercion(value, name);
     }
-    node.setAttribute(
-      name,
-      enableTrustedTypesIntegration ? (value: any) : '' + (value: any),
-    );
+    node.setAttribute(name, value as any);
   }
 }
 
@@ -152,10 +156,7 @@ export function setValueForKnownAttribute(
   if (__DEV__) {
     checkAttributeStringCoercion(value, name);
   }
-  node.setAttribute(
-    name,
-    enableTrustedTypesIntegration ? (value: any) : '' + (value: any),
-  );
+  node.setAttribute(name, value as any);
 }
 
 export function setValueForNamespacedAttribute(
@@ -180,11 +181,7 @@ export function setValueForNamespacedAttribute(
   if (__DEV__) {
     checkAttributeStringCoercion(value, name);
   }
-  node.setAttributeNS(
-    namespace,
-    name,
-    enableTrustedTypesIntegration ? (value: any) : '' + (value: any),
-  );
+  node.setAttributeNS(namespace, name, value as any);
 }
 
 export function setValueForPropertyOnCustomComponent(
@@ -206,22 +203,22 @@ export function setValueForPropertyOnCustomComponent(
       if (typeof prevValue !== 'function' && prevValue !== null) {
         // If we previously assigned a non-function type into this node, then
         // remove it when switching to event listener mode.
-        if (name in (node: any)) {
-          (node: any)[name] = null;
+        if (name in (node as any)) {
+          (node as any)[name] = null;
         } else if (node.hasAttribute(name)) {
           node.removeAttribute(name);
         }
       }
-      // $FlowFixMe[incompatible-cast] value can't be casted to EventListener.
-      node.addEventListener(eventName, (value: EventListener), useCapture);
+      // $FlowFixMe[incompatible-type] value can't be casted to EventListener.
+      node.addEventListener(eventName, value as EventListener, useCapture);
       return;
     }
   }
 
   trackHostMutation();
 
-  if (name in (node: any)) {
-    (node: any)[name] = value;
+  if (name in (node as any)) {
+    (node as any)[name] = value;
     return;
   }
 

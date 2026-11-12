@@ -48,7 +48,7 @@ function drawWeb(nodeToData: Map<HostInstance, Data>) {
   }
 
   const dpr = window.devicePixelRatio || 1;
-  const canvasFlow: HTMLCanvasElement = ((canvas: any): HTMLCanvasElement);
+  const canvasFlow: HTMLCanvasElement = canvas as any as HTMLCanvasElement;
   canvasFlow.width = window.innerWidth * dpr;
   canvasFlow.height = window.innerHeight * dpr;
   canvasFlow.style.width = `${window.innerWidth}px`;
@@ -217,7 +217,7 @@ function destroyWeb() {
 
     // $FlowFixMe[incompatible-use]: Flow doesn't recognize Popover API and loses canvas nullability tracking
     if (canvas.parentNode != null) {
-      // $FlowFixMe[incompatible-call]: Flow doesn't track that canvas is non-null here
+      // $FlowFixMe[incompatible-type]: Flow doesn't track that canvas is non-null here
       canvas.parentNode.removeChild(canvas);
     }
     canvas = null;
