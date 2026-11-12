@@ -11,6 +11,7 @@
 //! creation, aliasing, mutation, freezing, and error conditions for each
 //! instruction and terminal in the HIR.
 
+use crate::find_non_mutated_primitive_entry_arrays::find_non_mutated_primitive_entry_arrays;
 use indexmap::IndexMap;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
@@ -157,6 +158,7 @@ pub fn infer_mutation_aliasing_effects(
         is_function_expression,
         hoisted_context_declarations,
         non_mutating_spreads,
+        non_mutating_entries: find_non_mutated_primitive_entry_arrays(func, env),
         effect_value_id_cache: FxHashMap::default(),
         function_values: FxHashMap::default(),
         function_signature_cache: FxHashMap::default(),
@@ -757,6 +759,7 @@ struct Context {
     is_function_expression: bool,
     hoisted_context_declarations: FxHashMap<DeclarationId, Option<Place>>,
     non_mutating_spreads: FxHashSet<IdentifierId>,
+    non_mutating_entries: FxHashSet<IdentifierId>,
     /// Cache of ValueIds keyed by effect hash, ensuring stable allocation-site identity
     /// across fixpoint iterations. Mirrors TS `effectInstructionValueCache`.
     effect_value_id_cache: FxHashMap<String, ValueId>,
@@ -2253,7 +2256,7 @@ fn compute_signature_for_instruction(
             });
         }
         InstructionValue::NewExpression { callee, args, loc } => {
-            let sig = get_function_call_signature(env, callee.identifier)
+            let sig = get_refined_call_signature(context, env, callee.identifier, args)
                 .ok()
                 .flatten();
             effects.push(AliasingEffect::Apply {
@@ -2267,7 +2270,7 @@ fn compute_signature_for_instruction(
             });
         }
         InstructionValue::CallExpression { callee, args, loc } => {
-            let sig = get_function_call_signature(env, callee.identifier)
+            let sig = get_refined_call_signature(context, env, callee.identifier, args)
                 .ok()
                 .flatten();
             effects.push(AliasingEffect::Apply {
@@ -2286,7 +2289,7 @@ fn compute_signature_for_instruction(
             args,
             loc,
         } => {
-            let sig = get_function_call_signature(env, property.identifier)
+            let sig = get_refined_call_signature(context, env, property.identifier, args)
                 .ok()
                 .flatten();
             effects.push(AliasingEffect::Apply {
@@ -3663,12 +3666,33 @@ fn is_builtin_collection_type(ty: &Type) -> bool {
     )
 }
 
-fn get_function_call_signature(
+fn get_refined_call_signature(
+    context: &Context,
     env: &Environment,
     callee_id: IdentifierId,
+    args: &[PlaceOrSpread],
 ) -> Result<Option<FunctionSignature>, CompilerDiagnostic> {
     let ty = &env.types[env.identifiers[callee_id.0 as usize].type_.0 as usize];
-    Ok(env.get_function_signature(ty)?.cloned())
+    let Some(mut signature) = env.get_function_signature(ty)?.cloned() else {
+        return Ok(None);
+    };
+    let is_from_entries = matches!(ty,
+        Type::Function { shape_id: Some(id), .. }
+            if id == react_compiler_hir::object_shape::BUILT_IN_OBJECT_FROM_ENTRIES_ID
+    );
+    let known_entries = matches!(args.first(),
+        Some(PlaceOrSpread::Place(arg)) if context.non_mutating_entries.contains(&arg.identifier)
+    );
+    if is_from_entries && known_entries {
+        // Only proven local entries make both iteration and key coercion read-only.
+        signature.positional_params = vec![Effect::Capture];
+        if let Some(aliasing) = &mut signature.aliasing {
+            aliasing.effects.retain(|effect| !matches!(effect,
+                react_compiler_hir::type_config::AliasingEffectConfig::MutateTransitiveConditionally { .. }
+            ));
+        }
+    }
+    Ok(Some(signature))
 }
 
 fn is_ref_or_ref_value_for_id(env: &Environment, id: IdentifierId) -> bool {

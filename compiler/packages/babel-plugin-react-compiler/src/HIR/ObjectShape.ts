@@ -370,6 +370,7 @@ export const BuiltInWeakMapId = 'BuiltInWeakMap';
 export const BuiltInFunctionId = 'BuiltInFunction';
 export const BuiltInJsxId = 'BuiltInJsx';
 export const BuiltInObjectId = 'BuiltInObject';
+export const BuiltInObjectFromEntriesId = 'BuiltInObjectFromEntries';
 export const BuiltInUseStateId = 'BuiltInUseState';
 export const BuiltInSetStateId = 'BuiltInSetState';
 export const BuiltInUseActionStateId = 'BuiltInUseActionState';

@@ -72,6 +72,11 @@ import {
 } from './AliasingEffects';
 import {ErrorCategory} from '../CompilerError';
 
+import {
+  findNonMutatedPrimitiveEntryArrays,
+  isObjectFromEntries,
+} from './FindNonMutatedPrimitiveEntryArrays';
+
 const DEBUG = false;
 
 /**
@@ -277,6 +282,7 @@ class Context {
   fn: HIRFunction;
   hoistedContextDeclarations: Map<DeclarationId, Place | null>;
   nonMutatingSpreads: Set<IdentifierId>;
+  nonMutatingEntries: Set<IdentifierId>;
 
   constructor(
     isFunctionExpression: boolean,
@@ -288,6 +294,7 @@ class Context {
     this.fn = fn;
     this.hoistedContextDeclarations = hoistedContextDeclarations;
     this.nonMutatingSpreads = nonMutatingSpreads;
+    this.nonMutatingEntries = findNonMutatedPrimitiveEntryArrays(fn);
   }
 
   cacheApplySignature(
@@ -1835,7 +1842,26 @@ function computeSignatureForInstruction(
           `Unexpected value kind '${(value as any).kind}'`,
         );
       }
-      const signature = getFunctionCallSignature(env, callee.identifier.type);
+      let signature = getFunctionCallSignature(env, callee.identifier.type);
+      const firstArg = value.args[0];
+      if (
+        signature?.aliasing != null &&
+        isObjectFromEntries(value) &&
+        firstArg?.kind === 'Identifier' &&
+        context.nonMutatingEntries.has(firstArg.identifier.id)
+      ) {
+        // Iteration and key coercion are read-only only for proven local entries.
+        signature = {
+          ...signature,
+          positionalParams: [Effect.Capture],
+          aliasing: {
+            ...signature.aliasing,
+            effects: signature.aliasing.effects.filter(
+              effect => effect.kind !== 'MutateTransitiveConditionally',
+            ),
+          },
+        };
+      }
       effects.push({
         kind: 'Apply',
         receiver,

@@ -12,6 +12,7 @@ import {
   BuiltInMapId,
   BuiltInMixedReadonlyId,
   BuiltInObjectId,
+  BuiltInObjectFromEntriesId,
   BuiltInSetId,
   BuiltInUseActionStateId,
   BuiltInUseContextHookId,
@@ -104,13 +105,42 @@ const TYPED_GLOBALS: Array<[string, BuiltInType]> = [
          * iterable.
          */
         'fromEntries',
-        addFunction(DEFAULT_SHAPES, [], {
-          positionalParams: [Effect.ConditionallyMutate],
-          restParam: null,
-          returnType: {kind: 'Object', shapeId: BuiltInObjectId},
-          calleeEffect: Effect.Read,
-          returnValueKind: ValueKind.Mutable,
-        }),
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.ConditionallyMutate],
+            restParam: null,
+            returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Mutable,
+            aliasing: {
+              receiver: '@receiver',
+              params: ['@iterable'],
+              rest: null,
+              returns: '@returns',
+              temporaries: [],
+              effects: [
+                {
+                  kind: 'Create',
+                  into: '@returns',
+                  reason: ValueReason.KnownReturnSignature,
+                  value: ValueKind.Mutable,
+                },
+                {
+                  kind: 'MutateTransitiveConditionally',
+                  value: '@iterable',
+                },
+                {
+                  kind: 'Capture',
+                  from: '@iterable',
+                  into: '@returns',
+                },
+              ],
+            },
+          },
+          BuiltInObjectFromEntriesId,
+        ),
       ],
       [
         'entries',

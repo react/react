@@ -1997,9 +1997,30 @@ fn build_typed_globals(
                 shape_id: Some(BUILT_IN_OBJECT_ID.to_string()),
             },
             return_value_kind: ValueKind::Mutable,
+            aliasing: Some(AliasingSignatureConfig {
+                receiver: "@receiver".to_string(),
+                params: vec!["@iterable".to_string()],
+                rest: None,
+                returns: "@returns".to_string(),
+                temporaries: Vec::new(),
+                effects: vec![
+                    AliasingEffectConfig::Create {
+                        into: "@returns".to_string(),
+                        value: ValueKind::Mutable,
+                        reason: ValueReason::KnownReturnSignature,
+                    },
+                    AliasingEffectConfig::MutateTransitiveConditionally {
+                        value: "@iterable".to_string(),
+                    },
+                    AliasingEffectConfig::Capture {
+                        from: "@iterable".to_string(),
+                        into: "@returns".to_string(),
+                    },
+                ],
+            }),
             ..Default::default()
         },
-        None,
+        Some(BUILT_IN_OBJECT_FROM_ENTRIES_ID),
         false,
     );
     let obj_entries = add_function(

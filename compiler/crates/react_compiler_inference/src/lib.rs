@@ -3,6 +3,7 @@ pub mod align_object_method_scopes;
 pub mod align_reactive_scopes_to_block_scopes_hir;
 pub mod analyse_functions;
 pub mod build_reactive_scope_terminals_hir;
+mod find_non_mutated_primitive_entry_arrays;
 pub mod flatten_reactive_loops_hir;
 pub mod flatten_scopes_with_hooks_or_use_hir;
 pub mod infer_mutation_aliasing_effects;
