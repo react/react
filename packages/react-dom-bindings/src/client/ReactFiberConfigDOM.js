@@ -5382,9 +5382,10 @@ function preloadModule(href: string, options?: ?PreloadModuleImplOptions) {
   if (ownerDocument && href) {
     const as =
       options && typeof options.as === 'string' ? options.as : 'script';
+    const escapedHref = escapeSelectorAttributeValueInsideDoubleQuotes(href);
     const preloadSelector = `link[rel="modulepreload"][as="${escapeSelectorAttributeValueInsideDoubleQuotes(
       as,
-    )}"][href="${escapeSelectorAttributeValueInsideDoubleQuotes(href)}"]`;
+    )}"][href="${escapedHref}"]`;
     // Some preloads are keyed under their selector. This happens when the preload is for
     // an arbitrary type. Other preloads are keyed under the resource key they represent a preload for.
     // Here we figure out which key to use to determine if we have a preload already.
@@ -5411,7 +5412,18 @@ function preloadModule(href: string, options?: ?PreloadModuleImplOptions) {
       );
       preloadPropsMap.set(key, props);
 
-      if (null === ownerDocument.querySelector(preloadSelector)) {
+      // We never write the `as` attribute for the default module type since
+      // "script" is implied by modulepreload. That means a link we created, or
+      // one the server emitted, won't have the attribute. A link authored by
+      // hand may still spell out `as="script"` so we consider both shapes to be
+      // the same preload.
+      const existingPreload =
+        as === 'script'
+          ? ownerDocument.querySelector(
+              `link[rel="modulepreload"]:not([as])[href="${escapedHref}"]`,
+            ) !== null || ownerDocument.querySelector(preloadSelector) !== null
+          : ownerDocument.querySelector(preloadSelector) !== null;
+      if (!existingPreload) {
         switch (as) {
           case 'audioworklet':
           case 'paintworklet':
