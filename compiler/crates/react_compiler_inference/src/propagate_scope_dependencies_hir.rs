@@ -471,6 +471,43 @@ fn traverse_function_optional(
     }
 }
 
+/// A basic block (or a run of blocks) with `maybe-throw` terminals flattened away.
+///
+/// `maybe-throw` terminals wrap individual instructions with an edge to the
+/// enclosing try block's handler (every instruction inside a `try {}` is lowered
+/// into its own `maybe-throw`-terminated block). They do not change the values
+/// produced by the wrapped instructions, but the structural pattern-matching for
+/// optional chains assumes instructions are grouped into larger blocks. Mirrors
+/// `flattenMaybeThrows` in CollectOptionalChainDependencies.ts.
+struct FlattenedBlock<'a> {
+    instructions: Vec<InstructionId>,
+    terminal: &'a Terminal,
+    /// The block that owns `terminal` (the last block of the flattened run).
+    terminal_block: &'a BasicBlock,
+}
+
+fn flatten_maybe_throws<'a>(
+    block_id: BlockId,
+    func: &'a HirFunction,
+) -> Option<FlattenedBlock<'a>> {
+    let mut block = func.body.blocks.get(&block_id)?;
+    let mut instructions: Vec<InstructionId> = Vec::new();
+    let mut seen: FxHashSet<BlockId> = FxHashSet::default();
+    while let Terminal::MaybeThrow { continuation, .. } = &block.terminal {
+        if !seen.insert(block.id) {
+            break;
+        }
+        instructions.extend(block.instructions.iter().copied());
+        block = func.body.blocks.get(continuation)?;
+    }
+    instructions.extend(block.instructions.iter().copied());
+    Some(FlattenedBlock {
+        instructions,
+        terminal: &block.terminal,
+        terminal_block: block,
+    })
+}
+
 struct MatchConsequentResult {
     consequent_id: IdentifierId,
     property: PropertyLiteral,
@@ -495,7 +532,7 @@ fn match_optional_test_block(
         _ => return None,
     };
 
-    let consequent_block = func.body.blocks.get(&consequent_block_id)?;
+    let consequent_block = flatten_maybe_throws(consequent_block_id, func)?;
     if consequent_block.instructions.len() != 2 {
         return None;
     }
@@ -529,14 +566,14 @@ fn match_optional_test_block(
     }
 
     // Check consequent block terminal is goto break
-    match &consequent_block.terminal {
+    match consequent_block.terminal {
         Terminal::Goto {
             variant: GotoVariant::Break,
             block: goto_block,
             ..
         } => {
             // Verify alternate block structure
-            let alternate_block = func.body.blocks.get(&alternate_block_id)?;
+            let alternate_block = flatten_maybe_throws(alternate_block_id, func)?;
             if alternate_block.instructions.len() != 2 {
                 return None;
             }
@@ -579,9 +616,9 @@ fn traverse_optional_block(
         _ => return None,
     };
 
-    let maybe_test_block = func.body.blocks.get(&test_block_id)?;
+    let maybe_test_block = flatten_maybe_throws(test_block_id, func)?;
 
-    let (test_terminal, base_object) = match &maybe_test_block.terminal {
+    let (test_terminal, base_object) = match maybe_test_block.terminal {
         Terminal::Branch { .. } => {
             // Base case: optional must be true
             if !is_optional {
@@ -640,29 +677,34 @@ fn traverse_optional_block(
                 path,
                 loc: first_place.loc,
             };
-            (&maybe_test_block.terminal, base)
+            (maybe_test_block.terminal, base)
         }
         Terminal::Optional {
             fallthrough: inner_fallthrough,
             optional: _inner_optional,
             ..
         } => {
-            let test_block = func.body.blocks.get(inner_fallthrough)?;
-            if !matches!(&test_block.terminal, Terminal::Branch { .. }) {
+            let test_block = flatten_maybe_throws(*inner_fallthrough, func)?;
+            if !matches!(test_block.terminal, Terminal::Branch { .. }) {
                 return None;
             }
 
             // Recurse into inner optional
-            let inner_alternate = match &test_block.terminal {
+            let inner_alternate = match test_block.terminal {
                 Terminal::Branch { alternate, .. } => Some(*alternate),
                 _ => None,
             };
-            let inner_optional_result =
-                traverse_optional_block(maybe_test_block, func, env, ctx, inner_alternate);
+            let inner_optional_result = traverse_optional_block(
+                maybe_test_block.terminal_block,
+                func,
+                env,
+                ctx,
+                inner_alternate,
+            );
             let inner_optional_id = inner_optional_result?;
 
             // Check that inner optional is part of the same chain
-            let test_ident = match &test_block.terminal {
+            let test_ident = match test_block.terminal {
                 Terminal::Branch { test, .. } => test.identifier,
                 _ => return None,
             };
@@ -682,7 +724,7 @@ fn traverse_optional_block(
                 .temporaries_read_in_optional
                 .get(&inner_optional_id)?
                 .clone();
-            (&test_block.terminal, base)
+            (test_block.terminal, base)
         }
         _ => return None,
     };
