@@ -1258,6 +1258,11 @@ export function attach(
 
     if (fiber.tag === HostHoistable) {
       releaseHostResource(nearestInstance, fiber.memoizedState);
+      if (fiber.stateNode != null) {
+        // Non-resource hoistables (e.g. <title>, <meta>) own a regular host
+        // instance on the stateNode instead of a resource.
+        releaseHostInstance(nearestInstance, fiber.stateNode);
+      }
     } else if (
       fiber.tag === HostComponent ||
       fiber.tag === HostText ||
@@ -3444,6 +3449,11 @@ export function attach(
           throw new Error('Did not expect a host hoistable to be the root');
         }
         aquireHostResource(nearestInstance, fiber.memoizedState);
+        if (fiber.stateNode != null) {
+          // Non-resource hoistables (e.g. <title>, <meta>) own a regular host
+          // instance on the stateNode instead of a resource.
+          aquireHostInstance(nearestInstance, fiber.stateNode);
+        }
         trackDebugInfoFromHostResource(nearestInstance, fiber);
       } else if (
         fiber.tag === HostComponent ||
@@ -4443,6 +4453,14 @@ export function attach(
         if (prevFiber.memoizedState !== nextFiber.memoizedState) {
           releaseHostResource(nearestInstance, prevFiber.memoizedState);
           aquireHostResource(nearestInstance, nextFiber.memoizedState);
+        }
+        if (prevFiber.stateNode !== nextFiber.stateNode) {
+          if (prevFiber.stateNode != null) {
+            releaseHostInstance(nearestInstance, prevFiber.stateNode);
+          }
+          if (nextFiber.stateNode != null) {
+            aquireHostInstance(nearestInstance, nextFiber.stateNode);
+          }
         }
         trackDebugInfoFromHostResource(nearestInstance, nextFiber);
       } else if (

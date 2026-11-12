@@ -4157,4 +4157,47 @@ describe('Store', () => {
     styleID = agent.getIDForHostInstance(style).id;
     expect(store.containsElement(styleID)).toBe(true);
   });
+
+  // @reactVersion >= 19
+  it('maps non-resource host hoistables to their owning component', async () => {
+    function Page() {
+      return (
+        <>
+          <title>Page title</title>
+          <meta name="description" content="page" />
+        </>
+      );
+    }
+
+    function Other() {
+      return <title>Other title</title>;
+    }
+
+    await actAsync(() => {
+      render(<Page />);
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Page>
+    `);
+    const pageID = store.getElementIDAtIndex(0);
+    const title = document.head.querySelector('title');
+    const meta = document.head.querySelector('meta');
+    expect(agent.getIDForHostInstance(title)?.id).toBe(pageID);
+    expect(agent.getIDForHostInstance(meta)?.id).toBe(pageID);
+
+    await actAsync(() => {
+      render(<Other />);
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Other>
+    `);
+    const otherID = store.getElementIDAtIndex(0);
+    const otherTitle = document.head.querySelector('title');
+    expect(agent.getIDForHostInstance(otherTitle)?.id).toBe(otherID);
+    expect(store.containsElement(pageID)).toBe(false);
+  });
 });
