@@ -96,10 +96,13 @@ const TOOL_DEFINITIONS: Array<ToolDefinition> = [
     name: 'react_get_component_by_uid',
     description:
       'Detailed info for one component by uid: ' +
-      '{uid, type, name, key?, props?, hooks?}. props excludes children and ' +
-      'is normalized for serialization; when includeHooks is true, hooks is ' +
-      'the nested hooks tree ({id, name, value, subHooks}), present only for ' +
-      'function/forwardRef/memo components.',
+      '{uid, type, name, key?, props?, hooks?, meta}. props excludes ' +
+      'children and is normalized for serialization; when includeHooks is ' +
+      'true, hooks is the nested hooks tree ({id, name, value, subHooks}), ' +
+      'present only for function/forwardRef/memo components. meta is always ' +
+      'present and carries type-specific info: for type "suspense" it is ' +
+      '{isSuspended: boolean} (true while the boundary shows its fallback), ' +
+      'otherwise null.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -119,10 +122,11 @@ const TOOL_DEFINITIONS: Array<ToolDefinition> = [
     name: 'react_get_component_by_dom_element',
     description:
       'Detailed info for the React host component of a DOM element: ' +
-      '{uid, type, name, key?, props?}. This is the host node (e.g. a ' +
-      'button or div), not the function component that rendered it. The ' +
-      'element is an opaque page-side reference, such as the currently ' +
-      'selected Chrome DevTools element.',
+      '{uid, type, name, key?, props?, meta}. meta is always present and ' +
+      'carries type-specific info; it is always null for host nodes. This ' +
+      'is the host node (e.g. a button or div), not the function component ' +
+      'that rendered it. The element is an opaque page-side reference, such ' +
+      'as the currently selected Chrome DevTools element.',
     inputSchema: {
       type: 'object',
       properties: {

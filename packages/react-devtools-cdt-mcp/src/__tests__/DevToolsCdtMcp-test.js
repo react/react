@@ -483,6 +483,7 @@ describe('react-devtools-cdt-mcp', () => {
     expect(info).toEqual({
       uid: 'r0',
       type: 'function',
+      meta: null,
       name: 'Counter',
       props: {title: 'hi'},
       hooks: [{id: 0, name: 'State', value: 3, subHooks: []}],
@@ -494,6 +495,7 @@ describe('react-devtools-cdt-mcp', () => {
     expect(infoWithoutHooks).toEqual({
       uid: 'r0',
       type: 'function',
+      meta: null,
       name: 'Counter',
       props: {title: 'hi'},
     });
