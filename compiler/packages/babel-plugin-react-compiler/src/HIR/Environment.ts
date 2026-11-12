@@ -307,6 +307,19 @@ export const EnvironmentConfigSchema = z.object({
   validateStaticComponents: z.boolean().default(false),
 
   /**
+   * In lint mode, stop compiling a function after the last validation pass if
+   * the function has no manual memoization (useMemo/useCallback). The remaining
+   * passes build reactive scopes and generate code, which lint mode discards;
+   * they only report lint errors through ValidatePreservedManualMemoization,
+   * which needs manual memoization to report anything.
+   *
+   * Errors that only the skipped passes would report (Todo and Invariant) are
+   * not reported for those functions, and no CompileSuccess event is logged
+   * since memoization stats are not computed.
+   */
+  enableLintFastPath: z.boolean().default(false),
+
+  /**
    * Validates that there are no capitalized calls other than those allowed by the allowlist.
    * Calls to capitalized functions are often functions that used to be components and may
    * have lingering hook calls, which makes those calls risky to memoize.
