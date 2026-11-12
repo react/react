@@ -376,6 +376,101 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
         </select>,
       ));
 
+    ['value', 'defaultValue', 'uncontrolled'].forEach(valueProp => {
+      it(`should not replay a change for an untouched ${valueProp} select with duplicate values`, async () => {
+        const onChange = jest.fn();
+        const props = valueProp === 'uncontrolled' ? {} : {[valueProp]: 'same'};
+        const element = (
+          <select {...props} onChange={onChange}>
+            <option value="same">First</option>
+            <option value="same">Second</option>
+          </select>
+        );
+        const field = await serverRender(element);
+        const selectedIndex = field.selectedIndex;
+        expect(selectedIndex).toBe(valueProp === 'uncontrolled' ? 0 : 1);
+        await renderIntoDom(element, field.parentNode, true);
+        expect(field.selectedIndex).toBe(selectedIndex);
+        expect(onChange).not.toHaveBeenCalled();
+      });
+    });
+
+    // @gate enableHydrationChangeEvent
+    it('should replay a change between duplicate-valued options before hydration', async () => {
+      const onChange = jest.fn();
+      const element = (
+        <select defaultValue="same" onChange={onChange}>
+          <option value="same">First</option>
+          <option value="same">Second</option>
+        </select>
+      );
+      const field = await serverRender(element);
+      expect(field.selectedIndex).toBe(1);
+      field.selectedIndex = 0;
+      await renderIntoDom(element, field.parentNode, true);
+      expect(field.selectedIndex).toBe(0);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    // @gate enableHydrationChangeEvent
+    it('should compare the client select value when it differs from the server value', async () => {
+      const onChange = jest.fn();
+      const options = [
+        <option key="first" value="first">
+          First
+        </option>,
+        <option key="second" value="second">
+          Second
+        </option>,
+      ];
+      const field = await serverRender(
+        <select defaultValue="first" onChange={onChange}>
+          {options}
+        </select>,
+      );
+      await renderIntoDom(
+        <select defaultValue="second" onChange={onChange}>
+          {options}
+        </select>,
+        field.parentNode,
+        true,
+      );
+      expect(field.value).toBe('first');
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    // @gate enableHydrationChangeEvent
+    it('should replay all selection differences when hydrating a multiple select as single', async () => {
+      const onChange = jest.fn();
+      const options = [
+        <option key="first" value="first">
+          First
+        </option>,
+        <option key="second" value="second">
+          Second
+        </option>,
+      ];
+      const field = await serverRender(
+        <select
+          multiple={true}
+          defaultValue={['first', 'second']}
+          onChange={onChange}>
+          {options}
+        </select>,
+      );
+      await renderIntoDom(
+        <select multiple={false} defaultValue="first" onChange={onChange}>
+          {options}
+        </select>,
+        field.parentNode,
+        true,
+        1,
+      );
+      expect(field.selectedIndex).toBe(0);
+      expect(field.options[1].selected).toBe(true);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
     it('should not blow away user-selected value on successful reconnect to an controlled select', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
