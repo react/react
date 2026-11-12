@@ -2209,6 +2209,7 @@ function runActionStateAction<S, P>(
       currentTransition.startTime = -1;
     }
     if (__DEV__) {
+      currentTransition.transitionId = undefined;
       currentTransition._updatedFibers = new Set();
     }
     ReactSharedInternals.T = currentTransition;
@@ -3149,6 +3150,8 @@ function startTransition<S>(
     currentTransition.startTime = now();
   }
   if (__DEV__) {
+    currentTransition.transitionId =
+      options !== undefined ? options.transitionId : undefined;
     currentTransition._updatedFibers = new Set();
   }
 

@@ -32,6 +32,7 @@ export type Transition = {
   gesture: null | GestureProvider, // enableGestureTransition
   name: null | string, // enableTransitionTracing only
   startTime: number, // enableTransitionTracing only
+  transitionId: string | void, // DEV-only
   _updatedFibers: Set<Fiber>, // DEV-only
   ...
 };
@@ -68,6 +69,8 @@ export function startTransition(
     currentTransition.startTime = -1; // TODO: This should read the timestamp.
   }
   if (__DEV__) {
+    currentTransition.transitionId =
+      options !== undefined ? options.transitionId : undefined;
     currentTransition._updatedFibers = new Set();
   }
   ReactSharedInternals.T = currentTransition;
@@ -151,6 +154,8 @@ export function startGestureTransition(
     currentTransition.startTime = -1; // TODO: This should read the timestamp.
   }
   if (__DEV__) {
+    currentTransition.transitionId =
+      options !== undefined ? options.transitionId : undefined;
     currentTransition._updatedFibers = new Set();
   }
   ReactSharedInternals.T = currentTransition;

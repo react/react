@@ -163,6 +163,7 @@ export type ReactRecoverable = {
 
 export type StartTransitionOptions = {
   name?: string,
+  transitionId?: string,
 };
 
 export type Usable<T> = Thenable<T> | ReactContext<T> | ReactRecoverable;
