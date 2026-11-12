@@ -170,8 +170,8 @@ describe('ReactFlightTurbopackDOMNode', () => {
         resolveChild = resolve;
       });
 
-      function Child() {
-        ReactServer.use(childReady);
+      async function Child() {
+        await childReady;
         return ReactServer.createElement('span', null, 'ready');
       }
 
@@ -237,13 +237,13 @@ describe('ReactFlightTurbopackDOMNode', () => {
     },
   );
 
-  it('reports missing debug data after a supplied debug channel closes', async () => {
+  it('does not ignore missing data from a supplied debug channel after close', async () => {
     let resolveChild;
     const childReady = new Promise(resolve => {
       resolveChild = resolve;
     });
-    function Child() {
-      ReactServer.use(childReady);
+    async function Child() {
+      await childReady;
       return ReactServer.createElement('span', null, 'ready');
     }
     const rscStream = await serverAct(() =>
@@ -268,6 +268,8 @@ describe('ReactFlightTurbopackDOMNode', () => {
     const payload = await pendingResult;
 
     const readable = new Stream.PassThrough(streamOptions);
+    // We supply an empty readable channel after discarding the server's debug
+    // bytes. The client must still expect those records in development.
     const debugReadable = new Stream.PassThrough(streamOptions);
     const ended = new Promise(resolve => readable.once('end', resolve));
     const debugEnded = __DEV__

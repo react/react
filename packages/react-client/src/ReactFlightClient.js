@@ -398,6 +398,9 @@ type Response = {
   _timeOrigin: number, // Profiling-only
   _pendingInitialRender: null | TimeoutID, // Profiling-only,
   _pendingChunks: number, // DEV-only
+  // Null means a readable debug channel was supplied, so missing metadata must
+  // not be ignored. Otherwise, the set records missing chunk IDs. Closing the
+  // response clears _debugChannel, so this preserves the original choice.
   _missingChunks: null | Set<number>, // DEV-only
   _weakResponse: WeakResponse, // DEV-only
   _debugRootOwner?: null | ReactComponentInfo, // DEV-only
@@ -3089,8 +3092,6 @@ function ResponseInstance(
   }
   if (__DEV__) {
     this._pendingChunks = 0;
-    // We track missing chunks only when no readable debug channel was supplied.
-    // Closing the response clears _debugChannel, so late reads cannot check it.
     this._missingChunks =
       debugChannel === undefined || !debugChannel.hasReadable
         ? new Set()
