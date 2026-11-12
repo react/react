@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {use, useContext} from 'react';
+import {useContext} from 'react';
 
 import Button from '../Button';
 import useOpenResource from '../useOpenResource';
@@ -21,39 +21,26 @@ import type {ReactStackTrace, ReactCallSite} from 'shared/ReactTypes';
 
 import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
 
-import FetchFileWithCachingContext from './FetchFileWithCachingContext';
-
-import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
+import SourceMappedStackContext from './SourceMappedStackContext';
+import useSymbolicatedSources from './useSymbolicatedSources';
+import type {MappedSources} from './useSymbolicatedSources';
 
 import formatLocationForDisplay from './formatLocationForDisplay';
 
 type CallSiteViewProps = {
   callSite: ReactCallSite,
+  symbolicatedCallSite: SourceMappedLocation | null,
   environmentName: null | string,
   showIgnoreList: boolean,
 };
 
 export function CallSiteView({
   callSite,
+  symbolicatedCallSite,
   environmentName,
   showIgnoreList,
 }: CallSiteViewProps): React.Node {
-  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
-
-  const [virtualFunctionName, virtualURL, virtualLine, virtualColumn] =
-    callSite;
-
-  const symbolicatedCallSite: null | SourceMappedLocation =
-    fetchFileWithCaching !== null
-      ? use(
-          symbolicateSourceWithCache(
-            fetchFileWithCaching,
-            virtualURL,
-            virtualLine,
-            virtualColumn,
-          ),
-        )
-      : null;
+  const [virtualFunctionName] = callSite;
 
   const [linkIsEnabled, viewSource] = useOpenResource(
     callSite,
@@ -131,26 +118,42 @@ export default function StackTraceView({
   environmentName,
   showIgnoreList,
 }: Props): React.Node {
-  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+  const mapped = useContext(SourceMappedStackContext);
+  return mapped === null ? (
+    <StandaloneStackTraceView
+      stack={stack}
+      environmentName={environmentName}
+      showIgnoreList={showIgnoreList}
+    />
+  ) : (
+    <StackTraceContent
+      stack={stack}
+      environmentName={environmentName}
+      showIgnoreList={showIgnoreList}
+      mapped={mapped}
+    />
+  );
+}
 
+function StandaloneStackTraceView(props: Props): React.Node {
+  const mapped = useSymbolicatedSources(props.stack);
+  return <StackTraceContent {...props} mapped={mapped} />;
+}
+
+function StackTraceContent({
+  stack,
+  environmentName,
+  showIgnoreList,
+  mapped,
+}: {
+  ...Props,
+  mapped: MappedSources,
+}): React.Node {
   let lastMeaningfulFrameIndex = -1;
   // Reverse loop to find the last non-ignored, non-built-in index
   for (let index = stack.length - 1; index >= 0; index--) {
     const callSite = stack[index];
-    const [, virtualURL, virtualLine, virtualColumn] = callSite;
-
-    // symbolicated output is cached
-    const symbolicatedCallSite: null | SourceMappedLocation =
-      fetchFileWithCaching !== null
-        ? use(
-            symbolicateSourceWithCache(
-              fetchFileWithCaching,
-              virtualURL,
-              virtualLine,
-              virtualColumn,
-            ),
-          )
-        : null;
+    const symbolicatedCallSite = mapped.get(callSite) || null;
     const [, url] =
       symbolicatedCallSite !== null ? symbolicatedCallSite.location : callSite;
     const ignored =
@@ -170,6 +173,7 @@ export default function StackTraceView({
         <CallSiteView
           key={index}
           callSite={callSite}
+          symbolicatedCallSite={mapped.get(callSite) || null}
           environmentName={
             // Badge last meaningful frame (non-ignored, non-built-in)
             index === lastMeaningfulFrameIndex ? environmentName : null

@@ -45,7 +45,7 @@ export function handleDevToolsPageMessage(message) {
     // Proxy this message from DevTools page to content script via chrome.tabs.sendMessage
     case 'fetch-file-with-cache': {
       const {
-        payload: {tabId, url},
+        payload: {tabId, url, requestID},
       } = message;
 
       if (!tabId || !url) {
@@ -55,17 +55,31 @@ export function handleDevToolsPageMessage(message) {
           payload: {
             type: 'fetch-file-with-cache-error',
             url,
+            requestID,
             value: null,
           },
         });
       } else {
-        chrome.tabs.sendMessage(tabId, {
-          source: 'devtools-page',
-          payload: {
-            type: 'fetch-file-with-cache',
-            url,
-          },
-        });
+        chrome.tabs
+          .sendMessage(tabId, {
+            source: 'devtools-page',
+            payload: {
+              type: 'fetch-file-with-cache',
+              url,
+              requestID,
+            },
+          })
+          .catch(() => {
+            chrome.runtime.sendMessage({
+              source: 'react-devtools-background',
+              payload: {
+                type: 'fetch-file-with-cache-error',
+                url,
+                requestID,
+                value: null,
+              },
+            });
+          });
       }
 
       break;

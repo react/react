@@ -17,11 +17,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import {TreeStateContext} from './TreeContext';
+import {beginSourceSelection} from 'react-devtools-shared/src/symbolicateSource';
 import {BridgeContext, StoreContext} from '../context';
 import {
   inspectElement,
@@ -68,6 +70,12 @@ export function InspectedElementContextController({
 }: Props): React.Node {
   const {inspectedElementID} = useContext(TreeStateContext);
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+  useLayoutEffect(() => {
+    if (fetchFileWithCaching !== null) {
+      beginSourceSelection(fetchFileWithCaching, inspectedElementID);
+      return () => beginSourceSelection(fetchFileWithCaching, null);
+    }
+  }, [fetchFileWithCaching, inspectedElementID]);
   const bridge = useContext(BridgeContext);
   const store = useContext(StoreContext);
   const {parseHookNames: parseHookNamesByDefault} = useContext(SettingsContext);

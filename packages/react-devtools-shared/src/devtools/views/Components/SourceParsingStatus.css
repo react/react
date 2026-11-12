@@ -1,0 +1,22 @@
+.Status {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-dimmer);
+  font-size: var(--font-size-monospace-small);
+}
+
+.Dot,
+.PendingDot {
+  flex: 0 0 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--color-dimmer);
+}
+
+.PendingDot {
+  background: var(--color-component-name);
+}
