@@ -1174,6 +1174,46 @@ describe('ReactChildren', () => {
     );
   });
 
+  it('closes the iterator of an iterable child if the map callback throws', () => {
+    let closed = false;
+    function* gen() {
+      try {
+        yield <span key="a" />;
+        yield <span key="b" />;
+      } finally {
+        closed = true;
+      }
+    }
+    const error = new Error('map failure');
+    expect(() =>
+      React.Children.map(gen(), child => {
+        throw error;
+      }),
+    ).toThrow(error);
+    expect(closed).toBe(true);
+  });
+
+  it('closes the iterator of a custom iterable if the map callback throws', () => {
+    let closed = false;
+    const iterable = {
+      [Symbol.iterator]() {
+        return {
+          next: () => ({done: false, value: <span key="a" />}),
+          return() {
+            closed = true;
+            return {done: true, value: undefined};
+          },
+        };
+      },
+    };
+    expect(() =>
+      React.Children.map(iterable, () => {
+        throw new Error('map failure');
+      }),
+    ).toThrow('map failure');
+    expect(closed).toBe(true);
+  });
+
   describe('with fragments enabled', () => {
     it('warns for keys for arrays of elements in a fragment', async () => {
       class ComponentReturningArray extends React.Component {
