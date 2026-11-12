@@ -50,6 +50,8 @@ type IdentifierSidemap = {
  * Collect loads from named variables and property reads from @value
  * into `maybeDeps`
  * Returns the variable + property reads represented by @instr
+ * Assertions preserve source dependency equivalence; reactive scope dependency
+ * collection separately determines which reads are safe to hoist.
  */
 export function collectMaybeMemoDependencies(
   value: InstructionValue,
@@ -84,22 +86,25 @@ export function collectMaybeMemoDependencies(
     }
 
     case 'LoadLocal':
-    case 'LoadContext': {
-      const source = maybeDeps.get(value.place.identifier.id);
+    case 'LoadContext':
+    case 'NonNullExpression': {
+      const place =
+        value.kind === 'NonNullExpression' ? value.value : value.place;
+      const source = maybeDeps.get(place.identifier.id);
       if (source != null) {
         return source;
       } else if (
-        value.place.identifier.name != null &&
-        value.place.identifier.name.kind === 'named'
+        place.identifier.name != null &&
+        place.identifier.name.kind === 'named'
       ) {
         return {
           root: {
             kind: 'NamedLocal',
-            value: {...value.place},
+            value: {...place},
             constant: false,
           },
           path: [],
-          loc: value.place.loc,
+          loc: place.loc,
         };
       }
       break;

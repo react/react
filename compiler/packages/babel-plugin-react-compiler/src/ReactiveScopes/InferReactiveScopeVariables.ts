@@ -226,6 +226,7 @@ function mayAllocate(_env: Environment, instruction: Instruction): boolean {
     case 'StoreLocal':
     case 'LoadGlobal':
     case 'MetaProperty':
+    case 'NonNullExpression':
     case 'TypeCastExpression':
     case 'LoadLocal':
     case 'LoadContext':

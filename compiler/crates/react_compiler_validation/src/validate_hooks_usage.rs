@@ -250,6 +250,10 @@ pub fn validate_hooks_usage(
                     let kind = get_kind_for_place(place, &value_kinds, &env.identifiers);
                     value_kinds.insert(lvalue_id, kind);
                 }
+                InstructionValue::NonNullExpression { value, .. } => {
+                    let kind = get_kind_for_place(value, &value_kinds, &env.identifiers);
+                    value_kinds.insert(lvalue_id, kind);
+                }
                 InstructionValue::StoreLocal { lvalue, value, .. }
                 | InstructionValue::StoreContext { lvalue, value, .. } => {
                     visit_place(value, &value_kinds, &mut errors_by_loc, env)?;

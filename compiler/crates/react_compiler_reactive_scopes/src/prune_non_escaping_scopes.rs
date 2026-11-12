@@ -508,7 +508,8 @@ impl<'a> CollectDependenciesVisitor<'a> {
                 }
             }
             InstructionValue::Await { value: inner, .. }
-            | InstructionValue::TypeCastExpression { value: inner, .. } => {
+            | InstructionValue::TypeCastExpression { value: inner, .. }
+            | InstructionValue::NonNullExpression { value: inner, .. } => {
                 let lvalues = if let Some(lv) = lvalue {
                     vec![LValueMemoization {
                         place_identifier: lv,

@@ -27,15 +27,16 @@ interface ComponentProps {
 
 function Component(props) {
   const $ = _c(2);
-  let t0;
-  if ($[0] !== props.name) {
-    t0 = props.name.toUpperCase();
-    $[0] = props.name;
-    $[1] = t0;
+  const t0 = props.name!;
+  let t1;
+  if ($[0] !== t0) {
+    t1 = t0.toUpperCase();
+    $[0] = t0;
+    $[1] = t1;
   } else {
-    t0 = $[1];
+    t1 = $[1];
   }
-  return t0;
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {
