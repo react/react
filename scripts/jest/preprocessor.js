@@ -31,6 +31,10 @@ const pathToTransformLazyJSXImport = require.resolve(
 const pathToBabelrc = path.join(__dirname, '..', '..', 'babel.config.js');
 const pathToErrorCodes = require.resolve('../error-codes/codes.json');
 
+const pathToReactVersion = require.resolve(
+  '../../packages/shared/ReactVersion'
+);
+
 const ReactVersionTestingAgainst = process.env.REACT_VERSION || ReactVersion;
 
 const babelOptions = {
@@ -53,6 +57,11 @@ const babelOptions = {
 
 module.exports = {
   process: function (src, filePath) {
+    if (filePath === pathToReactVersion) {
+      src = src.replace("'%REACT_VERSION%'", () =>
+        JSON.stringify(ReactVersion)
+      );
+    }
     if (filePath.match(/\.css$/)) {
       // Don't try to parse CSS modules; they aren't needed for tests anyway.
       return {code: ''};
@@ -136,6 +145,7 @@ module.exports = {
       pathToTransformReactVersionPragma,
       pathToTransformLazyJSXImport,
       pathToErrorCodes,
+      require.resolve('../../ReactVersions'),
     ],
     [
       (process.env.REACT_VERSION != null).toString(),
