@@ -4072,6 +4072,13 @@ export function bindInstance(
 
 export const supportsHydration: boolean = true;
 
+function getElementType(element: Element): string {
+  const nodeName = element.nodeName;
+  // <form> is the only element whose named properties override built-ins, so a
+  // non-string nodeName means a control named "nodeName" is shadowing it.
+  return typeof nodeName === 'string' ? nodeName.toLowerCase() : 'form';
+}
+
 export function canHydrateInstance(
   instance: HydratableInstance,
   type: string,
@@ -4081,7 +4088,7 @@ export function canHydrateInstance(
   while (instance.nodeType === ELEMENT_NODE) {
     const element: Element = instance as any;
     const anyProps = props as any;
-    if (element.nodeName.toLowerCase() !== type.toLowerCase()) {
+    if (getElementType(element) !== type.toLowerCase()) {
       if (!inRootOrSingleton) {
         // Usually we error for mismatched tags.
         if (
@@ -4537,7 +4544,7 @@ export function describeHydratableInstanceForDevWarnings(
   if (instance.nodeType === ELEMENT_NODE) {
     // Reverse engineer a set of props that can print for dev warnings
     return {
-      type: instance.nodeName.toLowerCase(),
+      type: getElementType(instance as any),
       props: getPropsFromElement(instance as any),
     };
   } else if (instance.nodeType === COMMENT_NODE) {

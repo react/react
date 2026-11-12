@@ -29,7 +29,10 @@ const supportedInputTypes: {[key: string]: true | void, ...} = {
 };
 
 function isTextInputElement(elem: ?HTMLElement): boolean {
-  const nodeName = elem && elem.nodeName && elem.nodeName.toLowerCase();
+  // `nodeName` isn't a string on a <form> with a control named "nodeName", or
+  // on `window` when an element has that id.
+  const nodeName =
+    elem && typeof elem.nodeName === 'string' && elem.nodeName.toLowerCase();
 
   if (nodeName === 'input') {
     return !!supportedInputTypes[(elem as any as HTMLInputElement).type];

@@ -605,6 +605,54 @@ describe('ChangeEventPlugin', () => {
     }
   });
 
+  // https://github.com/react/react/issues/6284
+  it('does not crash when a form control shadows the nodeName of its form', async () => {
+    const onSubmit = jest.fn(event => event.preventDefault());
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form onSubmit={onSubmit}>
+          <input name="nodeName" />
+        </form>,
+      );
+    });
+
+    const form = container.firstChild;
+    // Browsers expose named controls as properties of their form, which
+    // shadow built-in properties like nodeName. jsdom doesn't implement this.
+    Object.defineProperty(form, 'nodeName', {value: form.firstChild});
+
+    form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  // https://github.com/react/react/issues/23324
+  it('does not crash when an element shadows the nodeName of window', async () => {
+    const onMouseEnter = jest.fn();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <>
+          <div id="nodeName" />
+          <button onMouseEnter={onMouseEnter} />
+        </>,
+      );
+    });
+
+    // Elements with an id are exposed as properties of window.
+    expect(window.nodeName).toBe(container.firstChild);
+
+    // Events targeting the root container itself have no target instance.
+    container.dispatchEvent(
+      new MouseEvent('mouseout', {
+        bubbles: true,
+        cancelable: true,
+        relatedTarget: container.lastChild,
+      }),
+    );
+    expect(onMouseEnter).toHaveBeenCalledTimes(1);
+  });
+
   describe('concurrent mode', () => {
     it('text input', async () => {
       const root = ReactDOMClient.createRoot(container);
