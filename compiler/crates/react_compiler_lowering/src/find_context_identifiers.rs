@@ -7,6 +7,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::expressions::*;
+use react_compiler_ast::operators::AssignmentOperator;
 use react_compiler_ast::patterns::*;
 use react_compiler_ast::scope::*;
 use react_compiler_ast::statements::FunctionDeclaration;
@@ -138,10 +139,33 @@ impl<'ast> Visitor<'ast> for ContextIdentifierVisitor<'_> {
             .last()
             .copied()
             .unwrap_or(self.scope_info.program_scope);
-        if self.error.is_none() {
-            if let Err(error) = walk_lval_for_reassignment(self, &node.left, current_scope) {
-                self.error = Some(error);
-            }
+        if self.error.is_some() {
+            return;
+        }
+        let targets_const = matches!(
+            node.operator,
+            AssignmentOperator::NullishAssign
+                | AssignmentOperator::OrAssign
+                | AssignmentOperator::AndAssign
+        ) && match node.left.as_ref() {
+            PatternLike::Identifier(ident) => self
+                .scope_info
+                .get_binding(current_scope, &ident.name)
+                .is_some_and(|id| {
+                    matches!(
+                        self.scope_info.bindings[id.0 as usize].kind,
+                        BindingKind::Const
+                    )
+                }),
+            _ => false,
+        };
+        if targets_const {
+            // BuildHIR records a Todo for this conditional store. Do not mark
+            // the const as reassigned and reject its declaration first.
+            return;
+        }
+        if let Err(error) = walk_lval_for_reassignment(self, &node.left, current_scope) {
+            self.error = Some(error);
         }
     }
 
