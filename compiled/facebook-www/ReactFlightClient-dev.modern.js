@@ -1964,9 +1964,11 @@ __DEV__ &&
         var response = unwrapWeakResponse(weakResponse);
         response._closed = !0;
         response._closedReason = error;
-        response._chunks.forEach(function (chunk) {
+        response._chunks.forEach(function (chunk, id) {
           "pending" === chunk.status
-            ? triggerErrorOnChunk(response, chunk, error)
+            ? (null !== response._missingChunks &&
+                response._missingChunks.add(id),
+              triggerErrorOnChunk(response, chunk, error))
             : "fulfilled" === chunk.status &&
               null !== chunk.reason &&
               chunk.reason.error(error);
@@ -2076,11 +2078,13 @@ __DEV__ &&
       var chunks = response._chunks,
         chunk = chunks.get(id);
       chunk ||
-        ((chunk = response._closed
-          ? response._allowPartialStream
-            ? new ReactPromise("halted", null, null)
-            : new ReactPromise("rejected", null, response._closedReason)
-          : createPendingChunk(response)),
+        (response._closed
+          ? (null !== response._missingChunks &&
+              response._missingChunks.add(id),
+            (chunk = response._allowPartialStream
+              ? new ReactPromise("halted", null, null)
+              : new ReactPromise("rejected", null, response._closedReason)))
+          : (chunk = createPendingChunk(response)),
         chunks.set(id, chunk));
       return chunk;
     }
@@ -2355,54 +2359,67 @@ __DEV__ &&
       }
     }
     function getOutlinedModel(response, reference, parentObject, key, map) {
-      var id = parseInt(reference, 16);
-      reference =
-        -1 === reference.indexOf(":")
-          ? EMPTY_REFERENCE_PATH
-          : reference.split(":");
-      id = getChunk(response, id);
+      var id = parseInt(reference, 16),
+        path =
+          -1 === reference.indexOf(":")
+            ? EMPTY_REFERENCE_PATH
+            : reference.split(":");
+      reference = getChunk(response, id);
+      if (
+        response._closed &&
+        parentObject[0] === REACT_ELEMENT_TYPE &&
+        ("4" === key || "5" === key)
+      ) {
+        var missingChunks = response._missingChunks;
+        if (null !== missingChunks && missingChunks.has(id)) return null;
+      }
       null !== initializingChunk &&
         isArrayImpl(initializingChunk._children) &&
-        initializingChunk._children.push(id);
-      switch (id.status) {
+        initializingChunk._children.push(reference);
+      switch (reference.status) {
         case "resolved_model":
-          initializeModelChunk(id);
+          initializeModelChunk(reference);
           break;
         case "resolved_module":
-          initializeModuleChunk(id);
+          initializeModuleChunk(reference);
       }
-      switch (id.status) {
+      switch (reference.status) {
         case "fulfilled":
-          for (var value = id.value, i = 1; i < reference.length; i++) {
+          id = reference.value;
+          for (
+            missingChunks = 1;
+            missingChunks < path.length;
+            missingChunks++
+          ) {
             for (
               ;
-              "object" === typeof value &&
-              null !== value &&
-              value.$$typeof === REACT_LAZY_TYPE;
+              "object" === typeof id &&
+              null !== id &&
+              id.$$typeof === REACT_LAZY_TYPE;
 
             ) {
-              value = value._payload;
-              switch (value.status) {
+              id = id._payload;
+              switch (id.status) {
                 case "resolved_model":
-                  initializeModelChunk(value);
+                  initializeModelChunk(id);
                   break;
                 case "resolved_module":
-                  initializeModuleChunk(value);
+                  initializeModuleChunk(id);
               }
-              switch (value.status) {
+              switch (id.status) {
                 case "fulfilled":
-                  value = value.value;
+                  id = id.value;
                   break;
                 case "blocked":
                 case "pending":
                 case "pending_weak":
                   return waitForReference(
-                    value,
+                    id,
                     parentObject,
                     key,
                     response,
                     map,
-                    reference.slice(i - 1),
+                    path.slice(missingChunks - 1),
                     isInitializingDebugInfo
                   );
                 case "halted":
@@ -2426,12 +2443,12 @@ __DEV__ &&
                       ? ((parentObject = initializingHandler),
                         (parentObject.errored = !0),
                         (parentObject.value = null),
-                        (parentObject.reason = value.reason))
+                        (parentObject.reason = id.reason))
                       : (initializingHandler = {
                           parent: null,
                           chunk: null,
                           value: null,
-                          reason: value.reason,
+                          reason: id.reason,
                           deps: 0,
                           errored: !0
                         }),
@@ -2439,57 +2456,57 @@ __DEV__ &&
                   );
               }
             }
-            var name = reference[i];
+            var name = path[missingChunks];
             if (
-              "object" !== typeof value ||
-              null === value ||
-              (getPrototypeOf(value) !== ObjectPrototype &&
-                getPrototypeOf(value) !== ArrayPrototype) ||
-              !hasOwnProperty.call(value, name)
+              "object" !== typeof id ||
+              null === id ||
+              (getPrototypeOf(id) !== ObjectPrototype &&
+                getPrototypeOf(id) !== ArrayPrototype) ||
+              !hasOwnProperty.call(id, name)
             )
               throw Error("Invalid reference.");
-            value = value[name];
+            id = id[name];
           }
           for (
             ;
-            "object" === typeof value &&
-            null !== value &&
-            value.$$typeof === REACT_LAZY_TYPE;
+            "object" === typeof id &&
+            null !== id &&
+            id.$$typeof === REACT_LAZY_TYPE;
 
           ) {
-            reference = value._payload;
-            switch (reference.status) {
+            path = id._payload;
+            switch (path.status) {
               case "resolved_model":
-                initializeModelChunk(reference);
+                initializeModelChunk(path);
                 break;
               case "resolved_module":
-                initializeModuleChunk(reference);
+                initializeModuleChunk(path);
             }
-            switch (reference.status) {
+            switch (path.status) {
               case "fulfilled":
-                value = reference.value;
+                id = path.value;
                 continue;
             }
             break;
           }
-          response = map(response, value, parentObject, key);
+          response = map(response, id, parentObject, key);
           if (
             parentObject[0] !== REACT_ELEMENT_TYPE ||
             ("4" !== key && "5" !== key)
           )
             isInitializingDebugInfo ||
-              transferReferencedDebugInfo(initializingChunk, id);
+              transferReferencedDebugInfo(initializingChunk, reference);
           return response;
         case "pending":
         case "pending_weak":
         case "blocked":
           return waitForReference(
-            id,
+            reference,
             parentObject,
             key,
             response,
             map,
-            reference,
+            path,
             isInitializingDebugInfo
           );
         case "halted":
@@ -2512,12 +2529,12 @@ __DEV__ &&
               ? ((parentObject = initializingHandler),
                 (parentObject.errored = !0),
                 (parentObject.value = null),
-                (parentObject.reason = id.reason))
+                (parentObject.reason = reference.reason))
               : (initializingHandler = {
                   parent: null,
                   chunk: null,
                   value: null,
-                  reason: id.reason,
+                  reason: reference.reason,
                   deps: 0,
                   errored: !0
                 }),
@@ -2826,6 +2843,8 @@ __DEV__ &&
       this._timeOrigin = 0;
       this._pendingInitialRender = null;
       this._pendingChunks = 0;
+      this._missingChunks =
+        void 0 !== debugChannel && debugChannel.hasReadable ? null : new Set();
       this._weakResponse = { weak: new WeakRef(this), response: this };
       this._debugRootOwner = bundlerConfig =
         void 0 === ReactSharedInteralsServer ||
@@ -4705,9 +4724,11 @@ __DEV__ &&
         var response = unwrapWeakResponse(weakResponse);
         response._allowPartialStream
           ? ((response._closed = !0),
-            response._chunks.forEach(function (chunk) {
+            response._chunks.forEach(function (chunk, id) {
               "pending" === chunk.status
-                ? haltChunk(response, chunk)
+                ? (null !== response._missingChunks &&
+                    response._missingChunks.add(id),
+                  haltChunk(response, chunk))
                 : "fulfilled" === chunk.status &&
                   null !== chunk.reason &&
                   chunk.reason.close('"$undefined"');
@@ -5143,10 +5164,10 @@ __DEV__ &&
       return hook.checkDCE ? !0 : !1;
     })({
       bundleType: 1,
-      version: "19.3.0-www-modern-176df75a-20261112",
+      version: "19.3.0-www-modern-df6aa4ec-20261112",
       rendererPackageName: "react-flight-server-fb",
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-176df75a-20261112",
+      reconcilerVersion: "19.3.0-www-modern-df6aa4ec-20261112",
       getCurrentComponentInfo: function () {
         return currentOwnerInDEV;
       }
