@@ -1,16 +1,19 @@
 'use strict';
 
 const chalk = require('chalk');
-const {exec} = require('child-process-promise');
+const {exec: execCallback} = require('child_process');
 const {existsSync, mkdirSync} = require('fs');
 const {readJsonSync, writeJsonSync} = require('fs-extra');
 const inquirer = require('inquirer');
 const {join} = require('path');
 const createLogger = require('progress-estimator');
+const {promisify} = require('util');
 const {
   BUILD_METADATA_TEMP_DIRECTORY,
   NPM_PACKAGES,
 } = require('./configuration');
+
+const exec = promisify(execCallback);
 
 const logger = createLogger({
   storagePath: join(__dirname, '.progress-estimator'),
