@@ -139,6 +139,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
               popActScope(prevActQueue, prevActScopeDepth);
               if (prevActScopeDepth === 0) {
                 // We're exiting the outermost `act` scope. Flush the queue.
+                ReactSharedInternals.actQueue = queue;
                 try {
                   flushActQueue(queue);
                   queueMacrotask(() =>
@@ -152,6 +153,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
                   ReactSharedInternals.thrownErrors.push(error);
                 }
                 if (ReactSharedInternals.thrownErrors.length > 0) {
+                  ReactSharedInternals.actQueue = null;
                   const thrownError = aggregateErrors(
                     ReactSharedInternals.thrownErrors,
                   );
@@ -179,9 +181,6 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       };
     } else {
       const returnValue: T = result as any;
-      // The callback is not an async function. Exit the current
-      // scope immediately.
-      popActScope(prevActQueue, prevActScopeDepth);
       if (prevActScopeDepth === 0) {
         // We're exiting the outermost `act` scope. Flush the queue.
         flushActQueue(queue);
@@ -206,24 +205,10 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
             }
           });
         }
-
-        // Like many things in this module, this is next part is confusing.
-        //
-        // We do not currently require every `act` call that is passed a
-        // callback to be awaited, through arguably we should. Since this
-        // callback was synchronous, we need to exit the current scope before
-        // returning.
-        //
-        // However, if thenable we're about to return *is* awaited, we'll
-        // immediately restore the current scope. So it shouldn't observable.
-        //
-        // This doesn't affect the case where the scope callback is async,
-        // because we always require those calls to be awaited.
-        //
-        // TODO: In a future version, consider always requiring all `act` calls
-        // to be awaited, regardless of whether the callback is sync or async.
-        ReactSharedInternals.actQueue = null;
       }
+
+      // Exit the current scope immediately.
+      popActScope(prevActQueue, prevActScopeDepth);
 
       if (ReactSharedInternals.thrownErrors.length > 0) {
         const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
@@ -265,6 +250,7 @@ function popActScope(
       );
     }
     actScopeDepth = prevActScopeDepth;
+    ReactSharedInternals.actQueue = prevActQueue;
   }
 }
 
@@ -298,6 +284,7 @@ function recursivelyFlushAsyncActWork<T>(
       }
     }
     if (ReactSharedInternals.thrownErrors.length > 0) {
+      ReactSharedInternals.actQueue = null;
       const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
       ReactSharedInternals.thrownErrors.length = 0;
       reject(thrownError);
