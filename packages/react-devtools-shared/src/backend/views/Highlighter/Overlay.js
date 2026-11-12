@@ -174,6 +174,22 @@ export default class Overlay {
     this.agent = agent;
 
     doc.body.appendChild(this.container);
+
+    // A z-index can't put the overlay above top layer elements like a modal
+    // <dialog>, so render the overlay in the top layer as well.
+    if (typeof this.container.showPopover === 'function') {
+      this.container.setAttribute('popover', 'manual');
+      // Undo the default popover styles so the container itself stays invisible.
+      assign(this.container.style, {
+        background: 'transparent',
+        border: 'none',
+        margin: 0,
+        overflow: 'visible',
+        padding: 0,
+        pointerEvents: 'none',
+      });
+      this.container.showPopover();
+    }
   }
 
   remove() {
