@@ -30,7 +30,10 @@ function Component(t0) {
   let t1;
   if ($[0] !== items) {
     const onClick = () => {
-      const mapped = items.map(_temp);
+      const mapped = items.map((item) => ({
+        id: item.id,
+        name: item.name.toUpperCase(),
+      }));
       submit(mapped);
     };
     t1 = <Button onClick={onClick} />;
@@ -40,9 +43,6 @@ function Component(t0) {
     t1 = $[1];
   }
   return t1;
-}
-function _temp(item) {
-  return { id: item.id, name: item.name.toUpperCase() };
 }
 
 ```

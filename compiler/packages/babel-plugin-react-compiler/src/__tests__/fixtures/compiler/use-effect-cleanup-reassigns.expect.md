@@ -69,7 +69,7 @@ function Component(t0) {
         () => {
           if (!cleanedUp) {
             cleanedUp = true;
-            setCleanupCount(_temp);
+            setCleanupCount((c) => c + 1);
           }
         },
 
@@ -79,7 +79,7 @@ function Component(t0) {
       return () => {
         if (!cleanedUp) {
           cleanedUp = true;
-          setCleanupCount(_temp2);
+          setCleanupCount((c_0) => c_0 + 1);
         }
       };
     };
@@ -105,12 +105,6 @@ function Component(t0) {
     t3 = $[4];
   }
   return t3;
-}
-function _temp2(c_0) {
-  return c_0 + 1;
-}
-function _temp(c) {
-  return c + 1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

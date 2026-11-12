@@ -64,7 +64,7 @@ function useFoo() {
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t0 = () => {
       dispatch();
-      startTransition(_temp3);
+      startTransition(() => {});
       addOptimistic();
       setState(null);
       dispatchAction();
@@ -76,7 +76,6 @@ function useFoo() {
   }
   return t0;
 }
-function _temp3() {}
 function _temp2() {}
 function _temp() {}
 

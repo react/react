@@ -37,7 +37,7 @@ function Test() {
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     const context = {
       testFn() {
-        return _temp;
+        return () => "test";
       },
     };
     t0 = <Stringify value={context} shouldInvokeFns={true} />;
@@ -46,9 +46,6 @@ function Test() {
     t0 = $[0];
   }
   return t0;
-}
-function _temp() {
-  return "test";
 }
 
 export const FIXTURE_ENTRYPOINT = {
