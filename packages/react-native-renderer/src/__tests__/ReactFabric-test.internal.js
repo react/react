@@ -58,6 +58,47 @@ describe('ReactFabric', () => {
     expect(fabricUIManager.completeRoot).toHaveBeenCalled();
   });
 
+  it('does not apply initial attribute defaults when hiding a native component', async () => {
+    const validAttributes = {foo: true, style: {display: true}};
+    const View = createReactNativeComponentClass('RCTView', () => ({
+      validAttributes,
+      uiViewClassName: 'RCTView',
+    }));
+    const createPayload = jest.spyOn(
+      ReactNativePrivateInterface,
+      'createAttributePayload',
+    );
+
+    await act(() => {
+      ReactFabric.render(
+        <React.Activity mode="visible">
+          <View foo="provided" />
+        </React.Activity>,
+        1,
+        null,
+        true,
+      );
+    });
+    createPayload.mockClear();
+
+    await act(() => {
+      ReactFabric.render(
+        <React.Activity mode="hidden">
+          <View foo="provided" />
+        </React.Activity>,
+        1,
+        null,
+        true,
+      );
+    });
+    expect(createPayload).toHaveBeenCalledTimes(1);
+    expect(createPayload).toHaveBeenCalledWith(
+      {style: {display: 'none'}},
+      validAttributes,
+      {isInitial: false},
+    );
+  });
+
   it('should be able to create and update a native component', async () => {
     const View = createReactNativeComponentClass('RCTView', () => ({
       validAttributes: {foo: true},

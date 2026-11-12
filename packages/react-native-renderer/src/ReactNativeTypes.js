@@ -27,6 +27,10 @@ export type AttributeType<T, V> =
   | Readonly<{
       diff?: (arg1: T, arg2: T) => boolean,
       process?: (arg1: V) => T,
+      /** Final payload for a removed prop, including an explicit undefined. */
+      resetValue?: unknown,
+      /** Final payload for a prop omitted or undefined on initial creation. */
+      defaultValue?: unknown,
     }>;
 
 // We either force that `diff` and `process` always use unknown,
