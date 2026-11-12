@@ -79,6 +79,57 @@ describe('ReactDOMInput', () => {
     });
   }
 
+  // Browsers set validity.badInput to true when the user types an
+  // intermediate invalid number (e.g. "e", "E", "-", "." or "1e") while
+  // node.value is sanitized to "". Programmatic sets never set
+  // badInput, so JSDOM (which only exercises programmatic sets) needs an
+  // explicit mock to simulate the user-perceived state.
+  // See https://github.com/facebook/react/issues/13499
+  function setValidityBadInput(node, badInput) {
+    if (node.__mockedValidity) {
+      node.__mockedValidity.badInput = badInput;
+      return;
+    }
+    const validity = node.validity;
+    const mocked = {badInput};
+    const knownProps = [
+      'typeMismatch',
+      'patternMismatch',
+      'tooLong',
+      'tooShort',
+      'rangeUnderflow',
+      'rangeOverflow',
+      'stepMismatch',
+      'valueMissing',
+      'valid',
+    ];
+    for (let i = 0; i < knownProps.length; i++) {
+      const prop = knownProps[i];
+      try {
+        mocked[prop] = validity ? !!validity[prop] : false;
+      } catch (e) {
+        mocked[prop] = false;
+      }
+    }
+    node.__mockedValidity = mocked;
+    Object.defineProperty(node, 'validity', {
+      configurable: true,
+      get() {
+        return mocked;
+      },
+      set() {},
+    });
+  }
+
+  function clearValidityMock(node) {
+    if (node.__mockedValidity) {
+      delete node.__mockedValidity;
+    }
+    if (Object.getOwnPropertyDescriptor(node, 'validity')) {
+      delete node.validity;
+    }
+  }
+
   beforeEach(() => {
     jest.resetModules();
 
@@ -3105,5 +3156,232 @@ describe('ReactDOMInput', () => {
 
     expect(log).toEqual(['']);
     expect(node.value).toBe('a');
+  });
+
+  describe('number inputs and validity.badInput (issue 13499)', () => {
+    it('fires onChange when validity.badInput turns on for "e" in a number input', async () => {
+      // Reproduces https://github.com/facebook/react/issues/13499:
+      // typing "e" into an empty <input type="number"> leaves
+      // node.value === "" but validity.badInput === true. The value
+      // tracker previously compared only node.value, so this
+      // transition was invisible and onChange never fired.
+      const onChange = jest.fn();
+      await act(() => {
+        root.render(<input type="number" onChange={onChange} />);
+      });
+      const node = container.firstChild;
+      expect(node.value).toBe('');
+
+      // Simulate the browser state after typing "e":
+      // value sanitized to "" and badInput turned on.
+      setUntrackedValue.call(node, '');
+      setValidityBadInput(node, true);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(node.value).toBe('');
+      expect(node.validity.badInput).toBe(true);
+      const event = onChange.mock.calls[0][0];
+      expect(event.target.value).toBe('');
+      expect(event.target.validity.badInput).toBe(true);
+
+      clearValidityMock(node);
+    });
+
+    it('fires onChange when validity.badInput turns off (clearing "e")', async () => {
+      const onChange = jest.fn();
+      await act(() => {
+        root.render(<input type="number" onChange={onChange} />);
+      });
+      const node = container.firstChild;
+
+      setUntrackedValue.call(node, '');
+      setValidityBadInput(node, true);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(1);
+
+      // Simulate deleting "e" so the input becomes truly empty.
+      setUntrackedValue.call(node, '');
+      setValidityBadInput(node, false);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(2);
+      expect(node.validity.badInput).toBe(false);
+
+      clearValidityMock(node);
+    });
+
+    it('does not fire onChange when badInput stays true and value stays empty', async () => {
+      const onChange = jest.fn();
+      await act(() => {
+        root.render(<input type="number" onChange={onChange} />);
+      });
+      const node = container.firstChild;
+
+      setUntrackedValue.call(node, '');
+      setValidityBadInput(node, true);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(1);
+
+      // Typing more invalid characters (e.g. "e" -> "e2" is still
+      // invalid, value stays "" and badInput stays true) must not
+      // over-fire.
+      setUntrackedValue.call(node, '');
+      // badInput stays true; no call to setValidityBadInput needed
+      // but set again to mirror a repeated keystroke.
+      setValidityBadInput(node, true);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(1);
+
+      clearValidityMock(node);
+    });
+
+    it('fires onChange when typing "1e" after "1" in a number input', async () => {
+      const onChange = jest.fn();
+      await act(() => {
+        root.render(<input type="number" onChange={onChange} />);
+      });
+      const node = container.firstChild;
+
+      setUntrackedValue.call(node, '1');
+      setValidityBadInput(node, false);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange.mock.calls[0][0].target.value).toBe('1');
+
+      // "1e" is incomplete: value sanitizes to "" and badInput turns on.
+      setUntrackedValue.call(node, '');
+      setValidityBadInput(node, true);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(2);
+      expect(onChange.mock.calls[1][0].target.value).toBe('');
+      expect(onChange.mock.calls[1][0].target.validity.badInput).toBe(true);
+
+      // "1e2" is a valid number: value updates and badInput turns off.
+      setUntrackedValue.call(node, '1e2');
+      setValidityBadInput(node, false);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(3);
+      expect(onChange.mock.calls[2][0].target.value).toBe('1e2');
+      expect(onChange.mock.calls[2][0].target.validity.badInput).toBe(false);
+
+      clearValidityMock(node);
+    });
+
+    it('fires onChange for valid exponent numbers', async () => {
+      const seen = [];
+      function onChange(e) {
+        seen.push(e.target.value);
+      }
+      await act(() => {
+        root.render(<input type="number" onChange={onChange} />);
+      });
+      const node = container.firstChild;
+      const values = ['1e2', '1E2', '1e+2', '-5', '1.5'];
+      for (let i = 0; i < values.length; i++) {
+        setUntrackedValue.call(node, values[i]);
+        setValidityBadInput(node, false);
+        await act(() => {
+          dispatchEventOnNode(node, 'input');
+        });
+      }
+      expect(seen).toEqual(values);
+      clearValidityMock(node);
+    });
+
+    // Each of these prefixes leaves a number input in the
+    // badInput === true, value === "" state at some point.
+    const intermediates = ['E', '-', '.', '+', '1e', '1e+', '1e-'];
+    for (let i = 0; i < intermediates.length; i++) {
+      const intermediate = intermediates[i];
+      it(`fires onChange for intermediate "${intermediate}"`, async () => {
+        const onChange = jest.fn();
+        await act(() => {
+          root.render(<input type="number" onChange={onChange} />);
+        });
+        const n = container.firstChild;
+        setUntrackedValue.call(n, '');
+        setValidityBadInput(n, true);
+        await act(() => {
+          dispatchEventOnNode(n, 'input');
+        });
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(n.validity.badInput).toBe(true);
+        clearValidityMock(n);
+      });
+    }
+    it('fires onChange for NaN-like pasted bad input', async () => {
+      const onChange = jest.fn();
+      await act(() => {
+        root.render(<input type="number" onChange={onChange} />);
+      });
+      const n = container.firstChild;
+      // Pasting or typing a non-numeric string can also produce
+      // value === "" with badInput === true.
+      setUntrackedValue.call(n, '');
+      setValidityBadInput(n, true);
+      await act(() => {
+        dispatchEventOnNode(n, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(1);
+      clearValidityMock(n);
+    });
+
+    it('fires onChange on badInput change for controlled number inputs', async () => {
+      const values = [];
+      const badInputs = [];
+      function onChange(e) {
+        values.push(e.target.value);
+        try {
+          badInputs.push(!!e.target.validity.badInput);
+        } catch (err) {
+          badInputs.push(false);
+        }
+      }
+      await act(() => {
+        root.render(<input type="number" value="" onChange={onChange} />);
+      });
+      const node = container.firstChild;
+      expect(node.value).toBe('');
+
+      setUntrackedValue.call(node, '');
+      setValidityBadInput(node, true);
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(values).toEqual(['']);
+      expect(badInputs).toEqual([true]);
+
+      clearValidityMock(node);
+    });
+
+    it('does not fire onChange for text inputs when nothing changes', async () => {
+      const onChange = jest.fn();
+      await act(() => {
+        root.render(<input type="text" onChange={onChange} />);
+      });
+      const node = container.firstChild;
+      // Text inputs have no badInput; a dispatch with no value change
+      // must not over-fire.
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+      expect(onChange).toHaveBeenCalledTimes(0);
+    });
   });
 });
