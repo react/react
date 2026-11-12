@@ -408,6 +408,14 @@ pub(crate) fn find_disjoint_mutable_values(
                     }
                 }
             }
+            if let InstructionValue::TaggedTemplateExpression {
+                receiver: Some(_),
+                tag,
+                ..
+            } = &instr.value
+            {
+                operands.push(tag.identifier);
+            }
 
             if !operands.is_empty() {
                 scope_identifiers.union(&operands);

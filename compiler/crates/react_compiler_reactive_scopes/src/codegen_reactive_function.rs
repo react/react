@@ -2605,23 +2605,55 @@ fn codegen_base_instruction_value(
             expr_type,
             ..
         } => codegen_function_expression(cx, name, name_hint, lowered_func, expr_type),
-        InstructionValue::TaggedTemplateExpression { tag, value, .. } => {
-            let tag_expr = codegen_place_to_expression(cx, tag)?;
+        InstructionValue::TaggedTemplateExpression {
+            receiver,
+            tag,
+            subexprs,
+            quasis,
+            ..
+        } => {
+            let mut tag_expr = codegen_place_to_expression(cx, tag)?;
+            if let Some(receiver) = receiver
+                && !matches!(tag_expr, Expression::MemberExpression(_))
+            {
+                tag_expr = Expression::CallExpression(ast_expr::CallExpression {
+                    base: BaseNode::typed("CallExpression"),
+                    callee: Box::new(Expression::MemberExpression(ast_expr::MemberExpression {
+                        base: BaseNode::typed("MemberExpression"),
+                        object: Box::new(tag_expr),
+                        property: Box::new(Expression::Identifier(make_identifier("bind"))),
+                        computed: false,
+                    })),
+                    arguments: vec![codegen_place_to_expression(cx, receiver)?],
+                    type_parameters: None,
+                    type_arguments: None,
+                    optional: None,
+                });
+            }
+            let exprs: Vec<Expression> = subexprs
+                .iter()
+                .map(|p| codegen_place_to_expression(cx, p))
+                .collect::<Result<_, _>>()?;
+            let template_elems: Vec<TemplateElement> = quasis
+                .iter()
+                .enumerate()
+                .map(|(i, q)| TemplateElement {
+                    base: BaseNode::typed("TemplateElement"),
+                    value: TemplateElementValue {
+                        raw: q.raw.clone(),
+                        cooked: q.cooked.clone(),
+                    },
+                    tail: i == quasis.len() - 1,
+                })
+                .collect();
             Ok(ExpressionOrJsxText::Expression(
                 Expression::TaggedTemplateExpression(ast_expr::TaggedTemplateExpression {
                     base: BaseNode::typed("TaggedTemplateExpression"),
                     tag: Box::new(tag_expr),
                     quasi: ast_expr::TemplateLiteral {
                         base: BaseNode::typed("TemplateLiteral"),
-                        quasis: vec![TemplateElement {
-                            base: BaseNode::typed("TemplateElement"),
-                            value: TemplateElementValue {
-                                raw: value.raw.clone(),
-                                cooked: value.cooked.clone(),
-                            },
-                            tail: true,
-                        }],
-                        expressions: Vec::new(),
+                        quasis: template_elems,
+                        expressions: exprs,
                     },
                     type_parameters: None,
                 }),
