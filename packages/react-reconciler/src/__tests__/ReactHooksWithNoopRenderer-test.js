@@ -824,6 +824,54 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(root).toMatchRenderedOutput(<span prop="Down" />);
     });
 
+    it('regression: render phase update is not lost when an update that bailed out eagerly is still queued', async () => {
+      let setFlag;
+      let setValue;
+
+      function Child({flag}) {
+        const [value, _setValue] = useState(flag);
+        setValue = _setValue;
+        const [prevFlag, setPrevFlag] = useState(flag);
+        if (flag !== prevFlag) {
+          // Storing information from previous renders.
+          setPrevFlag(flag);
+          setValue(flag);
+        }
+        return <Text text={`value: ${value}`} />;
+      }
+
+      function App() {
+        const [flag, _setFlag] = useState(true);
+        setFlag = _setFlag;
+        return <Child flag={flag} />;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => {
+        root.render(<App />);
+      });
+      assertLog(['value: true']);
+      expect(root).toMatchRenderedOutput(<span prop="value: true" />);
+
+      // `value` is already true, so this bails out eagerly and no render is
+      // scheduled. The update is still queued, though.
+      await act(() => {
+        ReactNoop.discreteUpdates(() => {
+          setValue(true);
+        });
+      });
+      assertLog([]);
+      expect(root).toMatchRenderedOutput(<span prop="value: true" />);
+
+      // Render at a lower priority than the queued update. Child updates
+      // `value` during this render; the queued update must not clobber it.
+      await act(() => {
+        setFlag(false);
+      });
+      assertLog(['value: false']);
+      expect(root).toMatchRenderedOutput(<span prop="value: false" />);
+    });
+
     // TODO: This should probably warn
     it('calling startTransition inside render phase', async () => {
       function App() {
