@@ -38,7 +38,7 @@
     "babel-eslint": "^9.0.0",
     "babel-loader": "^8.0.4",
     "buffer": "^6.0.3",
-    "cross-env": "^3.1.4",
+    "cross-env": "^7.0.3",
     "css-loader": "^7.1.5",
     "file-loader": "^6.1.0",
     "process": "^0.11.10",
