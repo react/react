@@ -2425,6 +2425,28 @@ fn build_typed_globals(
     ));
     globals.insert("ReportingObserver".to_string(), reporting_observer_ctor);
 
+    let finalization_registry_ctor = add_function(
+        shapes,
+        Vec::new(),
+        FunctionSignatureBuilder {
+            // The cleanup callback runs once the target is collected, never during construction.
+            positional_params: vec![Effect::Freeze],
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            ..Default::default()
+        },
+        None,
+        true,
+    );
+    typed_globals.push((
+        "FinalizationRegistry".to_string(),
+        finalization_registry_ctor.clone(),
+    ));
+    globals.insert(
+        "FinalizationRegistry".to_string(),
+        finalization_registry_ctor,
+    );
+
     // React global object — reuses the same REACT_APIS types (matching TS behavior
     // where the same type objects are used as both standalone globals and React.* properties)
     let react_create_element = add_function(
