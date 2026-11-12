@@ -28,7 +28,7 @@ function Component({value}) {
 
 export const FIXTURE_ENTRYPOINT = {
   fn: Component,
-  args: [{value: 0}],
+  params: [{value: 0}],
 };
 
 ```
@@ -119,8 +119,11 @@ function Component(t0) {
 
 export const FIXTURE_ENTRYPOINT = {
   fn: Component,
-  args: [{ value: 0 }],
+  params: [{ value: 0 }],
 };
 
 ```
       
+### Eval output
+(kind: ok) "my context value"
+logs: ['global string 0',0,4,4,'global string 0',0,5,5]
