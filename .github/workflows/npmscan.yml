@@ -1,0 +1,17 @@
+name: NPMscan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  npmscan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run NPMscan
+        uses: NPMscan/npmscan-action@e2ff8c953f1a0b536abd70b4479984137c76e1fe # v1.4.1
+        with:
+          mode: warn
+          fail-on-error: false
