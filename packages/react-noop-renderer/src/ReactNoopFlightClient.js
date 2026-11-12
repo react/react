@@ -82,6 +82,9 @@ function read<T>(source: Source, options: ReadOptions): Thenable<T> {
       ? // $FlowFixMe[incompatible-type]
         options.debugChannel.onMessage
       : undefined,
+    undefined,
+    undefined,
+    undefined,
   );
   const streamState = createStreamState(response, source);
   for (let i = 0; i < source.length; i++) {
