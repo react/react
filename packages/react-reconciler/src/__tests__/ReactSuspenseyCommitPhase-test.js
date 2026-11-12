@@ -152,6 +152,56 @@ describe('ReactSuspenseyCommitPhase', () => {
   });
 
   // @gate enableSuspenseyImages
+  it('update to root with pending commit during another root render does not corrupt the rendering root', async () => {
+    const Context = React.createContext('default');
+    let store = 'a';
+    const listeners = new Set();
+    function subscribe(l) {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    }
+    function A({src}) {
+      React.useSyncExternalStore(subscribe, () => store);
+      return <SuspenseyImage src={src} />;
+    }
+    function Notify() {
+      store += 'a';
+      listeners.forEach(l => l());
+      return null;
+    }
+    function Read() {
+      return <Text text={React.useContext(Context)} />;
+    }
+
+    const rootA = ReactNoop.createRoot();
+    const rootB = ReactNoop.createRoot();
+    const rootC = ReactNoop.createRoot();
+    await act(() => resolveSuspenseyThing('A1'));
+    await act(() => rootA.render(<A src="A1" />));
+    assertLog([]);
+
+    await act(async () => {
+      startTransition(() => rootA.render(<A src="A2" />));
+    });
+    assertLog(['Image requested [A2]']);
+
+    await act(async () => {
+      rootB.render(
+        <Context.Provider value="provided">
+          <Notify />
+          <Read />
+        </Context.Provider>,
+      );
+    });
+    assertLog(['provided']);
+    expect(rootB).toMatchRenderedOutput('provided');
+
+    await act(() => rootC.render(<Read />));
+    assertLog(['default']);
+    expect(rootC).toMatchRenderedOutput('default');
+  });
+
+  // @gate enableSuspenseyImages
   it('suspend commit during urgent initial mount', async () => {
     const root = ReactNoop.createRoot();
     await act(async () => {
