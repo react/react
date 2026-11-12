@@ -2093,7 +2093,42 @@ function lowerExpression(
 
       if (operator === '=') {
         const left = expr.get('left');
-        if (left.isLVal()) {
+        if (left.isMemberExpression()) {
+          /**
+           * Per spec, the object and (computed) property of a member expression
+           * lvalue are evaluated *before* the right-hand side, eg `a[i++] = i`
+           * stores to the original index while the rhs sees the incremented `i`.
+           */
+          const loc = getSourceLocation(left.node);
+          const {
+            object,
+            property,
+            value: loadValue,
+          } = lowerMemberExpression(builder, left);
+          if (loadValue.kind === 'UnsupportedNode') {
+            return loadValue;
+          }
+          const value = lowerExpressionToTemporary(builder, expr.get('right'));
+          let temporary;
+          if (typeof property === 'string' || typeof property === 'number') {
+            temporary = lowerValueToTemporary(builder, {
+              kind: 'PropertyStore',
+              object,
+              property: makePropertyLiteral(property),
+              value,
+              loc,
+            });
+          } else {
+            temporary = lowerValueToTemporary(builder, {
+              kind: 'ComputedStore',
+              object,
+              property,
+              value,
+              loc,
+            });
+          }
+          return {kind: 'LoadLocal', place: temporary, loc: temporary.loc};
+        } else if (left.isLVal()) {
           return lowerAssignment(
             builder,
             getSourceLocation(left.node),
