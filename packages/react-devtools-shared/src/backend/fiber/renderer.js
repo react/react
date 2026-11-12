@@ -913,9 +913,8 @@ export function attach(
     hook.getFiberRoots(rendererID).forEach(root => {
       const rootInstance = rootToFiberInstanceMap.get(root);
       if (rootInstance === undefined) {
-        throw new Error(
-          'Expected the root instance to already exist when applying filters',
-        );
+        // This root has no children, so it was never mounted. See handleCommitFiberRoot.
+        return;
       }
       currentRoot = rootInstance;
       unmountInstanceRecursively(rootInstance);
@@ -976,6 +975,10 @@ export function attach(
     // Recursively re-mount all roots with new filter criteria applied.
     hook.getFiberRoots(rendererID).forEach(root => {
       const current = root.current;
+      if (current.child === null) {
+        // Like in handleCommitFiberRoot, we don't mount roots without children.
+        return;
+      }
       const newRoot = createFiberInstance(current);
       rootToFiberInstanceMap.set(root, newRoot);
       idToDevToolsInstanceMap.set(newRoot.id, newRoot);
@@ -4985,6 +4988,10 @@ export function attach(
       // If we have not been profiling, then we can just walk the tree and build up its current state as-is.
       hook.getFiberRoots(rendererID).forEach(root => {
         const current = root.current;
+        if (current.child === null) {
+          // Like in handleCommitFiberRoot, we don't mount roots without children.
+          return;
+        }
         const newRoot = createFiberInstance(current);
         rootToFiberInstanceMap.set(root, newRoot);
         idToDevToolsInstanceMap.set(newRoot.id, newRoot);
@@ -5038,17 +5045,16 @@ export function attach(
 
     if (needsToFlushComponentLogs) {
       const rootInstance = rootToFiberInstanceMap.get(root);
-      if (rootInstance === undefined) {
-        throw new Error(
-          'Should have a root instance for a committed root. This is a bug in React DevTools.',
-        );
+      // The root has no instance if this commit unmounted it or removed all of its children.
+      // Then the logs came from the unmounted subtree, e.g. from a passive effect cleanup.
+      if (rootInstance !== undefined) {
+        // We received new logs after commit. I.e. in a passive effect. We need to
+        // traverse the tree to find the affected ones. If we just moved the whole
+        // tree traversal from handleCommitFiberRoot to handlePostCommitFiberRoot
+        // this wouldn't be needed. For now we just brute force check all instances.
+        // This is not that common of a case.
+        bruteForceFlushErrorsAndWarnings(rootInstance);
       }
-      // We received new logs after commit. I.e. in a passive effect. We need to
-      // traverse the tree to find the affected ones. If we just moved the whole
-      // tree traversal from handleCommitFiberRoot to handlePostCommitFiberRoot
-      // this wouldn't be needed. For now we just brute force check all instances.
-      // This is not that common of a case.
-      bruteForceFlushErrorsAndWarnings(rootInstance);
     }
   }
 
@@ -6900,9 +6906,8 @@ export function attach(
     roots.forEach(root => {
       const rootInstance = rootToFiberInstanceMap.get(root);
       if (rootInstance === undefined) {
-        throw new Error(
-          'Expected a root instance to exist for this Fiber root',
-        );
+        // This root has no children, so it was never mounted. See handleCommitFiberRoot.
+        return;
       }
       const inspectedRoot = inspectFiberInstanceRaw(rootInstance);
       if (inspectedRoot === null) {
@@ -7358,9 +7363,8 @@ export function attach(
     hook.getFiberRoots(rendererID).forEach(root => {
       const rootInstance = rootToFiberInstanceMap.get(root);
       if (rootInstance === undefined) {
-        throw new Error(
-          'Expected the root instance to already exist when starting profiling',
-        );
+        // This root has no children, so it was never mounted. See handleCommitFiberRoot.
+        return;
       }
       const rootID = rootInstance.id;
       (displayNamesByRootID as any as DisplayNamesByRootID).set(
