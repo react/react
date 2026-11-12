@@ -950,6 +950,29 @@ describe('ReactDOMInput', () => {
     expect(nodeValueSetter).toHaveBeenCalledTimes(1);
   });
 
+  it('should not rewrite the type or name of an unchanged text input', async () => {
+    await act(() => {
+      root.render(<input type="text" name="field" value="a" readOnly={true} />);
+    });
+    const input = container.firstChild;
+    let mutations = 0;
+    const observer = new MutationObserver(records => {
+      mutations += records.length;
+    });
+    observer.observe(input, {attributeFilter: ['type', 'name']});
+    try {
+      await act(() => {
+        root.render(
+          <input type="text" name="field" value="b" readOnly={true} />,
+        );
+      });
+      expect(mutations + observer.takeRecords().length).toBe(0);
+      expect(input.value).toBe('b');
+    } finally {
+      observer.disconnect();
+    }
+  });
+
   it('should not incur unnecessary DOM mutations for numeric type conversion', async () => {
     await act(() => {
       root.render(<input value="0" onChange={() => {}} />);
