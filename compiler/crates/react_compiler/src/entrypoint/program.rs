@@ -329,29 +329,32 @@ fn is_component_name(name: &str) -> bool {
         .map_or(false, |c| c.is_ascii_uppercase())
 }
 
+/// Check if a MemberExpression follows the `PascalCase.useHook` hook naming convention.
+fn is_hook_member_expression(member: &MemberExpression) -> bool {
+    if member.computed {
+        return false;
+    }
+    // Property must be a hook name
+    if !expr_is_hook(&member.property) {
+        return false;
+    }
+    // Object must be a PascalCase identifier
+    if let Expression::Identifier(obj) = member.object.as_ref() {
+        obj.name
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_uppercase())
+    } else {
+        false
+    }
+}
+
 /// Check if an expression is a hook call (identifier with hook name, or
 /// member expression `PascalCase.useHook`).
 fn expr_is_hook(expr: &Expression) -> bool {
     match expr {
         Expression::Identifier(id) => is_hook_name(&id.name),
-        Expression::MemberExpression(member) => {
-            if member.computed {
-                return false;
-            }
-            // Property must be a hook name
-            if !expr_is_hook(&member.property) {
-                return false;
-            }
-            // Object must be a PascalCase identifier
-            if let Expression::Identifier(obj) = member.object.as_ref() {
-                obj.name
-                    .chars()
-                    .next()
-                    .map_or(false, |c| c.is_ascii_uppercase())
-            } else {
-                false
-            }
-        }
+        Expression::MemberExpression(member) => is_hook_member_expression(member),
         _ => false,
     }
 }
@@ -1042,7 +1045,7 @@ enum FunctionBody<'a> {
 ///
 /// This is the Rust equivalent of `getReactFunctionType` in Program.ts.
 fn get_react_function_type(
-    name: Option<&str>,
+    name: Option<&InferredFunctionName>,
     params: &[PatternLike],
     body: &FunctionBody,
     body_directives: &[Directive],
@@ -1107,23 +1110,33 @@ fn get_react_function_type(
 /// Adapted from the ESLint rule at
 /// https://github.com/react/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js
 fn get_component_or_hook_like(
-    name: Option<&str>,
+    name: Option<&InferredFunctionName>,
     params: &[PatternLike],
     body: &FunctionBody,
     parent_callee_name: Option<&str>,
 ) -> Option<ReactFunctionType> {
-    if let Some(fn_name) = name {
-        if is_component_name(fn_name) {
-            // Check if it actually looks like a component
-            let is_component = is_valid_component_params(params)
-                && calls_hooks_or_creates_jsx(params, body)
-                && !returns_non_node_fn(params, body);
-            return if is_component {
-                Some(ReactFunctionType::Component)
-            } else {
-                None
-            };
-        } else if is_hook_name(fn_name) {
+    match name {
+        Some(InferredFunctionName::Identifier(fn_name)) => {
+            if is_component_name(fn_name) {
+                // Check if it actually looks like a component
+                let is_component = is_valid_component_params(params)
+                    && calls_hooks_or_creates_jsx(params, body)
+                    && !returns_non_node_fn(params, body);
+                return if is_component {
+                    Some(ReactFunctionType::Component)
+                } else {
+                    None
+                };
+            } else if is_hook_name(fn_name) {
+                // Hooks have hook invocations or JSX, but can take any # of arguments
+                return if calls_hooks_or_creates_jsx(params, body) {
+                    Some(ReactFunctionType::Hook)
+                } else {
+                    None
+                };
+            }
+        }
+        Some(InferredFunctionName::HookMemberExpression) => {
             // Hooks have hook invocations or JSX, but can take any # of arguments
             return if calls_hooks_or_creates_jsx(params, body) {
                 Some(ReactFunctionType::Hook)
@@ -1131,6 +1144,7 @@ fn get_component_or_hook_like(
                 None
             };
         }
+        None => {}
     }
 
     // For unnamed functions, check if they are forwardRef/memo callbacks
@@ -1676,9 +1690,31 @@ fn should_skip_compilation(program: &Program, options: &PluginOptions) -> bool {
 // Function discovery
 // -----------------------------------------------------------------------
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum InferredFunctionName {
+    Identifier(String),
+    HookMemberExpression,
+}
+
+#[derive(Clone, Debug)]
+struct InferredNameEntry {
+    target_fn_node_id: Option<u32>,
+    target_fn_ptr: usize,
+    name: InferredFunctionName,
+}
+
+impl InferredNameEntry {
+    fn matches_target_fn(&self, base: &BaseNode) -> bool {
+        match (base.node_id, self.target_fn_node_id) {
+            (Some(a), Some(b)) => a == b,
+            _ => (base as *const BaseNode as usize) == self.target_fn_ptr,
+        }
+    }
+}
+
 /// Information about an expression that might be a function to compile
 struct FunctionInfo<'a> {
-    name: Option<String>,
+    name: Option<InferredFunctionName>,
     fn_node: FunctionNode<'a>,
     params: &'a [PatternLike],
     body: FunctionBody<'a>,
@@ -1694,7 +1730,7 @@ struct FunctionInfo<'a> {
 /// Extract function info from a FunctionDeclaration
 fn fn_info_from_decl(decl: &FunctionDeclaration) -> FunctionInfo<'_> {
     FunctionInfo {
-        name: get_function_name_from_id(decl.id.as_ref()),
+        name: get_function_name_from_id(decl.id.as_ref()).map(InferredFunctionName::Identifier),
         fn_node: FunctionNode::FunctionDeclaration(decl),
         params: &decl.params,
         body: FunctionBody::Block(&decl.body),
@@ -1709,7 +1745,7 @@ fn fn_info_from_decl(decl: &FunctionDeclaration) -> FunctionInfo<'_> {
 /// Extract function info from a FunctionExpression
 fn fn_info_from_func_expr<'a>(
     expr: &'a FunctionExpression,
-    inferred_name: Option<String>,
+    inferred_name: Option<InferredFunctionName>,
     parent_callee_name: Option<String>,
 ) -> FunctionInfo<'a> {
     FunctionInfo {
@@ -1728,7 +1764,7 @@ fn fn_info_from_func_expr<'a>(
 /// Extract function info from an ArrowFunctionExpression
 fn fn_info_from_arrow<'a>(
     expr: &'a ArrowFunctionExpression,
-    inferred_name: Option<String>,
+    inferred_name: Option<InferredFunctionName>,
     parent_callee_name: Option<String>,
 ) -> FunctionInfo<'a> {
     let (body, directives) = match expr.body.as_ref() {
@@ -1764,7 +1800,7 @@ fn try_make_compile_source<'a>(
     }
 
     let fn_type = get_react_function_type(
-        info.name.as_deref(),
+        info.name.as_ref(),
         info.params,
         &info.body,
         &info.body_directives,
@@ -1780,10 +1816,15 @@ fn try_make_compile_source<'a>(
         context.mark_compiled(nid);
     }
 
+    let fn_name = match info.name {
+        Some(InferredFunctionName::Identifier(name)) => Some(name),
+        Some(InferredFunctionName::HookMemberExpression) | None => None,
+    };
+
     Some(CompileSource {
         kind: CompileSourceKind::Original,
         fn_node: info.fn_node,
-        fn_name: info.name,
+        fn_name,
         fn_loc: base_node_loc(info.base),
         fn_ast_loc: info.base.loc.clone(),
         fn_start: info.base.start,
@@ -1794,12 +1835,86 @@ fn try_make_compile_source<'a>(
     })
 }
 
-/// Get the variable declarator name (for inferring function names from `const Foo = () => {}`)
-fn get_declarator_name(decl: &VariableDeclarator) -> Option<String> {
-    match &decl.id {
-        PatternLike::Identifier(id) => Some(id.name.clone()),
+/// Unwraps transparent TS/Flow type expressions and up to one level of
+/// React.forwardRef / React.memo call wrapper (matching Program.ts:1229-1232)
+/// to find the target function `BaseNode`.
+fn extract_target_function_base(expr: &Expression) -> Option<&BaseNode> {
+    match expr {
+        Expression::FunctionExpression(f) => Some(&f.base),
+        Expression::ArrowFunctionExpression(f) => Some(&f.base),
+        Expression::CallExpression(call) => {
+            if get_callee_name_if_react_api(&call.callee).is_some() {
+                call.arguments.first().and_then(extract_target_function_base)
+            } else {
+                None
+            }
+        }
+        Expression::ParenthesizedExpression(p) => extract_target_function_base(&p.expression),
+        Expression::TSAsExpression(ts) => extract_target_function_base(&ts.expression),
+        Expression::TSSatisfiesExpression(ts) => extract_target_function_base(&ts.expression),
+        Expression::TSNonNullExpression(ts) => extract_target_function_base(&ts.expression),
+        Expression::TSTypeAssertion(ts) => extract_target_function_base(&ts.expression),
+        Expression::TSInstantiationExpression(ts) => extract_target_function_base(&ts.expression),
+        Expression::TypeCastExpression(tc) => extract_target_function_base(&tc.expression),
         _ => None,
     }
+}
+
+/// Unwraps transparent TS/Flow type expressions and up to one level of
+/// React.forwardRef / React.memo call wrapper (matching Program.ts:1229-1232)
+/// to find the target function `node_id`.
+#[allow(dead_code)]
+fn extract_target_function_node_id(expr: &Expression) -> Option<u32> {
+    extract_target_function_base(expr).and_then(|base| base.node_id)
+}
+
+/// Extracts an `InferredFunctionName` from an expression in LVal/key position.
+fn inferred_name_from_expression(expr: &Expression) -> Option<InferredFunctionName> {
+    match expr {
+        Expression::Identifier(id) => Some(InferredFunctionName::Identifier(id.name.clone())),
+        Expression::MemberExpression(member) => {
+            if is_hook_member_expression(member) {
+                Some(InferredFunctionName::HookMemberExpression)
+            } else {
+                None
+            }
+        }
+        Expression::ParenthesizedExpression(p) => inferred_name_from_expression(&p.expression),
+        Expression::TSAsExpression(ts) => inferred_name_from_expression(&ts.expression),
+        Expression::TSSatisfiesExpression(ts) => inferred_name_from_expression(&ts.expression),
+        Expression::TSNonNullExpression(ts) => inferred_name_from_expression(&ts.expression),
+        Expression::TSTypeAssertion(ts) => inferred_name_from_expression(&ts.expression),
+        Expression::TypeCastExpression(tc) => inferred_name_from_expression(&tc.expression),
+        _ => None,
+    }
+}
+
+/// Extracts an `InferredFunctionName` from a `PatternLike` (Identifier or MemberExpression).
+fn inferred_name_from_pattern(pat: &PatternLike) -> Option<InferredFunctionName> {
+    match pat {
+        PatternLike::Identifier(id) => Some(InferredFunctionName::Identifier(id.name.clone())),
+        PatternLike::MemberExpression(member) => {
+            if is_hook_member_expression(member) {
+                Some(InferredFunctionName::HookMemberExpression)
+            } else {
+                None
+            }
+        }
+        PatternLike::TSAsExpression(ts) => inferred_name_from_expression(&ts.expression),
+        PatternLike::TSSatisfiesExpression(ts) => inferred_name_from_expression(&ts.expression),
+        PatternLike::TSNonNullExpression(ts) => inferred_name_from_expression(&ts.expression),
+        PatternLike::TSTypeAssertion(ts) => inferred_name_from_expression(&ts.expression),
+        PatternLike::TypeCastExpression(tc) => inferred_name_from_expression(&tc.expression),
+        PatternLike::ObjectPattern(_)
+        | PatternLike::ArrayPattern(_)
+        | PatternLike::AssignmentPattern(_)
+        | PatternLike::RestElement(_) => None,
+    }
+}
+
+/// Extracts an `InferredFunctionName` from an `ObjectProperty` key when `!prop.computed`.
+fn inferred_name_from_property_key(expr: &Expression) -> Option<InferredFunctionName> {
+    inferred_name_from_expression(expr)
 }
 
 // -----------------------------------------------------------------------
@@ -1815,8 +1930,9 @@ fn get_declarator_name(decl: &VariableDeclarator) -> Option<String> {
 /// bodies traversed to find nested component/hook declarations.
 ///
 /// Tracks parent context via:
-/// - `current_declarator_name`: set by `enter_variable_declarator`, used to
-///   infer function names from `const Foo = () => {}`.
+/// - `inferred_name_stack`: set by `enter_variable_declarator`,
+///   `enter_assignment_expression`, `enter_object_property`, and
+///   `enter_assignment_pattern` to infer function names from parent context.
 /// - `parent_callee_stack`: set by `enter_call_expression`, used to detect
 ///   forwardRef/memo wrappers around function expressions.
 ///
@@ -1829,8 +1945,9 @@ struct FunctionDiscoveryVisitor<'a, 'ast> {
     opts: &'a PluginOptions,
     context: &'a mut ProgramContext,
     queue: Vec<CompileSource<'ast>>,
-    /// The inferred name from the current VariableDeclarator, if any.
-    current_declarator_name: Option<String>,
+    /// Scoped stack of inferred function names from enclosing VariableDeclarator,
+    /// AssignmentExpression, ObjectProperty, or AssignmentPattern nodes.
+    inferred_name_stack: Vec<Option<InferredNameEntry>>,
     /// Stack tracking callee names of enclosing CallExpressions.
     /// `Some(name)` when the callee is a React API (forwardRef/memo),
     /// `None` for other calls.
@@ -1850,7 +1967,7 @@ impl<'a, 'ast> FunctionDiscoveryVisitor<'a, 'ast> {
             opts,
             context,
             queue: Vec::new(),
-            current_declarator_name: None,
+            inferred_name_stack: Vec::new(),
             parent_callee_stack: Vec::new(),
             loop_expression_depth: 0,
             skip_body: false,
@@ -1872,6 +1989,18 @@ impl<'a, 'ast> FunctionDiscoveryVisitor<'a, 'ast> {
     /// Get the current parent callee name (forwardRef/memo) if any.
     fn current_parent_callee(&self) -> Option<String> {
         self.parent_callee_stack.last().and_then(|opt| opt.clone())
+    }
+
+    /// Consume the active `InferredNameEntry` if its target matches `base`.
+    fn take_matching_inferred_name(&mut self, base: &BaseNode) -> Option<InferredFunctionName> {
+        for slot in self.inferred_name_stack.iter_mut().rev() {
+            if let Some(entry) = slot {
+                if entry.matches_target_fn(base) {
+                    return slot.take().map(|e| e.name);
+                }
+            }
+        }
+        None
     }
 }
 
@@ -1896,21 +2025,16 @@ impl<'a, 'ast> Visitor<'ast> for FunctionDiscoveryVisitor<'a, 'ast> {
         node: &'ast VariableDeclarator,
         _scope_stack: &[ScopeId],
     ) {
-        // Only infer the declarator name when the init is a direct function
-        // expression, arrow, or call expression (for forwardRef/memo wrappers).
-        // TS checks `path.parentPath.isVariableDeclarator()` which only matches
-        // when the function IS the init, not when it's nested inside an object,
-        // array, or other expression.
-        if let Some(ref init) = node.init {
-            match init.as_ref() {
-                Expression::FunctionExpression(_)
-                | Expression::ArrowFunctionExpression(_)
-                | Expression::CallExpression(_) => {
-                    self.current_declarator_name = get_declarator_name(node);
-                }
-                _ => {}
-            }
-        }
+        let entry = node.init.as_deref().and_then(|init| {
+            let name = inferred_name_from_pattern(&node.id)?;
+            let base = extract_target_function_base(init)?;
+            Some(InferredNameEntry {
+                target_fn_node_id: base.node_id,
+                target_fn_ptr: base as *const BaseNode as usize,
+                name,
+            })
+        });
+        self.inferred_name_stack.push(entry);
     }
 
     fn leave_variable_declarator(
@@ -1918,33 +2042,91 @@ impl<'a, 'ast> Visitor<'ast> for FunctionDiscoveryVisitor<'a, 'ast> {
         _node: &'ast VariableDeclarator,
         _scope_stack: &[ScopeId],
     ) {
-        self.current_declarator_name = None;
+        self.inferred_name_stack.pop();
+    }
+
+    fn enter_assignment_expression(
+        &mut self,
+        node: &'ast AssignmentExpression,
+        _scope_stack: &[ScopeId],
+    ) {
+        let entry = if matches!(
+            node.operator,
+            react_compiler_ast::operators::AssignmentOperator::Assign
+        ) {
+            inferred_name_from_pattern(&node.left).and_then(|name| {
+                let base = extract_target_function_base(&node.right)?;
+                Some(InferredNameEntry {
+                    target_fn_node_id: base.node_id,
+                    target_fn_ptr: base as *const BaseNode as usize,
+                    name,
+                })
+            })
+        } else {
+            None
+        };
+        self.inferred_name_stack.push(entry);
+    }
+
+    fn leave_assignment_expression(
+        &mut self,
+        _node: &'ast AssignmentExpression,
+        _scope_stack: &[ScopeId],
+    ) {
+        self.inferred_name_stack.pop();
+    }
+
+    fn enter_object_property(&mut self, node: &'ast ObjectProperty, _scope_stack: &[ScopeId]) {
+        let entry = if !node.computed {
+            inferred_name_from_property_key(&node.key).and_then(|name| {
+                let base = extract_target_function_base(&node.value)?;
+                Some(InferredNameEntry {
+                    target_fn_node_id: base.node_id,
+                    target_fn_ptr: base as *const BaseNode as usize,
+                    name,
+                })
+            })
+        } else {
+            None
+        };
+        self.inferred_name_stack.push(entry);
+    }
+
+    fn leave_object_property(&mut self, _node: &'ast ObjectProperty, _scope_stack: &[ScopeId]) {
+        self.inferred_name_stack.pop();
+    }
+
+    fn enter_assignment_pattern(
+        &mut self,
+        node: &'ast react_compiler_ast::patterns::AssignmentPattern,
+        _scope_stack: &[ScopeId],
+    ) {
+        let entry = inferred_name_from_pattern(&node.left).and_then(|name| {
+            let base = extract_target_function_base(&node.right)?;
+            Some(InferredNameEntry {
+                target_fn_node_id: base.node_id,
+                target_fn_ptr: base as *const BaseNode as usize,
+                name,
+            })
+        });
+        self.inferred_name_stack.push(entry);
+    }
+
+    fn leave_assignment_pattern(
+        &mut self,
+        _node: &'ast react_compiler_ast::patterns::AssignmentPattern,
+        _scope_stack: &[ScopeId],
+    ) {
+        self.inferred_name_stack.pop();
     }
 
     fn enter_call_expression(&mut self, node: &'ast CallExpression, _scope_stack: &[ScopeId]) {
         let callee_name = get_callee_name_if_react_api(&node.callee).map(|s| s.to_string());
-        // In TS, the declarator name only flows through forwardRef/memo calls
-        // (path.parentPath.isCallExpression() checks the callee). For any other
-        // call expression, clear the name so nested functions don't inherit it.
-        if callee_name.is_none() {
-            self.current_declarator_name = None;
-        }
         self.parent_callee_stack.push(callee_name);
     }
 
     fn leave_call_expression(&mut self, _node: &'ast CallExpression, _scope_stack: &[ScopeId]) {
-        let was_react_api = self
-            .parent_callee_stack
-            .pop()
-            .and_then(|name| name)
-            .is_some();
-        // After a forwardRef/memo call finishes, clear the declarator name.
-        // The name is only valid within the call's arguments — if a function
-        // inside consumed it via .take(), great; if not, it shouldn't leak
-        // to sibling or subsequent expressions.
-        if was_react_api {
-            self.current_declarator_name = None;
-        }
+        self.parent_callee_stack.pop();
     }
 
     fn enter_function_declaration(
@@ -1972,10 +2154,13 @@ impl<'a, 'ast> Visitor<'ast> for FunctionDiscoveryVisitor<'a, 'ast> {
         if self.is_rejected_by_scope_check(scope_stack) {
             return;
         }
-        // TS getFunctionName for FunctionExpressions only returns names from parent
-        // context (VariableDeclarator, AssignmentExpression, Property) — never from
-        // the expression's own `id`. So we only use current_declarator_name here.
-        let inferred_name = self.current_declarator_name.take();
+        let context_name = self.take_matching_inferred_name(&node.base);
+        let inferred_name = match (node.id.as_ref(), context_name) {
+            (Some(id), Some(_)) if is_component_name(&id.name) || is_hook_name(&id.name) => {
+                Some(InferredFunctionName::Identifier(id.name.clone()))
+            }
+            (_, ctx) => ctx,
+        };
         let parent_callee = self.current_parent_callee();
         let info = fn_info_from_func_expr(node, inferred_name, parent_callee);
         if let Some(source) = try_make_compile_source(info, self.opts, self.context) {
@@ -1993,7 +2178,7 @@ impl<'a, 'ast> Visitor<'ast> for FunctionDiscoveryVisitor<'a, 'ast> {
         if self.is_rejected_by_scope_check(scope_stack) {
             return;
         }
-        let inferred_name = self.current_declarator_name.take();
+        let inferred_name = self.take_matching_inferred_name(&node.base);
         let parent_callee = self.current_parent_callee();
         let info = fn_info_from_arrow(node, inferred_name, parent_callee);
         if let Some(source) = try_make_compile_source(info, self.opts, self.context) {
@@ -4203,5 +4388,634 @@ mod tests {
             debug: false,
         };
         assert!(!should_skip_compilation(&program, &options));
+    }
+
+    fn default_test_options() -> PluginOptions {
+        PluginOptions {
+            should_compile: true,
+            enable_reanimated: false,
+            is_dev: false,
+            filename: None,
+            compilation_mode: "infer".to_string(),
+            panic_threshold: "none".to_string(),
+            target: super::super::plugin_options::CompilerTarget::Version("19".to_string()),
+            gating: None,
+            dynamic_gating: None,
+            no_emit: false,
+            output_mode: None,
+            eslint_suppression_rules: None,
+            flow_suppressions: true,
+            ignore_use_no_forget: false,
+            custom_opt_out_directives: None,
+            environment: EnvironmentConfig::default(),
+            source_code: None,
+            profiling: false,
+            debug: false,
+        }
+    }
+
+    fn empty_scope_info() -> ScopeInfo {
+        ScopeInfo {
+            scopes: vec![react_compiler_ast::scope::ScopeData {
+                id: ScopeId(0),
+                parent: None,
+                kind: react_compiler_ast::scope::ScopeKind::Program,
+                bindings: FxHashMap::default(),
+            }],
+            bindings: vec![],
+            node_to_scope: FxHashMap::default(),
+            node_to_scope_end: FxHashMap::default(),
+            reference_to_binding: indexmap::IndexMap::default(),
+            ref_node_id_to_binding: indexmap::IndexMap::default(),
+            node_id_to_scope: FxHashMap::default(),
+            program_scope: ScopeId(0),
+        }
+    }
+
+    fn base_with_id(node_id: u32) -> BaseNode {
+        let mut base = BaseNode::default();
+        base.node_id = Some(node_id);
+        base
+    }
+
+    fn make_id(name: &str) -> Identifier {
+        Identifier {
+            base: BaseNode::default(),
+            name: name.to_string(),
+            type_annotation: None,
+            optional: None,
+            decorators: None,
+        }
+    }
+
+    fn make_hook_call_expr() -> Expression {
+        Expression::CallExpression(CallExpression {
+            base: BaseNode::default(),
+            callee: Box::new(Expression::Identifier(make_id("useState"))),
+            arguments: vec![],
+            type_parameters: None,
+            type_arguments: None,
+            optional: None,
+        })
+    }
+
+    fn make_jsx_div_expr() -> Expression {
+        use react_compiler_ast::jsx::{
+            JSXElement, JSXElementName, JSXIdentifier, JSXOpeningElement,
+        };
+        Expression::JSXElement(Box::new(JSXElement {
+            base: BaseNode::default(),
+            opening_element: JSXOpeningElement {
+                base: BaseNode::default(),
+                name: JSXElementName::JSXIdentifier(JSXIdentifier {
+                    base: BaseNode::default(),
+                    name: "div".to_string(),
+                }),
+                attributes: vec![],
+                self_closing: true,
+                type_parameters: None,
+            },
+            closing_element: None,
+            children: vec![],
+            self_closing: Some(true),
+        }))
+    }
+
+    fn make_arrow_expr(node_id: u32, body_expr: Expression) -> Expression {
+        Expression::ArrowFunctionExpression(ArrowFunctionExpression {
+            base: base_with_id(node_id),
+            params: vec![],
+            body: Box::new(ArrowFunctionBody::Expression(Box::new(body_expr))),
+            id: None,
+            generator: false,
+            is_async: false,
+            expression: Some(true),
+            return_type: None,
+            type_parameters: None,
+            predicate: None,
+        })
+    }
+
+    fn make_func_expr(node_id: u32, id: Option<&str>, ret_expr: Expression) -> Expression {
+        Expression::FunctionExpression(FunctionExpression {
+            base: base_with_id(node_id),
+            params: vec![],
+            body: BlockStatement {
+                base: BaseNode::default(),
+                body: vec![Statement::ReturnStatement(ReturnStatement {
+                    base: BaseNode::default(),
+                    argument: Some(Box::new(ret_expr)),
+                })],
+                directives: vec![],
+            },
+            id: id.map(make_id),
+            generator: false,
+            is_async: false,
+            return_type: None,
+            type_parameters: None,
+            predicate: None,
+        })
+    }
+
+    fn discover_in_stmts(
+        stmts: Vec<Statement>,
+    ) -> Vec<(Option<u32>, Option<String>, ReactFunctionType)> {
+        let program = Program {
+            base: BaseNode::default(),
+            body: stmts,
+            directives: vec![],
+            source_type: react_compiler_ast::SourceType::Module,
+            interpreter: None,
+            source_file: None,
+        };
+        let options = default_test_options();
+        let scope = empty_scope_info();
+        let mut context = ProgramContext::new(options.clone(), None, None, Vec::new(), false);
+        let queue = find_functions_to_compile(&program, &options, &mut context, &scope);
+        queue
+            .into_iter()
+            .map(|s| (s.fn_node_id, s.fn_name, s.fn_type))
+            .collect()
+    }
+
+    #[test]
+    fn test_infer_name_from_variable_declarator_and_named_function_expression() {
+        let stmts = vec![
+            // const Foo = () => <div />;
+            Statement::VariableDeclaration(VariableDeclaration {
+                base: BaseNode::default(),
+                kind: VariableDeclarationKind::Const,
+                declarations: vec![VariableDeclarator {
+                    base: BaseNode::default(),
+                    id: PatternLike::Identifier(make_id("Foo")),
+                    init: Some(Box::new(make_arrow_expr(1, make_jsx_div_expr()))),
+                    definite: None,
+                }],
+                declare: None,
+            }),
+            // const useHook = () => useState();
+            Statement::VariableDeclaration(VariableDeclaration {
+                base: BaseNode::default(),
+                kind: VariableDeclarationKind::Const,
+                declarations: vec![VariableDeclarator {
+                    base: BaseNode::default(),
+                    id: PatternLike::Identifier(make_id("useHook")),
+                    init: Some(Box::new(make_arrow_expr(2, make_hook_call_expr()))),
+                    definite: None,
+                }],
+                declare: None,
+            }),
+            // const whatever = function useNamedHook() { return useState(); };
+            Statement::VariableDeclaration(VariableDeclaration {
+                base: BaseNode::default(),
+                kind: VariableDeclarationKind::Const,
+                declarations: vec![VariableDeclarator {
+                    base: BaseNode::default(),
+                    id: PatternLike::Identifier(make_id("whatever")),
+                    init: Some(Box::new(make_func_expr(
+                        3,
+                        Some("useNamedHook"),
+                        make_hook_call_expr(),
+                    ))),
+                    definite: None,
+                }],
+                declare: None,
+            }),
+            // const MyComponent = function helper() { return <div />; };
+            Statement::VariableDeclaration(VariableDeclaration {
+                base: BaseNode::default(),
+                kind: VariableDeclarationKind::Const,
+                declarations: vec![VariableDeclarator {
+                    base: BaseNode::default(),
+                    id: PatternLike::Identifier(make_id("MyComponent")),
+                    init: Some(Box::new(make_func_expr(
+                        4,
+                        Some("helper"),
+                        make_jsx_div_expr(),
+                    ))),
+                    definite: None,
+                }],
+                declare: None,
+            }),
+        ];
+
+        let discovered = discover_in_stmts(stmts);
+        assert_eq!(
+            discovered,
+            vec![
+                (Some(1), Some("Foo".to_string()), ReactFunctionType::Component),
+                (Some(2), Some("useHook".to_string()), ReactFunctionType::Hook),
+                (
+                    Some(3),
+                    Some("useNamedHook".to_string()),
+                    ReactFunctionType::Hook
+                ),
+                (
+                    Some(4),
+                    Some("MyComponent".to_string()),
+                    ReactFunctionType::Component
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_infer_name_from_assignment_expression() {
+        use react_compiler_ast::operators::AssignmentOperator;
+
+        let stmts = vec![
+            // Foo = () => <div />;
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::AssignmentExpression(AssignmentExpression {
+                    base: BaseNode::default(),
+                    operator: AssignmentOperator::Assign,
+                    left: Box::new(PatternLike::Identifier(make_id("Foo"))),
+                    right: Box::new(make_arrow_expr(10, make_jsx_div_expr())),
+                })),
+            }),
+            // useHook = () => useState();
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::AssignmentExpression(AssignmentExpression {
+                    base: BaseNode::default(),
+                    operator: AssignmentOperator::Assign,
+                    left: Box::new(PatternLike::Identifier(make_id("useHook"))),
+                    right: Box::new(make_arrow_expr(11, make_hook_call_expr())),
+                })),
+            }),
+            // Namespace.useHook = () => useState();
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::AssignmentExpression(AssignmentExpression {
+                    base: BaseNode::default(),
+                    operator: AssignmentOperator::Assign,
+                    left: Box::new(PatternLike::MemberExpression(MemberExpression {
+                        base: BaseNode::default(),
+                        object: Box::new(Expression::Identifier(make_id("Namespace"))),
+                        property: Box::new(Expression::Identifier(make_id("useHook"))),
+                        computed: false,
+                    })),
+                    right: Box::new(make_arrow_expr(12, make_hook_call_expr())),
+                })),
+            }),
+            // Compound assignment should NOT infer a name: useIgnored ||= () => useState();
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::AssignmentExpression(AssignmentExpression {
+                    base: BaseNode::default(),
+                    operator: AssignmentOperator::OrAssign,
+                    left: Box::new(PatternLike::Identifier(make_id("useIgnored"))),
+                    right: Box::new(make_arrow_expr(13, make_hook_call_expr())),
+                })),
+            }),
+            // Lowercase member object should NOT be classified as a hook: namespace.useHook = () => useState();
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::AssignmentExpression(AssignmentExpression {
+                    base: BaseNode::default(),
+                    operator: AssignmentOperator::Assign,
+                    left: Box::new(PatternLike::MemberExpression(MemberExpression {
+                        base: BaseNode::default(),
+                        object: Box::new(Expression::Identifier(make_id("namespace"))),
+                        property: Box::new(Expression::Identifier(make_id("useHook"))),
+                        computed: false,
+                    })),
+                    right: Box::new(make_arrow_expr(14, make_hook_call_expr())),
+                })),
+            }),
+        ];
+
+        let discovered = discover_in_stmts(stmts);
+        assert_eq!(
+            discovered,
+            vec![
+                (
+                    Some(10),
+                    Some("Foo".to_string()),
+                    ReactFunctionType::Component
+                ),
+                (
+                    Some(11),
+                    Some("useHook".to_string()),
+                    ReactFunctionType::Hook
+                ),
+                (Some(12), None, ReactFunctionType::Hook),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_infer_name_from_object_property() {
+        let stmts = vec![Statement::ExpressionStatement(ExpressionStatement {
+            base: BaseNode::default(),
+            expression: Box::new(Expression::ObjectExpression(ObjectExpression {
+                base: BaseNode::default(),
+                properties: vec![
+                    // Foo: () => <div />
+                    ObjectExpressionProperty::ObjectProperty(ObjectProperty {
+                        base: BaseNode::default(),
+                        key: Box::new(Expression::Identifier(make_id("Foo"))),
+                        value: Box::new(make_arrow_expr(20, make_jsx_div_expr())),
+                        computed: false,
+                        shorthand: false,
+                        decorators: None,
+                        method: None,
+                    }),
+                    // useHook: () => useState()
+                    ObjectExpressionProperty::ObjectProperty(ObjectProperty {
+                        base: BaseNode::default(),
+                        key: Box::new(Expression::Identifier(make_id("useHook"))),
+                        value: Box::new(make_arrow_expr(21, make_hook_call_expr())),
+                        computed: false,
+                        shorthand: false,
+                        decorators: None,
+                        method: None,
+                    }),
+                    // [useComputed]: () => useState() (computed key should NOT infer a name)
+                    ObjectExpressionProperty::ObjectProperty(ObjectProperty {
+                        base: BaseNode::default(),
+                        key: Box::new(Expression::Identifier(make_id("useComputed"))),
+                        value: Box::new(make_arrow_expr(22, make_hook_call_expr())),
+                        computed: true,
+                        shorthand: false,
+                        decorators: None,
+                        method: None,
+                    }),
+                ],
+            })),
+        })];
+
+        let discovered = discover_in_stmts(stmts);
+        assert_eq!(
+            discovered,
+            vec![
+                (
+                    Some(20),
+                    Some("Foo".to_string()),
+                    ReactFunctionType::Component
+                ),
+                (
+                    Some(21),
+                    Some("useHook".to_string()),
+                    ReactFunctionType::Hook
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_infer_name_from_assignment_pattern() {
+        use react_compiler_ast::operators::AssignmentOperator;
+        use react_compiler_ast::patterns::{
+            AssignmentPattern, ObjectPattern, ObjectPatternProp, ObjectPatternProperty,
+        };
+
+        let stmts = vec![
+            // const { useHook = () => useState(), Foo = () => <div /> } = {};
+            Statement::VariableDeclaration(VariableDeclaration {
+                base: BaseNode::default(),
+                kind: VariableDeclarationKind::Const,
+                declarations: vec![VariableDeclarator {
+                    base: BaseNode::default(),
+                    id: PatternLike::ObjectPattern(ObjectPattern {
+                        base: BaseNode::default(),
+                        properties: vec![
+                            ObjectPatternProperty::ObjectProperty(ObjectPatternProp {
+                                base: BaseNode::default(),
+                                key: Box::new(Expression::Identifier(make_id("useHook"))),
+                                value: Box::new(PatternLike::AssignmentPattern(
+                                    AssignmentPattern {
+                                        base: BaseNode::default(),
+                                        left: Box::new(PatternLike::Identifier(make_id(
+                                            "useHook",
+                                        ))),
+                                        right: Box::new(make_arrow_expr(
+                                            30,
+                                            make_hook_call_expr(),
+                                        )),
+                                        type_annotation: None,
+                                        decorators: None,
+                                    },
+                                )),
+                                computed: false,
+                                shorthand: true,
+                                decorators: None,
+                                method: None,
+                            }),
+                            ObjectPatternProperty::ObjectProperty(ObjectPatternProp {
+                                base: BaseNode::default(),
+                                key: Box::new(Expression::Identifier(make_id("Foo"))),
+                                value: Box::new(PatternLike::AssignmentPattern(
+                                    AssignmentPattern {
+                                        base: BaseNode::default(),
+                                        left: Box::new(PatternLike::Identifier(make_id("Foo"))),
+                                        right: Box::new(make_arrow_expr(31, make_jsx_div_expr())),
+                                        type_annotation: None,
+                                        decorators: None,
+                                    },
+                                )),
+                                computed: false,
+                                shorthand: true,
+                                decorators: None,
+                                method: None,
+                            }),
+                        ],
+                        type_annotation: None,
+                        decorators: None,
+                    }),
+                    init: Some(Box::new(Expression::ObjectExpression(ObjectExpression {
+                        base: BaseNode::default(),
+                        properties: vec![],
+                    }))),
+                    definite: None,
+                }],
+                declare: None,
+            }),
+            // ({ useAssignedDefault = () => useState() } = {});
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::AssignmentExpression(AssignmentExpression {
+                    base: BaseNode::default(),
+                    operator: AssignmentOperator::Assign,
+                    left: Box::new(PatternLike::ObjectPattern(ObjectPattern {
+                        base: BaseNode::default(),
+                        properties: vec![ObjectPatternProperty::ObjectProperty(
+                            ObjectPatternProp {
+                                base: BaseNode::default(),
+                                key: Box::new(Expression::Identifier(make_id(
+                                    "useAssignedDefault",
+                                ))),
+                                value: Box::new(PatternLike::AssignmentPattern(
+                                    AssignmentPattern {
+                                        base: BaseNode::default(),
+                                        left: Box::new(PatternLike::Identifier(make_id(
+                                            "useAssignedDefault",
+                                        ))),
+                                        right: Box::new(make_arrow_expr(
+                                            32,
+                                            make_hook_call_expr(),
+                                        )),
+                                        type_annotation: None,
+                                        decorators: None,
+                                    },
+                                )),
+                                computed: false,
+                                shorthand: true,
+                                decorators: None,
+                                method: None,
+                            },
+                        )],
+                        type_annotation: None,
+                        decorators: None,
+                    })),
+                    right: Box::new(Expression::ObjectExpression(ObjectExpression {
+                        base: BaseNode::default(),
+                        properties: vec![],
+                    })),
+                })),
+            }),
+        ];
+
+        let discovered = discover_in_stmts(stmts);
+        assert_eq!(
+            discovered,
+            vec![
+                (
+                    Some(30),
+                    Some("useHook".to_string()),
+                    ReactFunctionType::Hook
+                ),
+                (
+                    Some(31),
+                    Some("Foo".to_string()),
+                    ReactFunctionType::Component
+                ),
+                (
+                    Some(32),
+                    Some("useAssignedDefault".to_string()),
+                    ReactFunctionType::Hook
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_infer_name_with_forward_ref_and_memo_wrappers_and_reject_non_react_wrappers() {
+        use react_compiler_ast::operators::AssignmentOperator;
+
+        let react_memo = |arg: Expression| -> Expression {
+            Expression::CallExpression(CallExpression {
+                base: BaseNode::default(),
+                callee: Box::new(Expression::MemberExpression(MemberExpression {
+                    base: BaseNode::default(),
+                    object: Box::new(Expression::Identifier(make_id("React"))),
+                    property: Box::new(Expression::Identifier(make_id("memo"))),
+                    computed: false,
+                })),
+                arguments: vec![arg],
+                type_parameters: None,
+                type_arguments: None,
+                optional: None,
+            })
+        };
+
+        let forward_ref = |arg: Expression| -> Expression {
+            Expression::CallExpression(CallExpression {
+                base: BaseNode::default(),
+                callee: Box::new(Expression::Identifier(make_id("forwardRef"))),
+                arguments: vec![arg],
+                type_parameters: None,
+                type_arguments: None,
+                optional: None,
+            })
+        };
+
+        let non_react_helper = |arg: Expression| -> Expression {
+            Expression::CallExpression(CallExpression {
+                base: BaseNode::default(),
+                callee: Box::new(Expression::Identifier(make_id("someHelper"))),
+                arguments: vec![arg],
+                type_parameters: None,
+                type_arguments: None,
+                optional: None,
+            })
+        };
+
+        let stmts = vec![
+            // MemoizedComp = React.memo(() => <div />);
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::AssignmentExpression(AssignmentExpression {
+                    base: BaseNode::default(),
+                    operator: AssignmentOperator::Assign,
+                    left: Box::new(PatternLike::Identifier(make_id("MemoizedComp"))),
+                    right: Box::new(react_memo(make_arrow_expr(40, make_jsx_div_expr()))),
+                })),
+            }),
+            // ({ ForwardedComp: forwardRef(() => <div />) });
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::ObjectExpression(ObjectExpression {
+                    base: BaseNode::default(),
+                    properties: vec![ObjectExpressionProperty::ObjectProperty(ObjectProperty {
+                        base: BaseNode::default(),
+                        key: Box::new(Expression::Identifier(make_id("ForwardedComp"))),
+                        value: Box::new(forward_ref(make_arrow_expr(41, make_jsx_div_expr()))),
+                        computed: false,
+                        shorthand: false,
+                        decorators: None,
+                        method: None,
+                    })],
+                })),
+            }),
+            // Negative: const useNotAHook = someHelper(() => useState());
+            Statement::VariableDeclaration(VariableDeclaration {
+                base: BaseNode::default(),
+                kind: VariableDeclarationKind::Const,
+                declarations: vec![VariableDeclarator {
+                    base: BaseNode::default(),
+                    id: PatternLike::Identifier(make_id("useNotAHook")),
+                    init: Some(Box::new(non_react_helper(make_arrow_expr(
+                        42,
+                        make_hook_call_expr(),
+                    )))),
+                    definite: None,
+                }],
+                declare: None,
+            }),
+            // Negative: useObj[() => useState()] = () => useState(); (LHS function does not inherit RHS/LHS name)
+            Statement::ExpressionStatement(ExpressionStatement {
+                base: BaseNode::default(),
+                expression: Box::new(Expression::AssignmentExpression(AssignmentExpression {
+                    base: BaseNode::default(),
+                    operator: AssignmentOperator::Assign,
+                    left: Box::new(PatternLike::MemberExpression(MemberExpression {
+                        base: BaseNode::default(),
+                        object: Box::new(Expression::Identifier(make_id("useObj"))),
+                        property: Box::new(make_arrow_expr(43, make_hook_call_expr())),
+                        computed: true,
+                    })),
+                    right: Box::new(make_arrow_expr(44, make_hook_call_expr())),
+                })),
+            }),
+        ];
+
+        let discovered = discover_in_stmts(stmts);
+        assert_eq!(
+            discovered,
+            vec![
+                (
+                    Some(40),
+                    Some("MemoizedComp".to_string()),
+                    ReactFunctionType::Component
+                ),
+                (
+                    Some(41),
+                    Some("ForwardedComp".to_string()),
+                    ReactFunctionType::Component
+                ),
+            ]
+        );
     }
 }
