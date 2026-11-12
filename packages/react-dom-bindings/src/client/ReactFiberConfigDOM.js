@@ -1723,13 +1723,16 @@ export function restoreRootViewTransitionName(rootContainer: Container): void {
   ) {
     return;
   }
+  // A ShadowRoot can be a root container, but it does not have a style object.
+  // $FlowFixMe[prop-missing]
+  const containerInstanceStyle = containerInstance.style;
   if (
-    // $FlowFixMe[prop-missing]
-    containerInstance.style.viewTransitionName === 'root'
+    containerInstanceStyle !== undefined &&
+    containerInstanceStyle.viewTransitionName === 'root'
   ) {
     // If we moved the root view transition name to the container in a gesture
     // we need to restore it now.
-    containerInstance.style.viewTransitionName = '';
+    containerInstanceStyle.viewTransitionName = '';
   }
   const documentElement: null | HTMLElement =
     containerInstance.ownerDocument.documentElement;
