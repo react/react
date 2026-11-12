@@ -319,6 +319,32 @@ export function isFunctionClassComponent(
   return shouldConstruct(type);
 }
 
+// Each ForwardRef Fiber owns a separate cache box. The render props themselves
+// are immutable and can be shared, but updating a speculative Fiber's box must
+// not change the committed Fiber's cached props.
+export function cloneForwardRefStateNode(
+  current: Fiber | null,
+  workInProgress: Fiber,
+): void {
+  const currentStateNode = current === null ? null : current.stateNode;
+  if (currentStateNode === null) {
+    workInProgress.stateNode = null;
+    return;
+  }
+
+  const workInProgressStateNode = workInProgress.stateNode;
+  if (
+    workInProgressStateNode === null ||
+    workInProgressStateNode === currentStateNode
+  ) {
+    workInProgress.stateNode = {
+      propsWithoutRef: currentStateNode.propsWithoutRef,
+    };
+  } else {
+    workInProgressStateNode.propsWithoutRef = currentStateNode.propsWithoutRef;
+  }
+}
+
 // This is used to create an alternate fiber to do work on.
 export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   let workInProgress = current.alternate;
@@ -388,6 +414,11 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   workInProgress.memoizedProps = current.memoizedProps;
   workInProgress.memoizedState = current.memoizedState;
   workInProgress.updateQueue = current.updateQueue;
+  if (current.tag === ForwardRef) {
+    // Keep the cached render props paired with memoizedProps, including when
+    // this Fiber bails out without rendering.
+    cloneForwardRefStateNode(current, workInProgress);
+  }
 
   // Clone the dependencies object. This is mutated during the render phase, so
   // it cannot be shared with the current fiber.
@@ -488,6 +519,9 @@ export function resetWorkInProgress(
     workInProgress.memoizedProps = current.memoizedProps;
     workInProgress.memoizedState = current.memoizedState;
     workInProgress.updateQueue = current.updateQueue;
+    if (current.tag === ForwardRef) {
+      cloneForwardRefStateNode(current, workInProgress);
+    }
     // Needed because Blocks store data on type.
     // TODO: Blocks don't exist anymore. Do we still need this?
     workInProgress.type = current.type;

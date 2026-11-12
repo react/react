@@ -34,6 +34,7 @@ import {
   HostComponent,
   HostSingleton,
   ClassComponent,
+  ForwardRef,
   HostRoot,
   SuspenseComponent,
   ActivityComponent,
@@ -478,6 +479,8 @@ export function getPublicRootInstance(
     case HostSingleton:
     case HostComponent:
       return getPublicInstance(containerFiber.child.stateNode);
+    case ForwardRef:
+      return null;
     default:
       return containerFiber.child.stateNode;
   }

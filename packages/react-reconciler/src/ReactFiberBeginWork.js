@@ -425,19 +425,39 @@ function updateForwardRef(
   let propsWithoutRef;
   if ('ref' in nextProps) {
     // `ref` is just a prop now, but `forwardRef` expects it to not appear in
-    // the props object. This used to happen in the JSX runtime, but now we do
-    // it here.
-    propsWithoutRef = {} as {[string]: any};
-    for (const key in nextProps) {
-      // Since `ref` should only appear in props via the JSX transform, we can
-      // assume that this is a plain object. So we don't need a
-      // hasOwnProperty check.
-      if (key !== 'ref') {
-        propsWithoutRef[key] = nextProps[key];
+    // the props object. Keep the copy on this Fiber so state updates can reuse
+    // it without keeping a global cache of previous inputs.
+    if (
+      current !== null &&
+      current.memoizedProps === nextProps &&
+      current.stateNode !== null
+    ) {
+      propsWithoutRef = current.stateNode.propsWithoutRef;
+    } else {
+      propsWithoutRef = {} as {[string]: any};
+      for (const key in nextProps) {
+        // Since `ref` should only appear in props via the JSX transform, we can
+        // assume that this is a plain object. So we don't need a
+        // hasOwnProperty check.
+        if (key !== 'ref') {
+          propsWithoutRef[key] = nextProps[key];
+        }
       }
+    }
+    // Keep user props inside the cache box: older DevTools backends interpret
+    // fields such as stateNode.context and stateNode.measure as instance APIs.
+    const stateNode = workInProgress.stateNode;
+    if (
+      stateNode === null ||
+      (current !== null && stateNode === current.stateNode)
+    ) {
+      workInProgress.stateNode = {propsWithoutRef};
+    } else {
+      stateNode.propsWithoutRef = propsWithoutRef;
     }
   } else {
     propsWithoutRef = nextProps;
+    workInProgress.stateNode = null;
   }
 
   // The rest is a fork of updateFunctionComponent
@@ -1569,6 +1589,11 @@ export function replayFunctionComponent(
   // This function is used to replay a component that previously suspended,
   // after its data resolves. It's a simplified version of
   // updateFunctionComponent that reuses the hooks from the previous attempt.
+
+  if (workInProgress.tag === ForwardRef && 'ref' in nextProps) {
+    // The suspended attempt already prepared the props without `ref`.
+    nextProps = workInProgress.stateNode.propsWithoutRef;
+  }
 
   prepareToReadContext(workInProgress, renderLanes);
   if (enableSchedulingProfiler) {
