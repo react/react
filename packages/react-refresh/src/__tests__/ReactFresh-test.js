@@ -3754,6 +3754,113 @@ describe('ReactFresh', () => {
     }
   });
 
+  // https://github.com/facebook/react/issues/37804
+  it('does not retain roots that unmount before their first commit', async () => {
+    if (__DEV__) {
+      // Get a handle on the garbage collector without running the test with --expose-gc.
+      const v8 = require('v8');
+      const vm = require('vm');
+      v8.setFlagsFromString('--expose-gc');
+      const gc = vm.runInNewContext('gc');
+      v8.setFlagsFromString('--no-expose-gc');
+
+      const HelloV1 = () => {
+        return <p style={{color: 'blue'}}>Hello</p>;
+      };
+      $RefreshReg$(HelloV1, 'Hello');
+      await act(() => {
+        root.render(<HelloV1 />);
+      });
+      expect(ReactFreshRuntime._getMountedRootCount()).toBe(1);
+
+      // Render into a root and unmount it before the render commits, so the
+      // render and the unmount are processed in a single commit. This is what
+      // happens when a root is created in an effect and unmounted in its
+      // cleanup under StrictMode.
+      const containerRefs = [];
+      for (let i = 0; i < 5; i++) {
+        await act(() => {
+          const otherContainer = document.createElement('div');
+          containerRefs.push(new WeakRef(otherContainer));
+          const otherRoot = ReactDOMClient.createRoot(otherContainer);
+          otherRoot.render(<HelloV1 />);
+          otherRoot.unmount();
+        });
+      }
+      expect(ReactFreshRuntime._getMountedRootCount()).toBe(1);
+
+      const {setImmediate: realSetImmediate} = require('timers');
+      const tick = () => new Promise(resolve => realSetImmediate(resolve));
+      let retainedCount = containerRefs.length;
+      for (let i = 0; retainedCount > 0 && i < 10; i++) {
+        gc();
+        await tick();
+        retainedCount = containerRefs.filter(
+          ref => ref.deref() !== undefined,
+        ).length;
+        // deref() keeps the target alive until the end of the current task, so
+        // don't call gc() again on the same tick.
+        await tick();
+      }
+      expect(retainedCount).toBe(0);
+
+      // Hot reload still works for the root that stayed mounted.
+      const el = container.firstChild;
+      await patch(() => {
+        const HelloV2 = () => {
+          return <p style={{color: 'red'}}>Hello</p>;
+        };
+        $RefreshReg$(HelloV2, 'Hello');
+      });
+      expect(container.firstChild).toBe(el);
+      expect(el.style.color).toBe('red');
+    }
+  });
+
+  it('keeps working after a root fails while unmounting', async () => {
+    if (__DEV__) {
+      await render(() => {
+        function Hello() {
+          React.useEffect(() => {
+            return () => {
+              throw new Error('Cleanup');
+            };
+          }, []);
+          return <h1>Hi</h1>;
+        }
+        $RefreshReg$(Hello, 'Hello');
+
+        return Hello;
+      });
+      expect(container.innerHTML).toBe('<h1>Hi</h1>');
+
+      // The root captures the error after it has unmounted, so it is retried
+      // on edits even though there is nothing left to render.
+      await expect(
+        act(() => {
+          root.unmount();
+        }),
+      ).rejects.toThrow('Cleanup');
+      expect(container.innerHTML).toBe('');
+
+      // Retrying commits nothing without an error. This should not make the
+      // next hot update lose track of the root.
+      await patch(() => {
+        function Hello() {
+          return <h1>Ignored</h1>;
+        }
+        $RefreshReg$(Hello, 'Hello');
+      });
+      await patch(() => {
+        function Hello() {
+          return <h1>Ignored again</h1>;
+        }
+        $RefreshReg$(Hello, 'Hello');
+      });
+      expect(container.innerHTML).toBe('');
+    }
+  });
+
   it('remounts a failed root on update', async () => {
     if (__DEV__) {
       await render(() => {
