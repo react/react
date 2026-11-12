@@ -34,4 +34,21 @@ describe('ReactFlightStackConfigV8', () => {
       ['outerName', '/tmp/app.js', 2, 30, 0, 0, true],
     ]);
   });
+
+  // @gate __DEV__
+  it('marks an anonymous async frame as async in an already formatted stack', () => {
+    const error = new Error();
+    // An async function that has no name of its own, e.g. an anonymous async
+    // arrow that awaits, prints without a function name but keeps the `async `
+    // marker: `at async filename:line:column`.
+    error.stack =
+      'Error: boom\n' +
+      '    at inner (/tmp/app.js:1:44)\n' +
+      '    at async /tmp/app.js:2:16';
+
+    expect(parseStackTrace(error, 1)).toEqual([
+      ['inner', '/tmp/app.js', 1, 44, 0, 0, false],
+      ['', '/tmp/app.js', 2, 16, 0, 0, true],
+    ]);
+  });
 });
