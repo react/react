@@ -49,7 +49,7 @@
     "os-name": "^3.1.0",
     "process": "0.11.10",
     "raw-loader": "^3.1.0",
-    "rimraf": "^5.0.1",
+    "rimraf": "^6.1.4",
     "source-map-js": "^0.6.2",
     "style-loader": "^4.0.0",
     "terser-webpack-plugin": "^5.6.1",
