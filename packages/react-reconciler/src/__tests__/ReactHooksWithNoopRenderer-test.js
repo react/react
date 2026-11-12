@@ -824,6 +824,89 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(root).toMatchRenderedOutput(<span prop="Down" />);
     });
 
+    it('rebases a skipped eagerly bailed-out update on top of a render phase update', async () => {
+      let setState;
+
+      function App({step}) {
+        const [state, _setState] = useState(0);
+        setState = _setState;
+        Scheduler.log(`Render step=${step} state=${state}`);
+        if (state < step) {
+          _setState(step);
+        }
+        return <Text text={state} />;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<App step={0} />));
+      assertLog(['Render step=0 state=0', 0]);
+
+      // Set state to the same value. This bails out eagerly: nothing is
+      // scheduled, but the update is left in the queue (at DefaultLane) in
+      // case it needs to be rebased later.
+      await act(() => setState(0));
+      assertLog([]);
+
+      // Render at higher priority (SyncLane). The pending DefaultLane
+      // update is skipped and kept in the base queue.
+      await act(() => {
+        ReactNoop.flushSync(() => root.render(<App step={1} />));
+      });
+      assertLog([
+        'Render step=1 state=0',
+        // Render phase update:
+        'Render step=1 state=1',
+        1,
+        // Extra render at DefaultLane to process the skipped update, with
+        // the render phase update rebased on top of it. The state doesn't
+        // change, so the children bail out and nothing new is committed:
+        'Render step=1 state=1',
+      ]);
+      expect(root).toMatchRenderedOutput(<span prop={1} />);
+    });
+
+    it('regression: render phase update lost when rebasing a skipped update', async () => {
+      // Same as above, except the render phase update is guarded by a
+      // prevTarget state (the getDerivedStateFromProps pattern), so it does
+      // not re-fire during the rebase render. Previously the render phase
+      // update was dropped from the queue, so the rebase replayed only the
+      // stale bailed-out update and the committed state regressed to 'A'.
+      let setValue;
+
+      function App({target}) {
+        const [value, _setValue] = useState('A');
+        const [prevTarget, setPrevTarget] = useState(target);
+        setValue = _setValue;
+        Scheduler.log(`Render target=${target} value=${value}`);
+        if (target !== prevTarget) {
+          setPrevTarget(target);
+          _setValue(target);
+        }
+        return <Text text={value} />;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<App target="A" />));
+      assertLog(['Render target=A value=A', 'A']);
+
+      // Eagerly bails out but stays in the queue at DefaultLane.
+      await act(() => setValue('A'));
+      assertLog([]);
+
+      await act(() => {
+        ReactNoop.flushSync(() => root.render(<App target="B" />));
+      });
+      assertLog([
+        'Render target=B value=A',
+        'Render target=B value=B',
+        'B',
+        // Rebase render at DefaultLane; the state doesn't change, so the
+        // children bail out and nothing new is committed:
+        'Render target=B value=B',
+      ]);
+      expect(root).toMatchRenderedOutput(<span prop="B" />);
+    });
+
     // TODO: This should probably warn
     it('calling startTransition inside render phase', async () => {
       function App() {
