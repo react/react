@@ -31,7 +31,7 @@
   "devDependencies": {
     "cross-env": "^3.1.4",
     "process": "0.11.10",
-    "webpack": "^5.82.1",
+    "webpack": "^5.104.1",
     "webpack-cli": "^5.1.1",
     "workerize-loader": "^2.0.2"
   }

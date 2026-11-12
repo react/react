@@ -45,7 +45,7 @@
     "raw-loader": "^3.1.0",
     "style-loader": "^4.0.0",
     "util": "^0.10.4",
-    "webpack": "^5.82.1",
+    "webpack": "^5.104.1",
     "webpack-cli": "^5.1.1",
     "workerize-loader": "^2.0.2"
   }
