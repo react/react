@@ -1331,10 +1331,16 @@ fn lower_expression(
                     }
                     react_compiler_ast::patterns::PatternLike::MemberExpression(member) => {
                         // Member expression assignment: a.b = value or a[b] = value
-                        let right = lower_expression_to_temporary(builder, &expr.right)?;
+                        // The target reference (object, then computed key) is
+                        // evaluated before the right-hand side, matching TS
+                        // `lowerMemberAssignment`.
                         let left_loc = convert_base_loc(&member.base);
                         let object = lower_expression_to_temporary(builder, &member.object)?;
-                        let temp = if !member.computed
+                        enum MemberStoreKey {
+                            Literal(PropertyLiteral),
+                            Computed(Place),
+                        }
+                        let key = if !member.computed
                             || matches!(
                                 &*member.property,
                                 react_compiler_ast::expressions::Expression::NumericLiteral(_)
@@ -1342,53 +1348,45 @@ fn lower_expression(
                             match &*member.property {
                                 react_compiler_ast::expressions::Expression::Identifier(
                                     prop_id,
-                                ) => lower_value_to_temporary(
-                                    builder,
-                                    InstructionValue::PropertyStore {
-                                        object,
-                                        property: PropertyLiteral::String(prop_id.name.clone()),
-                                        value: right,
-                                        loc: left_loc,
-                                    },
-                                )?,
+                                ) => MemberStoreKey::Literal(PropertyLiteral::String(
+                                    prop_id.name.clone(),
+                                )),
                                 react_compiler_ast::expressions::Expression::NumericLiteral(
                                     num,
-                                ) => lower_value_to_temporary(
+                                ) => MemberStoreKey::Literal(PropertyLiteral::Number(
+                                    FloatValue::new(num.precise_value()),
+                                )),
+                                _ => MemberStoreKey::Computed(lower_expression_to_temporary(
                                     builder,
-                                    InstructionValue::PropertyStore {
-                                        object,
-                                        property: PropertyLiteral::Number(FloatValue::new(
-                                            num.precise_value(),
-                                        )),
-                                        value: right,
-                                        loc: left_loc,
-                                    },
-                                )?,
-                                _ => {
-                                    let prop =
-                                        lower_expression_to_temporary(builder, &member.property)?;
-                                    lower_value_to_temporary(
-                                        builder,
-                                        InstructionValue::ComputedStore {
-                                            object,
-                                            property: prop,
-                                            value: right,
-                                            loc: left_loc,
-                                        },
-                                    )?
-                                }
+                                    &member.property,
+                                )?),
                             }
                         } else {
-                            let prop = lower_expression_to_temporary(builder, &member.property)?;
-                            lower_value_to_temporary(
+                            MemberStoreKey::Computed(lower_expression_to_temporary(
                                 builder,
-                                InstructionValue::ComputedStore {
+                                &member.property,
+                            )?)
+                        };
+                        let right = lower_expression_to_temporary(builder, &expr.right)?;
+                        let temp = match key {
+                            MemberStoreKey::Literal(property) => lower_value_to_temporary(
+                                builder,
+                                InstructionValue::PropertyStore {
                                     object,
-                                    property: prop,
+                                    property,
                                     value: right,
                                     loc: left_loc,
                                 },
-                            )?
+                            )?,
+                            MemberStoreKey::Computed(property) => lower_value_to_temporary(
+                                builder,
+                                InstructionValue::ComputedStore {
+                                    object,
+                                    property,
+                                    value: right,
+                                    loc: left_loc,
+                                },
+                            )?,
                         };
                         Ok(InstructionValue::LoadLocal {
                             place: temp.clone(),
