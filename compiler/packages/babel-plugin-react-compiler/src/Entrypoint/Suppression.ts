@@ -91,11 +91,13 @@ export function findProgramSuppressions(
   let enablePattern: RegExp | null = null;
   if (ruleNames != null && ruleNames.length !== 0) {
     const rulePattern = `(${ruleNames.join('|')})`;
+    // oxlint reads the same directives as eslint, under its own prefix.
+    const linterPattern = '(?:eslint|oxlint)';
     disableNextLinePattern = new RegExp(
-      `eslint-disable-next-line ${rulePattern}`,
+      `${linterPattern}-disable-next-line ${rulePattern}`,
     );
-    disablePattern = new RegExp(`eslint-disable ${rulePattern}`);
-    enablePattern = new RegExp(`eslint-enable ${rulePattern}`);
+    disablePattern = new RegExp(`${linterPattern}-disable ${rulePattern}`);
+    enablePattern = new RegExp(`${linterPattern}-enable ${rulePattern}`);
   }
 
   const flowSuppressionPattern = new RegExp(
