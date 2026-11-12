@@ -3840,7 +3840,10 @@ fn lower_statement(
                 })?;
 
                 let test = if let Some(test_expr) = &case.test {
-                    Some(lower_reorderable_expression(builder, test_expr)?)
+                    // Case tests are lowered before the switch terminal, so they are
+                    // evaluated eagerly and in reverse order rather than lazily in source
+                    // order. Calls could observe that, so they are not allowed here.
+                    Some(lower_reorderable_expression(builder, test_expr, false)?)
                 } else {
                     None
                 };
@@ -5119,7 +5122,7 @@ fn lower_assignment_at(
 
             // Consequent: use default value
             let consequent = builder.try_enter(BlockKind::Value, |builder, _| {
-                let default_value = lower_reorderable_expression(builder, &pattern.right)?;
+                let default_value = lower_reorderable_expression(builder, &pattern.right, true)?;
                 lower_value_to_temporary(
                     builder,
                     InstructionValue::StoreLocal {
@@ -6617,8 +6620,9 @@ fn lower_object_property_key(
 fn lower_reorderable_expression(
     builder: &mut HirBuilder,
     expr: &react_compiler_ast::expressions::Expression,
+    allow_calls: bool,
 ) -> Result<Place, CompilerError> {
-    if !is_reorderable_expression(builder, expr, true) {
+    if !is_reorderable_expression(builder, expr, true, allow_calls) {
         builder.record_error(CompilerErrorDetail {
             category: ErrorCategory::Todo,
             reason: format!(
@@ -6637,6 +6641,7 @@ fn is_reorderable_expression(
     builder: &HirBuilder,
     expr: &react_compiler_ast::expressions::Expression,
     allow_local_identifiers: bool,
+    allow_calls: bool,
 ) -> bool {
     use react_compiler_ast::expressions::Expression;
     match expr {
@@ -6670,28 +6675,56 @@ fn is_reorderable_expression(
             matches!(
                 unary.operator,
                 UnaryOperator::Not | UnaryOperator::Plus | UnaryOperator::Neg
-            ) && is_reorderable_expression(builder, &unary.argument, allow_local_identifiers)
+            ) && is_reorderable_expression(
+                builder,
+                &unary.argument,
+                allow_local_identifiers,
+                allow_calls,
+            )
         }
         Expression::LogicalExpression(logical) => {
-            is_reorderable_expression(builder, &logical.left, allow_local_identifiers)
-                && is_reorderable_expression(builder, &logical.right, allow_local_identifiers)
+            is_reorderable_expression(builder, &logical.left, allow_local_identifiers, allow_calls)
+                && is_reorderable_expression(
+                    builder,
+                    &logical.right,
+                    allow_local_identifiers,
+                    allow_calls,
+                )
         }
         Expression::ConditionalExpression(cond) => {
-            is_reorderable_expression(builder, &cond.test, allow_local_identifiers)
-                && is_reorderable_expression(builder, &cond.consequent, allow_local_identifiers)
-                && is_reorderable_expression(builder, &cond.alternate, allow_local_identifiers)
+            is_reorderable_expression(builder, &cond.test, allow_local_identifiers, allow_calls)
+                && is_reorderable_expression(
+                    builder,
+                    &cond.consequent,
+                    allow_local_identifiers,
+                    allow_calls,
+                )
+                && is_reorderable_expression(
+                    builder,
+                    &cond.alternate,
+                    allow_local_identifiers,
+                    allow_calls,
+                )
         }
         Expression::ArrayExpression(arr) => {
             arr.elements.iter().all(|element| {
                 match element {
-                    Some(e) => is_reorderable_expression(builder, e, allow_local_identifiers),
+                    Some(e) => {
+                        is_reorderable_expression(builder, e, allow_local_identifiers, allow_calls)
+                    }
                     None => false, // holes are not reorderable
                 }
             })
         }
         Expression::ObjectExpression(obj) => obj.properties.iter().all(|prop| match prop {
             react_compiler_ast::expressions::ObjectExpressionProperty::ObjectProperty(p) => {
-                !p.computed && is_reorderable_expression(builder, &p.value, allow_local_identifiers)
+                !p.computed
+                    && is_reorderable_expression(
+                        builder,
+                        &p.value,
+                        allow_local_identifiers,
+                        allow_calls,
+                    )
             }
             _ => false,
         }),
@@ -6721,45 +6754,73 @@ fn is_reorderable_expression(
             match arrow.body.as_ref() {
                 ArrowFunctionBody::BlockStatement(block) => block.body.is_empty(),
                 ArrowFunctionBody::Expression(body_expr) => {
-                    is_reorderable_expression(builder, body_expr, false)
+                    is_reorderable_expression(builder, body_expr, false, allow_calls)
                 }
             }
         }
         Expression::CallExpression(call) => {
-            is_reorderable_expression(builder, &call.callee, allow_local_identifiers)
-                && call
-                    .arguments
-                    .iter()
-                    .all(|arg| is_reorderable_expression(builder, arg, allow_local_identifiers))
+            allow_calls
+                && is_reorderable_expression(
+                    builder,
+                    &call.callee,
+                    allow_local_identifiers,
+                    allow_calls,
+                )
+                && call.arguments.iter().all(|arg| {
+                    is_reorderable_expression(builder, arg, allow_local_identifiers, allow_calls)
+                })
         }
         Expression::NewExpression(new_expr) => {
-            is_reorderable_expression(builder, &new_expr.callee, allow_local_identifiers)
-                && new_expr
-                    .arguments
-                    .iter()
-                    .all(|arg| is_reorderable_expression(builder, arg, allow_local_identifiers))
+            allow_calls
+                && is_reorderable_expression(
+                    builder,
+                    &new_expr.callee,
+                    allow_local_identifiers,
+                    allow_calls,
+                )
+                && new_expr.arguments.iter().all(|arg| {
+                    is_reorderable_expression(builder, arg, allow_local_identifiers, allow_calls)
+                })
         }
         // TypeScript/Flow type wrappers: recurse into the inner expression
-        Expression::TSAsExpression(ts) => {
-            is_reorderable_expression(builder, &ts.expression, allow_local_identifiers)
-        }
-        Expression::TSSatisfiesExpression(ts) => {
-            is_reorderable_expression(builder, &ts.expression, allow_local_identifiers)
-        }
-        Expression::TSNonNullExpression(ts) => {
-            is_reorderable_expression(builder, &ts.expression, allow_local_identifiers)
-        }
-        Expression::TSInstantiationExpression(ts) => {
-            is_reorderable_expression(builder, &ts.expression, allow_local_identifiers)
-        }
-        Expression::TypeCastExpression(tc) => {
-            is_reorderable_expression(builder, &tc.expression, allow_local_identifiers)
-        }
-        Expression::TSTypeAssertion(ts) => {
-            is_reorderable_expression(builder, &ts.expression, allow_local_identifiers)
-        }
+        Expression::TSAsExpression(ts) => is_reorderable_expression(
+            builder,
+            &ts.expression,
+            allow_local_identifiers,
+            allow_calls,
+        ),
+        Expression::TSSatisfiesExpression(ts) => is_reorderable_expression(
+            builder,
+            &ts.expression,
+            allow_local_identifiers,
+            allow_calls,
+        ),
+        Expression::TSNonNullExpression(ts) => is_reorderable_expression(
+            builder,
+            &ts.expression,
+            allow_local_identifiers,
+            allow_calls,
+        ),
+        Expression::TSInstantiationExpression(ts) => is_reorderable_expression(
+            builder,
+            &ts.expression,
+            allow_local_identifiers,
+            allow_calls,
+        ),
+        Expression::TypeCastExpression(tc) => is_reorderable_expression(
+            builder,
+            &tc.expression,
+            allow_local_identifiers,
+            allow_calls,
+        ),
+        Expression::TSTypeAssertion(ts) => is_reorderable_expression(
+            builder,
+            &ts.expression,
+            allow_local_identifiers,
+            allow_calls,
+        ),
         Expression::ParenthesizedExpression(p) => {
-            is_reorderable_expression(builder, &p.expression, allow_local_identifiers)
+            is_reorderable_expression(builder, &p.expression, allow_local_identifiers, allow_calls)
         }
         _ => false,
     }
