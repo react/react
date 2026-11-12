@@ -281,8 +281,12 @@ module.exports = {
             loader: 'css-loader',
             options: {
               sourceMap: __DEV__,
-              modules: true,
-              localIdentName: '[local]___[hash:base64:5]',
+              modules: {
+                localIdentName: '[local]___[hash:base64:5]',
+                // Keep `import styles from './Foo.css'` working (css-loader 7 defaults to named exports).
+                namedExport: false,
+                exportLocalsConvention: 'as-is',
+              },
             },
           },
         ],
