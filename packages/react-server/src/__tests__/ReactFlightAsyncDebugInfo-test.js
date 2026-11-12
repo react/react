@@ -4160,4 +4160,223 @@ describe('ReactFlightAsyncDebugInfo', () => {
       expect(ioEntry.awaited.name).toBe('getData');
     }
   });
+
+  describe('memory', () => {
+    let gc;
+    let tick;
+
+    beforeEach(() => {
+      // Get a handle on the garbage collector without running the test with --expose-gc.
+      const v8 = require('v8');
+      const vm = require('vm');
+      v8.setFlagsFromString('--expose-gc');
+      gc = vm.runInNewContext('gc');
+      v8.setFlagsFromString('--no-expose-gc');
+
+      // The global setImmediate is patched to setTimeout in this test which
+      // registers as new I/O in async_hooks. Use the real one to yield.
+      const {setImmediate: realSetImmediate} = require('timers');
+      tick = () => new Promise(resolve => realSetImmediate(resolve));
+    });
+
+    async function isCollected(weakRef, attempts = 10) {
+      // deref() keeps the target alive until the end of the current task, and
+      // the destroy() hooks of collected promises fire asynchronously, so
+      // check on a later tick than the gc() call.
+      for (let i = 0; i < attempts; i++) {
+        gc();
+        await tick();
+        if (weakRef.deref() === undefined) {
+          return true;
+        }
+        await tick();
+      }
+      return false;
+    }
+
+    // Functions are serialized by name in debug info, so a value kept in this
+    // closure never has to be serialized as part of the component's props.
+    function createStore() {
+      let value;
+      return {
+        set(newValue) {
+          value = newValue;
+        },
+        get() {
+          return value;
+        },
+      };
+    }
+
+    // Renders on the server only. A Flight Client in the same process would
+    // inherit the request's async context in its timers, and keep the request
+    // alive for as long as those are pending.
+    async function renderToCompletion(element) {
+      const stream = ReactServerDOMServer.renderToPipeableStream(element);
+      const writable = new Stream.Writable({
+        write(chunk, encoding, callback) {
+          callback();
+        },
+      });
+      const finished = new Promise(resolve => writable.on('finish', resolve));
+      stream.pipe(writable);
+      await finished;
+    }
+
+    function Unrelated() {
+      return null;
+    }
+
+    // Renders <Component store={store} /> to completion and returns a WeakRef
+    // to the store, which nothing but the component's props still references.
+    async function renderWithStore(Component) {
+      const store = createStore();
+      await renderToCompletion(<Component store={store} />);
+      // The renderer remembers the last component it rendered. Render another
+      // one so that it's not the component under test.
+      await renderToCompletion(<Unrelated />);
+      return new WeakRef(store);
+    }
+
+    it('releases the props of a component after its render completes', async () => {
+      function Component({store}) {
+        // eslint-disable-next-line no-new
+        new Promise(() => {});
+        return null;
+      }
+
+      const storeRef = await renderWithStore(Component);
+
+      expect(await isCollected(storeRef)).toBe(true);
+    });
+
+    // Before AsyncLocalStorage was built on AsyncContextFrame (Node.js 24), a
+    // Promise created inside run() keeps the store alive for as long as the
+    // Promise is alive. The store is the component, so on those versions it's
+    // the platform that retains it and there's nothing for us to release.
+    async function promisesRetainTheirAsyncLocalStorageStore() {
+      const {AsyncLocalStorage} = require('async_hooks');
+      const storage = new AsyncLocalStorage();
+      const promises = [];
+      const storeRef = (() => {
+        const store = {};
+        storage.run(store, () => {
+          promises.push(new Promise(() => {}));
+        });
+        return new WeakRef(store);
+      })();
+      const collected = await isCollected(storeRef, 4);
+      return promises.length === 1 && !collected;
+    }
+
+    it('releases the props of a component while a promise it created is still referenced', async () => {
+      if (await promisesRetainTheirAsyncLocalStorageStore()) {
+        return;
+      }
+
+      const longLived = [];
+
+      function Component({store}) {
+        longLived.push(new Promise(() => {}));
+        return null;
+      }
+
+      const storeRef = await renderWithStore(Component);
+
+      expect(longLived.length).toBe(1);
+      expect(await isCollected(storeRef)).toBe(true);
+    });
+
+    it('releases the props of a component that stored a promise it created in them', async () => {
+      function Component({store}) {
+        store.set(new Promise(() => {}));
+        return null;
+      }
+
+      const storeRef = await renderWithStore(Component);
+
+      expect(await isCollected(storeRef)).toBe(true);
+    });
+
+    it('releases the props of a component that appended to a long-lived promise chain', async () => {
+      let chain = Promise.resolve();
+
+      function Component({store}) {
+        chain = chain.then(() => {});
+        return null;
+      }
+
+      const storeRef = await renderWithStore(Component);
+      // Move the chain on, so that nothing references the promise that the
+      // component created any more.
+      chain = chain.then(() => {});
+
+      expect(await isCollected(storeRef)).toBe(true);
+    });
+
+    it('releases the props of a component that resolved a promise awaited by a long-lived consumer', async () => {
+      let resolveNext;
+      let consumed = 0;
+      (async () => {
+        for (;;) {
+          await new Promise(resolve => {
+            resolveNext = resolve;
+          });
+          consumed++;
+        }
+      })();
+
+      async function Component({store}) {
+        await Promise.resolve();
+        resolveNext();
+        return null;
+      }
+
+      const storeRef = await renderWithStore(Component);
+
+      expect(consumed).toBe(1);
+      expect(await isCollected(storeRef)).toBe(true);
+    });
+
+    it('keeps the owner of I/O that was started by a component that has finished rendering', async () => {
+      let cached;
+
+      function Starter() {
+        cached = delay(20);
+        return 'started';
+      }
+
+      async function Awaiter() {
+        // By now nothing in the render references Starter any more. Give the
+        // garbage collector a chance to collect it before we await its I/O.
+        for (let i = 0; i < 3; i++) {
+          gc();
+          await tick();
+        }
+        await cached;
+        return 'awaited';
+      }
+
+      const stream = ReactServerDOMServer.renderToPipeableStream([
+        <Starter key="starter" />,
+        <Awaiter key="awaiter" />,
+      ]);
+      const readable = new Stream.PassThrough(streamOptions);
+      const result = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: {},
+      });
+      stream.pipe(readable);
+      const [, awaiter] = await result;
+      await finishLoadingStream(readable);
+
+      if (__DEV__ && gate(flags => flags.enableComponentPerformanceTrack)) {
+        const ioEntry = awaiter._debugInfo.find(
+          info => info.awaited != null && info.awaited.name === 'delay',
+        );
+        expect(ioEntry.awaited.owner.name).toBe('Starter');
+        expect(ioEntry.owner.name).toBe('Awaiter');
+      }
+    });
+  });
 });
