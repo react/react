@@ -3518,10 +3518,12 @@ describe('ReactDOMFizzServer', () => {
     },
   );
 
-  // Disabled because of a WWW late mutations regression.
-  // We may want to re-enable this if we figure out why.
+  // The message used to report that a boundary's primary children could only be
+  // client rendered. In DEV we surface the server's own error message.
+  const serverErrorClientRenderMessage = __DEV__
+    ? 'onRecoverableError: Switched to client rendering because the server rendering errored: Oops.'
+    : 'onRecoverableError: The server could not finish this Suspense boundary, likely due to an error during server rendering. Switched to client rendering.';
 
-  // @gate FIXME
   it('does not recreate the fallback if server errors and hydration suspends', async () => {
     let isClient = false;
 
@@ -3558,6 +3560,7 @@ describe('ReactDOMFizzServer', () => {
     assertLog(['[s!] Oops.']);
 
     // The server could not complete this boundary, so we'll retry on the client.
+    console.log('PROBE html-before:', container.innerHTML);
     const serverFallback = container.getElementsByTagName('p')[0];
     expect(serverFallback.innerHTML).toBe('Loading...');
 
@@ -3565,14 +3568,16 @@ describe('ReactDOMFizzServer', () => {
     isClient = true;
     ReactDOMClient.hydrateRoot(container, <App />, {
       onRecoverableError(error) {
-        Scheduler.log('onRecoverableError: ' + error.message);
+        Scheduler.log(
+          'onRecoverableError: ' + error.message.replace(/\s+/g, ' '),
+        );
         if (error.cause) {
           Scheduler.log('Cause: ' + normalizeError(error.cause.message));
         }
       },
     });
-    // This should not report any errors yet.
-    await waitForAll([]);
+    // The primary children could only be client rendered, which is recoverable.
+    await waitForAll([serverErrorClientRenderMessage]);
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <p>Loading...</p>
@@ -3590,12 +3595,11 @@ describe('ReactDOMFizzServer', () => {
     await act(() => {
       resolveText('Yay!');
     });
-    await waitForAll([
-      'Yay!',
-      'onRecoverableError: The server could not finish this Suspense boundary, ' +
-        'likely due to an error during server rendering. ' +
-        'Switched to client rendering.',
-    ]);
+    console.log(
+      'PROBE DBG2TAIL: ' + JSON.stringify((globalThis.__DBG || []).slice(24)),
+    );
+    await waitForAll(['Yay!']);
+    jest.runAllTimers();
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>Yay!</span>
@@ -3603,10 +3607,6 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
-  // Disabled because of a WWW late mutations regression.
-  // We may want to re-enable this if we figure out why.
-
-  // @gate FIXME
   it(
     'does not recreate the fallback if server errors and hydration suspends ' +
       'and root receives a transition',
@@ -3653,14 +3653,16 @@ describe('ReactDOMFizzServer', () => {
       isClient = true;
       const root = ReactDOMClient.hydrateRoot(container, <App color="red" />, {
         onRecoverableError(error) {
-          Scheduler.log('onRecoverableError: ' + error.message);
+          Scheduler.log(
+            'onRecoverableError: ' + error.message.replace(/\s+/g, ' '),
+          );
           if (error.cause) {
             Scheduler.log('Cause: ' + normalizeError(error.cause.message));
           }
         },
       });
-      // This should not report any errors yet.
-      await waitForAll([]);
+      // The primary children could only be client rendered, which is recoverable.
+      await waitForAll([serverErrorClientRenderMessage]);
       expect(getVisibleChildren(container)).toEqual(
         <div>
           <p>Loading...</p>
@@ -3687,13 +3689,8 @@ describe('ReactDOMFizzServer', () => {
       await act(() => {
         resolveText('Yay!');
       });
-      await waitForAll([
-        'Yay! (red)',
-        'onRecoverableError: The server could not finish this Suspense boundary, ' +
-          'likely due to an error during server rendering. ' +
-          'Switched to client rendering.',
-        'Yay! (blue)',
-      ]);
+      await waitForAll(['Yay! (blue)']);
+      jest.runAllTimers();
       expect(getVisibleChildren(container)).toEqual(
         <div>
           <span>Yay! (blue)</span>
@@ -3702,12 +3699,8 @@ describe('ReactDOMFizzServer', () => {
     },
   );
 
-  // Disabled because of a WWW late mutations regression.
-  // We may want to re-enable this if we figure out why.
-
-  // @gate FIXME
   it(
-    'recreates the fallback if server errors and hydration suspends but ' +
+    'updates the fallback if server errors and hydration suspends but ' +
       'client receives new props',
     async () => {
       let isClient = false;
@@ -3759,15 +3752,17 @@ describe('ReactDOMFizzServer', () => {
         <App fallbackText="Loading..." />,
         {
           onRecoverableError(error) {
-            Scheduler.log('onRecoverableError: ' + error.message);
+            Scheduler.log(
+              'onRecoverableError: ' + error.message.replace(/\s+/g, ' '),
+            );
             if (error.cause) {
               Scheduler.log('Cause: ' + normalizeError(error.cause.message));
             }
           },
         },
       );
-      // This should not report any errors yet.
-      await waitForAll([]);
+      // The primary children could only be client rendered, which is recoverable.
+      await waitForAll([serverErrorClientRenderMessage]);
       expect(getVisibleChildren(container)).toEqual(
         <div>
           <p>Loading...</p>
@@ -3786,25 +3781,24 @@ describe('ReactDOMFizzServer', () => {
       root.render(<App fallbackText="More loading..." />);
       await waitForAll([]);
       jest.runAllTimers();
-      assertLog([
-        'onRecoverableError: The server could not finish this Suspense boundary, ' +
-          'likely due to an error during server rendering. ' +
-          'Switched to client rendering.',
-      ]);
+      assertLog([]);
       expect(getVisibleChildren(container)).toEqual(
         <div>
           <p>More loading...</p>
         </div>,
       );
-      // This should be a clean render without reusing DOM.
+      // The fallback props changed, so the client render wins over the server
+      // markup, but it can still reuse the same node.
       const clientFallback2 = container.getElementsByTagName('p')[0];
-      expect(clientFallback2).not.toBe(clientFallback1);
+      expect(clientFallback2).toBe(clientFallback1);
+      expect(clientFallback2.innerHTML).toBe('More loading...');
 
       // Verify we can still do a clean content render after.
       await act(() => {
         resolveText('Yay!');
       });
       await waitForAll(['Yay!']);
+      jest.runAllTimers();
       expect(getVisibleChildren(container)).toEqual(
         <div>
           <span>Yay!</span>

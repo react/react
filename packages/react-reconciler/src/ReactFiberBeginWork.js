@@ -247,6 +247,9 @@ import {
   claimNextHydratableSuspenseInstance,
   warnIfHydrating,
   queueHydrationError,
+  pauseHydratingPrimaryChildren,
+  resumeHydratingFallbackChildren,
+  getIsHydrationPaused,
 } from './ReactFiberHydrationContext';
 import {
   constructClassInstance,
@@ -465,7 +468,7 @@ function updateForwardRef(
     return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
   }
 
-  if (getIsHydrating() && hasId) {
+  if (getIsHydrating() && !getIsHydrationPaused() && hasId) {
     pushMaterializedTreeId(workInProgress);
   }
 
@@ -1157,7 +1160,7 @@ function updateActivityComponent(
     // Special path for hydration
     // If we're currently hydrating, try to hydrate this boundary.
     // Hidden Activity boundaries are not emitted on the server.
-    if (getIsHydrating()) {
+    if (getIsHydrating() && !getIsHydrationPaused()) {
       if (nextProps.mode === 'hidden') {
         // SSR doesn't render hidden Activity so it shouldn't hydrate,
         // even at offscreen lane. Defer to a client rendered offscreen lane.
@@ -1364,6 +1367,29 @@ function updateFragment(
   workInProgress: Fiber,
   renderLanes: Lanes,
 ) {
+  if (
+    (workInProgress.flags & Hydrating) !== NoFlags &&
+    workInProgress.return !== null &&
+    workInProgress.return.tag === SuspenseComponent
+  ) {
+    // This is the server-rendered fallback of a Suspense boundary that suspended
+    // during hydration. Unlike the primary children, which have no server
+    // markup, this fallback was rendered by the server. Resume hydrating the
+    // boundary so the existing DOM is reused instead of recreated.
+    if (getIsHydrationPaused()) {
+      resumeHydratingFallbackChildren();
+    }
+    const suspenseState: SuspenseState = (workInProgress.memoizedState: any);
+    if (suspenseState.dehydrated !== null) {
+      reenterHydrationStateFromDehydratedSuspenseInstance(
+        workInProgress.return,
+        suspenseState.dehydrated,
+        suspenseState.treeContext,
+        // Keep the errors queued while rendering the primary children.
+        true,
+      );
+    }
+  }
   const nextChildren = workInProgress.pendingProps;
   markRef(current, workInProgress);
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
@@ -1548,7 +1574,7 @@ function updateFunctionComponent(
     return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
   }
 
-  if (getIsHydrating() && hasId) {
+  if (getIsHydrating() && !getIsHydrationPaused() && hasId) {
     pushMaterializedTreeId(workInProgress);
   }
 
@@ -1591,7 +1617,7 @@ export function replayFunctionComponent(
     return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
   }
 
-  if (getIsHydrating() && hasId) {
+  if (getIsHydrating() && !getIsHydrationPaused() && hasId) {
     pushMaterializedTreeId(workInProgress);
   }
 
@@ -2045,7 +2071,7 @@ function updateHostHoistable(
     if (resource) {
       workInProgress.memoizedState = resource;
     } else {
-      if (!getIsHydrating()) {
+      if (!getIsHydrating() || getIsHydrationPaused()) {
         // This is not a Resource Hoistable and we aren't hydrating so we construct the instance.
         workInProgress.stateNode = createHoistableInstance(
           workInProgress.type,
@@ -2434,7 +2460,7 @@ function updateSuspenseComponent(
 
     // Special path for hydration
     // If we're currently hydrating, try to hydrate this boundary.
-    if (getIsHydrating()) {
+    if (getIsHydrating() && !getIsHydrationPaused()) {
       // We must push the suspense handler context *before* attempting to
       // hydrate, to avoid a mismatch in case it errors.
       if (showFallback) {
@@ -2907,6 +2933,7 @@ function mountSuspenseFallbackAfterRetryWithoutHydrating(
   primaryChildren: $FlowFixMe,
   fallbackChildren: $FlowFixMe,
   renderLanes: Lanes,
+  suspenseState: SuspenseState | null,
 ) {
   const fiberMode = workInProgress.mode;
   const primaryChildProps: OffscreenProps = {
@@ -2924,18 +2951,46 @@ function mountSuspenseFallbackAfterRetryWithoutHydrating(
     renderLanes,
     null,
   );
-  // Needs a placement effect because the parent (the Suspense
-  // boundary) already mounted but this is a new fiber.
-  fallbackChildFragment.flags |= Placement;
+  if (suspenseState !== null) {
+    // The server already rendered this fallback, and it's still in the DOM. We
+    // can hydrate it instead of deleting it and mounting a new one, which is
+    // extra work and would restart animations. We don't enter hydration state
+    // here because the primary children rendered below us have no server
+    // markup; only the fallback does. Instead we enter it when we begin work on
+    // the fallback (see updateFragment).
+    if (getIsHydrating()) {
+      // If a parent hydration is still in progress, pause it: the primary
+      // children rendered below have no server markup to claim.
+      pauseHydratingPrimaryChildren();
+    }
+    fallbackChildFragment.flags |= Hydrating;
+    // Stash the dehydrated state on the fallback fragment. The dehydrated marker
+    // fiber is about to be dropped, and the boundary itself switches to the
+    // regular (non hydrated) fallback state, but popHydrationState still needs
+    // the instance to move the cursor past the boundary. We can't use the
+    // fragment's stateNode for this because it holds its FragmentInstance.
+    fallbackChildFragment.memoizedState = suspenseState;
+  } else {
+    // Needs a placement effect because the parent (the Suspense
+    // boundary) already mounted but this is a new fiber.
+    fallbackChildFragment.flags |= Placement;
+  }
 
   primaryChildFragment.return = workInProgress;
   fallbackChildFragment.return = workInProgress;
   primaryChildFragment.sibling = fallbackChildFragment;
   workInProgress.child = primaryChildFragment;
 
-  if (disableLegacyMode || (workInProgress.mode & ConcurrentMode) !== NoMode) {
+  if (
+    suspenseState === null &&
+    (disableLegacyMode || (workInProgress.mode & ConcurrentMode) !== NoMode)
+  ) {
     // We will have dropped the effect list which contains the
     // deletion. We need to reconcile to delete the current child.
+    // When we hydrate the server fallback, the dehydrated fragment is already
+    // dropped the same way the first hydration pass drops it, so we must not
+    // delete it. Deleting it would clear the boundary's DOM, including the
+    // nodes we just claimed for the fallback.
     reconcileChildFibers(workInProgress, current.child, null, renderLanes);
   }
 
@@ -2979,9 +3034,14 @@ function updateDehydratedSuspenseComponent(
     // This is the first render pass. Attempt to hydrate.
     pushPrimaryTreeSuspenseHandler(workInProgress);
 
-    // We should never be hydrating at this point because it is the first pass,
-    // but after we've already committed once.
-    warnIfHydrating();
+    // Normally we should never be hydrating at this point because it is the
+    // first pass, but after we've already committed once. The exception is a
+    // boundary whose server render failed: we client render those, and if the
+    // fallback was hydrated in place we may re-enter the boundary while the
+    // rest of the tree is still hydrating.
+    if (!isSuspenseInstanceFallback(suspenseInstance)) {
+      warnIfHydrating();
+    }
 
     if (includesSomeLane(renderLanes, OffscreenLane as Lane)) {
       // If we're rendering Offscreen and we're entering the activity then it's possible
@@ -3161,10 +3221,23 @@ function updateDehydratedSuspenseComponent(
     // something either suspended or errored.
 
     if (workInProgress.flags & ForceClientRender) {
+      workInProgress.flags &= ~ForceClientRender;
+      if ((workInProgress.flags & Hydrating) !== NoFlags) {
+        // The error happened while hydrating the server fallback. Client render
+        // the fallback instead of retrying the primary, which would only suspend
+        // again.
+        return mountSuspenseFallbackAfterRetry(
+          current,
+          workInProgress,
+          nextProps,
+          didPrimaryChildrenDefer,
+          renderLanes,
+          null,
+        );
+      }
       // Something errored during hydration. Try again without hydrating.
       // The error should've already been logged in throwException.
       pushPrimaryTreeSuspenseHandler(workInProgress);
-      workInProgress.flags &= ~ForceClientRender;
       return retrySuspenseComponentWithoutHydrating(
         current,
         workInProgress,
@@ -3187,29 +3260,69 @@ function updateDehydratedSuspenseComponent(
     } else {
       // Suspended but we should no longer be in dehydrated mode.
       // Therefore we now have to render the fallback.
-      pushFallbackTreeSuspenseHandler(workInProgress);
-
-      const nextPrimaryChildren = nextProps.children;
-      const nextFallbackChildren = nextProps.fallback;
-      mountSuspenseFallbackAfterRetryWithoutHydrating(
+      // If the server rendered the fallback for this boundary (rather than
+      // primary content that we failed to hydrate), the fallback is already in
+      // the DOM. Hydrate it so we don't delete and recreate it.
+      const canHydrateFallback =
+        supportsHydration &&
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        // Only try this once per render. If we already attempted to hydrate the
+        // fallback and it mismatched, the next pass client renders instead. The
+        // current fiber survives re-renders within a render, the work in
+        // progress fiber does not.
+        (current.flags & Hydrating) === NoFlags;
+      if (canHydrateFallback) {
+        current.flags |= Hydrating;
+        workInProgress.flags |= Hydrating;
+      }
+      return mountSuspenseFallbackAfterRetry(
         current,
         workInProgress,
-        nextPrimaryChildren,
-        nextFallbackChildren,
-        renderLanes,
-      );
-      const primaryChildFragment: Fiber = workInProgress.child as any;
-      primaryChildFragment.memoizedState =
-        mountSuspenseOffscreenState(renderLanes);
-      primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
-        current,
+        nextProps,
         didPrimaryChildrenDefer,
         renderLanes,
+        canHydrateFallback ? suspenseState : null,
       );
-      workInProgress.memoizedState = SUSPENDED_MARKER;
-      return bailoutOffscreenComponent(null, primaryChildFragment);
     }
   }
+}
+
+function mountSuspenseFallbackAfterRetry(
+  current: Fiber,
+  workInProgress: Fiber,
+  nextProps: SuspenseProps,
+  didPrimaryChildrenDefer: boolean,
+  renderLanes: Lanes,
+  suspenseState: SuspenseState | null,
+): Fiber | null {
+  if (suspenseState !== null) {
+    // We're hydrating the server fallback, so the boundary is the handler for
+    // it. That way a mismatch is recoverable like any other hydration mismatch
+    // instead of bubbling out of the boundary.
+    pushPrimaryTreeSuspenseHandler(workInProgress);
+  } else {
+    pushFallbackTreeSuspenseHandler(workInProgress);
+  }
+
+  const nextPrimaryChildren = nextProps.children;
+  const nextFallbackChildren = nextProps.fallback;
+  mountSuspenseFallbackAfterRetryWithoutHydrating(
+    current,
+    workInProgress,
+    nextPrimaryChildren,
+    nextFallbackChildren,
+    renderLanes,
+    suspenseState,
+  );
+  const primaryChildFragment: Fiber = workInProgress.child as any;
+  primaryChildFragment.memoizedState = mountSuspenseOffscreenState(renderLanes);
+  primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
+    current,
+    didPrimaryChildrenDefer,
+    renderLanes,
+  );
+  workInProgress.memoizedState = SUSPENDED_MARKER;
+  return bailoutOffscreenComponent(null, primaryChildFragment);
 }
 
 function scheduleSuspenseWorkOnFiber(
@@ -3489,7 +3602,10 @@ function updateSuspenseListComponent(
     reconcileChildren(current, workInProgress, newChildren, renderLanes);
   }
   // Read how many children forks this set pushed so we can push it every time we retry.
-  const treeForkCount = getIsHydrating() ? getForksAtLevel(workInProgress) : 0;
+  const treeForkCount =
+    getIsHydrating() && !getIsHydrationPaused()
+      ? getForksAtLevel(workInProgress)
+      : 0;
 
   if (!shouldForceFallback) {
     const didSuspendBefore =
