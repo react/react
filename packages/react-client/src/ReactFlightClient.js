@@ -398,6 +398,7 @@ type Response = {
   _timeOrigin: number, // Profiling-only
   _pendingInitialRender: null | TimeoutID, // Profiling-only,
   _pendingChunks: number, // DEV-only
+  _missingChunks: null | Set<number>, // DEV-only
   _weakResponse: WeakResponse, // DEV-only
   _debugRootOwner?: null | ReactComponentInfo, // DEV-only
   _debugRootStack?: null | Error, // DEV-only
@@ -1301,11 +1302,14 @@ export function reportGlobalError(
   const response = unwrapWeakResponse(weakResponse);
   response._closed = true;
   response._closedReason = error;
-  response._chunks.forEach(chunk => {
+  response._chunks.forEach((chunk, id) => {
     // If this chunk was already resolved or errored, it won't
     // trigger an error but if it wasn't then we need to
     // because we won't be getting any new data to resolve it.
     if (chunk.status === PENDING) {
+      if (__DEV__ && response._missingChunks !== null) {
+        response._missingChunks.add(id);
+      }
       triggerErrorOnChunk(response, chunk, error);
     } else if (enableFlightWeakThenables && chunk.status === PENDING_WEAK) {
       // A weak Promise reference may never be emitted by the server. It
@@ -1664,6 +1668,11 @@ function getChunk(response: Response, id: number): SomeChunk<any> {
   let chunk = chunks.get(id);
   if (!chunk) {
     if (response._closed) {
+      if (__DEV__ && response._missingChunks !== null) {
+        // We record this missing chunk here because it did not exist when the
+        // response closed.
+        response._missingChunks.add(id);
+      }
       if (response._allowPartialStream) {
         // For partial streams, chunks accessed after close should be HALTED
         // (never resolve).
@@ -2337,6 +2346,20 @@ function getOutlinedModel<T>(
   const path =
     reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
   const chunk = getChunk(response, id);
+  if (
+    __DEV__ &&
+    response._closed &&
+    parentObject[0] === REACT_ELEMENT_TYPE &&
+    // Slots 4 and 5 hold the element's owner and debug stack.
+    (key === '4' || key === '5')
+  ) {
+    const missingChunks = response._missingChunks;
+    // An unwired debug channel can leave owner and stack records absent. They
+    // remain optional when a lazy element is first initialized after close.
+    if (missingChunks !== null && missingChunks.has(id)) {
+      return null as any;
+    }
+  }
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (initializingChunk !== null && isArray(initializingChunk._children)) {
       initializingChunk._children.push(chunk);
@@ -3066,6 +3089,12 @@ function ResponseInstance(
   }
   if (__DEV__) {
     this._pendingChunks = 0;
+    // We track missing chunks only when no readable debug channel was supplied.
+    // Closing the response clears _debugChannel, so late reads cannot check it.
+    this._missingChunks =
+      debugChannel === undefined || !debugChannel.hasReadable
+        ? new Set()
+        : null;
     this._weakResponse = {
       weak: new WeakRef(this),
       response: this,
@@ -5733,11 +5762,14 @@ export function close(weakResponse: WeakResponse): void {
   if (response._allowPartialStream) {
     // For partial streams, we halt pending chunks instead of erroring them.
     response._closed = true;
-    response._chunks.forEach(chunk => {
+    response._chunks.forEach((chunk, id) => {
       if (
         chunk.status === PENDING ||
         (enableFlightWeakThenables && chunk.status === PENDING_WEAK)
       ) {
+        if (__DEV__ && response._missingChunks !== null) {
+          response._missingChunks.add(id);
+        }
         haltChunk(response, chunk);
       } else if (chunk.status === INITIALIZED && chunk.reason !== null) {
         // Stream chunk - close gracefully instead of erroring.
