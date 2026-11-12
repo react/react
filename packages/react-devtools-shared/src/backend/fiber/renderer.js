@@ -139,6 +139,8 @@ import {
   ioExistsInSuspenseAncestor,
   getAwaitInSuspendedByFromIO,
   getVirtualEndTime,
+  isLaterStreamEntry,
+  isRSCStreamIO,
 } from './shared/DevToolsFiberSuspense';
 
 import {
@@ -5655,10 +5657,7 @@ export function attach(
             }
           }
           const newIO = asyncInfo.awaited;
-          if (
-            (newIO.name === 'RSC stream' || newIO.name === 'rsc stream') &&
-            newIO.value != null
-          ) {
+          if (isRSCStreamIO(newIO) && newIO.value != null) {
             const streamPromise = newIO.value;
             // Special case RSC stream entries to pick the last entry keyed by the stream.
             const existingEntry = streamEntries.get(streamPromise);
@@ -5670,13 +5669,7 @@ export function attach(
               });
             } else {
               const existingIO = existingEntry.asyncInfo.awaited;
-              if (
-                newIO !== existingIO &&
-                ((newIO.byteSize !== undefined &&
-                  existingIO.byteSize !== undefined &&
-                  newIO.byteSize > existingIO.byteSize) ||
-                  newIO.end > existingIO.end)
-              ) {
+              if (isLaterStreamEntry(newIO, existingIO)) {
                 // The new entry is later in the stream that the old entry. Replace it.
                 existingEntry.asyncInfo = asyncInfo;
                 existingEntry.instance = firstInstance;
@@ -5717,10 +5710,7 @@ export function attach(
         continue;
       }
       foundIOEntries.add(ioInfo);
-      if (
-        (ioInfo.name === 'RSC stream' || ioInfo.name === 'rsc stream') &&
-        ioInfo.value != null
-      ) {
+      if (isRSCStreamIO(ioInfo) && ioInfo.value != null) {
         const streamPromise = ioInfo.value;
         // Special case RSC stream entries to pick the last entry keyed by the stream.
         const existingEntry = streamEntries.get(streamPromise);
@@ -5728,13 +5718,7 @@ export function attach(
           streamEntries.set(streamPromise, asyncInfo);
         } else {
           const existingIO = existingEntry.awaited;
-          if (
-            ioInfo !== existingIO &&
-            ((ioInfo.byteSize !== undefined &&
-              existingIO.byteSize !== undefined &&
-              ioInfo.byteSize > existingIO.byteSize) ||
-              ioInfo.end > existingIO.end)
-          ) {
+          if (isLaterStreamEntry(ioInfo, existingIO)) {
             // The new entry is later in the stream that the old entry. Replace it.
             streamEntries.set(streamPromise, asyncInfo);
           }
