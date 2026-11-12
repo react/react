@@ -573,6 +573,417 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('keeps the painted fallback DOM when hydration suspends again on a client promise', async () => {
+    let resolveClientReady;
+    const clientReady = new Promise(resolve => {
+      resolveClientReady = resolve;
+    });
+
+    function ClientSide() {
+      use(ReactDOM.browser());
+      const text = use(clientReady);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Loading</span>}>
+            <ClientSide />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loading</span>
+      </div>,
+    );
+    const fallbackBeforeHydration = container.querySelector('span');
+    // Give the fallback DOM state that neither server HTML nor a re-render
+    // would set. If React remounts an identical fallback, this marker is lost.
+    fallbackBeforeHydration.setAttribute('data-kept', 'yes');
+
+    // Hydration: browser() passes on the client, then the client-only promise
+    // suspends. React must keep the fallback UI it already painted instead of
+    // tearing it down and mounting an identical fallback, which would restart
+    // CSS-driven progress animations (https://github.com/facebook/react/issues/37620).
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    // The preserved fallback still carries the marker we set on the node.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span data-kept="yes">Loading</span>
+      </div>,
+    );
+    expect(container.querySelector('span')).toBe(fallbackBeforeHydration);
+    expect(fallbackBeforeHydration.getAttribute('data-kept')).toBe('yes');
+
+    await act(() => {
+      resolveClientReady('Content');
+    });
+    await waitForAll([]);
+    jest.advanceTimersByTime(300);
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Content</span>
+      </div>,
+    );
+  });
+
+  it('hydrates an interactive browser-only fallback while client data is pending', async () => {
+    let resolveBrowserText;
+    const browserText = new Promise(resolve => {
+      resolveBrowserText = resolve;
+    });
+    const fallbackRef = React.createRef();
+    const effects = [];
+
+    function BrowserOnly() {
+      use(ReactDOM.browser());
+      return <span>{use(browserText)}</span>;
+    }
+
+    function Fallback() {
+      const [count, setCount] = React.useState(0);
+      React.useLayoutEffect(() => {
+        effects.push('layout mount');
+        return () => effects.push('layout cleanup');
+      }, []);
+      React.useEffect(() => {
+        effects.push('passive mount');
+        return () => effects.push('passive cleanup');
+      }, []);
+      return (
+        <button ref={fallbackRef} onClick={() => setCount(c => c + 1)}>
+          Loading {count}
+        </button>
+      );
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<Fallback />}>
+          <BrowserOnly />
+        </Suspense>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+
+    const serverFallback = container.querySelector('button');
+    expect(fallbackRef.current).toBe(null);
+    expect(effects).toEqual([]);
+
+    const errors = [];
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError(error) {
+          errors.push(error);
+        },
+      });
+    });
+    await waitForAll([]);
+
+    // The server fallback DOM node is preserved AND hydrated: refs, effects
+    // and event handlers all work while the primary client promise is pending.
+    expect(fallbackRef.current).toBe(serverFallback);
+    expect(effects).toEqual(['layout mount', 'passive mount']);
+    expect(errors).toEqual([]);
+
+    await act(() => {
+      serverFallback.dispatchEvent(
+        new window.MouseEvent('click', {bubbles: true}),
+      );
+    });
+    expect(container.querySelector('button')).toBe(serverFallback);
+    expect(serverFallback.textContent).toBe('Loading 1');
+    expect(effects).toEqual(['layout mount', 'passive mount']);
+
+    await act(() => {
+      resolveBrowserText('Browser');
+    });
+    await waitForAll([]);
+    jest.advanceTimersByTime(300);
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(<span>Browser</span>);
+    expect(serverFallback.isConnected).toBe(false);
+    expect(fallbackRef.current).toBe(null);
+    expect(effects).toEqual([
+      'layout mount',
+      'passive mount',
+      'layout cleanup',
+      'passive cleanup',
+    ]);
+  });
+
+  it('updates browser-only fallback props and context without blocking siblings', async () => {
+    const Context = React.createContext('red');
+    const browserText = new Promise(() => {});
+    let updateSibling;
+    let updateColor;
+
+    function BrowserOnly() {
+      use(ReactDOM.browser());
+      return use(browserText);
+    }
+
+    function Fallback({label}) {
+      const color = React.useContext(Context);
+      return <p style={{color}}>{label}</p>;
+    }
+
+    function Sibling() {
+      const [count, setCount] = React.useState(0);
+      updateSibling = setCount;
+      return <span>{count}</span>;
+    }
+
+    function App() {
+      const [color, setColor] = React.useState('red');
+      updateColor = setColor;
+      return (
+        <Context.Provider value={color}>
+          <Suspense fallback={<Fallback label={color} />}>
+            <BrowserOnly />
+          </Suspense>
+          <Sibling />
+        </Context.Provider>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+
+    const serverFallback = container.querySelector('p');
+    // The server and client share the same context object; reset the renderer
+    // so hydration reads the client value.
+    Context._currentRenderer = null;
+    const errors = [];
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError(error) {
+          errors.push(error);
+        },
+      });
+    });
+    await waitForAll([]);
+    expect(container.querySelector('p')).toBe(serverFallback);
+    expect(serverFallback.textContent).toBe('red');
+    expect(errors).toEqual([]);
+
+    await clientAct(() => {
+      updateSibling(1);
+    });
+    expect(container.querySelector('span').textContent).toBe('1');
+    expect(container.querySelector('p')).toBe(serverFallback);
+
+    await act(() => {
+      updateColor('blue');
+    });
+    await waitForAll([]);
+    expect(container.querySelector('p')).toBe(serverFallback);
+    expect(serverFallback.textContent).toBe('blue');
+    expect(serverFallback.style.color).toBe('blue');
+  });
+
+  it('unmounts a hydrated browser-only fallback before client data resolves', async () => {
+    let resolveBrowserText;
+    const browserText = new Promise(resolve => {
+      resolveBrowserText = resolve;
+    });
+    const cleanup = jest.fn();
+    const fallbackRef = React.createRef();
+
+    function BrowserOnly() {
+      use(ReactDOM.browser());
+      return use(browserText);
+    }
+
+    function Fallback() {
+      React.useEffect(() => cleanup, []);
+      return <p ref={fallbackRef}>Loading</p>;
+    }
+
+    const app = (
+      <Suspense fallback={<Fallback />}>
+        <BrowserOnly />
+      </Suspense>
+    );
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(app, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+
+    const serverFallback = container.querySelector('p');
+    let root;
+    await act(() => {
+      root = ReactDOMClient.hydrateRoot(container, app, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+      });
+    });
+    await waitForAll([]);
+    expect(fallbackRef.current).toBe(serverFallback);
+    expect(serverErrors).toEqual([]);
+
+    await act(() => {
+      root.unmount();
+    });
+    expect(container.textContent).toBe('');
+    expect(serverFallback.isConnected).toBe(false);
+    expect(fallbackRef.current).toBe(null);
+    expect(cleanup).toHaveBeenCalledTimes(1);
+
+    await act(() => {
+      resolveBrowserText('Browser');
+    });
+    await waitForAll([]);
+    expect(container.textContent).toBe('');
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers a mismatching browser-only fallback without replacing siblings', async () => {
+    let isClient = false;
+    let resolveBrowserText;
+    const browserText = new Promise(resolve => {
+      resolveBrowserText = resolve;
+    });
+
+    function BrowserOnly() {
+      use(ReactDOM.browser());
+      return <strong>{use(browserText)}</strong>;
+    }
+
+    function Fallback() {
+      return isClient ? <p>Loading</p> : <button>Loading</button>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <span>Before</span>
+          <Suspense fallback={<Fallback />}>
+            <BrowserOnly />
+          </Suspense>
+          <span>After</span>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+
+    const serverFallback = container.querySelector('button');
+    const [before, after] = container.querySelectorAll('span');
+    isClient = true;
+    const errors = [];
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError(error) {
+          errors.push(error.message);
+        },
+      });
+    });
+    await waitForAll([]);
+
+    // The server-rendered <button> doesn't match the client's <p>, so the
+    // fallback hydrates with a hydration error but siblings are untouched.
+    expect(serverFallback.isConnected).toBe(false);
+    expect(container.querySelector('p').textContent).toBe('Loading');
+    expect(Array.from(container.querySelectorAll('span'))).toEqual([
+      before,
+      after,
+    ]);
+    expect(errors).toHaveLength(1);
+
+    await act(() => {
+      resolveBrowserText('Browser');
+    });
+    await waitForAll([]);
+    jest.advanceTimersByTime(300);
+    await waitForAll([]);
+    expect(container.querySelector('strong').textContent).toBe('Browser');
+    expect(container.querySelector('p')).toBe(null);
+  });
+
   it('supports omitted and direct string browser reasons', async () => {
     const directReason = 'Only render this content in a browser';
     const withoutReason = ReactDOM.browser();
