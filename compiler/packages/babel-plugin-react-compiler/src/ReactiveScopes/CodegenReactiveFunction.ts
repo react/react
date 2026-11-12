@@ -1917,7 +1917,12 @@ function codegenInstructionValue(
       value = createTaggedTemplateExpression(
         instrValue.loc,
         codegenPlaceToExpression(cx, instrValue.tag),
-        t.templateLiteral([t.templateElement(instrValue.value)], []),
+        t.templateLiteral(
+          instrValue.quasis.map(quasi => t.templateElement(quasi)),
+          instrValue.subexprs.map(subexpr =>
+            codegenPlaceToExpression(cx, subexpr),
+          ),
+        ),
       );
       break;
     }
