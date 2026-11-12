@@ -1173,6 +1173,122 @@ describe('ReactDOMForm', () => {
     },
   );
 
+  it('useActionState: uses the latest action after switching back to a previous one', async () => {
+    function actionA() {
+      Scheduler.log('Action A');
+      return 'A';
+    }
+    function actionB() {
+      Scheduler.log('Action B');
+      return 'B';
+    }
+
+    let dispatch;
+    function App({action}) {
+      const [state, _dispatch] = useActionState(action, 'Initial');
+      dispatch = _dispatch;
+      return <Text text={state} />;
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App action={actionA} />));
+    assertLog(['Initial']);
+    await act(() => root.render(<App action={actionB} />));
+    assertLog(['Initial']);
+    // Switch back to the original action. Dispatching should use it, not the
+    // intermediate one.
+    await act(() => root.render(<App action={actionA} />));
+    assertLog(['Initial']);
+
+    await act(() => startTransition(() => dispatch()));
+    assertLog(['Action A', 'Initial', 'A']);
+    expect(container.textContent).toBe('A');
+  });
+
+  it('useActionState: uses the latest action after changing it in StrictMode', async () => {
+    function actionA() {
+      Scheduler.log('Action A');
+      return 'A';
+    }
+    function actionB() {
+      Scheduler.log('Action B');
+      return 'B';
+    }
+
+    let dispatch;
+    function App({action}) {
+      const [state, _dispatch] = useActionState(action, 'Initial');
+      dispatch = _dispatch;
+      return state;
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() =>
+      root.render(
+        <React.StrictMode>
+          <App action={actionA} />
+        </React.StrictMode>,
+      ),
+    );
+    await act(() =>
+      root.render(
+        <React.StrictMode>
+          <App action={actionB} />
+        </React.StrictMode>,
+      ),
+    );
+
+    await act(() => startTransition(() => dispatch()));
+    assertLog(['Action B']);
+    expect(container.textContent).toBe('B');
+  });
+
+  it('useActionState: uses an action that changed while hidden in an Activity', async () => {
+    const Activity = React.Activity;
+    function actionA() {
+      Scheduler.log('Action A');
+      return 'A';
+    }
+    function actionB() {
+      Scheduler.log('Action B');
+      return 'B';
+    }
+
+    let dispatch;
+    function App({action}) {
+      const [state, _dispatch] = useActionState(action, 'Initial');
+      dispatch = _dispatch;
+      return state;
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() =>
+      root.render(
+        <Activity mode="visible">
+          <App action={actionA} />
+        </Activity>,
+      ),
+    );
+    await act(() =>
+      root.render(
+        <Activity mode="hidden">
+          <App action={actionB} />
+        </Activity>,
+      ),
+    );
+    await act(() =>
+      root.render(
+        <Activity mode="visible">
+          <App action={actionB} />
+        </Activity>,
+      ),
+    );
+
+    await act(() => startTransition(() => dispatch()));
+    assertLog(['Action B']);
+    expect(container.textContent).toBe('B');
+  });
+
   it('useActionState: works if action is sync', async () => {
     let increment;
     function App({stepSize}) {
