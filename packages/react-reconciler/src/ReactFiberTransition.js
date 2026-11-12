@@ -47,7 +47,10 @@ import {
   peekEntangledActionLane,
 } from './ReactFiberAsyncAction';
 import {startAsyncTransitionTimer} from './ReactProfilerTimer';
-import {firstScheduledRoot} from './ReactFiberRootScheduler';
+import {
+  firstScheduledRoot,
+  requestTransitionLane,
+} from './ReactFiberRootScheduler';
 import {
   startScheduledGesture,
   cancelScheduledGesture,
@@ -98,26 +101,23 @@ ReactSharedInternals.S = function onStartTransitionFinishForReconciler(
     entangleAsyncAction(transition, thenable);
   }
   if (enableViewTransition) {
-    if (entangledTransitionTypes !== null) {
-      // If we scheduled work on any new roots, we need to add any entangled async
-      // transition types to those roots too.
-      let root = firstScheduledRoot;
-      while (root !== null) {
-        queueTransitionTypes(root, entangledTransitionTypes);
-        root = root.next;
-      }
-    }
     const transitionTypes = transition.types;
-    if (transitionTypes !== null) {
-      // Within this Transition we should've now scheduled any roots we have updates
-      // to work on. If there are no updates on a root, then the Transition type won't
-      // be applied to that root.
+    if (entangledTransitionTypes !== null || transitionTypes !== null) {
+      // Use the same lane as updates scheduled by this Transition, including
+      // any entangled async actions.
+      const lane = requestTransitionLane(transition);
       let root = firstScheduledRoot;
       while (root !== null) {
-        queueTransitionTypes(root, transitionTypes);
+        if (entangledTransitionTypes !== null) {
+          // New roots also inherit the types from entangled async actions.
+          queueTransitionTypes(root, lane, entangledTransitionTypes);
+        }
+        if (transitionTypes !== null) {
+          queueTransitionTypes(root, lane, transitionTypes);
+        }
         root = root.next;
       }
-      if (peekEntangledActionLane() !== NoLane) {
+      if (transitionTypes !== null && peekEntangledActionLane() !== NoLane) {
         // If we have entangled, async actions going on, the update associated with
         // these types might come later. We need to save them for later.
         entangleAsyncTransitionTypes(transitionTypes);
