@@ -40,6 +40,10 @@ export type SuspenseState = {
   retryLane: Lane,
   // Stashed Errors that happened while attempting to hydrate this boundary.
   hydrationErrors: Array<CapturedValue<mixed>> | null,
+  // Set when the server left this boundary in its fallback state, the client
+  // render suspended, and we kept showing the server fallback. Any error the
+  // server left on the boundary has been reported at that point.
+  keptServerFallback: boolean,
 };
 
 export type SuspenseListRenderState = {
