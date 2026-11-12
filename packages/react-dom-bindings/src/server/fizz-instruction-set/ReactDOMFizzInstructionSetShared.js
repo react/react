@@ -457,6 +457,18 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
       // make the batch.
       setTimeout(window['$RV'].bind(null, window['$RB']), msUntilTimeout);
     }
+    // Register a one-time visibilitychange listener to flush any remaining queued
+    // boundaries the first time the tab becomes visible. This covers the race where
+    // rAF was scheduled while the tab was visible but the tab went hidden before it
+    // had a chance to fire.
+    if (!window['$RVL']) {
+      window['$RVL'] = true;
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState !== 'hidden' && window['$RB'].length > 0) {
+          window['$RV'](window['$RB']);
+        }
+      });
+    }
   }
 }
 
