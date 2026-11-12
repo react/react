@@ -1313,6 +1313,8 @@ fn outlined_assign_pattern_node_ids(
                     declaration_type: "VariableDeclarator".to_string(),
                     declaration_start: id.base.start,
                     declaration_node_id: Some(node_id),
+                    first_reference_node_id: None,
+                    first_constant_violation_node_id: None,
                     import: None,
                 });
                 ref_node_id_to_binding.insert(node_id, binding_id);
