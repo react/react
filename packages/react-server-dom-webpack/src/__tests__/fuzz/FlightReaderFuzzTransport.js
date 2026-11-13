@@ -38,6 +38,8 @@ function startFlightResponse({
   WebpackMock,
   host,
   model,
+  body,
+  bufferedReply,
   packetSizes,
   yieldBetweenPackets,
   onError,
@@ -71,7 +73,65 @@ function startFlightResponse({
       }
     },
   };
-  if (host === 'node') {
+  if (host === 'reply') {
+    serverDone = true;
+    serverCompletion = Promise.resolve();
+    abort = () => {};
+    // The graph size is bounded by the generator. Test decoding independently
+    // of the application's configurable limit on nested arrays.
+    const replyOptions = {arraySizeLimit: Infinity};
+    if (bufferedReply) {
+      root = ReactServerDOMServer.decodeReply(
+        body,
+        WebpackMock.webpackServerMap,
+        replyOptions,
+      );
+      send = () => {};
+      end = () => {};
+    } else {
+      // Packet sizes count FormData entries, since the public decoder reads
+      // entries from an async iterable rather than bytes from a stream.
+      queued =
+        typeof body === 'string' ? [['0', body]] : Array.from(body.entries());
+      const waiting = [];
+      const arrived = [];
+      let ended = false;
+      const deliver = () => {
+        while (waiting.length && (arrived.length || ended)) {
+          waiting.shift()(
+            arrived.length
+              ? {done: false, value: arrived.shift()}
+              : {done: true, value: undefined},
+          );
+        }
+      };
+      const entries = {
+        [Symbol.asyncIterator]() {
+          return {
+            next() {
+              return new Promise(resolve => {
+                waiting.push(resolve);
+                deliver();
+              });
+            },
+          };
+        },
+      };
+      root = ReactServerDOMServer.decodeReplyFromAsyncIterable(
+        entries,
+        WebpackMock.webpackServerMap,
+        replyOptions,
+      );
+      send = entry => {
+        arrived.push(entry);
+        deliver();
+      };
+      end = () => {
+        ended = true;
+        deliver();
+      };
+    }
+  } else if (host === 'node') {
     const {PassThrough, Writable} = require('stream');
     const {finished} = require('stream/promises');
     const input = new PassThrough();
@@ -138,18 +198,27 @@ function startFlightResponse({
   // Split output into uneven packets to exercise partial reads.
   async function flush() {
     await tick();
-
-    // A broken byte-stream reader may transfer the packet's buffer. Give
-    // the transport its own buffer so this can fail the case without also
-    // detaching Node's shared Buffer pool and breaking Jest's file reads.
-    const bytes = new Uint8Array(Buffer.concat(queued));
-    queued = [];
-    for (let offset = 0; offset < bytes.length; ) {
-      const size = packetSizes[packet++ % packetSizes.length];
-      send(bytes.subarray(offset, offset + size));
-      offset += size;
-      if (yieldBetweenPackets) {
-        await tick();
+    if (host === 'reply') {
+      while (queued.length) {
+        const count = packetSizes[packet++ % packetSizes.length];
+        queued.splice(0, count).forEach(send);
+        if (yieldBetweenPackets) {
+          await tick();
+        }
+      }
+    } else {
+      // A broken byte-stream reader may transfer the packet's buffer. Give
+      // the transport its own buffer so this can fail the case without also
+      // detaching Node's shared Buffer pool and breaking Jest's file reads.
+      const bytes = new Uint8Array(Buffer.concat(queued));
+      queued = [];
+      for (let offset = 0; offset < bytes.length; ) {
+        const size = packetSizes[packet++ % packetSizes.length];
+        send(bytes.subarray(offset, offset + size));
+        offset += size;
+        if (yieldBetweenPackets) {
+          await tick();
+        }
       }
     }
 
