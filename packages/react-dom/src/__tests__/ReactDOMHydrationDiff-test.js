@@ -243,6 +243,20 @@ describe('ReactDOMServerHydration', () => {
 
   describe('attribute mismatch', () => {
     // @gate __DEV__
+    it('describes props named hasOwnProperty', () => {
+      function Mismatch({isClient}) {
+        return (
+          <some-custom-element
+            hasOwnProperty={isClient ? 'client' : 'server'}
+          />
+        );
+      }
+      expect(testMismatch(Mismatch)).toEqual([
+        expect.stringContaining('hasOwnProperty="client"'),
+      ]);
+    });
+
+    // @gate __DEV__
     it('warns when client and server render different attributes', () => {
       function Mismatch({isClient}) {
         return (
