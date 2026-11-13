@@ -2429,6 +2429,79 @@ describe('ReactFlightDOMNode', () => {
     expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
   });
 
+  it('does not consume an iterator while inspecting an awaited value for debug info', async () => {
+    let resolveValue;
+    const value = new Promise(resolve => (resolveValue = resolve));
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({value}),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const promise = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+    // The debug info for the awaited value is emitted before the value is
+    // serialized. The iterator must still have its items by then.
+    await serverAct(() => resolveValue(['a', 'b'][Symbol.iterator]()));
+    const result = await promise;
+    expect(Array.from(await result.value)).toEqual(['a', 'b']);
+  });
+
+  it('can resolve a Promise before loading a module in another value that contains it', async () => {
+    let resolveData;
+    const data = new Promise(resolve => (resolveData = resolve));
+    let resolveSection;
+    const section = new Promise(resolve => (resolveSection = resolve));
+    let loadModule;
+    const moduleLoading = new Promise(resolve => (loadModule = resolve));
+    const ClientModule = clientExports(
+      {label: 'loaded'},
+      'section',
+      'section.js',
+      moduleLoading,
+    );
+
+    const readable = new Stream.PassThrough(streamOptions);
+    const response = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: null,
+      moduleLoading: webpackModuleLoading,
+    });
+    await serverAct(() => {
+      ReactServerDOMServer.renderToPipeableStream(
+        {data, section},
+        webpackMap,
+      ).pipe(readable);
+    });
+    const result = await response;
+    let receivedData = 'pending';
+    let receivedSection = 'pending';
+    result.data.then(value => (receivedData = value));
+    result.section.then(value => (receivedSection = value));
+
+    // Data from an I/O callback is also described in the response's debug info.
+    const {AsyncResource} = require('async_hooks');
+    const io = new AsyncResource('read');
+    try {
+      await serverAct(() => {
+        io.runInAsyncScope(() =>
+          resolveSection({data, label: ClientModule.label}),
+        );
+      });
+      await serverAct(() => {
+        io.runInAsyncScope(() => resolveData(null));
+      });
+      expect(receivedData).toBe(null);
+      expect(receivedSection).toBe('pending');
+
+      await serverAct(() => loadModule());
+      expect(receivedSection.label).toBe('loaded');
+      expect(await receivedSection.data).toBe(null);
+    } finally {
+      io.emitDestroy();
+    }
+  });
+
   it('detaches the abort listener from a composite signal once the prerender completes', async () => {
     // A composite signal from AbortSignal.any() is retained by the runtime for
     // as long as it has an abort listener attached, so a listener left behind
@@ -3068,5 +3141,88 @@ describe('ReactFlightDOMNode', () => {
     expect(readError.stack).toMatch(
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
+  });
+  it('refers to a repeated suspended server component lazily', async () => {
+    let release;
+    const gate = new Promise(r => (release = r));
+    function Shared() {
+      ReactServer.use(gate);
+      return ReactServer.createElement('b', null, 'shared');
+    }
+    const el = ReactServer.createElement(Shared);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {first: el, second: el, m: new Map([['k', el]]), element: el},
+        webpackMap,
+      ),
+    );
+    // The root resolves before the component does. A later occurrence that
+    // referred to it by value would make the whole root wait for it to render.
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    expect(Object.keys(result)).toEqual(['first', 'second', 'm', 'element']);
+
+    // Each occurrence is a lazy that resolves once the component renders.
+    await serverAct(() => release());
+    const html = await serverAct(() =>
+      readResult(
+        ReactDOMServer.renderToPipeableStream(
+          React.createElement(
+            'div',
+            null,
+            result.first,
+            result.second,
+            result.element,
+            result.m.get('k'),
+          ),
+        ),
+      ),
+    );
+    expect(html).toBe(
+      '<div><b>shared</b><b>shared</b><b>shared</b><b>shared</b></div>',
+    );
+  });
+
+  it('resolves the root even when a repeated suspended component rejects', async () => {
+    let fail;
+    const gate = new Promise((_, reject) => (fail = reject));
+    gate.catch(() => {});
+    function Shared() {
+      ReactServer.use(gate);
+      return ReactServer.createElement('b', null, 'shared');
+    }
+    const el = ReactServer.createElement(Shared);
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {first: el, second: el},
+        webpackMap,
+        {
+          onError(x) {
+            errors.push(x.message);
+          },
+        },
+      ),
+    );
+    // The root resolves even though the component has not; only the lazy
+    // occurrences carry the failure.
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    expect(Object.keys(result)).toEqual(['first', 'second']);
+    await serverAct(() => fail(new Error('boom')));
+    const rendered = serverAct(() =>
+      readResult(
+        ReactDOMServer.renderToPipeableStream(
+          React.createElement('div', null, result.first, result.second),
+          {
+            onError() {},
+          },
+        ),
+      ),
+    );
+    await expect(rendered).rejects.toThrow();
+    expect(errors).toContain('boom');
   });
 });
