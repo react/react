@@ -60,34 +60,17 @@ function BasicSourceMapConsumer(sourceMapJSON: BasicSourceMap) {
 
     const lineMappings = decodedMappings[lineNumber - 1];
 
-    let nearestEntry = null;
-
     let startIndex = 0;
     let stopIndex = lineMappings.length - 1;
     let index = -1;
     while (startIndex <= stopIndex) {
-      index = Math.floor((stopIndex + startIndex) / 2);
-      nearestEntry = lineMappings[index];
-
-      const currentColumn = nearestEntry[0];
-      if (currentColumn === targetColumnNumber) {
-        break;
+      const middle = Math.floor((stopIndex + startIndex) / 2);
+      const currentColumn = lineMappings[middle][0];
+      if (currentColumn <= targetColumnNumber) {
+        index = middle;
+        startIndex = middle + 1;
       } else {
-        if (currentColumn > targetColumnNumber) {
-          if (stopIndex - index > 0) {
-            stopIndex = index;
-          } else {
-            index = stopIndex;
-            break;
-          }
-        } else {
-          if (index - startIndex > 0) {
-            startIndex = index;
-          } else {
-            index = startIndex;
-            break;
-          }
-        }
+        stopIndex = middle - 1;
       }
     }
 
@@ -97,12 +80,13 @@ function BasicSourceMapConsumer(sourceMapJSON: BasicSourceMap) {
     while (index > 0) {
       const previousEntry = lineMappings[index - 1];
       const currentColumn = previousEntry[0];
-      if (currentColumn !== targetColumnNumber) {
+      if (currentColumn !== lineMappings[index][0]) {
         break;
       }
       index--;
     }
 
+    const nearestEntry = index < 0 ? null : lineMappings[index];
     if (nearestEntry == null) {
       // TODO maybe fall back to the runtime source instead of throwing?
       throw Error(
