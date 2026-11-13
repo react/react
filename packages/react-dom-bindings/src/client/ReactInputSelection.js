@@ -98,7 +98,8 @@ export function hasSelectionCapabilities(elem) {
         elem.type === 'url' ||
         elem.type === 'password')) ||
       nodeName === 'textarea' ||
-      elem.contentEditable === 'true')
+      elem.contentEditable === 'true' ||
+      elem.contentEditable === 'plaintext-only')
   );
 }
 
