@@ -117,7 +117,7 @@ import {componentInfoToComponentLogsMap} from '../shared/DevToolsServerComponent
 import {getIODescription} from 'shared/ReactIODescription';
 
 import {
-  getPublicInstance,
+  getHostInstanceKey,
   getNativeTag,
   getCurrentTime,
 } from 'react-devtools-shared/src/backend/DevToolsNativeHost';
@@ -305,19 +305,20 @@ function aquireHostInstance(
   nearestInstance: DevToolsInstance,
   hostInstance: HostInstance,
 ): void {
-  const publicInstance = getPublicInstance(hostInstance);
-  publicInstanceToDevToolsInstanceMap.set(publicInstance, nearestInstance);
+  const hostInstanceKey = getHostInstanceKey(hostInstance);
+  publicInstanceToDevToolsInstanceMap.set(hostInstanceKey, nearestInstance);
 }
 
 function releaseHostInstance(
   nearestInstance: DevToolsInstance,
   hostInstance: HostInstance,
 ): void {
-  const publicInstance = getPublicInstance(hostInstance);
+  const hostInstanceKey = getHostInstanceKey(hostInstance);
   if (
-    publicInstanceToDevToolsInstanceMap.get(publicInstance) === nearestInstance
+    publicInstanceToDevToolsInstanceMap.get(hostInstanceKey) ===
+    nearestInstance
   ) {
-    publicInstanceToDevToolsInstanceMap.delete(publicInstance);
+    publicInstanceToDevToolsInstanceMap.delete(hostInstanceKey);
   }
 }
 
@@ -327,14 +328,14 @@ function aquireHostResource(
 ): void {
   const hostInstance = resource && resource.instance;
   if (hostInstance) {
-    const publicInstance = getPublicInstance(hostInstance);
+    const hostInstanceKey = getHostInstanceKey(hostInstance);
     let resourceInstances =
-      hostResourceToDevToolsInstanceMap.get(publicInstance);
+      hostResourceToDevToolsInstanceMap.get(hostInstanceKey);
     if (resourceInstances === undefined) {
       resourceInstances = new Set();
-      hostResourceToDevToolsInstanceMap.set(publicInstance, resourceInstances);
+      hostResourceToDevToolsInstanceMap.set(hostInstanceKey, resourceInstances);
       // Store the first match in the main map for quick access when selecting DOM node.
-      publicInstanceToDevToolsInstanceMap.set(publicInstance, nearestInstance);
+      publicInstanceToDevToolsInstanceMap.set(hostInstanceKey, nearestInstance);
     }
     resourceInstances.add(nearestInstance);
   }
@@ -346,23 +347,23 @@ function releaseHostResource(
 ): void {
   const hostInstance = resource && resource.instance;
   if (hostInstance) {
-    const publicInstance = getPublicInstance(hostInstance);
+    const hostInstanceKey = getHostInstanceKey(hostInstance);
     const resourceInstances =
-      hostResourceToDevToolsInstanceMap.get(publicInstance);
+      hostResourceToDevToolsInstanceMap.get(hostInstanceKey);
     if (resourceInstances !== undefined) {
       resourceInstances.delete(nearestInstance);
       if (resourceInstances.size === 0) {
-        hostResourceToDevToolsInstanceMap.delete(publicInstance);
-        publicInstanceToDevToolsInstanceMap.delete(publicInstance);
+        hostResourceToDevToolsInstanceMap.delete(hostInstanceKey);
+        publicInstanceToDevToolsInstanceMap.delete(hostInstanceKey);
       } else if (
-        publicInstanceToDevToolsInstanceMap.get(publicInstance) ===
+        publicInstanceToDevToolsInstanceMap.get(hostInstanceKey) ===
         nearestInstance
       ) {
         // This was the first one. Store the next first one in the main map for easy access.
         // eslint-disable-next-line no-for-of-loops/no-for-of-loops
         for (const firstInstance of resourceInstances) {
           publicInstanceToDevToolsInstanceMap.set(
-            publicInstance,
+            hostInstanceKey,
             firstInstance,
           );
           break;
@@ -5314,7 +5315,10 @@ export function attach(
 
   function getNearestMountedDOMNode(publicInstance: Element): null | Element {
     let domNode: null | Element = publicInstance;
-    while (domNode && !publicInstanceToDevToolsInstanceMap.has(domNode)) {
+    while (
+      domNode &&
+      !publicInstanceToDevToolsInstanceMap.has(getHostInstanceKey(domNode))
+    ) {
       // $FlowFixMe[incompatible-type]: In practice this is either null or Element.
       domNode = domNode.parentNode;
     }
@@ -5324,7 +5328,9 @@ export function attach(
   function getElementIDForHostInstance(
     publicInstance: HostInstance,
   ): number | null {
-    const instance = publicInstanceToDevToolsInstanceMap.get(publicInstance);
+    const instance = publicInstanceToDevToolsInstanceMap.get(
+      getHostInstanceKey(publicInstance),
+    );
     if (instance !== undefined) {
       if (instance.kind === FILTERED_FIBER_INSTANCE) {
         // A Filtered Fiber Instance will always have a Virtual Instance as a parent.
@@ -5338,7 +5344,9 @@ export function attach(
   function getSuspenseNodeIDForHostInstance(
     publicInstance: HostInstance,
   ): number | null {
-    const instance = publicInstanceToDevToolsInstanceMap.get(publicInstance);
+    const instance = publicInstanceToDevToolsInstanceMap.get(
+      getHostInstanceKey(publicInstance),
+    );
     if (instance !== undefined) {
       // Pick nearest unfiltered SuspenseNode instance.
       let suspenseInstance = instance;
