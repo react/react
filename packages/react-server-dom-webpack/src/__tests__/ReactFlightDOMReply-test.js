@@ -248,6 +248,14 @@ describe('ReactFlightDOMReply', () => {
     expect(d % 1000).toEqual(123); // double-check the milliseconds made it through
   });
 
+  it('can pass an invalid Date as a reply', async () => {
+    const body = await ReactServerDOMClient.encodeReply({d: new Date(NaN)});
+    const {d} = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+
+    expect(d).toBeInstanceOf(Date);
+    expect(d.getTime()).toBeNaN();
+  });
+
   it('can pass a Map as a reply', async () => {
     const objKey = {obj: 'key'};
     const m = new Map([
