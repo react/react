@@ -3142,6 +3142,43 @@ describe('ReactFlightDOMNode', () => {
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
   });
+
+  // @gate __DEV__
+  it('preserves a debug failure when reading an otherwise independent model', async () => {
+    let rejectModule;
+    const moduleLoading = new Promise(
+      (resolve, reject) => (rejectModule = reject),
+    );
+    // Production omits debug props, so it never subscribes to this module.
+    moduleLoading.catch(() => {});
+    const ClientModule = clientExports(
+      {label: 'loaded'},
+      'debug-props',
+      '/debug-props.js',
+      moduleLoading,
+    );
+    function Component() {
+      return 'ready';
+    }
+    const text = await readResult(
+      ReactServerDOMServer.renderToPipeableStream(
+        ReactServer.createElement(Component, {module: ClientModule.label}),
+        webpackMap,
+      ),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const result = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: null,
+      moduleLoading: webpackModuleLoading,
+    });
+    await serverAct(() => readable.end(text));
+    // The value itself has no module dependency. Its debug props fail before
+    // anyone demands it, and reading it must preserve that failure.
+    const moduleError = new Error('debug module failed');
+    await serverAct(() => rejectModule(moduleError));
+    await expect(Promise.resolve(result)).rejects.toBe(moduleError);
+  });
+
   it('refers to a repeated suspended server component lazily', async () => {
     let release;
     const gate = new Promise(r => (release = r));

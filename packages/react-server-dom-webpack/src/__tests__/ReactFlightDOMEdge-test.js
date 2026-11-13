@@ -453,6 +453,361 @@ describe('ReactFlightDOMEdge', () => {
     expect(result.boundMethod()).toBe('hi, there');
   });
 
+  it.each(['fulfill', 'reject'])(
+    'a module can %s all the Promises of objects that depend on it',
+    async outcome => {
+      let resolveModule;
+      let rejectModule;
+      const {value: tail} = clientExports(
+        {value: 'done'},
+        'tail',
+        'tail.js',
+        new Promise((resolve, reject) => {
+          resolveModule = resolve;
+          rejectModule = reject;
+        }),
+      );
+      // Each object holds the previous one. Loading or failing the module
+      // must notify every subscriber, including those far down the chain.
+      const size = 5000;
+      const resolvers = [];
+      const model = Array.from(
+        {length: size},
+        () => new Promise(resolve => resolvers.push(resolve)),
+      );
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(model, webpackMap),
+      );
+      const received = await ReactServerDOMClient.createFromReadableStream(
+        stream,
+        {serverConsumerManifest: {moduleMap: null, moduleLoading: null}},
+      );
+      const fulfilled = [];
+      const rejected = [];
+      received.forEach(promise => {
+        promise.then(
+          value => fulfilled.push(value),
+          error => rejected.push(error),
+        );
+      });
+      let previous = tail;
+      for (let i = 0; i < size; i++) {
+        previous = {previous};
+        resolvers[i](previous);
+        // Let the writer flush in batches under Jest's loop budget. All
+        // decoded values still wait for the same module after each flush.
+        if (i % 250 === 249) {
+          await serverAct(() => {});
+        }
+      }
+      expect(fulfilled).toEqual([]);
+      expect(rejected).toEqual([]);
+
+      const failure = new Error('module failed');
+      await serverAct(() => {
+        if (outcome === 'fulfill') {
+          resolveModule();
+        } else {
+          rejectModule(failure);
+        }
+      });
+      expect(fulfilled.length).toBe(outcome === 'fulfill' ? size : 0);
+      expect(rejected.length).toBe(outcome === 'reject' ? size : 0);
+      if (outcome === 'fulfill') {
+        let last = fulfilled[size - 1];
+        for (let i = 0; i < size; i++) {
+          last = last.previous;
+        }
+        expect(last).toBe('done');
+      } else {
+        rejected.forEach(error => expect(error).toBe(failure));
+      }
+    },
+    15000,
+  );
+
+  it('round trips deeply nested bound Server Functions', async () => {
+    const {identity} = serverExports({identity: value => value});
+    const size = 1800;
+    let model = 'done';
+    for (let i = 0; i < size; i++) {
+      model = identity.bind(null, model);
+    }
+    let finished;
+    const consumed = new Promise(resolve => (finished = resolve));
+    const response = ReactServerDOMClient.createFromReadableStream(
+      ReactServerDOMServer.renderToReadableStream(
+        model,
+        webpackMap,
+      ).pipeThrough(
+        new TransformStream({
+          transform(chunk, controller) {
+            controller.enqueue(chunk);
+          },
+          flush() {
+            finished();
+          },
+        }),
+      ),
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          serverModuleMap: webpackServerMap,
+          moduleLoading: null,
+        },
+      },
+    );
+    // Begin observing only after the complete response has arrived.
+    await serverAct(() => consumed);
+    let value = await response;
+    for (let i = 0; i < size; i++) {
+      value = value();
+    }
+    expect(value).toBe('done');
+  });
+
+  it('delivers a Set containing itself with its entries already installed', async () => {
+    const set = new Set();
+    set.add(set);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(set),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        const self = Array.from(value)[0];
+        observed.push([value.size, self instanceof Set && self.size]);
+      });
+    });
+    expect(observed).toEqual([[1, 1]]);
+  });
+
+  it('delivers a Map containing itself with its entries already installed', async () => {
+    const map = new Map();
+    map.set('self', map);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(map),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        const self = value.get('self');
+        observed.push([value.size, self instanceof Map && self.size]);
+      });
+    });
+    expect(observed).toEqual([[1, 1]]);
+  });
+
+  // @gate __DEV__
+  it('fills in the cause of an Error that loads after the Error', async () => {
+    let resolveCause;
+    const {value: cause} = clientExports(
+      {value: 'cause'},
+      'cause',
+      '/cause.js',
+      new Promise(resolve => (resolveCause = resolve)),
+    );
+    const error = new Error('failed', {cause});
+    const aggregate = new AggregateError([cause], 'all failed');
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {error, aggregate},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => observed.push(value));
+    });
+    // The Errors wait for their cause and errors like any other field.
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveCause());
+    expect(observed.length).toBe(1);
+    expect(observed[0].error.cause).toBe('cause');
+    expect(observed[0].aggregate.errors).toEqual(['cause']);
+  });
+
+  it('resolves a server reference whose bound argument also appears elsewhere in the response', async () => {
+    let resolveModule;
+    const {read} = serverExports(
+      {
+        read(settings) {
+          return settings.theme;
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    // The function and its containing model share the same settings.
+    const settings = {theme: 'dark'};
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {read: read.bind(null, settings), settings},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: webpackServerMap,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => observed.push(value.read()));
+    });
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveModule());
+    expect(observed).toEqual(['dark']);
+    const result = await response;
+    expect(result.settings).toEqual(settings);
+  });
+
+  it('waits for a bound argument that loads after one the root also holds', async () => {
+    let resolveModule;
+    const {read} = serverExports(
+      {
+        read(first, second) {
+          return [first, second];
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    let resolveFirst;
+    const {value: first} = clientExports(
+      {value: 'first'},
+      'first',
+      '/first.js',
+      new Promise(resolve => (resolveFirst = resolve)),
+    );
+    let resolveSecond;
+    const {value: second} = clientExports(
+      {value: 'second'},
+      'second',
+      '/second.js',
+      new Promise(resolve => (resolveSecond = resolve)),
+    );
+    // Loading the shared first argument must not expose a function whose
+    // second argument is still unavailable.
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {read: read.bind(null, first, second), first},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: webpackServerMap,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => observed.push(value.read()));
+      resolveModule();
+    });
+    await serverAct(() => resolveFirst());
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveSecond());
+    expect(observed).toEqual([['first', 'second']]);
+  });
+
+  it('binds a server reference to its containing array after the module loads', async () => {
+    let resolveModule;
+    const {read} = serverExports(
+      {
+        read(array, other) {
+          return [array.length, array[1].length, other];
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    const array = [];
+    array.push(read.bind(null, array, null), array);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(array, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: webpackServerMap,
+        moduleLoading: null,
+      },
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        observed.push(value[0]());
+      });
+    });
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveModule());
+    expect(observed).toEqual([[2, 2, null]]);
+  });
+
+  it('rejects a later Promise of an object holding a Map whose entry failed to load', async () => {
+    let rejectLoad;
+    const {value: failing} = clientExports(
+      {value: 'failing'},
+      'failing',
+      '/failing.js',
+      new Promise((resolve, reject) => (rejectLoad = reject)),
+    );
+    const map = new Map([['key', failing]]);
+    // The copy is written as a reference to the holder's slot.
+    const copy = {map};
+    let resolveLater;
+    const later = new Promise(resolve => (resolveLater = resolve));
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {data: Promise.resolve({holder: {map}, copy}), later},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        serverModuleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const root = await response;
+    const observed = [];
+    root.data.then(
+      () => observed.push('data fulfilled'),
+      error => observed.push('data: ' + error.message),
+    );
+    root.later.then(
+      () => observed.push('later fulfilled'),
+      error => observed.push('later: ' + error.message),
+    );
+
+    await serverAct(() => rejectLoad(new Error('failed to load')));
+    expect(observed).toEqual(['data: failed to load']);
+
+    await serverAct(() => resolveLater(copy));
+    expect(observed).toEqual(['data: failed to load', 'later: failed to load']);
+  });
+
   it('should load a server reference on a consuming server and pass it back', async () => {
     function greet(name) {
       return 'hi, ' + name;
@@ -2120,9 +2475,7 @@ describe('ReactFlightDOMEdge', () => {
     expect(innerItems[1].again).toBe(innerItems[0]);
   });
 
-  // Writing this cycle also requires the reader to fill the Map before delivery.
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can pass a stream item that contains itself', async () => {
+  it('can pass a stream item that contains itself', async () => {
     const item = ['first'];
     item.push(item);
     item.push({back: item});
@@ -2165,36 +2518,29 @@ describe('ReactFlightDOMEdge', () => {
     expect((await reader.read()).done).toBe(true);
   });
 
-  // DEV Error causes also need the client completion fix.
-  (__DEV__ ? it.skip : it)(
-    'can pass an Error whose cause is itself',
-    async () => {
-      const error = new Error('self-caused');
-      error.cause = error;
+  it('can pass an Error whose cause is itself', async () => {
+    const error = new Error('self-caused');
+    error.cause = error;
 
-      const stream = await serverAct(() =>
-        ReactServerDOMServer.renderToReadableStream({error}, {}),
-      );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({error}, {}),
+    );
 
-      const result = await ReactServerDOMClient.createFromReadableStream(
-        stream,
-        {
-          serverConsumerManifest: {
-            moduleMap: null,
-            moduleLoading: null,
-          },
-        },
-      );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
 
-      expect(result.error).toBeInstanceOf(Error);
-      if (__DEV__) {
-        expect(result.error.message).toBe('self-caused');
-        expect(result.error.cause).toBe(result.error);
-      } else {
-        expect(result.error.cause).toBe(undefined);
-      }
-    },
-  );
+    expect(result.error).toBeInstanceOf(Error);
+    if (__DEV__) {
+      expect(result.error.message).toBe('self-caused');
+      expect(result.error.cause).toBe(result.error);
+    } else {
+      expect(result.error.cause).toBe(undefined);
+    }
+  });
 
   it('can pass a stream a second time after a stream item held it', async () => {
     const inner = new ReadableStream({
@@ -4508,5 +4854,349 @@ describe('ReactFlightDOMEdge', () => {
     expect(readError.stack).toMatch(
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
+  });
+  // Feeds raw Flight rows to a client response, a few microtasks apart, so the
+  // reader's handling of particular shapes and orderings can be exercised
+  // without going through the writer.
+  function openRawResponse(options) {
+    const encoder = new TextEncoder();
+    let controller;
+    const stream = new ReadableStream({
+      start(c) {
+        controller = c;
+      },
+    });
+    const root = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+        serverModuleMap: webpackServerMap,
+      },
+      ...options,
+    });
+    const handle = {
+      root,
+      settled: false,
+      value: undefined,
+      write(row) {
+        controller.enqueue(encoder.encode(row + '\n'));
+      },
+      close() {
+        controller.close();
+      },
+    };
+    // Subscribe at open, as a renderer awaiting the model would, so the model
+    // initializes as its rows arrive rather than lazily on a later read.
+    root.then(value => {
+      handle.settled = true;
+      handle.value = value;
+    });
+    return handle;
+  }
+
+  async function flushImmediates() {
+    for (let i = 0; i < 20; i++) await null;
+    await new Promise(resolve => setImmediate(resolve));
+    for (let i = 0; i < 20; i++) await null;
+  }
+
+  it('fills a bound server reference before delivering the model that holds it', async () => {
+    const serverModule = serverExports({read: async function read() {}});
+    const id = serverModule.read.$$id;
+    const rows = [
+      '0:{"read":"$h1"}',
+      '1:{"id":' + JSON.stringify(id) + ',"bound":"$@2"}',
+      '2:[1]',
+    ];
+    const orders = [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+    ];
+    for (let o = 0; o < orders.length; o++) {
+      const order = orders[o];
+      const response = openRawResponse();
+      let delivered = 'not delivered';
+      response.root.then(value => {
+        // The slot captured at the moment of delivery. A placeholder here would
+        // mean the model resolved before its bound function was constructed.
+        delivered = value.read;
+      });
+      for (let i = 0; i < order.length; i++) {
+        response.write(rows[order[i]]);
+        await flushImmediates();
+      }
+      response.close();
+      await flushImmediates();
+      expect(typeof delivered).toBe('function');
+    }
+  });
+
+  it('completes a later cyclic model after a bound server reference loads', async () => {
+    const serverModule = serverExports({read: async function read() {}});
+    const id = serverModule.read.$$id;
+    // A response whose model holds a bound server reference. Constructing the
+    // bound function outside a parse must not leave an initialization handler
+    // behind that would stop a later response from completing its cycles.
+    const a = openRawResponse();
+    a.write('0:{"read":"$h1"}');
+    await flushImmediates();
+    a.write('1:{"id":' + JSON.stringify(id) + ',"bound":"$@2"}');
+    await flushImmediates();
+    a.write('2:[1]');
+    await flushImmediates();
+    a.close();
+    await flushImmediates();
+    // The model resolved, which means its bound function was constructed.
+    expect(typeof a.value.read).toBe('function');
+
+    // A self-referential Set reached through a Promise. Its cycle only
+    // completes if cycle checks still run.
+    const b = openRawResponse();
+    b.write('0:{"p":"$@1"}');
+    await flushImmediates();
+    b.write('1:"$W2"');
+    await flushImmediates();
+    b.write('2:["$1","x"]');
+    await flushImmediates();
+    b.close();
+    await flushImmediates();
+
+    let resolved = false;
+    let set;
+    b.value.p.then(value => {
+      resolved = true;
+      set = value;
+    });
+    await flushImmediates();
+    expect(resolved).toBe(true);
+    expect(set instanceof Set).toBe(true);
+    expect(set.has(set)).toBe(true);
+    expect(set.has('x')).toBe(true);
+  });
+
+  it('rejects a reference that never resolves once the stream closes', async () => {
+    // The `d` slot only ever leads back to itself, so it can never hold a
+    // value. The writer never emits this, and it must not hang: once the
+    // stream has closed the chunk is rejected rather than left blocked.
+    const response = openRawResponse();
+    let rejection = 'not rejected';
+    response.root.then(
+      () => {},
+      error => {
+        rejection = error;
+      },
+    );
+    response.write('0:{"a":{"b":1},"c":"$0:a:b","d":"$0:d"}');
+    await flushImmediates();
+    expect(rejection).toBe('not rejected');
+    response.close();
+    await flushImmediates();
+    expect(rejection).toEqual(expect.any(Error));
+    expect(rejection.message).toContain('never resolved to a value');
+  });
+
+  it('completes a cycle blocked on a slow client module after the stream closes', async () => {
+    let resolveModule;
+    const blockOnModule = new Promise(resolve => {
+      resolveModule = resolve;
+    });
+    const ClientComponent = clientExports(
+      function ClientComponent() {},
+      'client-chunk',
+      'client.js',
+      blockOnModule,
+    );
+    const model = {};
+    model.self = model;
+    model.C = ClientComponent;
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap),
+    );
+    const root = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    let settled = false;
+    let value;
+    root.then(v => {
+      settled = true;
+      value = v;
+    });
+    // The stream closes but the client module is still loading, so the cycle
+    // stays blocked instead of being rejected by the close backstop.
+    await flushImmediates();
+    expect(settled).toBe(false);
+    resolveModule();
+    await flushImmediates();
+    expect(settled).toBe(true);
+    expect(value.self).toBe(value);
+    expect(typeof value.C).toBe('function');
+  });
+
+  it('halts rather than rejects an unresolved reference on a partial stream', async () => {
+    const response = openRawResponse({unstable_allowPartialStream: true});
+    let touched = false;
+    response.root.then(
+      () => {
+        touched = true;
+      },
+      () => {
+        touched = true;
+      },
+    );
+    response.write('0:{"a":{"b":1},"c":"$0:a:b","d":"$0:d"}');
+    await flushImmediates();
+    response.close();
+    await flushImmediates();
+    // A partial stream halts what it cannot finish; it never rejects.
+    expect(touched).toBe(false);
+  });
+
+  it('rejects a row referenced as both a Set and a Map', async () => {
+    // The writer gives each collection its own row of a single kind. A row
+    // referenced as both must not be shared as one object across the two
+    // slots.
+    const response = openRawResponse();
+    let rejection = 'not rejected';
+    response.root.then(
+      () => {},
+      error => {
+        rejection = error;
+      },
+    );
+    response.write('0:{"s":"$W1","m":"$Q1"}');
+    await flushImmediates();
+    response.write('1:[[1,2]]');
+    await flushImmediates();
+    response.close();
+    await flushImmediates();
+    expect(rejection).toEqual(expect.any(Error));
+    expect(rejection.message).toContain('both a Set and a Map');
+  });
+
+  it('builds independent collections for paths into the same row', async () => {
+    // A path leads to a value inside the row, not to the row's own collection,
+    // so each reference constructs its own Set rather than sharing one.
+    const response = openRawResponse();
+    let model;
+    response.root.then(value => {
+      model = value;
+    });
+    response.write('0:{"a":"$W1:x","b":"$W1:y"}');
+    await flushImmediates();
+    response.write('1:{"x":[1],"y":[2]}');
+    await flushImmediates();
+    response.close();
+    await flushImmediates();
+    expect(model.a).toBeInstanceOf(Set);
+    expect(model.b).toBeInstanceOf(Set);
+    expect(model.a).not.toBe(model.b);
+    expect(Array.from(model.a)).toEqual([1]);
+    expect(Array.from(model.b)).toEqual([2]);
+  });
+
+  function unwrapLazy(value) {
+    while (
+      value != null &&
+      value.$$typeof === Symbol.for('react.lazy') &&
+      value._payload.status === 'fulfilled'
+    ) {
+      value = value._payload.value;
+    }
+    return value;
+  }
+
+  // An element whose props are still blocked is delivered as the lazy node the
+  // reader inserts in its place. For this shared blocked element, its own
+  // position and a reference reaching it through a path decode to the same
+  // lazy, whether the module that blocked it loads before or after the rest of
+  // the stream: reaching it by a path does not change it into an element.
+  async function decodeSharedBlockedElement(loadBeforeClose) {
+    let resolveModule;
+    const blockOnModule = new Promise(resolve => {
+      resolveModule = resolve;
+    });
+    const ClientComponent = clientExports(
+      function ClientComponent() {},
+      'client-chunk',
+      'client.js',
+      blockOnModule,
+    );
+    const shared = {flag: true, ClientComponent};
+    const child = ReactServer.createElement('span', {shared});
+    const model = ReactServer.createElement(
+      'div',
+      {shared, ClientComponent},
+      child,
+      child,
+      ReactServer.createElement(ClientComponent, {shared, child}),
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap),
+    );
+    const root = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    let value;
+    root.then(v => {
+      value = v;
+    });
+    if (loadBeforeClose) {
+      resolveModule();
+    }
+    await flushImmediates();
+    if (!loadBeforeClose) {
+      resolveModule();
+      await flushImmediates();
+    }
+    const div = unwrapLazy(value);
+    const children = div.props.children;
+    const clientElement = unwrapLazy(children[2]);
+    return {
+      original: children[0],
+      duplicatedInSameRow: children[1],
+      referencedByPath: clientElement.props.child,
+    };
+  }
+
+  it('decodes a blocked element to one lazy shared by every occurrence', async () => {
+    const cases = [
+      await decodeSharedBlockedElement(true),
+      await decodeSharedBlockedElement(false),
+    ];
+    const whenLoadedEarly = cases[0];
+    const whenLoadedLate = cases[1];
+    for (let i = 0; i < cases.length; i++) {
+      const {original, duplicatedInSameRow, referencedByPath} = cases[i];
+      // The same lazy node stands in for the element everywhere it occurs.
+      expect(original.$$typeof).toBe(Symbol.for('react.lazy'));
+      expect(duplicatedInSameRow).toBe(original);
+      expect(referencedByPath).toBe(original);
+      expect(React.isValidElement(referencedByPath)).toBe(false);
+    }
+    // Whether the module loaded before or after the stream closed makes no
+    // difference to the decoded shape.
+    expect(whenLoadedLate.referencedByPath.$$typeof).toBe(
+      whenLoadedEarly.referencedByPath.$$typeof,
+    );
+  });
+
+  it('decodes an unblocked element to the same element at every occurrence', async () => {
+    const child = ReactServer.createElement('span', {title: 'x'});
+    const model = {first: child, second: child};
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap),
+    );
+    const root = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    expect(React.isValidElement(root.first)).toBe(true);
+    expect(root.second).toBe(root.first);
   });
 });
