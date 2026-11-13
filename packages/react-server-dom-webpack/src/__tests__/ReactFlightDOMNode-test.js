@@ -3069,4 +3069,52 @@ describe('ReactFlightDOMNode', () => {
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
   });
+
+  describe('abort signal lifetime', () => {
+    function abortListeners(signal) {
+      return require('events').getEventListeners(signal, 'abort').length;
+    }
+
+    it('releases the abort listener when an unread prelude is destroyed', async () => {
+      const controller = new AbortController();
+      const {prelude} = await serverAct(() =>
+        ReactServerDOMStaticServer.prerenderToNodeStream(
+          <div>hello world</div>,
+          webpackMap,
+          {signal: controller.signal},
+        ),
+      );
+
+      expect(abortListeners(controller.signal)).toBe(1);
+
+      const closed = new Promise(resolve => prelude.once('close', resolve));
+      prelude.destroy();
+      await closed;
+
+      expect(prelude.destroyed).toBe(true);
+      expect(abortListeners(controller.signal)).toBe(0);
+    });
+
+    it('still emits the error when the prelude is destroyed with one', async () => {
+      const controller = new AbortController();
+      const {prelude} = await serverAct(() =>
+        ReactServerDOMStaticServer.prerenderToNodeStream(
+          <div>hello world</div>,
+          webpackMap,
+          {signal: controller.signal, onError() {}},
+        ),
+      );
+
+      const destroyError = new Error('destroyed');
+      const emitted = [];
+      prelude.on('error', error => emitted.push(error));
+
+      const closed = new Promise(resolve => prelude.once('close', resolve));
+      prelude.destroy(destroyError);
+      await closed;
+
+      expect(emitted).toEqual([destroyError]);
+      expect(abortListeners(controller.signal)).toBe(0);
+    });
+  });
 });
