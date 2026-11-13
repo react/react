@@ -500,97 +500,166 @@ const rule = {
       // Key is dependency string, value is whether it's stable.
       const dependencies = new Map<string, Dependency>();
       const optionalChains = new Map<string, boolean>();
+      const processedReferenceNodes = new WeakSet<Node>();
       gatherDependenciesRecursively(scope);
+      gatherJSXDependenciesRecursively(node, scope);
 
       function gatherDependenciesRecursively(currentScope: Scope.Scope): void {
         for (const reference of currentScope.references) {
-          // If this reference is not resolved or it is not declared in a pure
-          // scope then we don't care about this reference.
-          if (!reference.resolved) {
-            continue;
-          }
-          if (!pureScopes.has(reference.resolved.scope)) {
-            continue;
-          }
-
-          // Narrow the scope of a dependency if it is, say, a member expression.
-          // Then normalize the narrowed dependency.
-          const referenceNode = fastFindReferenceWithParent(
-            node,
-            reference.identifier,
-          );
-          if (referenceNode == null) {
-            continue;
-          }
-          const dependencyNode = getDependency(referenceNode);
-          const dependency = analyzePropertyChain(
-            dependencyNode,
-            optionalChains,
-          );
-
-          // Accessing ref.current inside effect cleanup is bad.
-          if (
-            // We're in an effect...
-            isEffect &&
-            // ... and this look like accessing .current...
-            dependencyNode.type === 'Identifier' &&
-            (dependencyNode.parent?.type === 'MemberExpression' ||
-              dependencyNode.parent?.type === 'OptionalMemberExpression') &&
-            !dependencyNode.parent.computed &&
-            dependencyNode.parent.property.type === 'Identifier' &&
-            dependencyNode.parent.property.name === 'current' &&
-            // ...in a cleanup function or below...
-            isInsideEffectCleanup(reference)
-          ) {
-            currentRefsInEffectCleanup.set(dependency, {
-              reference,
-              dependencyNode,
-            });
-          }
-
-          if (
-            dependencyNode.parent?.type === 'TSTypeQuery' ||
-            dependencyNode.parent?.type === 'TSTypeReference'
-          ) {
-            continue;
-          }
-
-          const def = reference.resolved.defs[0];
-          if (def == null) {
-            continue;
-          }
-          // Ignore references to the function itself as it's not defined yet.
-          if (def.node != null && def.node.init === node.parent) {
-            continue;
-          }
-          // Ignore Flow type parameters
-          if (
-            // @ts-expect-error We don't have flow types
-            def.type === 'TypeParameter' ||
-            // @ts-expect-error Flow-specific AST node type
-            dependencyNode.parent?.type === 'GenericTypeAnnotation'
-          ) {
-            continue;
-          }
-
-          // Add the dependency to a map so we can make sure it is referenced
-          // again in our dependencies array. Remember whether it's stable.
-          if (!dependencies.has(dependency)) {
-            const resolved = reference.resolved;
-            const isStable =
-              memoizedIsStableKnownHookValue(resolved) ||
-              memoizedIsFunctionWithoutCapturedValues(resolved);
-            dependencies.set(dependency, {
-              isStable,
-              references: [reference],
-            });
-          } else {
-            dependencies.get(dependency)?.references.push(reference);
-          }
+          gatherDependency(reference);
         }
 
         for (const childScope of currentScope.childScopes) {
           gatherDependenciesRecursively(childScope);
+        }
+      }
+
+      function gatherDependency(
+        reference: Scope.Reference,
+        referenceNode?: Node,
+      ): void {
+        if (
+          reference.resolved == null ||
+          !pureScopes.has(reference.resolved.scope)
+        ) {
+          return;
+        }
+
+        const resolvedReferenceNode =
+          referenceNode ??
+          fastFindReferenceWithParent(node, reference.identifier);
+        if (
+          resolvedReferenceNode == null ||
+          processedReferenceNodes.has(resolvedReferenceNode)
+        ) {
+          return;
+        }
+        processedReferenceNodes.add(resolvedReferenceNode);
+
+        const dependencyNode = getDependency(resolvedReferenceNode);
+        const dependency = analyzePropertyChain(dependencyNode, optionalChains);
+
+        if (
+          isEffect &&
+          dependencyNode.type === 'Identifier' &&
+          (dependencyNode.parent?.type === 'MemberExpression' ||
+            dependencyNode.parent?.type === 'OptionalMemberExpression') &&
+          !dependencyNode.parent.computed &&
+          dependencyNode.parent.property.type === 'Identifier' &&
+          dependencyNode.parent.property.name === 'current' &&
+          isInsideEffectCleanup(reference)
+        ) {
+          currentRefsInEffectCleanup.set(dependency, {
+            reference,
+            dependencyNode,
+          });
+        }
+
+        if (
+          dependencyNode.parent?.type === 'TSTypeQuery' ||
+          dependencyNode.parent?.type === 'TSTypeReference'
+        ) {
+          return;
+        }
+
+        const def = reference.resolved.defs[0];
+        if (def == null) {
+          return;
+        }
+        if (def.node != null && def.node.init === node.parent) {
+          return;
+        }
+        if (
+          // @ts-expect-error We don't have flow types
+          def.type === 'TypeParameter' ||
+          // @ts-expect-error Flow-specific AST node type
+          dependencyNode.parent?.type === 'GenericTypeAnnotation'
+        ) {
+          return;
+        }
+
+        if (!dependencies.has(dependency)) {
+          const resolved = reference.resolved;
+          const isStable =
+            memoizedIsStableKnownHookValue(resolved) ||
+            memoizedIsFunctionWithoutCapturedValues(resolved);
+          dependencies.set(dependency, {
+            isStable,
+            references: [reference],
+          });
+        } else {
+          dependencies.get(dependency)?.references.push(reference);
+        }
+      }
+
+      function gatherJSXDependenciesRecursively(
+        currentNode: Node,
+        currentScope: Scope.Scope,
+      ): void {
+        let childScope = currentScope.childScopes.find(
+          child => child.block === currentNode,
+        );
+        while (childScope != null) {
+          currentScope = childScope;
+          childScope = currentScope.childScopes.find(
+            child => child.block === currentNode,
+          );
+        }
+
+        if (currentNode.type === 'JSXOpeningElement') {
+          let name = currentNode.name;
+          while (name.type === 'JSXMemberExpression') {
+            name = name.object;
+          }
+
+          if (
+            name.type === 'JSXIdentifier' &&
+            (currentNode.name.type === 'JSXMemberExpression' ||
+              !/^[a-z]/.test(name.name))
+          ) {
+            let resolvedScope: Scope.Scope | null = currentScope;
+            let resolved: Scope.Variable | null = null;
+            while (resolvedScope != null) {
+              resolved = resolvedScope.set.get(name.name) ?? null;
+              if (resolved != null) {
+                break;
+              }
+              resolvedScope = resolvedScope.upper;
+            }
+
+            if (resolved != null) {
+              const reference = {
+                identifier: name as unknown as Identifier,
+                from: currentScope,
+                resolved,
+                writeExpr: null,
+                init: false,
+                isWrite: () => false,
+                isRead: () => true,
+                isWriteOnly: () => false,
+                isReadOnly: () => true,
+                isReadWrite: () => false,
+              } satisfies Scope.Reference;
+              gatherDependency(reference, name);
+            }
+          }
+        }
+
+        for (const [key, value] of Object.entries(currentNode)) {
+          if (key === 'parent') {
+            continue;
+          }
+          if (isNodeLike(value)) {
+            value.parent = currentNode;
+            gatherJSXDependenciesRecursively(value, currentScope);
+          } else if (Array.isArray(value)) {
+            value.forEach(child => {
+              if (isNodeLike(child)) {
+                child.parent = currentNode;
+                gatherJSXDependenciesRecursively(child, currentScope);
+              }
+            });
+          }
         }
       }
 
