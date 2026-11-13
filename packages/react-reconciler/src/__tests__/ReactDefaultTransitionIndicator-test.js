@@ -74,6 +74,121 @@ describe('ReactDefaultTransitionIndicator', () => {
   });
 
   // @gate enableDefaultTransitionIndicator
+  it('does not unmount the root if it has a faulty implementation', async () => {
+    const onUncaughtError = jest.fn();
+    let setPromise;
+    function App() {
+      const [maybePromise, _setPromise] = useState(null);
+      setPromise = _setPromise;
+      let message = 'default';
+      if (maybePromise !== null) {
+        message = use(maybePromise);
+      }
+
+      return `Hello, ${message}!`;
+    }
+
+    const root = ReactNoop.createRoot({
+      onDefaultTransitionIndicator() {
+        Scheduler.log('start');
+        throw new Error('Failed to start default transition indicator');
+      },
+      onUncaughtError,
+    });
+    await act(() => {
+      root.render(<App />);
+    });
+
+    expect(root).toMatchRenderedOutput('Hello, default!');
+
+    let resolve;
+    await expect(
+      act(() => {
+        React.startTransition(() => {
+          setPromise(
+            new Promise(_resolve => {
+              resolve = _resolve;
+            }),
+          );
+        });
+      }),
+    ).rejects.toThrow('Failed to start default transition indicator');
+    expect(onUncaughtError).not.toHaveBeenCalled();
+
+    assertLog(['start']);
+
+    expect(root).toMatchRenderedOutput('Hello, default!');
+
+    await act(() => {
+      React.startTransition(() => {
+        resolve('test');
+      });
+    });
+
+    expect(root).toMatchRenderedOutput('Hello, test!');
+  });
+
+  // @gate enableDefaultTransitionIndicator
+  it('does not unmount the root if it has a faulty cleanup implementation', async () => {
+    const onUncaughtError = jest.fn();
+    let setPromise;
+    function App() {
+      const [maybePromise, _setPromise] = useState(null);
+      setPromise = _setPromise;
+      let message = 'default';
+      if (maybePromise !== null) {
+        message = use(maybePromise);
+      }
+
+      return `Hello, ${message}!`;
+    }
+
+    const root = ReactNoop.createRoot({
+      onDefaultTransitionIndicator() {
+        Scheduler.log('start');
+        return () => {
+          Scheduler.log('stop');
+          throw new Error('Failed to stop default transition indicator');
+        };
+      },
+      onUncaughtError,
+    });
+    await act(() => {
+      root.render(<App />);
+    });
+
+    expect(root).toMatchRenderedOutput('Hello, default!');
+
+    let resolve;
+    await act(() => {
+      React.startTransition(() => {
+        setPromise(
+          new Promise(_resolve => {
+            resolve = _resolve;
+          }),
+        );
+      });
+    });
+
+    assertLog(['start']);
+
+    expect(root).toMatchRenderedOutput('Hello, default!');
+
+    await expect(
+      act(() => {
+        React.startTransition(() => {
+          resolve('test');
+        });
+      }),
+    ).rejects.toThrow('Failed to stop default transition indicator');
+    expect(onUncaughtError).not.toHaveBeenCalled();
+
+    assertLog(['stop']);
+
+    expect(root).toMatchRenderedOutput('Hello, test!');
+  });
+
+  // @gate enableDefaultTransitionIndicator
   it('does not trigger the default indicator if there is a sync mutation', async () => {
     const promiseA = Promise.resolve('Hi');
     let resolveB;
