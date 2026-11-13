@@ -1821,7 +1821,6 @@ function markRootSuspended(
   // now ready to commit the initial value.
   const pingedLanes = removeLanes(root.pingedLanes, suspendedLanes);
   suspendedLanes = getEntangledLanes(root, suspendedLanes);
-  suspendedLanes = removeLanes(suspendedLanes, pingedLanes);
 
   // When suspending, we should always exclude lanes that were pinged or (more
   // rarely, since we try to avoid it) updated during the render phase.
@@ -1830,7 +1829,16 @@ function markRootSuspended(
     suspendedLanes,
     workInProgressRootInterleavedUpdatedLanes,
   );
-  _markRootSuspended(root, suspendedLanes, spawnedLane, didAttemptEntireTree);
+  // Spawned work must include the same updates even if some are already pinged.
+  const entangledLanes = suspendedLanes;
+  suspendedLanes = removeLanes(suspendedLanes, pingedLanes);
+  _markRootSuspended(
+    root,
+    suspendedLanes,
+    spawnedLane,
+    didAttemptEntireTree,
+    entangledLanes,
+  );
 }
 
 export function flushRoot(root: FiberRoot, lanes: Lanes) {
