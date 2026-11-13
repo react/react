@@ -849,6 +849,7 @@ export function markRootSuspended(
   suspendedLanes: Lanes,
   spawnedLane: Lane,
   didAttemptEntireTree: boolean,
+  entangledLanes: Lanes,
 ) {
   // TODO: Split this into separate functions for marking the root at the end of
   // a render attempt versus suspending while the root is still in progress.
@@ -883,9 +884,9 @@ export function markRootSuspended(
     // render nothing and commit, and that commit clears the suspended lanes,
     // so the suspended work would be retried at once, in a loop, until its
     // data arrives. The deferred values are requested again by that retry.
-    includesSomeLane(suspendedLanes, UpdateLanes)
+    includesSomeLane(entangledLanes, UpdateLanes)
   ) {
-    markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
+    markSpawnedDeferredLane(root, spawnedLane, entangledLanes);
   }
 }
 
