@@ -225,8 +225,11 @@ function IndexedSourceMapConsumer(sourceMapJSON: IndexSourceMap) {
     }
 
     return section.sourceMapConsumer.originalPositionFor({
-      // The mappings in a Source Map section are relative to the section offset.
-      columnNumber: columnNumber - section.offsetColumn0,
+      // The column offset only applies to the first line of the section.
+      columnNumber:
+        line0 === section.offsetLine0
+          ? columnNumber - section.offsetColumn0
+          : columnNumber,
       lineNumber: lineNumber - section.offsetLine0,
     });
   }
