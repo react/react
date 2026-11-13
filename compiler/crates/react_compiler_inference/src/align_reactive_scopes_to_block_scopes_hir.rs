@@ -260,6 +260,7 @@ pub fn align_reactive_scopes_to_block_scopes_hir(func: &mut HirFunction, env: &m
                     env.new_mutable_range(terminal_eval_order, next_id)
                 } else {
                     // Value -> value transition (ternary/logical/optional): reuse range
+                    #[allow(clippy::unnecessary_unwrap)]
                     node.as_ref().unwrap().value_range.clone()
                 };
 

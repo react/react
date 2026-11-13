@@ -249,13 +249,8 @@ impl SSABuilder {
     }
 
     fn fix_incomplete_phis(&mut self, block_id: BlockId, env: &mut Environment) {
-        let incomplete_phis: Vec<IncompletePhi> = self
-            .states
-            .get_mut(&block_id)
-            .unwrap()
-            .incomplete_phis
-            .drain(..)
-            .collect();
+        let incomplete_phis: Vec<IncompletePhi> =
+            std::mem::take(&mut self.states.get_mut(&block_id).unwrap().incomplete_phis);
         for phi in &incomplete_phis {
             self.add_phi(block_id, &phi.old_place, &phi.new_place, env);
         }
