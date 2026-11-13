@@ -27,7 +27,10 @@ export function compareDocumentPositionForEmptyFragment<TPublicInstance>(
   const parentResult = parentHostInstance.compareDocumentPosition(otherNode);
   result = parentResult;
   if (parentHostInstance === otherNode) {
-    result = Node.DOCUMENT_POSITION_CONTAINS;
+    // An ancestor contains and precedes the fragment. This matches the
+    // non-empty path, where the first child reports CONTAINS | PRECEDING for
+    // its host parent, and the DOM spec.
+    result = Node.DOCUMENT_POSITION_CONTAINS | Node.DOCUMENT_POSITION_PRECEDING;
   } else {
     if (parentResult & Node.DOCUMENT_POSITION_CONTAINED_BY) {
       // otherNode is one of the fragment's siblings. Use the next
