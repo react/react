@@ -12,7 +12,10 @@ import type {Fiber} from './ReactInternalTypes';
 import type {StackCursor} from './ReactFiberStack';
 import type {SuspenseState} from './ReactFiberSuspenseComponent';
 
-import {enableSuspenseAvoidThisFallback} from 'shared/ReactFeatureFlags';
+import {
+  enableSuspenseAvoidThisFallback,
+  enableServerErrorBoundary,
+} from 'shared/ReactFeatureFlags';
 import {createCursor, push, pop} from './ReactFiberStack';
 import {isCurrentTreeHidden} from './ReactFiberHiddenContext';
 import {OffscreenComponent} from './ReactWorkTags';
@@ -40,7 +43,10 @@ export function getShellBoundary(): Fiber | null {
   return shellBoundary;
 }
 
-export function pushPrimaryTreeSuspenseHandler(handler: Fiber): void {
+export function pushPrimaryTreeSuspenseHandler(
+  handler: Fiber,
+  isHydrating: boolean = false,
+): void {
   // TODO: Pass as argument
   const current = handler.alternate;
   const props: SuspenseProps = handler.pendingProps;
@@ -53,6 +59,22 @@ export function pushPrimaryTreeSuspenseHandler(handler: Fiber): void {
     setDefaultShallowSuspenseListContext(suspenseStackCursor.current),
     handler,
   );
+
+  if (
+    enableServerErrorBoundary &&
+    props.unstable_errorBoundary === true &&
+    !isHydrating
+  ) {
+    // Error boundaries do not provide a loading state. Let suspensions reach
+    // the nearest explicit Suspense boundary. During hydration we still need
+    // a handler here so that the server-rendered content can remain in place.
+    push(
+      suspenseHandlerStackCursor,
+      suspenseHandlerStackCursor.current,
+      handler,
+    );
+    return;
+  }
 
   // Experimental feature: Some Suspense boundaries are marked as having an
   // undesirable fallback state. These have special behavior where we only

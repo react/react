@@ -21,6 +21,7 @@ import {
   REACT_CONSUMER_TYPE,
   REACT_STRICT_MODE_TYPE,
   REACT_SUSPENSE_TYPE,
+  REACT_SERVER_ERROR_BOUNDARY_TYPE,
   REACT_SUSPENSE_LIST_TYPE,
   REACT_VIEW_TRANSITION_TYPE,
   REACT_SCOPE_TYPE,
@@ -33,6 +34,7 @@ import {
   enableTransitionTracing,
   enableLegacyHidden,
   enableViewTransition,
+  enableServerErrorBoundary,
 } from 'shared/ReactFeatureFlags';
 
 const REACT_CLIENT_REFERENCE: symbol = Symbol.for('react.client.reference');
@@ -101,6 +103,7 @@ export function isValidElementType(type: mixed): boolean {
     type === REACT_STRICT_MODE_TYPE ||
     type === REACT_SUSPENSE_TYPE ||
     type === REACT_SUSPENSE_LIST_TYPE ||
+    (enableServerErrorBoundary && type === REACT_SERVER_ERROR_BOUNDARY_TYPE) ||
     (enableLegacyHidden && type === REACT_LEGACY_HIDDEN_TYPE) ||
     (enableScopeAPI && type === REACT_SCOPE_TYPE) ||
     (enableTransitionTracing && type === REACT_TRACING_MARKER_TYPE) ||
