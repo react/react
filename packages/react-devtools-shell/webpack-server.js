@@ -126,8 +126,12 @@ const makeConfig = (entry, alias) => ({
             loader: 'css-loader',
             options: {
               sourceMap: true,
-              modules: true,
-              localIdentName: '[local]',
+              modules: {
+                localIdentName: '[local]',
+                // Keep `import styles from './Foo.css'` working (css-loader 7 defaults to named exports).
+                namedExport: false,
+                exportLocalsConvention: 'as-is',
+              },
             },
           },
         ],

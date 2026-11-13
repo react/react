@@ -192,11 +192,16 @@ function collectStackTrace(
       if (name === '<anonymous>') {
         name = '';
       }
-      let filename =
+      const scriptName =
         // $FlowFixMe[method-unbinding]
         typeof callSite.getScriptNameOrSourceURL === 'function'
-          ? callSite.getScriptNameOrSourceURL() || '<anonymous>'
-          : '';
+          ? callSite.getScriptNameOrSourceURL()
+          : // Hermes implements getFileName() but not getScriptNameOrSourceURL()
+            // $FlowFixMe[method-unbinding]
+            typeof callSite.getFileName === 'function'
+            ? callSite.getFileName()
+            : null;
+      let filename = scriptName || '<anonymous>';
       if (filename === '<anonymous>') {
         filename = '';
         // $FlowFixMe[method-unbinding]

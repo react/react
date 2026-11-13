@@ -124,7 +124,13 @@ module.exports = {
           },
           {
             loader: 'css-loader',
-            options: {modules: true},
+            options: {
+              modules: {
+                // Keep `import styles from './Foo.css'` working (css-loader 7 defaults to named exports).
+                namedExport: false,
+                exportLocalsConvention: 'as-is',
+              },
+            },
           },
         ],
       },
