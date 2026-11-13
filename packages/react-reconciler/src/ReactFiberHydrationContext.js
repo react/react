@@ -64,6 +64,7 @@ import {
   isFormStateMarkerMatching,
   validateHydratableInstance,
   validateHydratableTextInstance,
+  waitForHydrationIfBlocked,
 } from './ReactFiberConfig';
 import {OffscreenLane} from './ReactFiberLane';
 import {
@@ -383,6 +384,10 @@ export const HydrationMismatchException: mixed = new Error(
 );
 
 function throwOnHydrationMismatch(fiber: Fiber, fromText: boolean = false) {
+  const hydrationWait = waitForHydrationIfBlocked(getRootHostContainer());
+  if (hydrationWait !== null) {
+    throw hydrationWait;
+  }
   let diff = '';
   if (__DEV__) {
     // Consume the diff root for this mismatch.

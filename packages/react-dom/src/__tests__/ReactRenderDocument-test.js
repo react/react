@@ -85,6 +85,70 @@ describe('rendering React components at document', () => {
       expect(body === testDocument.body).toBe(true);
     });
 
+    it('retries hydration when the document parser is still streaming', async () => {
+      function Root() {
+        return (
+          <html>
+            <head>
+              <title>Streaming document</title>
+            </head>
+            <body>
+              <header>Shell</header>
+              <main>Streamed content</main>
+            </body>
+          </html>
+        );
+      }
+
+      const fullMarkup = ReactDOMServer.renderToString(<Root />);
+      const partialMarkup = fullMarkup.replace(
+        '<main>Streamed content</main>',
+        '',
+      );
+      const testDocument = getTestDocument(partialMarkup);
+      let readyState = 'loading';
+      Object.defineProperty(testDocument, 'defaultView', {
+        configurable: true,
+        value: window,
+      });
+      Object.defineProperty(testDocument, 'readyState', {
+        configurable: true,
+        get() {
+          return readyState;
+        },
+      });
+
+      const serverHeader = testDocument.querySelector('header');
+      const recoverableErrors = [];
+      ReactDOM.flushSync(() => {
+        ReactDOMClient.hydrateRoot(testDocument, <Root />, {
+          onRecoverableError(error) {
+            recoverableErrors.push(error);
+          },
+        });
+      });
+
+      expect(recoverableErrors).toEqual([]);
+      expect(testDocument.querySelector('header')).toBe(serverHeader);
+      expect(testDocument.querySelector('main')).toBe(null);
+
+      const main = testDocument.createElement('main');
+      main.textContent = 'Streamed content';
+      testDocument.body.appendChild(main);
+      readyState = 'interactive';
+      await act(() => {
+        testDocument.dispatchEvent(
+          new testDocument.defaultView.Event('DOMContentLoaded'),
+        );
+      });
+
+      expect(recoverableErrors).toEqual([]);
+      expect(testDocument.querySelector('header')).toBe(serverHeader);
+      expect(testDocument.querySelector('main').textContent).toBe(
+        'Streamed content',
+      );
+    });
+
     it('should be able to unmount component from document node, but leaves singleton nodes intact', async () => {
       class Root extends React.Component {
         render() {
