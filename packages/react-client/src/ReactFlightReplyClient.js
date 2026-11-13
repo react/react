@@ -481,6 +481,12 @@ export function processReply(
     }
 
     if (value === null) {
+      // An invalid Date's toJSON returns null. Encode it as a Date so that it
+      // doesn't turn into null on the server.
+      // $FlowFixMe[incompatible-use]
+      if (parent[key] instanceof Date) {
+        return serializeDateFromDateJSON('null');
+      }
       return null;
     }
 

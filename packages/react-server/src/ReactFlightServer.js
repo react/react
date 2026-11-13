@@ -2957,6 +2957,12 @@ function resolveModel(
   ) {
     // $FlowFixMe[incompatible-use]
     jsonValue = value.toJSON(parentPropertyName);
+    // An invalid Date's toJSON returns null. Encode it as a Date so that it
+    // doesn't turn into null on the client.
+    // $FlowFixMe[invalid-compare]
+    if (jsonValue === null && value instanceof Date) {
+      return serializeDate(value);
+    }
   }
 
   if (__DEV__) {
