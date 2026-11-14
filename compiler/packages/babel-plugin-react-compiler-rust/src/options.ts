@@ -143,6 +143,8 @@ export function resolveOptions(
     }
   } else if (rawOpts.sources != null && filename == null) {
     shouldCompile = false; // sources specified but no filename
+  } else if (filename != null) {
+    shouldCompile = filename.indexOf('node_modules') === -1;
   }
 
   // Resolve reanimated check
