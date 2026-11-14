@@ -3586,4 +3586,57 @@ describe('ReactFlightDOM', () => {
       expect(container.innerHTML).toBe('<span id="_stream-S_1_">cause</span>');
     });
   });
+  // Strings that are written as text chunks are encoded as UTF-8, which can't
+  // represent an unpaired surrogate. The encoder replaces it with U+FFFD, so
+  // these strings have to stay in the JSON payload, where JSON.stringify
+  // escapes them and JSON.parse restores them.
+  describe('unpaired surrogates', () => {
+    async function render(model) {
+      const {writable, readable} = getTestStream();
+      const {pipe} = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(model, webpackMap),
+      );
+      pipe(writable);
+      return ReactServerDOMClient.createFromReadableStream(readable);
+    }
+
+    it('preserves an unpaired surrogate in a string model', async () => {
+      const text = 'a\uD800b';
+      expect(await render(text)).toBe(text);
+    });
+
+    it('preserves an unpaired surrogate in a small string', async () => {
+      const text = 'a'.repeat(16) + '\uDFFF';
+      const model = await render({text});
+      expect(model.text).toBe(text);
+    });
+
+    it('preserves an unpaired surrogate in a large string', async () => {
+      // Strings of this size are normally written as a separate text chunk.
+      const text = 'a'.repeat(1024) + '\uD800' + 'b'.repeat(1024);
+      const model = await render({text});
+      expect(model.text).toBe(text);
+    });
+
+    it('preserves an unpaired surrogate in a streamed string', async () => {
+      // Chunks of a ReadableStream are written as their own rows, so a string
+      // chunk becomes a text chunk instead of part of the model.
+      const text = 'a\uD800b';
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(text);
+          controller.close();
+        },
+      });
+      const model = await render({stream});
+      const reader = model.stream.getReader();
+      expect(await reader.read()).toEqual({done: false, value: text});
+    });
+
+    it('preserves surrogate pairs in a large string', async () => {
+      const text = 'a'.repeat(1024) + '\u{1F600}\u{10FFFF}';
+      const model = await render({text});
+      expect(model.text).toBe(text);
+    });
+  });
 });
