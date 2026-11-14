@@ -228,6 +228,7 @@ export function initInput(
   type: ?string,
   name: ?string,
   isHydrating: boolean,
+  autoFocus: boolean,
 ) {
   const node: HTMLInputElement = element as any;
 
@@ -302,6 +303,17 @@ export function initInput(
       // so we assign defaultValue to the same thing as the value property
       // assignment step above.
       node.defaultValue = initialValue;
+
+      if (
+        autoFocus &&
+        value == null &&
+        initialValue !== '' &&
+        node.type === 'text'
+      ) {
+        // The initial value assignment moves the caret to the end. Set it
+        // before commitMount focuses the input, as with native autofocus.
+        node.setSelectionRange(0, 0);
+      }
     }
   }
 

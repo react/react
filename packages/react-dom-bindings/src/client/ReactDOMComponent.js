@@ -1236,6 +1236,7 @@ export function setInitialProperties(
         type,
         name,
         false,
+        !!props.autoFocus,
       );
       return;
     }
@@ -3207,6 +3208,7 @@ export function hydrateProperties(
           props.type,
           props.name,
           true,
+          false,
         );
       }
       break;
