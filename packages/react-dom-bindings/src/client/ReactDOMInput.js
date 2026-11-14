@@ -97,24 +97,36 @@ export function updateInput(
 ) {
   const node: HTMLInputElement = element as any;
 
-  // Temporarily disconnect the input from any radio buttons.
-  // Changing the type or name as the same time as changing the checked value
-  // needs to be atomically applied. We can only ensure that by disconnecting
-  // the name while do the mutations and then reapply the name after that's done.
-  node.name = '';
+  // A plain text input with matching attributes does not need to be
+  // disconnected from a radio group. Keep the usual order when coercion
+  // or custom element callbacks can change the element during the update.
+  const skipTypeAndNameUpdate =
+    type === 'text' &&
+    typeof name === 'string' &&
+    (value == null || typeof value !== 'object') &&
+    (defaultValue == null || typeof defaultValue !== 'object') &&
+    !node.hasAttribute('is') &&
+    node.getAttribute('type') === type &&
+    node.getAttribute('name') === name;
 
-  if (
-    type != null &&
-    typeof type !== 'function' &&
-    typeof type !== 'symbol' &&
-    typeof type !== 'boolean'
-  ) {
-    if (__DEV__) {
-      checkAttributeStringCoercion(type, 'type');
+  if (!skipTypeAndNameUpdate) {
+    // Disconnect from radio buttons while changing type, name, and checked.
+    // Reapply the name once the other mutations are complete.
+    node.name = '';
+
+    if (
+      type != null &&
+      typeof type !== 'function' &&
+      typeof type !== 'symbol' &&
+      typeof type !== 'boolean'
+    ) {
+      if (__DEV__) {
+        checkAttributeStringCoercion(type, 'type');
+      }
+      node.type = type;
+    } else {
+      node.removeAttribute('type');
     }
-    node.type = type;
-  } else {
-    node.removeAttribute('type');
   }
 
   if (value != null) {
@@ -204,18 +216,20 @@ export function updateInput(
       checked && typeof checked !== 'function' && typeof checked !== 'symbol';
   }
 
-  if (
-    name != null &&
-    typeof name !== 'function' &&
-    typeof name !== 'symbol' &&
-    typeof name !== 'boolean'
-  ) {
-    if (__DEV__) {
-      checkAttributeStringCoercion(name, 'name');
+  if (!skipTypeAndNameUpdate) {
+    if (
+      name != null &&
+      typeof name !== 'function' &&
+      typeof name !== 'symbol' &&
+      typeof name !== 'boolean'
+    ) {
+      if (__DEV__) {
+        checkAttributeStringCoercion(name, 'name');
+      }
+      node.name = toString(getToStringValue(name));
+    } else {
+      node.removeAttribute('name');
     }
-    node.name = toString(getToStringValue(name));
-  } else {
-    node.removeAttribute('name');
   }
 }
 
