@@ -156,6 +156,14 @@ export function resolveOptions(
       (globalThis as any).__DEV__ === true) ||
     process.env['NODE_ENV'] === 'development';
 
+  const environment = serializeEnvironment(
+    (rawOpts.environment as Record<string, unknown>) ?? {},
+    ast,
+  );
+  if (isDev && environment.enableResetCacheOnSourceFileChanges !== false) {
+    environment.enableResetCacheOnSourceFileChanges = true;
+  }
+
   return {
     shouldCompile,
     enableReanimated,
@@ -172,9 +180,6 @@ export function resolveOptions(
     flowSuppressions: rawOpts.flowSuppressions ?? true,
     ignoreUseNoForget: rawOpts.ignoreUseNoForget ?? false,
     customOptOutDirectives: rawOpts.customOptOutDirectives ?? null,
-    environment: serializeEnvironment(
-      (rawOpts.environment as Record<string, unknown>) ?? {},
-      ast,
-    ),
+    environment,
   };
 }
