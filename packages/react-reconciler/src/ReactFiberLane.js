@@ -875,7 +875,16 @@ export function markRootSuspended(
     lanes &= ~lane;
   }
 
-  if (spawnedLane !== NoLane) {
+  if (
+    spawnedLane !== NoLane &&
+    // A suspended attempt commits nothing. If it carried updates, the spawned
+    // task is entangled with them below and retries them together. If it
+    // carried none (hydration, a Suspense retry), the spawned task would
+    // render nothing and commit, and that commit clears the suspended lanes,
+    // so the suspended work would be retried at once, in a loop, until its
+    // data arrives. The deferred values are requested again by that retry.
+    includesSomeLane(suspendedLanes, UpdateLanes)
+  ) {
     markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
   }
 }

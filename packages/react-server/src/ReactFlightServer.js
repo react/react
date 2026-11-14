@@ -108,11 +108,10 @@ import {
 
 import {
   HooksDispatcher,
-  prepareToUseHooksForRequest,
+  switchHooksRequest,
   prepareToUseHooksForComponent,
   getThenableStateAfterSuspending,
   getTrackedThenablesAfterRendering,
-  resetHooksForRequest,
 } from './ReactFlightHooks';
 import {DefaultAsyncDispatcher} from './flight/ReactFlightAsyncDispatcher';
 
@@ -901,6 +900,25 @@ export function resolveRequest(): null | Request {
   return null;
 }
 
+function runWithRequest<A, R>(
+  request: Request,
+  callback: (Request, A) => R,
+  argument: A,
+): R {
+  const previousDispatcher = ReactSharedInternals.H;
+  const previousRequest = currentRequest;
+  const previousHooksRequest = switchHooksRequest(request);
+  ReactSharedInternals.H = HooksDispatcher;
+  currentRequest = request;
+  try {
+    return callback(request, argument);
+  } finally {
+    ReactSharedInternals.H = previousDispatcher;
+    currentRequest = previousRequest;
+    switchHooksRequest(previousHooksRequest);
+  }
+}
+
 function isTypedArray(value: any): boolean {
   if (value instanceof ArrayBuffer) {
     return true;
@@ -1374,8 +1392,12 @@ function serializeReadableStream(
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortStream);
-  reader.read().then(progress, error);
+  if (request.cacheController.signal.aborted) {
+    abortStream();
+  } else {
+    request.cacheController.signal.addEventListener('abort', abortStream);
+    reader.read().then(progress, error);
+  }
   return serializeByValueID(streamTask.id);
 }
 
@@ -1509,11 +1531,15 @@ function serializeAsyncIterable(
       iterator.throw(reason).then(noop, noop);
     }
   }
-  request.cacheController.signal.addEventListener('abort', abortIterable);
-  if (__DEV__) {
-    callIteratorInDEV(iterator, progress, error);
+  if (request.cacheController.signal.aborted) {
+    abortIterable();
   } else {
-    iterator.next().then(progress, error);
+    request.cacheController.signal.addEventListener('abort', abortIterable);
+    if (__DEV__) {
+      callIteratorInDEV(iterator, progress, error);
+    } else {
+      iterator.next().then(progress, error);
+    }
   }
   return serializeByValueID(streamTask.id);
 }
@@ -3581,10 +3607,14 @@ function serializeBlob(request: Request, blob: Blob): string {
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortBlob);
+  if (request.cacheController.signal.aborted) {
+    abortBlob();
+  } else {
+    request.cacheController.signal.addEventListener('abort', abortBlob);
 
-  // $FlowFixMe[incompatible-type]
-  reader.read().then(progress).catch(error);
+    // $FlowFixMe[incompatible-type]
+    reader.read().then(progress).catch(error);
+  }
 
   return '$B' + newTask.id.toString(16);
 }
@@ -6259,6 +6289,10 @@ function retryTask(request: Request, task: Task): void {
     return;
   }
 
+  runWithRequest(request, retryTaskWithRequest, task);
+}
+
+function retryTaskWithRequest(request: Request, task: Task): void {
   const prevCanEmitDebugInfo = canEmitDebugInfo;
   task.status = RENDERING;
 
@@ -6385,6 +6419,10 @@ function retryTask(request: Request, task: Task): void {
 }
 
 function tryStreamTask(request: Request, task: Task): void {
+  runWithRequest(request, tryStreamTaskWithRequest, task);
+}
+
+function tryStreamTaskWithRequest(request: Request, task: Task): void {
   // This is used to try to emit something synchronously but if it suspends,
   // we emit a reference to a new outlined task immediately instead.
   const prevCanEmitDebugInfo = canEmitDebugInfo;
@@ -6406,13 +6444,10 @@ function tryStreamTask(request: Request, task: Task): void {
 
 function performWork(request: Request): void {
   markAsyncSequenceRootTask();
+  runWithRequest(request, performWorkWithRequest, undefined);
+}
 
-  const prevDispatcher = ReactSharedInternals.H;
-  ReactSharedInternals.H = HooksDispatcher;
-  const prevRequest = currentRequest;
-  currentRequest = request;
-  prepareToUseHooksForRequest(request);
-
+function performWorkWithRequest(request: Request): void {
   try {
     const pingedTasks = request.pingedTasks;
     request.pingedTasks = [];
@@ -6424,10 +6459,6 @@ function performWork(request: Request): void {
   } catch (error) {
     logRecoverableError(request, error, null);
     fatalError(request, error);
-  } finally {
-    ReactSharedInternals.H = prevDispatcher;
-    resetHooksForRequest();
-    currentRequest = prevRequest;
   }
 }
 

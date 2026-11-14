@@ -83,7 +83,7 @@ type InspectorDataProps = Readonly<{
 }>;
 
 type InspectorDataGetter = (
-  <TElementType extends React.ElementType>(
+  f: <TElementType extends React.ElementType>(
     componentOrHandle: React.ElementRef<TElementType> | number,
   ) => ?number,
 ) => Readonly<{

@@ -48,7 +48,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
 
       - uses: actions/setup-node@v4
@@ -75,7 +75,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'compiler/yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -152,7 +152,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -178,7 +178,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -206,7 +206,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile
@@ -260,7 +260,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'compiler/yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -270,6 +270,25 @@ jobs:
         if: steps.node_modules.outputs.cache-hit != 'true'
       - run: node --version
       - run: yarn test ${{ matrix.params }} --ci --shard=${{ matrix.shard }}
+
+  test_fizz_flight_node20:
+    name: Fizz/Flight on Node 20 (${{ matrix.release_channel }}, ${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        release_channel: [stable, experimental]
+        env: [development, production]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn test --release-channel=${{ matrix.release_channel }} --env=${{ matrix.env }} --ci --testPathPatterns='Fizz|Flight'
 
   # Hardcoded to improve parallelism
   test-linter:
@@ -287,7 +306,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'compiler/yarn.lock') }}
       - name: Install runtime dependencies
         run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -331,7 +350,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'compiler/yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -438,7 +457,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'compiler/yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -487,7 +506,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -529,7 +548,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -619,7 +638,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -659,7 +678,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -696,7 +715,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: fixtures_dom-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'fixtures/dom/yarn.lock') }}
+          key: fixtures_dom-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'fixtures/dom/yarn.lock') }}
       - run: yarn --cwd fixtures/dom install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Wait for archived build
@@ -713,9 +732,13 @@ jobs:
 
   # ----- FLIGHT -----
   run_fixtures_flight_tests:
-    name: Run fixtures Flight tests
+    name: Run fixtures Flight tests (Node ${{ matrix.node_version }})
     needs: build_and_lint
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node_version: [default, '20.19.0']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -733,6 +756,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
+          node-version: ${{ matrix.node_version != 'default' && matrix.node_version || '' }}
       # Fixture copies some built packages from the workroot after install.
       # That means dependencies of the built packages are not installed.
       # We need to install dependencies of the workroot to fulfill all dependency constraints
@@ -742,20 +766,24 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: fixtures_flight-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'fixtures/flight/yarn.lock') }}
+          key: fixtures_flight-node_modules-v7-${{ matrix.node_version }}-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'fixtures/flight/yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - run: yarn --cwd fixtures/flight install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Check Playwright version
         id: playwright_version
-        run: echo "playwright_version=$(npm ls @playwright/test | grep @playwright | sed 's/.*@//' | head -1)" >> "$GITHUB_OUTPUT"
+        working-directory: fixtures/flight
+        run: |
+          # Validate npm's devEngines checks even when cached browsers skip installation.
+          npx --offline playwright --version
+          echo "playwright_version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright Browsers for version ${{ steps.playwright_version.outputs.playwright_version }}
         id: cache_playwright_browsers
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
+          key: flight-playwright-browsers-v1-${{ matrix.node_version }}-${{ hashFiles('.nvmrc') }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
       - name: Playwright install deps
         if: steps.cache_playwright_browsers.outputs.cache-hit != 'true'
         working-directory: fixtures/flight
@@ -773,13 +801,13 @@ jobs:
       - name: Archive Flight fixture artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: flight-playwright-report
+          name: flight-playwright-report-${{ matrix.node_version }}
           path: fixtures/flight/playwright-report
           if-no-files-found: warn
       - name: Archive Flight fixture artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: flight-test-results
+          name: flight-test-results-${{ matrix.node_version }}
           path: fixtures/flight/test-results
           if-no-files-found: ignore
 
@@ -815,7 +843,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -869,7 +897,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -913,7 +941,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -962,7 +990,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -1015,7 +1043,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-release-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'scripts/release/yarn.lock') }}
+          key: runtime-release-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'yarn.lock', 'scripts/release/yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile

@@ -6,9 +6,9 @@
     "start": "cross-env NODE_ENV=development node ./webpack-server.js"
   },
   "dependencies": {
-    "immutable": "^4.0.0-rc.12",
+    "immutable": "^4.3.9",
     "react-native-web": "0.0.0-26873b469",
-    "semver": "^6.3.0"
+    "semver": "^6.3.1"
   },
   "devDependencies": {
     "@babel/core": "^7.11.1",
@@ -21,12 +21,12 @@
     "babel-core": "^7.0.0-bridge",
     "babel-eslint": "^9.0.0",
     "babel-loader": "^8.0.4",
-    "cross-env": "^3.1.4",
-    "css-loader": "^1.0.1",
+    "cross-env": "^7.0.3",
+    "css-loader": "^7.1.5",
     "raw-loader": "^3.1.0",
-    "style-loader": "^0.23.1",
-    "webpack": "^5.82.1",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.104.1",
     "webpack-cli": "^5.1.1",
-    "webpack-dev-server": "^4.15.0"
+    "webpack-dev-server": "^5.2.7"
   }
 }

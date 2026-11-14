@@ -19,6 +19,7 @@ let Suspense;
 let Activity;
 let assertLog;
 let waitForPaint;
+let waitForAll;
 let textCache;
 
 describe('ReactDeferredValue', () => {
@@ -39,6 +40,7 @@ describe('ReactDeferredValue', () => {
     const InternalTestUtils = require('internal-test-utils');
     assertLog = InternalTestUtils.assertLog;
     waitForPaint = InternalTestUtils.waitForPaint;
+    waitForAll = InternalTestUtils.waitForAll;
 
     textCache = new Map();
   });
@@ -1142,5 +1144,65 @@ describe('ReactDeferredValue', () => {
       'B: updated',
     ]);
     expect(root).toMatchRenderedOutput('A:updatedupdated');
+  });
+
+  it('a Suspense retry that suspends again after spawning a deferred task waits for its data', async () => {
+    function Deferred() {
+      return <Text text={useDeferredValue('Final', 'Initial')} />;
+    }
+
+    function Content() {
+      readText('A');
+      return (
+        <>
+          <Deferred />
+          <AsyncText text="B" />
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() =>
+      root.render(
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Content />
+        </Suspense>,
+      ),
+    );
+    Scheduler.unstable_clearLog();
+    expect(root).toMatchRenderedOutput('Loading...');
+
+    // Resolving A retries the boundary. Content mounts the useDeferredValue,
+    // which spawns a deferred task, and then B suspends. The retry has to wait
+    // for B: it must not be retried again because the spawned task committed.
+    // If it is, this never settles, and the test fails with "Potential
+    // infinite loop".
+    resolveText('A');
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      await waitForAll(['Initial', 'Suspend! [B]']);
+    } else {
+      // Without throttling, the retry commits the fallback right away, and the
+      // deferred task spawned by that commit renders the content again with
+      // the final value, which also waits for B. This path never marks the
+      // retry suspended, so it did not loop before the fix either.
+      await waitForAll([
+        'Initial',
+        'Suspend! [B]',
+        'Final',
+        'Suspend! [B]',
+        'Final',
+        'Suspend! [B]',
+      ]);
+    }
+    expect(root).toMatchRenderedOutput('Loading...');
+
+    await act(() => resolveText('B'));
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      assertLog(['Initial', 'B', 'Final']);
+    } else {
+      // The deferred task is the render waiting for B, with the final value.
+      assertLog(['Final', 'B']);
+    }
+    expect(root).toMatchRenderedOutput('FinalB');
   });
 });
