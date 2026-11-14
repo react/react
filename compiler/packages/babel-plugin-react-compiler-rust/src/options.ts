@@ -36,7 +36,7 @@ export interface Logger {
 }
 
 export type PluginOptions = Partial<ResolvedOptions> & {
-  sources?: ((filename: string) => boolean) | string[];
+  sources?: ((filename: string) => boolean) | string[] | null;
   enableReanimatedCheck?: boolean;
   logger?: Logger | null;
 } & Record<string, unknown>;
@@ -143,7 +143,7 @@ export function resolveOptions(
     }
   } else if (rawOpts.sources != null && filename == null) {
     shouldCompile = false; // sources specified but no filename
-  } else if (filename != null) {
+  } else if (rawOpts.sources === undefined && filename != null) {
     shouldCompile = filename.indexOf('node_modules') === -1;
   }
 
