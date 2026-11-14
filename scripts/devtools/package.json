@@ -6,11 +6,10 @@
   "license": "MIT",
   "dependencies": {
     "chalk": "^2.1.0",
-    "child-process-promise": "^2.2.1",
     "fs-extra": "^4.0.2",
     "inquirer": "^8.1.2",
     "progress-estimator": "^0.2.1",
     "prompt-promise": "^1.0.3",
-    "semver": "^5.4.1"
+    "semver": "^5.7.2"
   }
 }

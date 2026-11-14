@@ -16,8 +16,11 @@
     "babel-loader": "^8.0.4",
     "cross-env": "^7.0.3",
     "process": "^0.11.10",
-    "webpack": "^5.82.1",
+    "webpack": "^5.104.1",
     "webpack-cli": "^5.1.1",
-    "webpack-dev-server": "^4.15.0"
+    "webpack-dev-server": "^5.2.7"
+  },
+  "resolutions": {
+    "**/sockjs/uuid": "^11.1.1"
   }
 }

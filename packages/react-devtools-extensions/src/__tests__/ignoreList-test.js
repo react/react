@@ -7,10 +7,13 @@
  * @flow
  */
 
-import {exec} from 'child-process-promise';
+import {exec as execCallback} from 'child_process';
 import {readFileSync} from 'fs';
 import path from 'path';
 import {rimrafSync} from 'rimraf';
+import {promisify} from 'util';
+
+const exec = promisify(execCallback);
 
 describe('ignoreList source map extension', () => {
   jest.setTimeout(60 * 1000);
