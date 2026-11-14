@@ -689,6 +689,18 @@ describe('DOMPluginEventSystem', () => {
           await act(() => innerRoot.unmount());
         });
 
+        it('dispatches a legacy click when getRootNode is unavailable', async () => {
+          const onClick = jest.fn();
+          Object.defineProperty(container, 'getRootNode', {value: undefined});
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<button onClick={onClick} />);
+          });
+
+          dispatchClickEvent(container.firstChild);
+          expect(onClick).toHaveBeenCalledTimes(1);
+        });
+
         it('handle click events on document.body portals', async () => {
           const log = [];
 

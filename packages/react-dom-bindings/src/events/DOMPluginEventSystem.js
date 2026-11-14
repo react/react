@@ -590,12 +590,26 @@ function isMatchingRootContainer(
   );
 }
 
+function isInShadowTree(container: Node): boolean {
+  // Older DOM implementations may not expose getRootNode.
+  if (typeof container.getRootNode !== 'function') {
+    return false;
+  }
+
+  const root = container.getRootNode();
+  return root.nodeType === DOCUMENT_FRAGMENT_NODE && 'host' in root;
+}
+
 function isEventFromShadowPortal(
   nativeEvent: AnyNativeEvent,
   targetContainer: Node,
 ): boolean {
   const target = getEventTarget(nativeEvent);
-  if (!nativeEvent.composed || target.shadowRoot == null) {
+  if (
+    !nativeEvent.composed ||
+    target.shadowRoot == null ||
+    typeof nativeEvent.composedPath !== 'function'
+  ) {
     return false;
   }
 
@@ -670,7 +684,7 @@ export function dispatchEventForPluginEventSystem(
       (eventSystemFlags & SHOULD_NOT_DEFER_CLICK_FOR_FB_SUPPORT_MODE) === 0 &&
       !isReplayingEvent(nativeEvent) &&
       // The document may see a different target for clicks in a shadow tree.
-      targetContainerNode.getRootNode().nodeType !== DOCUMENT_FRAGMENT_NODE
+      !isInShadowTree(targetContainerNode)
     ) {
       deferClickToDocumentForLegacyFBSupport(domEventName, targetContainer);
       return;
