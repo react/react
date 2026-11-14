@@ -44,7 +44,11 @@ import {
   getEventListenerSet,
   getEventHandlerListeners,
 } from '../client/ReactDOMComponentTree';
-import {COMMENT_NODE, DOCUMENT_NODE} from '../client/HTMLNodeType';
+import {
+  COMMENT_NODE,
+  DOCUMENT_FRAGMENT_NODE,
+  DOCUMENT_NODE,
+} from '../client/HTMLNodeType';
 import {batchedUpdates} from './ReactDOMUpdateBatching';
 import getListener from './getListener';
 import {passiveBrowserEventsSupported} from './checkPassiveEvents';
@@ -586,6 +590,51 @@ function isMatchingRootContainer(
   );
 }
 
+function isEventFromShadowPortal(
+  nativeEvent: AnyNativeEvent,
+  targetContainer: Node,
+): boolean {
+  const target = getEventTarget(nativeEvent);
+  if (!nativeEvent.composed || target.shadowRoot == null) {
+    return false;
+  }
+
+  // Outside an open shadow root, the browser retargets the event to its
+  // host. Check the part of the path hidden by retargeting for a portal
+  // that will already propagate through this React container.
+  const path = nativeEvent.composedPath();
+  for (let i = 0; i < path.length && path[i] !== target; i++) {
+    const pathNode = path[i];
+    if (pathNode.nodeType === DOCUMENT_FRAGMENT_NODE) {
+      continue;
+    }
+    let fiber = getClosestInstanceFromNode(pathNode);
+    while (fiber !== null && fiber.tag !== HostRoot) {
+      if (fiber.tag === HostPortal) {
+        const portalContainer = fiber.stateNode.containerInfo;
+        if (path.includes(portalContainer)) {
+          let parent = fiber.return;
+          while (parent !== null) {
+            if (
+              (parent.tag === HostRoot || parent.tag === HostPortal) &&
+              isMatchingRootContainer(
+                parent.stateNode.containerInfo,
+                targetContainer,
+              )
+            ) {
+              return true;
+            }
+            parent = parent.return;
+          }
+        }
+        break;
+      }
+      fiber = fiber.return;
+    }
+  }
+  return false;
+}
+
 export function dispatchEventForPluginEventSystem(
   domEventName: DOMEventName,
   eventSystemFlags: EventSystemFlags,
@@ -600,6 +649,13 @@ export function dispatchEventForPluginEventSystem(
   ) {
     const targetContainerNode = targetContainer as any as Node;
 
+    if (
+      targetInst !== null &&
+      isEventFromShadowPortal(nativeEvent, targetContainerNode)
+    ) {
+      return;
+    }
+
     // If we are using the legacy FB support flag, we
     // defer the event to the null with a one
     // time event listener so we can defer the event.
@@ -612,7 +668,9 @@ export function dispatchEventForPluginEventSystem(
       // match React < 16 behavior of delegated clicks to the doc.
       domEventName === 'click' &&
       (eventSystemFlags & SHOULD_NOT_DEFER_CLICK_FOR_FB_SUPPORT_MODE) === 0 &&
-      !isReplayingEvent(nativeEvent)
+      !isReplayingEvent(nativeEvent) &&
+      // The document may see a different target for clicks in a shadow tree.
+      targetContainerNode.getRootNode().nodeType !== DOCUMENT_FRAGMENT_NODE
     ) {
       deferClickToDocumentForLegacyFBSupport(domEventName, targetContainer);
       return;
