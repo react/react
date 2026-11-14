@@ -228,6 +228,7 @@ export function initInput(
   type: ?string,
   name: ?string,
   isHydrating: boolean,
+  autoFocus: boolean,
 ) {
   const node: HTMLInputElement = element as any;
 
@@ -259,49 +260,63 @@ export function initInput(
     const initialValue =
       value != null ? toString(getToStringValue(value)) : defaultValueStr;
 
-    // Do not assign value if it is already set. This prevents user text input
-    // from being lost during SSR hydration.
-    if (!isHydrating || enableHydrationChangeEvent) {
-      if (disableInputAttributeSyncing) {
-        // When not syncing the value attribute, the value property points
-        // directly to the React prop. Only assign it if it exists.
-        if (value != null) {
-          // Always assign on buttons so that it is possible to assign an
-          // empty string to clear button text.
+    if (
+      autoFocus &&
+      !disableInputAttributeSyncing &&
+      value == null &&
+      initialValue !== '' &&
+      node.type === 'text'
+    ) {
+      // Initialize the text through the attribute to preserve the browser's
+      // initial caret. Assign the same value afterward so later defaultValue
+      // changes still leave the current value alone.
+      node.defaultValue = initialValue;
+      node.value = initialValue;
+    } else {
+      // Do not assign value if it is already set. This prevents user text input
+      // from being lost during SSR hydration.
+      if (!isHydrating || enableHydrationChangeEvent) {
+        if (disableInputAttributeSyncing) {
+          // When not syncing the value attribute, the value property points
+          // directly to the React prop. Only assign it if it exists.
+          if (value != null) {
+            // Always assign on buttons so that it is possible to assign an
+            // empty string to clear button text.
+            //
+            // Otherwise, do not re-assign the value property if is empty. This
+            // potentially avoids a DOM write and prevents Firefox (~60.0.1) from
+            // prematurely marking required inputs as invalid. Equality is compared
+            // to the current value in case the browser provided value is not an
+            // empty string.
+            if (isButton || toString(getToStringValue(value)) !== node.value) {
+              node.value = toString(getToStringValue(value));
+            }
+          }
+        } else {
+          // When syncing the value attribute, the value property should use
+          // the wrapperState._initialValue property. This uses:
           //
-          // Otherwise, do not re-assign the value property if is empty. This
-          // potentially avoids a DOM write and prevents Firefox (~60.0.1) from
-          // prematurely marking required inputs as invalid. Equality is compared
-          // to the current value in case the browser provided value is not an
-          // empty string.
-          if (isButton || toString(getToStringValue(value)) !== node.value) {
-            node.value = toString(getToStringValue(value));
+          //   1. The value React property when present
+          //   2. The defaultValue React property when present
+          //   3. An empty string
+          if (initialValue !== node.value) {
+            node.value = initialValue;
           }
         }
-      } else {
-        // When syncing the value attribute, the value property should use
-        // the wrapperState._initialValue property. This uses:
-        //
-        //   1. The value React property when present
-        //   2. The defaultValue React property when present
-        //   3. An empty string
-        if (initialValue !== node.value) {
-          node.value = initialValue;
-        }
       }
-    }
 
-    if (disableInputAttributeSyncing) {
-      // When not syncing the value attribute, assign the value attribute
-      // directly from the defaultValue React property (when present)
-      if (defaultValue != null) {
-        node.defaultValue = defaultValueStr;
+      if (disableInputAttributeSyncing) {
+        // When not syncing the value attribute, assign the value attribute
+        // directly from the defaultValue React property (when present)
+        if (defaultValue != null) {
+          node.defaultValue = defaultValueStr;
+        }
+      } else {
+        // Otherwise, the value attribute is synchronized to the property,
+        // so we assign defaultValue to the same thing as the value property
+        // assignment step above.
+        node.defaultValue = initialValue;
       }
-    } else {
-      // Otherwise, the value attribute is synchronized to the property,
-      // so we assign defaultValue to the same thing as the value property
-      // assignment step above.
-      node.defaultValue = initialValue;
     }
   }
 
