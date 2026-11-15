@@ -255,6 +255,64 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(2);
   });
 
+  it('fires change when an uncontrolled checkbox is checked again after reset', async () => {
+    const changes = [];
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <div>
+          <form id="checkbox-form">
+            <button type="reset">Reset</button>
+          </form>
+          <input
+            type="checkbox"
+            form="checkbox-form"
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </div>,
+      );
+    });
+
+    const checkbox = container.querySelector('input');
+    checkbox.click();
+    expect(changes).toEqual([true]);
+
+    container.querySelector('button').click();
+    expect(checkbox.checked).toBe(false);
+    expect(changes).toEqual([true]);
+
+    checkbox.click();
+    expect(checkbox.checked).toBe(true);
+    expect(changes).toEqual([true, true]);
+
+    checkbox.click();
+    expect(changes).toEqual([true, true, false]);
+  });
+
+  it('keeps tracking an uncontrolled checkbox when a reset is canceled', async () => {
+    const changes = [];
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form onReset={event => event.preventDefault()}>
+          <input
+            type="checkbox"
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </form>,
+      );
+    });
+
+    const checkbox = container.querySelector('input');
+    checkbox.click();
+    checkbox.form.reset();
+    expect(checkbox.checked).toBe(true);
+    expect(changes).toEqual([true]);
+
+    checkbox.click();
+    expect(changes).toEqual([true, false]);
+  });
+
   it('should not fire change setting the value programmatically', async () => {
     let called = 0;
 
