@@ -108,6 +108,15 @@ function extractEvents(
   eventSystemFlags: EventSystemFlags,
   targetContainer: EventTarget,
 ) {
+  if (domEventName === 'reset' && (eventSystemFlags & IS_CAPTURE_PHASE) !== 0) {
+    // A native reset can complete even if propagation stops before bubbling.
+    ChangeEventPlugin.recordFormReset(
+      nativeEvent,
+      targetInst,
+      nativeEventTarget,
+    );
+  }
+
   // TODO: we should remove the concept of a "SimpleEventPlugin".
   // This is the basic functionality of the event system. All
   // the other plugins are essentially polyfills. So the plugin

@@ -289,6 +289,85 @@ describe('ChangeEventPlugin', () => {
     expect(changes).toEqual([true, true, false]);
   });
 
+  it('tracks a reset when a native handler stops propagation at the form', async () => {
+    const changes = [];
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form>
+          <input
+            type="checkbox"
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </form>,
+      );
+    });
+
+    const checkbox = container.querySelector('input');
+    checkbox.form.addEventListener('reset', event => event.stopPropagation());
+    checkbox.click();
+    checkbox.form.reset();
+    expect(checkbox.checked).toBe(false);
+
+    checkbox.click();
+    expect(changes).toEqual([true, true]);
+  });
+
+  it('keeps tracking a reset when onReset clicks the checkbox before it resets', async () => {
+    const changes = [];
+    const ref = React.createRef();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form onReset={() => ref.current.click()}>
+          <input
+            ref={ref}
+            type="checkbox"
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </form>,
+      );
+    });
+
+    const checkbox = ref.current;
+    checkbox.form.reset();
+    expect(changes).toEqual([true]);
+    expect(checkbox.checked).toBe(false);
+
+    checkbox.click();
+    expect(changes).toEqual([true, true]);
+  });
+
+  it('does not fire duplicate changes when the click handler resets the form', async () => {
+    const changes = [];
+    let resetOnClick = true;
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form>
+          <input
+            type="checkbox"
+            onClick={event => {
+              if (resetOnClick) {
+                resetOnClick = false;
+                event.target.form.reset();
+              }
+            }}
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </form>,
+      );
+    });
+
+    const checkbox = container.querySelector('input');
+    checkbox.click();
+    expect(checkbox.checked).toBe(false);
+    expect(changes).toEqual([false]);
+
+    checkbox.click();
+    expect(changes).toEqual([false, true]);
+  });
+
   it('keeps tracking an uncontrolled checkbox when a reset is canceled', async () => {
     const changes = [];
     const root = ReactDOMClient.createRoot(container);

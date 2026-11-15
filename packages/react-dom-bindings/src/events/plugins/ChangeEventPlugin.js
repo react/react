@@ -254,8 +254,29 @@ function getTargetInstForClickEvent(
 
 const formResets: WeakMap<
   HTMLFormElement,
-  {event: AnyNativeEvent, handledCheckboxes: WeakSet<HTMLInputElement>},
+  {
+    event: AnyNativeEvent,
+    checkboxChanges: WeakMap<HTMLInputElement, 'pending' | 'handled'>,
+  },
 > = new WeakMap();
+
+function recordFormReset(
+  nativeEvent: AnyNativeEvent,
+  targetInst: null | Fiber,
+  nativeEventTarget: null | EventTarget,
+): void {
+  if (
+    nativeEvent.isTrusted &&
+    targetInst !== null &&
+    targetInst.type === 'form' &&
+    getNodeFromInstance(targetInst) === nativeEventTarget
+  ) {
+    formResets.set(nativeEventTarget as any as HTMLFormElement, {
+      event: nativeEvent,
+      checkboxChanges: new WeakMap(),
+    });
+  }
+}
 
 function getTargetInstForCheckableEvent(
   domEventName: DOMEventName,
@@ -272,20 +293,26 @@ function getTargetInstForCheckableEvent(
     const reset = formResets.get(targetNode.form);
     if (
       reset !== undefined &&
-      !reset.event.defaultPrevented &&
-      !reset.handledCheckboxes.has(targetNode)
+      // Handlers can dispatch a click while the reset is still in progress.
+      reset.event.eventPhase === 0 &&
+      !reset.event.defaultPrevented
     ) {
-      if (changedInst != null) {
-        reset.handledCheckboxes.add(targetNode);
-      } else if (domEventName === 'change' && nativeEvent.isTrusted) {
-        const props = getFiberCurrentPropsFromNode(targetNode);
-        if (props !== null && props.checked == null) {
-          // Browser resets bypass the value tracker. If the next click
-          // returns the checkbox to its tracked value, the click path misses
-          // it. The native change confirms the browser committed a toggle.
-          reset.handledCheckboxes.add(targetNode);
-          updateValueIfChanged(targetNode);
-          return targetInst;
+      const status = reset.checkboxChanges.get(targetNode);
+      if (status !== 'handled') {
+        if (domEventName === 'click') {
+          reset.checkboxChanges.set(
+            targetNode,
+            changedInst == null ? 'pending' : 'handled',
+          );
+        } else if (status === 'pending' && nativeEvent.isTrusted) {
+          const props = getFiberCurrentPropsFromNode(targetNode);
+          if (props !== null && props.checked == null) {
+            // Browser resets bypass the value tracker. If the click was
+            // missed after this reset, the native change confirms the toggle.
+            reset.checkboxChanges.set(targetNode, 'handled');
+            updateValueIfChanged(targetNode);
+            return targetInst;
+          }
         }
       }
     }
@@ -322,20 +349,6 @@ function extractEvents(
   targetContainer: null | EventTarget,
 ) {
   const targetNode = targetInst ? getNodeFromInstance(targetInst) : window;
-  if (domEventName === 'reset') {
-    if (
-      nativeEvent.isTrusted &&
-      targetInst !== null &&
-      targetInst.type === 'form' &&
-      targetNode === nativeEventTarget
-    ) {
-      formResets.set(targetNode as any as HTMLFormElement, {
-        event: nativeEvent,
-        handledCheckboxes: new WeakSet(),
-      });
-    }
-    return;
-  }
 
   let getTargetInstFunc, handleEventFunc;
   if (shouldUseChangeEvent(targetNode)) {
@@ -388,4 +401,4 @@ function extractEvents(
   }
 }
 
-export {registerEvents, extractEvents};
+export {registerEvents, extractEvents, recordFormReset};
