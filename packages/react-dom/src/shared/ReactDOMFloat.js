@@ -12,9 +12,13 @@ import type {
   PreloadModuleOptions,
   PreinitOptions,
   PreinitModuleOptions,
+  PreinitScriptOptions,
+  PreinitDataAttributes,
 } from './ReactDOMTypes';
 
 import ReactDOMSharedInternals from 'shared/ReactDOMSharedInternals';
+import hasOwnProperty from 'shared/hasOwnProperty';
+import isAttributeNameSafe from 'react-dom-bindings/src/shared/isAttributeNameSafe';
 
 import {
   getCrossOriginString,
@@ -225,6 +229,17 @@ export function preinit(href: string, options: PreinitOptions) {
         'ReactDOM.preinit(): Expected the `as` property in the `options` argument (second) to contain a valid value describing the type of resource to be preinitialized but encountered %s instead. Valid values for `as` are "style" and "script".',
         getValueDescriptorExpectingEnumForWarning(options.as),
       );
+    } else if (
+      options.as !== 'script' &&
+      // The types disallow this but untyped callers can still pass it.
+      'dataAttributes' in options &&
+      options.dataAttributes != null
+    ) {
+      console.error(
+        'ReactDOM.preinit(): The `dataAttributes` option is only supported when `as` is "script" but it was passed with `as` %s for `href` "%s". The `dataAttributes` option will be ignored.',
+        getValueDescriptorExpectingEnumForWarning(options.as),
+        href,
+      );
     }
   }
   if (typeof href === 'string' && options && typeof options.as === 'string') {
@@ -251,13 +266,17 @@ export function preinit(href: string, options: PreinitOptions) {
           },
         );
     } else if (as === 'script') {
+      const scriptOptions: Required<PreinitScriptOptions> = {
+        crossOrigin,
+        integrity,
+        fetchPriority,
+        nonce: typeof options.nonce === 'string' ? options.nonce : undefined,
+      };
+      if (options.dataAttributes != null) {
+        assignDataAttributes(scriptOptions, href, options.dataAttributes);
+      }
       ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
-        .X(/* preinitScript */ href, {
-          crossOrigin,
-          integrity,
-          fetchPriority,
-          nonce: typeof options.nonce === 'string' ? options.nonce : undefined,
-        });
+        .X(/* preinitScript */ href, scriptOptions);
     }
   }
   // We don't error because preinit needs to be resilient to being called in a variety of scopes
@@ -340,6 +359,62 @@ export function preinitModule(href: string, options?: ?PreinitModuleOptions) {
   // We don't error because preinit needs to be resilient to being called in a variety of scopes
   // and the runtime may not be capable of responding. The function is optimistic and not critical
   // so we favor silent bailout over warning or erroring.
+}
+
+// Validates the `dataAttributes` option and copies each valid entry onto the
+// options passed to the dispatcher. The `data-` prefix check runs in every
+// build, not just DEV: it is what keeps these keys from ever colliding with a
+// real option name such as `nonce`. Invalid entries are dropped, with a warning
+// in DEV. Like the other preinit options the types are not trusted at runtime
+// since untyped callers can pass anything.
+function assignDataAttributes(
+  target: PreinitScriptOptions,
+  href: string,
+  dataAttributes: PreinitDataAttributes,
+): void {
+  if (typeof dataAttributes !== 'object') {
+    if (__DEV__) {
+      console.error(
+        'ReactDOM.preinit(): Expected the `dataAttributes` option to be an object mapping `data-*` attribute names to string values but encountered %s instead. This was passed for `href` "%s".',
+        getValueDescriptorExpectingObjectForWarning(dataAttributes),
+        href,
+      );
+    }
+    return;
+  }
+  for (const name in dataAttributes) {
+    if (!hasOwnProperty.call(dataAttributes, name)) {
+      continue;
+    }
+    const value = dataAttributes[name];
+    // A bare "data-" is not a valid data attribute name.
+    if (name.length <= 5 || !name.startsWith('data-')) {
+      if (__DEV__) {
+        console.error(
+          'ReactDOM.preinit(): Expected the keys of the `dataAttributes` option to be `data-*` attribute names but encountered "%s" instead for `href` "%s". This attribute will be omitted.',
+          name,
+          href,
+        );
+      }
+      continue;
+    }
+    if (!isAttributeNameSafe(name)) {
+      // isAttributeNameSafe warns in DEV.
+      continue;
+    }
+    if (typeof value !== 'string') {
+      if (__DEV__) {
+        console.error(
+          'ReactDOM.preinit(): Expected the `dataAttributes` option to map "%s" to a string but encountered %s instead for `href` "%s". This attribute will be omitted.',
+          name,
+          getValueDescriptorExpectingEnumForWarning(value),
+          href,
+        );
+      }
+      continue;
+    }
+    target[name] = value;
+  }
 }
 
 function getValueDescriptorExpectingObjectForWarning(thing: any): string {

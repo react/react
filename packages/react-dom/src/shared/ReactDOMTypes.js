@@ -30,14 +30,22 @@ export type PreloadModuleOptions = {
   nonce?: string,
   fetchPriority?: FetchPriorityEnum,
 };
-export type PreinitOptions = {
-  as: string,
+type PreinitSharedOptions = {
   precedence?: string,
   crossOrigin?: string,
   integrity?: string,
   nonce?: string,
   fetchPriority?: FetchPriorityEnum,
 };
+export type PreinitOptions =
+  | {...PreinitSharedOptions, as: 'style'}
+  | {
+      ...PreinitSharedOptions,
+      as: 'script',
+      dataAttributes?: PreinitDataAttributes,
+    };
+// Maps `data-*` attribute names to values, e.g. {'data-framework': 'next'}.
+export type PreinitDataAttributes = {+[attributeName: string]: string};
 export type PreinitModuleOptions = {
   as?: string,
   crossOrigin?: string,
@@ -77,6 +85,10 @@ export type PreinitScriptOptions = {
   integrity?: ?string,
   fetchPriority?: ?string,
   nonce?: ?string,
+  // `data-*` attributes from the public `dataAttributes` option, validated by
+  // ReactDOM.preinit and spread directly onto the options. Hosts copy options
+  // onto the script's props, so these become attributes with no extra work.
+  [dataAttributeName: string]: ?string,
 };
 export type PreinitModuleScriptOptions = {
   crossOrigin?: ?CrossOriginEnum,
