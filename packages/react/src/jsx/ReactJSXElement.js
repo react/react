@@ -309,7 +309,7 @@ export function jsxProd(type, config, maybeKey) {
   }
 
   if (hasValidKey(config)) {
-    if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
+    if (enableOptimisticKey && config.key === REACT_OPTIMISTIC_KEY) {
       key = REACT_OPTIMISTIC_KEY;
     } else {
       if (__DEV__) {
