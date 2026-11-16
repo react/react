@@ -1210,6 +1210,27 @@ describe('ReactHooksInspectionIntegration', () => {
     `);
   });
 
+  it.each(['abc', null])(
+    'should inspect useDeferredValue state from older renderers (%s)',
+    async value => {
+      function Foo() {
+        React.useDeferredValue(value);
+        return null;
+      }
+      let renderer;
+      await act(() => {
+        renderer = ReactTestRenderer.create(<Foo />);
+      });
+      const fiber = renderer.root.findByType(Foo)._currentFiber();
+      // Older React renderers store the deferred value directly, without the
+      // {value, isInitial} wrapper. DevTools must still inspect those renderers.
+      fiber.memoizedState.memoizedState = value;
+      const tree = ReactDebugTools.inspectHooksOfFiber(fiber);
+      expect(tree[0].name).toBe('DeferredValue');
+      expect(tree[0].value).toBe(value);
+    },
+  );
+
   it('should support useDeferredValue hook', async () => {
     function Foo(props) {
       React.useDeferredValue('abc');

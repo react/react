@@ -375,6 +375,31 @@ describe('ReactDeferredValue', () => {
     });
   });
 
+  it('does not reuse initialValue after the final value commits with initialValue removed', async () => {
+    function App({value, initialValue}) {
+      return <AsyncText text={useDeferredValue(value, initialValue)} />;
+    }
+    const root = ReactNoop.createRoot();
+
+    resolveText('Preview');
+    await act(() => root.render(<App value="A" initialValue="Preview" />));
+    assertLog(['Preview', 'Suspend! [A]']);
+    expect(root).toMatchRenderedOutput('Preview');
+
+    // Commit the final value, which equals the previous preview, while removing
+    // initialValue. This should permanently exit the hook's initial state.
+    await act(() => root.render(<App value="Preview" />));
+    assertLog(['Preview']);
+    expect(root).toMatchRenderedOutput('Preview');
+
+    resolveText('New Preview');
+    await act(() => root.render(<App value="B" initialValue="New Preview" />));
+    // The final value already committed, so keep it while B is pending instead
+    // of reverting to the new initialValue.
+    assertLog(['Preview', 'Suspend! [B]']);
+    expect(root).toMatchRenderedOutput('Preview');
+  });
+
   it('supports initialValue argument', async () => {
     function App() {
       const value = useDeferredValue('Final', 'Initial');
