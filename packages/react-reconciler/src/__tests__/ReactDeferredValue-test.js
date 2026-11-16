@@ -18,6 +18,7 @@ let useState;
 let Suspense;
 let Activity;
 let assertLog;
+let waitFor;
 let waitForPaint;
 let waitForAll;
 let textCache;
@@ -39,6 +40,7 @@ describe('ReactDeferredValue', () => {
 
     const InternalTestUtils = require('internal-test-utils');
     assertLog = InternalTestUtils.assertLog;
+    waitFor = InternalTestUtils.waitFor;
     waitForPaint = InternalTestUtils.waitForPaint;
     waitForAll = InternalTestUtils.waitForAll;
 
@@ -1204,5 +1206,87 @@ describe('ReactDeferredValue', () => {
       assertLog(['Final', 'B']);
     }
     expect(root).toMatchRenderedOutput('FinalB');
+  });
+
+  it('commits the initial value if its data resolves while the deferred render is in progress', async () => {
+    // The initial value and the final value suspend on different data, and
+    // there's no Suspense boundary, so neither can commit a fallback. The data
+    // for the initial value resolves while the spawned deferred render is
+    // suspended on the final value's data. React must retry the original
+    // render, which can now commit the initial value, instead of waiting for
+    // the final value.
+    function Content({value}) {
+      if (value === 'Initial') {
+        readText('A');
+      } else {
+        // Resolve A during the deferred render. The deferred render does not
+        // include A, so the ping must not be discarded when it suspends.
+        resolveText('A');
+        readText('B');
+      }
+      return <Text text={value} />;
+    }
+
+    function App() {
+      const value = useDeferredValue('Final', 'Initial');
+      return <Content value={value} />;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(async () => {
+      startTransition(() => root.render(<App />));
+      await waitForAll([
+        // The initial value suspends.
+        'Suspend! [A]',
+        // React switches to the deferred value, which also suspends.
+        'Suspend! [B]',
+        // A was pinged during the deferred render. Retry the original render.
+        'Initial',
+        // After the initial value commits, the deferred render is attempted
+        // again. It's still waiting on B.
+        'Suspend! [B]',
+      ]);
+      expect(root).toMatchRenderedOutput('Initial');
+    });
+
+    await act(() => resolveText('B'));
+    assertLog(['Final']);
+    expect(root).toMatchRenderedOutput('Final');
+  });
+
+  it('commits the initial value if its data resolves before the deferred render starts', async () => {
+    function Content({value}) {
+      readText(value === 'Initial' ? 'A' : 'B');
+      return <Text text={value} />;
+    }
+
+    function App() {
+      const value = useDeferredValue('Final', 'Initial');
+      return <Content value={value} />;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(async () => {
+      startTransition(() => root.render(<App />));
+      await waitFor(['Suspend! [A]']);
+      expect(root).toMatchRenderedOutput(null);
+
+      // A resolves after the original render suspended, but before the
+      // deferred render runs.
+      resolveText('A');
+      await waitForAll([
+        // The deferred render runs first and suspends on B.
+        'Suspend! [B]',
+        // Then the original render is retried and commits the initial value.
+        'Initial',
+        // The deferred render is attempted again after the commit.
+        'Suspend! [B]',
+      ]);
+      expect(root).toMatchRenderedOutput('Initial');
+    });
+
+    await act(() => resolveText('B'));
+    assertLog(['Final']);
+    expect(root).toMatchRenderedOutput('Final');
   });
 });
