@@ -51,6 +51,9 @@ const ReactNoopFlightServer = ReactFlightServer({
   stringToPrecomputedChunk(content: string): Uint8Array {
     return textEncoder.encode(content);
   },
+  byteLengthOfChunk(chunk: Uint8Array): number {
+    return chunk.byteLength;
+  },
   isClientReference(reference: Object): boolean {
     return reference.$$typeof === Symbol.for('react.client.reference');
   },
@@ -96,15 +99,7 @@ function render(model: ReactClientValue, options?: Options): Destination {
   );
   const signal = options ? options.signal : undefined;
   if (signal) {
-    if (signal.aborted) {
-      ReactNoopFlightServer.abort(request, (signal as any).reason);
-    } else {
-      const listener = () => {
-        ReactNoopFlightServer.abort(request, (signal as any).reason);
-        signal.removeEventListener('abort', listener);
-      };
-      signal.addEventListener('abort', listener);
-    }
+    ReactNoopFlightServer.attachAbortSignal(request, signal);
   }
   if (__DEV__ && options && options.debugChannel !== undefined) {
     options.debugChannel.onMessage = message => {

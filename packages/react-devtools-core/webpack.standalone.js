@@ -72,7 +72,7 @@ module.exports = {
   node: {
     // Don't replace __dirname!
     // This would break the standalone DevTools ability to load the backend.
-    // see https://github.com/facebook/react-devtools/issues/1269
+    // see https://github.com/react/react-devtools/issues/1269
     __dirname: false,
 
     global: false,
@@ -137,8 +137,12 @@ module.exports = {
               // which in turn avoids a nasty Electron/Chromium bug that breaks DevTools in Nuclide.
               // (Calls to URL.createObjectURL seem to crash the webview process.)
               sourceMap: __DEV__,
-              modules: true,
-              localIdentName: '[local]___[hash:base64:5]',
+              modules: {
+                localIdentName: '[local]___[hash:base64:5]',
+                // Keep `import styles from './Foo.css'` working (css-loader 7 defaults to named exports).
+                namedExport: false,
+                exportLocalsConvention: 'as-is',
+              },
             },
           },
         ],

@@ -165,6 +165,14 @@ fn merge_location(l: Option<SourceLocation>, r: Option<SourceLocation>) -> Optio
                     (a, b) => a.or(b),
                 },
             },
+            start_offset: match (l.start_offset, r.start_offset) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            },
+            end_offset: match (l.end_offset, r.end_offset) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            },
         }),
     }
 }
@@ -183,8 +191,10 @@ fn may_allocate(value: &InstructionValue, lvalue_type_is_primitive: bool) -> boo
         InstructionValue::Destructure { lvalue, .. } => {
             visitors::does_pattern_contain_spread_element(&lvalue.pattern)
         }
-        InstructionValue::PostfixUpdate { .. }
-        | InstructionValue::PrefixUpdate { .. }
+        InstructionValue::PostfixUpdateLocal { .. }
+        | InstructionValue::PostfixUpdateContext { .. }
+        | InstructionValue::PrefixUpdateContext { .. }
+        | InstructionValue::PrefixUpdateLocal { .. }
         | InstructionValue::Await { .. }
         | InstructionValue::DeclareLocal { .. }
         | InstructionValue::DeclareContext { .. }

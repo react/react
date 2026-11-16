@@ -275,7 +275,7 @@ export const noTimeout: -1 = -1;
 //     Mutation
 // -------------------
 
-export const supportsMutation = true;
+export const supportsMutation: boolean = true;
 
 export function commitUpdate(
   instance: Instance,

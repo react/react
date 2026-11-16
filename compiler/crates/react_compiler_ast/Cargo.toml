@@ -1,10 +1,14 @@
 [package]
 name = "react_compiler_ast"
-version = "0.1.0"
-edition = "2024"
+description = "JavaScript AST types and transforms for the React Compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
+react_compiler_diagnostics.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value", "unbounded_depth"] }
 serde-transcode = "1"

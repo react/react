@@ -18,12 +18,15 @@ import type {
 
 import {allocateTag} from './ReactFiberConfigFabric';
 
+// Modules provided by RN:
+import {fabricUIManager} from 'react-native/react-private-interface';
+
 const {
   applyViewTransitionName: fabricApplyViewTransitionName,
   createViewTransitionInstance: fabricCreateViewTransitionInstance,
   startViewTransition: fabricStartViewTransition,
   startViewTransitionReadyFinished: fabricStartViewTransitionReadyFinished,
-} = nativeFabricUIManager;
+} = fabricUIManager;
 
 export type InstanceMeasurement = {
   rect: {x: number, y: number, width: number, height: number},

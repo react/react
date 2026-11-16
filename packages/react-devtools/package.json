@@ -1,6 +1,6 @@
 {
   "name": "react-devtools",
-  "version": "7.0.1",
+  "version": "8.0.0",
   "description": "Use react-devtools outside of the browser",
   "license": "MIT",
   "repository": {
@@ -22,11 +22,11 @@
     "start": "node bin.js"
   },
   "dependencies": {
-    "cross-spawn": "^5.0.1",
-    "electron": "^23.1.2",
+    "cross-spawn": "^7.0.6",
+    "electron": "^39.8.10",
     "internal-ip": "^6.2.0",
-    "minimist": "^1.2.3",
-    "react-devtools-core": "7.0.1",
-    "update-notifier": "^5.0.0"
+    "minimist": "^1.2.8",
+    "react-devtools-core": "8.0.0",
+    "update-notifier": "^7.3.1"
   }
 }

@@ -70,6 +70,8 @@ import {
   getFragmentInstanceOrTextInstanceSiblings,
   traverseFragmentInstancesAndTextInstancesDeeply,
   fiberIsPortaledIntoHost,
+  getFragmentPortalContainerInfo,
+  getFragmentRootContainerInfo,
   isFiberContainedByFragment,
   isFragmentContainedByFiber,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
@@ -122,7 +124,6 @@ import {
 import {
   enableCreateEventHandleAPI,
   enableScopeAPI,
-  enableTrustedTypesIntegration,
   disableLegacyMode,
   enableMoveBefore,
   disableCommentsAsDOMContainers,
@@ -130,10 +131,7 @@ import {
   enableSrcObject,
   enableViewTransition,
   enableHydrationChangeEvent,
-  enableFragmentRefsScrollIntoView,
   enableProfilerTimer,
-  enableFragmentRefsInstanceHandles,
-  enableFragmentRefsTextNodes,
 } from 'shared/ReactFeatureFlags';
 import {
   HostComponent,
@@ -575,7 +573,6 @@ export function createInstance(
           const div = ownerDocument.createElement('div');
           if (__DEV__) {
             if (
-              enableTrustedTypesIntegration &&
               !didWarnScriptTags &&
               // Data block scripts are not executed by UAs anyway so
               // we don't need to warn: https://html.spec.whatwg.org/multipage/scripting.html#attr-script-type
@@ -601,7 +598,7 @@ export function createInstance(
             domElement = ownerDocument.createElement('select', {is: props.is});
           } else {
             // Separate else branch instead of using `props.is || undefined` above because of a Firefox bug.
-            // See discussion in https://github.com/facebook/react/pull/6896
+            // See discussion in https://github.com/react/react/pull/6896
             // and discussion in https://bugzilla.mozilla.org/show_bug.cgi?id=1276240
             domElement = ownerDocument.createElement('select');
           }
@@ -621,7 +618,7 @@ export function createInstance(
             domElement = ownerDocument.createElement(type, {is: props.is});
           } else {
             // Separate else branch instead of using `props.is || undefined` above because of a Firefox bug.
-            // See discussion in https://github.com/facebook/react/pull/6896
+            // See discussion in https://github.com/react/react/pull/6896
             // and discussion in https://bugzilla.mozilla.org/show_bug.cgi?id=1276240
             domElement = ownerDocument.createElement(type);
           }
@@ -866,7 +863,7 @@ export function getInstanceFromScope(
 // -------------------
 //     Microtasks
 // -------------------
-export const supportsMicrotasks = true;
+export const supportsMicrotasks: boolean = true;
 export const scheduleMicrotask: any =
   typeof queueMicrotask === 'function'
     ? queueMicrotask
@@ -885,7 +882,7 @@ function handleErrorInNextTick(error: any) {
 //     Mutation
 // -------------------
 
-export const supportsMutation = true;
+export const supportsMutation: boolean = true;
 
 export function commitMount(
   domElement: Instance,
@@ -1119,7 +1116,7 @@ export function appendChildToContainer(
   // event exists. So we wouldn't see it and dispatch it.
   // This is why we ensure that non React root containers have inline onclick
   // defined.
-  // https://github.com/facebook/react/issues/11918
+  // https://github.com/react/react/issues/11918
   const reactRootContainer = container._reactRootContainer;
   if (
     // $FlowFixMe[invalid-compare]
@@ -1375,7 +1372,7 @@ function hideOrUnhideDehydratedBoundary(
     }
     if (nextNode && nextNode.nodeType === COMMENT_NODE) {
       const data = (nextNode as any).data as string;
-      if (data === SUSPENSE_END_DATA) {
+      if (data === SUSPENSE_END_DATA || data === ACTIVITY_END_DATA) {
         if (depth === 0) {
           return;
         } else {
@@ -1385,7 +1382,8 @@ function hideOrUnhideDehydratedBoundary(
         data === SUSPENSE_START_DATA ||
         data === SUSPENSE_PENDING_START_DATA ||
         data === SUSPENSE_QUEUED_START_DATA ||
-        data === SUSPENSE_FALLBACK_START_DATA
+        data === SUSPENSE_FALLBACK_START_DATA ||
+        data === ACTIVITY_START_DATA
       ) {
         depth++;
       }
@@ -2126,22 +2124,40 @@ function customizeViewTransitionError(
         break;
       }
       case 'InvalidStateError': {
-        if (
-          error.message ===
-            'View transition was skipped because document visibility state is hidden.' ||
-          error.message ===
-            'Skipping view transition because document visibility state has become hidden.' ||
-          error.message ===
-            'Skipping view transition because viewport size changed.' ||
-          // Chrome uses a generic error message instead of specific reasons. It will log a
-          // more specific reason in the console but the user might not look there.
-          // Some of these errors are important to surface like duplicate name errors but
-          // it's too noisy for unactionable cases like the document was hidden. Therefore,
-          // we hide all of them and hopefully it surfaces in another browser.
-          error.message === 'Transition was aborted because of invalid state'
-        ) {
-          // Skip logging this. This is not considered an error.
-          return null;
+        // Skip unactionable cases like the document being hidden or the viewport
+        // being resized.
+        switch (error.message) {
+          // Chrome 152 and earlier use a generic error message instead of specific
+          // reasons. Some of these errors are important to surface like duplicate name
+          // errors but it's too noisy for the unactionable cases. Therefore, we hide
+          // all of them and hopefully it surfaces in another browser.
+          case 'Transition was aborted because of invalid state':
+          case 'Transition was aborted because of invalid state.': // Chrome 153+
+          case 'Transition was aborted because of invalid state. Document hidden': // Chrome 153+
+          case 'Transition was aborted because of invalid state. Viewport size changed': // Chrome 153+
+          case 'Skipped ViewTransition due to document being hidden': // Firefox
+          case 'Skipped view transition due to viewport resize': // Firefox
+          case 'View transition was skipped because document visibility state is hidden.': // Safari
+          case 'Skipping view transition because document visibility state has become hidden.': // Safari
+          case 'Skipping view transition because viewport size changed.': // Safari
+            // Skip logging this. This is not considered an error.
+            return null;
+          // Chrome 153+ reports these when verifying the transition names fails while
+          // capturing the old or new state. The specific reason is only logged to
+          // the console.
+          case 'Transition was aborted because of invalid state. Snapshot capture failed':
+          case 'Transition was aborted because of invalid state. Animation start failed': {
+            if (__DEV__) {
+              // eslint-disable-next-line react-internal/prod-error-codes
+              return new Error(
+                'A ViewTransition could not start. This usually means that two elements ' +
+                  'have the same view-transition-name at the same time. ' +
+                  'Check the console for details.',
+                {cause: error},
+              );
+            }
+            break;
+          }
         }
         break;
       }
@@ -2987,6 +3003,10 @@ type StoredEventListener = {
   type: string,
   listener: EventListener,
   optionsOrUseCapture: void | EventListenerOptionsOrUseCapture,
+  // When once:true, a wrapper that removes the fragment listener after the
+  // first fire. Otherwise the same as listener.
+  attachedListener: EventListener,
+  cleanup: null | (() => void),
 };
 
 export type FragmentInstanceType = {
@@ -3030,6 +3050,15 @@ FragmentInstance.prototype.addEventListener = function (
   listener: EventListener,
   optionsOrUseCapture?: EventListenerOptionsOrUseCapture,
 ): void {
+  let signal: null | AbortSignal = null;
+  let cleanup: null | (() => void) = null;
+  if (optionsOrUseCapture != null && typeof optionsOrUseCapture !== 'boolean') {
+    signal = optionsOrUseCapture.signal || null;
+    if (signal !== null && signal.aborted) {
+      return;
+    }
+  }
+
   if (this._eventListeners === null) {
     this._eventListeners = [];
   }
@@ -3041,13 +3070,49 @@ FragmentInstance.prototype.addEventListener = function (
   const isNewEventListener =
     indexOfEventListener(listeners, type, listener, optionsOrUseCapture) === -1;
   if (isNewEventListener) {
-    listeners.push({type, listener, optionsOrUseCapture});
+    const fragmentInstance = this;
+    let attachedListener = listener;
+    if (isOnceOption(optionsOrUseCapture)) {
+      // once is fragment-scoped: the first fire on any child removes this
+      // listener from the fragment and every host child.
+      attachedListener = function (this: EventTarget, event: Event) {
+        fragmentInstance.removeEventListener(
+          type,
+          listener,
+          optionsOrUseCapture,
+        );
+        if (typeof listener === 'function') {
+          listener.call(this, event);
+        } else {
+          listener.handleEvent(event);
+        }
+      };
+    }
+    if (signal !== null) {
+      const onAbort = fragmentInstance.removeEventListener.bind(
+        fragmentInstance,
+        type,
+        listener,
+        optionsOrUseCapture,
+      );
+      signal.addEventListener('abort', onAbort, {once: true});
+      // $FlowFixMe[method-unbinding]
+      cleanup = signal.removeEventListener.bind(signal, 'abort', onAbort);
+    }
+    const attachOptions = getAttachOptions(optionsOrUseCapture);
+    listeners.push({
+      type,
+      listener,
+      optionsOrUseCapture,
+      attachedListener,
+      cleanup,
+    });
     traverseFragmentInstancesAndTextInstances(
       this._fragmentFiber,
       addEventListenerToChild,
       type,
-      listener,
-      optionsOrUseCapture,
+      attachedListener,
+      attachOptions,
     );
   }
   this._eventListeners = listeners;
@@ -3073,23 +3138,31 @@ FragmentInstance.prototype.removeEventListener = function (
   if (listeners === null) {
     return;
   }
-  if (typeof listeners !== 'undefined' && listeners.length > 0) {
-    traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
-      removeEventListenerFromChild,
-      type,
-      listener,
-      optionsOrUseCapture,
-    );
-    const index = indexOfEventListener(
-      listeners,
-      type,
-      listener,
-      optionsOrUseCapture,
-    );
-    if (this._eventListeners !== null) {
-      this._eventListeners.splice(index, 1);
-    }
+  const index = indexOfEventListener(
+    listeners,
+    type,
+    listener,
+    optionsOrUseCapture,
+  );
+  if (index === -1) {
+    return;
+  }
+  const {
+    attachedListener,
+    optionsOrUseCapture: storedOptions,
+    cleanup,
+  } = listeners[index];
+  const attachOptions = getAttachOptions(storedOptions);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    removeEventListenerFromChild,
+    type,
+    attachedListener,
+    attachOptions,
+  );
+  listeners.splice(index, 1);
+  if (cleanup !== null) {
+    cleanup();
   }
 };
 function removeEventListenerFromChild(
@@ -3102,11 +3175,30 @@ function removeEventListenerFromChild(
   instance.removeEventListener(type, listener, optionsOrUseCapture);
   return false;
 }
+function isOnceOption(opts: ?EventListenerOptionsOrUseCapture): boolean {
+  return opts != null && typeof opts !== 'boolean' && opts.once === true;
+}
+function getAttachOptions(
+  opts: void | EventListenerOptionsOrUseCapture,
+): void | EventListenerOptionsOrUseCapture {
+  // Strip once and signal when attaching to host children; Fragment owns once and signal semantics.
+  if (
+    opts == null ||
+    typeof opts === 'boolean' ||
+    (opts.once !== true && !(opts.signal instanceof AbortSignal))
+  ) {
+    return opts;
+  }
+  return {
+    capture: opts.capture,
+    passive: opts.passive,
+  };
+}
 function normalizeListenerOptions(
   opts: ?EventListenerOptionsOrUseCapture,
 ): string {
   if (opts == null) {
-    return '0';
+    return 'c=0';
   }
 
   if (typeof opts === 'boolean') {
@@ -3156,19 +3248,34 @@ FragmentInstance.prototype.dispatchEvent = function (
     (eventListeners !== null && eventListeners.length > 0) ||
     !event.bubbles
   ) {
-    const temp = document.createTextNode('');
+    // The temporary node stands in for the fragment's position so that its own
+    // listeners fire before the event propagates to the parent. A Document can
+    // only hold comments and processing instructions alongside its
+    // documentElement, so a Text node would be an invalid child there.
+    const temp =
+      parentHostInstance.nodeType === DOCUMENT_NODE
+        ? (parentHostInstance as any as Document).createComment('')
+        : document.createTextNode('');
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, listener, optionsOrUseCapture} = eventListeners[i];
-        temp.addEventListener(type, listener, optionsOrUseCapture);
+        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+        temp.addEventListener(
+          type,
+          attachedListener,
+          getAttachOptions(optionsOrUseCapture),
+        );
       }
     }
     parentHostInstance.appendChild(temp);
     const cancelable = temp.dispatchEvent(event);
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, listener, optionsOrUseCapture} = eventListeners[i];
-        temp.removeEventListener(type, listener, optionsOrUseCapture);
+        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+        temp.removeEventListener(
+          type,
+          attachedListener,
+          getAttachOptions(optionsOrUseCapture),
+        );
       }
     }
     parentHostInstance.removeChild(temp);
@@ -3192,11 +3299,9 @@ function setFocusOnFiberIfFocusable(
   fiber: Fiber,
   focusOptions?: FocusOptions,
 ): boolean {
-  if (enableFragmentRefsTextNodes) {
-    // Skip text nodes - they are not focusable
-    if (fiber.tag === HostText) {
-      return false;
-    }
+  // Skip text nodes - they are not focusable
+  if (fiber.tag === HostText) {
+    return false;
   }
   const instance = getInstanceFromHostFiber<Instance>(fiber);
   return setFocusIfFocusable(instance, focusOptions);
@@ -3225,7 +3330,6 @@ function collectChildren(child: Fiber, collection: Array<Fiber>): boolean {
 }
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
-  // Early exit if activeElement is not within the fragment's parent
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
     this._fragmentFiber,
   );
@@ -3240,13 +3344,9 @@ FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
     parentInstanceOrContainer,
   );
   const activeElement = ownerDocument.activeElement;
-  if (
-    activeElement === null ||
-    !parentInstanceOrContainer.contains(activeElement)
-  ) {
+  if (activeElement === null) {
     return;
   }
-
   traverseFragmentInstancesAndTextInstances(
     this._fragmentFiber,
     blurActiveElementWithinFragment,
@@ -3258,7 +3358,7 @@ function blurActiveElementWithinFragment(
   activeElement: Element,
 ): boolean {
   // Skip text nodes - they can't be focused
-  if (enableFragmentRefsTextNodes && child.tag === HostText) {
+  if (child.tag === HostText) {
     return false;
   }
   const instance = getInstanceFromHostFiber<Instance>(child);
@@ -3275,28 +3375,26 @@ FragmentInstance.prototype.observeUsing = function (
   observer: IntersectionObserver | ResizeObserver,
 ): void {
   if (__DEV__) {
-    if (enableFragmentRefsTextNodes) {
-      let hasText = false;
-      let hasElement = false;
-      traverseFragmentInstancesAndTextInstances(
-        this._fragmentFiber,
-        (child: Fiber) => {
-          if (child.tag === HostText) {
-            hasText = true;
-          } else {
-            // Stop traversal, found element
-            hasElement = true;
-            return true;
-          }
-          return false;
-        },
+    let hasText = false;
+    let hasElement = false;
+    traverseFragmentInstancesAndTextInstances(
+      this._fragmentFiber,
+      (child: Fiber) => {
+        if (child.tag === HostText) {
+          hasText = true;
+        } else {
+          // Stop traversal, found element
+          hasElement = true;
+          return true;
+        }
+        return false;
+      },
+    );
+    if (hasText && !hasElement) {
+      console.error(
+        'observeUsing() was called on a FragmentInstance with only text children. ' +
+          'Observers do not work on text nodes.',
       );
-      if (hasText && !hasElement) {
-        console.error(
-          'observeUsing() was called on a FragmentInstance with only text children. ' +
-            'Observers do not work on text nodes.',
-        );
-      }
     }
   }
   if (this._observers === null) {
@@ -3313,11 +3411,9 @@ function observeChild(
   child: Fiber,
   observer: IntersectionObserver | ResizeObserver,
 ) {
-  if (enableFragmentRefsTextNodes) {
-    // Skip text nodes - observers don't work on them
-    if (child.tag === HostText) {
-      return false;
-    }
+  // Skip text nodes - observers don't work on them
+  if (child.tag === HostText) {
+    return false;
   }
   const instance = getInstanceFromHostFiber<Instance>(child);
   observer.observe(instance);
@@ -3343,21 +3439,106 @@ FragmentInstance.prototype.unobserveUsing = function (
       unobserveChild,
       observer,
     );
+    unobservePendingChildren(this, observer);
   }
 };
 function unobserveChild(
   child: Fiber,
   observer: IntersectionObserver | ResizeObserver,
 ) {
-  if (enableFragmentRefsTextNodes) {
-    // Skip text nodes - they were never observed
-    if (child.tag === HostText) {
-      return false;
-    }
+  // Skip text nodes - they were never observed
+  if (child.tag === HostText) {
+    return false;
   }
   const instance = getInstanceFromHostFiber<Instance>(child);
   observer.unobserve(instance);
   return false;
+}
+
+type PendingIntersectionUnobserve = {
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver,
+  instance: Instance,
+};
+
+let pendingIntersectionUnobserves: Array<PendingIntersectionUnobserve> = [];
+let intersectionUnobserveScheduled: boolean = false;
+
+function isIntersectionObserver(
+  observer: IntersectionObserver | ResizeObserver,
+): boolean {
+  // IntersectionObserver has rootMargin; ResizeObserver does not. Avoid
+  // instanceof so jsdom mocks and cross-realm observers still match.
+  return typeof (observer as any).rootMargin === 'string';
+}
+
+// A later commit can reinsert the same node before the post-paint unobserve
+// runs (Activity hidden → visible). Cancel so the flush does not drop it.
+function cancelPendingIntersectionUnobserve(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver | ResizeObserver,
+  instance: Instance,
+): void {
+  let writeIdx = 0;
+  for (let i = 0; i < pendingIntersectionUnobserves.length; i++) {
+    const pending = pendingIntersectionUnobserves[i];
+    if (
+      pending.fragmentInstance !== fragmentInstance ||
+      pending.observer !== observer ||
+      pending.instance !== instance
+    ) {
+      pendingIntersectionUnobserves[writeIdx++] = pending;
+    }
+  }
+  pendingIntersectionUnobserves.length = writeIdx;
+}
+
+// unobserveUsing() only walks the children that are still mounted, so release
+// the deleted ones that are waiting for their exit record.
+function unobservePendingChildren(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver | ResizeObserver,
+): void {
+  let writeIdx = 0;
+  for (let i = 0; i < pendingIntersectionUnobserves.length; i++) {
+    const pending = pendingIntersectionUnobserves[i];
+    if (
+      pending.fragmentInstance === fragmentInstance &&
+      pending.observer === observer
+    ) {
+      observer.unobserve(pending.instance);
+    } else {
+      pendingIntersectionUnobserves[writeIdx++] = pending;
+    }
+  }
+  pendingIntersectionUnobserves.length = writeIdx;
+}
+
+function schedulePendingIntersectionUnobserve(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver,
+  instance: Instance,
+): void {
+  pendingIntersectionUnobserves.push({
+    fragmentInstance,
+    observer,
+    instance,
+  });
+  if (!intersectionUnobserveScheduled) {
+    intersectionUnobserveScheduled = true;
+    // Unobserving in this commit would cancel the record IntersectionObserver
+    // delivers for the now disconnected target. Wait until after paint so the
+    // exit fires first, then drop the observer's strong ref to the node.
+    requestPostPaintCallback(() => {
+      intersectionUnobserveScheduled = false;
+      const pending = pendingIntersectionUnobserves;
+      pendingIntersectionUnobserves = [];
+      for (let i = 0; i < pending.length; i++) {
+        const item = pending[i];
+        item.observer.unobserve(item.instance);
+      }
+    });
+  }
 }
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.getClientRects = function (
@@ -3372,7 +3553,7 @@ FragmentInstance.prototype.getClientRects = function (
   return rects;
 };
 function collectClientRects(child: Fiber, rects: Array<DOMRect>): boolean {
-  if (enableFragmentRefsTextNodes && child.tag === HostText) {
+  if (child.tag === HostText) {
     const textNode: Text = child.stateNode;
     const range = textNode.ownerDocument.createRange();
     range.selectNodeContents(textNode);
@@ -3426,9 +3607,20 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   );
 
   if (children.length === 0) {
+    // Match non-empty CDP: when portaled, position against the portal
+    // container rather than the React host parent.
+    let emptyParentHostInstance = parentHostInstance;
+    if (fiberIsPortaledIntoHost(this._fragmentFiber)) {
+      const portalContainer = getFragmentPortalContainerInfo(
+        this._fragmentFiber,
+      );
+      if (portalContainer != null) {
+        emptyParentHostInstance = portalContainer;
+      }
+    }
     return compareDocumentPositionForEmptyFragment(
       this._fragmentFiber,
-      parentHostInstance,
+      emptyParentHostInstance,
       otherNode,
       getInstanceFromHostFiber,
     );
@@ -3531,10 +3723,13 @@ function validateDocumentPositionWithFiberTree(
   }
   if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
     if (otherFiber === null) {
-      // otherFiber could be null if its the document or body element
-      const ownerDocument = otherNode.ownerDocument;
-      // $FlowFixMe[invalid-compare]
-      return otherNode === ownerDocument || otherNode === ownerDocument.body;
+      // otherFiber is null when otherNode is not part of a React tree. That
+      // includes the document, documentElement and body, but also the root
+      // container and any element above it. All of them contain the whole
+      // React tree, so check containment of the root container rather than
+      // enumerating the nodes above it.
+      const rootContainer = getFragmentRootContainerInfo(fragmentFiber);
+      return rootContainer !== null && otherNode.contains(rootContainer);
     }
     return isFragmentContainedByFiber(fragmentFiber, otherFiber);
   }
@@ -3569,114 +3764,102 @@ function scrollTextNodeIntoView(
   window.scrollTo(window.scrollX + rect.left, scrollY);
 }
 
-if (enableFragmentRefsScrollIntoView) {
-  // $FlowFixMe[prop-missing]
-  FragmentInstance.prototype.scrollIntoView = function (
-    this: FragmentInstanceType,
-    alignToTop?: boolean,
-  ): void {
-    if (typeof alignToTop === 'object') {
-      throw new Error(
-        'FragmentInstance.scrollIntoView() does not support ' +
-          'scrollIntoViewOptions. Use the alignToTop boolean instead.',
-      );
-    }
-    // First, get the children nodes
-    const children: Array<Fiber> = [];
-    traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
-      collectChildren,
-      children,
+// $FlowFixMe[prop-missing]
+FragmentInstance.prototype.scrollIntoView = function (
+  this: FragmentInstanceType,
+  alignToTop?: boolean,
+): void {
+  if (typeof alignToTop === 'object') {
+    throw new Error(
+      'FragmentInstance.scrollIntoView() does not support ' +
+        'scrollIntoViewOptions. Use the alignToTop boolean instead.',
     );
+  }
+  // First, get the children nodes
+  const children: Array<Fiber> = [];
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    collectChildren,
+    children,
+  );
 
-    const resolvedAlignToTop = alignToTop !== false;
+  const resolvedAlignToTop = alignToTop !== false;
 
-    // If there are no children, we can use the parent and siblings to determine a position
-    if (children.length === 0) {
-      const hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
-        this._fragmentFiber,
-      );
-      const targetFiber = resolvedAlignToTop
-        ? hostSiblings[1] ||
-          hostSiblings[0] ||
-          getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
-        : hostSiblings[0] || hostSiblings[1];
+  // If there are no children, we can use the parent and siblings to determine a position
+  if (children.length === 0) {
+    const hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
+      this._fragmentFiber,
+    );
+    const targetFiber = resolvedAlignToTop
+      ? hostSiblings[1] ||
+        hostSiblings[0] ||
+        getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
+      : hostSiblings[0] || hostSiblings[1];
 
-      if (targetFiber === null) {
-        if (__DEV__) {
-          console.warn(
-            'You are attempting to scroll a FragmentInstance that has no ' +
-              'children, siblings, or parent. No scroll was performed.',
-          );
-        }
-        return;
-      }
-      // For text node siblings, use Range API to scroll to their position
-      if (enableFragmentRefsTextNodes && targetFiber.tag === HostText) {
-        const textNode = getInstanceFromHostFiber<TextInstance>(targetFiber);
-        scrollTextNodeIntoView(textNode, resolvedAlignToTop);
-        return;
-      }
-      const target = getInstanceFromHostFiber<Instance | Container>(
-        targetFiber,
-      );
-      // If the parent host fiber is a HostRoot, the target is a Container
-      // which is not necessarily an Element with a scrollIntoView method.
-      if (target.nodeType === DOCUMENT_NODE) {
-        // A Document is always in view.
-      } else if (target.nodeType === DOCUMENT_FRAGMENT_NODE) {
-        const fragment = target as any as DocumentFragment;
-        // ShadowRoot always has a host: https://dom.spec.whatwg.org/#ref-for-concept-documentfragment-host%E2%91%A5
-        // A generic DocumentFragment doesn't implement this property but conceptually
-        // host is a nullable Element: https://dom.spec.whatwg.org/#concept-documentfragment-host
-        const host =
-          'host' in fragment ? (fragment as any as ShadowRoot).host : null;
-        if (host !== null) {
-          // The ShadowRoot's host element marks the position where the
-          // fragment's content would appear.
-          host.scrollIntoView(alignToTop);
-        } else if (__DEV__) {
-          console.warn(
-            'You are attempting to scroll a FragmentInstance that is only ' +
-              'mounted inside a detached DocumentFragment. No scroll was ' +
-              'performed.',
-          );
-        }
-        return;
-      } else {
-        // Narrowed down to Element by nodeType check above, but Flow doesn't know that.
-        const element = target as any as Element;
-        element.scrollIntoView(alignToTop);
-      }
+    if (targetFiber === null) {
+      return;
     }
-
-    let i = resolvedAlignToTop ? children.length - 1 : 0;
-    while (i !== (resolvedAlignToTop ? -1 : children.length)) {
-      const child = children[i];
-      // For text nodes, use Range API to scroll to their position
-      if (enableFragmentRefsTextNodes && child.tag === HostText) {
-        const textNode = getInstanceFromHostFiber<TextInstance>(child);
-        scrollTextNodeIntoView(textNode, resolvedAlignToTop);
-        i += resolvedAlignToTop ? -1 : 1;
-        continue;
+    // For text node siblings, use Range API to scroll to their position
+    if (targetFiber.tag === HostText) {
+      const textNode = getInstanceFromHostFiber<TextInstance>(targetFiber);
+      scrollTextNodeIntoView(textNode, resolvedAlignToTop);
+      return;
+    }
+    const target = getInstanceFromHostFiber<Instance | Container>(targetFiber);
+    // If the parent host fiber is a HostRoot, the target is a Container
+    // which is not necessarily an Element with a scrollIntoView method.
+    if (target.nodeType === DOCUMENT_NODE) {
+      // A Document is always in view.
+    } else if (target.nodeType === DOCUMENT_FRAGMENT_NODE) {
+      const fragment = target as any as DocumentFragment;
+      // ShadowRoot always has a host: https://dom.spec.whatwg.org/#ref-for-concept-documentfragment-host%E2%91%A5
+      // A generic DocumentFragment doesn't implement this property but conceptually
+      // host is a nullable Element: https://dom.spec.whatwg.org/#concept-documentfragment-host
+      const host =
+        'host' in fragment ? (fragment as any as ShadowRoot).host : null;
+      if (host !== null) {
+        // The ShadowRoot's host element marks the position where the
+        // fragment's content would appear.
+        host.scrollIntoView(alignToTop);
+      } else if (__DEV__) {
+        console.warn(
+          'You are attempting to scroll a FragmentInstance that is only ' +
+            'mounted inside a detached DocumentFragment. No scroll was ' +
+            'performed.',
+        );
       }
-      const instance = getInstanceFromHostFiber<Instance>(child);
-      instance.scrollIntoView(alignToTop);
+      return;
+    } else {
+      // Narrowed down to Element by nodeType check above, but Flow doesn't know that.
+      const element = target as any as Element;
+      element.scrollIntoView(alignToTop);
+    }
+  }
+
+  let i = resolvedAlignToTop ? children.length - 1 : 0;
+  while (i !== (resolvedAlignToTop ? -1 : children.length)) {
+    const child = children[i];
+    // For text nodes, use Range API to scroll to their position
+    if (child.tag === HostText) {
+      const textNode = getInstanceFromHostFiber<TextInstance>(child);
+      scrollTextNodeIntoView(textNode, resolvedAlignToTop);
       i += resolvedAlignToTop ? -1 : 1;
+      continue;
     }
-  };
-}
+    const instance = getInstanceFromHostFiber<Instance>(child);
+    instance.scrollIntoView(alignToTop);
+    i += resolvedAlignToTop ? -1 : 1;
+  }
+};
 
 function addFragmentHandleToFiber(
   child: Fiber,
   fragmentInstance: FragmentInstanceType,
 ): boolean {
-  if (enableFragmentRefsInstanceHandles) {
-    const instance = getInstanceFromHostFiber<Instance | TextInstance>(
-      child,
-    ) as any as HostNodeWithFragmentHandles;
-    addFragmentHandleToInstance(instance, fragmentInstance);
-  }
+  const instance = getInstanceFromHostFiber<Instance | TextInstance>(
+    child,
+  ) as any as HostNodeWithFragmentHandles;
+  addFragmentHandleToInstance(instance, fragmentInstance);
   return false;
 }
 
@@ -3684,25 +3867,21 @@ function addFragmentHandleToInstance(
   instance: HostNodeWithFragmentHandles,
   fragmentInstance: FragmentInstanceType,
 ): void {
-  if (enableFragmentRefsInstanceHandles) {
-    if (instance.reactFragments == null) {
-      instance.reactFragments = new Set();
-    }
-    instance.reactFragments.add(fragmentInstance);
+  if (instance.reactFragments == null) {
+    instance.reactFragments = new Set();
   }
+  instance.reactFragments.add(fragmentInstance);
 }
 
 export function createFragmentInstance(
   fragmentFiber: Fiber,
 ): FragmentInstanceType {
   const fragmentInstance = new (FragmentInstance as any)(fragmentFiber);
-  if (enableFragmentRefsInstanceHandles) {
-    traverseFragmentInstancesAndTextInstances(
-      fragmentFiber,
-      addFragmentHandleToFiber,
-      fragmentInstance,
-    );
-  }
+  traverseFragmentInstancesAndTextInstances(
+    fragmentFiber,
+    addFragmentHandleToFiber,
+    fragmentInstance,
+  );
   return fragmentInstance;
 }
 
@@ -3717,46 +3896,69 @@ export function commitNewChildToFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
+  const eventListeners = fragmentInstance._eventListeners;
+  if (eventListeners !== null) {
+    for (let i = 0; i < eventListeners.length; i++) {
+      const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+      childInstance.addEventListener(
+        type,
+        attachedListener,
+        getAttachOptions(optionsOrUseCapture),
+      );
+    }
+  }
+  // Observers and fragment handles only apply to element children.
   if (childInstance.nodeType === TEXT_NODE) {
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
-  const eventListeners = fragmentInstance._eventListeners;
-  if (eventListeners !== null) {
-    for (let i = 0; i < eventListeners.length; i++) {
-      const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      instance.addEventListener(type, listener, optionsOrUseCapture);
-    }
-  }
-  if (fragmentInstance._observers !== null) {
-    fragmentInstance._observers.forEach(observer => {
+  const observers = fragmentInstance._observers;
+  if (observers !== null) {
+    observers.forEach(observer => {
+      cancelPendingIntersectionUnobserve(fragmentInstance, observer, instance);
       observer.observe(instance);
     });
   }
-  if (enableFragmentRefsInstanceHandles) {
-    addFragmentHandleToInstance(instance, fragmentInstance);
-  }
+  addFragmentHandleToInstance(instance, fragmentInstance);
 }
 
 export function deleteChildFromFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
+  const eventListeners = fragmentInstance._eventListeners;
+  if (eventListeners !== null) {
+    for (let i = 0; i < eventListeners.length; i++) {
+      const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+      childInstance.removeEventListener(
+        type,
+        attachedListener,
+        getAttachOptions(optionsOrUseCapture),
+      );
+    }
+  }
   if (childInstance.nodeType === TEXT_NODE) {
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
-  const eventListeners = fragmentInstance._eventListeners;
-  if (eventListeners !== null) {
-    for (let i = 0; i < eventListeners.length; i++) {
-      const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      instance.removeEventListener(type, listener, optionsOrUseCapture);
-    }
+  const observers = fragmentInstance._observers;
+  if (observers !== null) {
+    observers.forEach(observer => {
+      if (isIntersectionObserver(observer)) {
+        // Stay observed until the next IntersectionObserver delivery so a
+        // disconnected target still gets an isIntersecting: false record.
+        schedulePendingIntersectionUnobserve(
+          fragmentInstance,
+          observer as any as IntersectionObserver,
+          instance,
+        );
+      } else {
+        observer.unobserve(instance);
+      }
+    });
   }
-  if (enableFragmentRefsInstanceHandles) {
-    if (instance.reactFragments != null) {
-      instance.reactFragments.delete(fragmentInstance);
-    }
+  if (instance.reactFragments != null) {
+    instance.reactFragments.delete(fragmentInstance);
   }
 }
 
@@ -3868,7 +4070,7 @@ export function bindInstance(
 //     Hydration
 // -------------------
 
-export const supportsHydration = true;
+export const supportsHydration: boolean = true;
 
 export function canHydrateInstance(
   instance: HydratableInstance,
@@ -4565,7 +4767,7 @@ export function shouldDeleteUnhydratedTailInstances(
 //     Test Selectors
 // -------------------
 
-export const supportsTestSelectors = true;
+export const supportsTestSelectors: boolean = true;
 
 export function findFiberRoot(node: Instance): null | FiberRoot {
   const stack = [node];
@@ -4732,7 +4934,7 @@ export function requestPostPaintCallback(callback: (time: number) => void) {
 //     Singletons
 // -------------------
 
-export const supportsSingletons = true;
+export const supportsSingletons: boolean = true;
 
 export function isHostSingletonType(type: string): boolean {
   return type === 'html' || type === 'head' || type === 'body';
@@ -4892,7 +5094,7 @@ function clearSingletonPreambleContribution(instance: Instance): void {
 //     Resources
 // -------------------
 
-export const supportsResources = true;
+export const supportsResources: boolean = true;
 
 type HoistableTagType = 'link' | 'meta' | 'title';
 type TResource<

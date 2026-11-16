@@ -11,6 +11,7 @@ import type {DOMEventName} from './DOMEventNames';
 
 import {registerTwoPhaseEvent} from './EventRegistry';
 import {
+  ANIMATION_CANCEL,
   ANIMATION_END,
   ANIMATION_ITERATION,
   ANIMATION_START,
@@ -135,6 +136,7 @@ export function registerSimpleEvents() {
     registerSimpleEvent(domEventName, 'on' + capitalizedEvent);
   }
   // Special cases where event names don't match.
+  registerSimpleEvent(ANIMATION_CANCEL, 'onAnimationCancel');
   registerSimpleEvent(ANIMATION_END, 'onAnimationEnd');
   registerSimpleEvent(ANIMATION_ITERATION, 'onAnimationIteration');
   registerSimpleEvent(ANIMATION_START, 'onAnimationStart');

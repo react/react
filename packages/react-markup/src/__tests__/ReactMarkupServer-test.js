@@ -138,7 +138,7 @@ if (!__EXPERIMENTAL__) {
         await ReactMarkup.experimental_renderToHTML(
           React.createElement(Component),
         );
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         __DEV__
           ? `Event handlers cannot be passed to Client Component props.\n` +
               '  <div onClick={function onClick}>\n' +

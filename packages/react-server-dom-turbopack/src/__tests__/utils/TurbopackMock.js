@@ -15,6 +15,10 @@ const turbopackClientModules = {};
 const turbopackErroredModules = {};
 const turbopackServerMap = {};
 const turbopackClientMap = {};
+const turbopackChunkMap = {};
+global.__turbopack_load_by_url__ = function (id) {
+  return turbopackChunkMap[id];
+};
 global.__turbopack_require__ = function (id) {
   if (turbopackErroredModules[id]) {
     throw turbopackErroredModules[id];
@@ -25,6 +29,7 @@ global.__turbopack_require__ = function (id) {
 const Server = require('react-server-dom-turbopack/server');
 const registerClientReference = Server.registerClientReference;
 const registerServerReference = Server.registerServerReference;
+const registerServerObjectReference = Server.registerServerObjectReference;
 const createClientModuleProxy = Server.createClientModuleProxy;
 
 exports.turbopackMap = turbopackClientMap;
@@ -144,13 +149,19 @@ exports.clientExportsESM = function clientExportsESM(
 };
 
 // This tests server to server references. There's another case of client to server references.
-exports.serverExports = function serverExports(moduleExports) {
+exports.serverExports = function serverExports(moduleExports, blockOnChunk) {
   const idx = '' + turbopackModuleIdx++;
   turbopackServerModules[idx] = moduleExports;
   const path = url.pathToFileURL(idx).href;
+  const chunks = [];
+  if (blockOnChunk) {
+    const chunk = idx + '.js';
+    turbopackChunkMap[chunk] = blockOnChunk;
+    chunks.push(chunk);
+  }
   turbopackServerMap[path] = {
     id: idx,
-    chunks: [],
+    chunks,
     name: '*',
   };
   // We only add this if this test is testing ESM compat.
@@ -174,24 +185,57 @@ exports.serverExports = function serverExports(moduleExports) {
     };
   }
 
-  if (typeof exports === 'function') {
+  if (typeof moduleExports === 'function') {
     // The module exports a function directly,
     registerServerReference(
-      (exports: any),
-      idx,
+      (moduleExports: any),
+      path,
       // Represents the whole Module object instead of a particular import.
       null,
     );
   } else {
-    const keys = Object.keys(exports);
+    const keys = Object.keys(moduleExports);
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      const value = exports[keys[i]];
+      const value = moduleExports[key];
       if (typeof value === 'function') {
-        registerServerReference((value: any), idx, key);
+        registerServerReference((value: any), path, key);
       }
     }
   }
 
+  return moduleExports;
+};
+
+// Simulates a "use server" module whose exports include objects, which are
+// registered as object Server References.
+exports.serverObjectExports = function serverObjectExports(
+  moduleExports,
+  blockOnChunk,
+) {
+  const idx = '' + turbopackModuleIdx++;
+  turbopackServerModules[idx] = moduleExports;
+  const path = url.pathToFileURL(idx).href;
+  const chunks = [];
+  if (blockOnChunk) {
+    const chunk = idx + '.js';
+    turbopackChunkMap[chunk] = blockOnChunk;
+    chunks.push(chunk);
+  }
+  turbopackServerMap[path] = {
+    id: idx,
+    chunks,
+    name: '*',
+  };
+  const keys = Object.keys(moduleExports);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const value = moduleExports[key];
+    if (typeof value === 'function') {
+      registerServerReference((value: any), path, key);
+    } else {
+      registerServerObjectReference((value: any), path, key);
+    }
+  }
   return moduleExports;
 };

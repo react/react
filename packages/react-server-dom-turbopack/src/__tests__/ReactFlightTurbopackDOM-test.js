@@ -63,6 +63,9 @@ describe('ReactFlightTurbopackDOM', () => {
     use = React.use;
     Suspense = React.Suspense;
     ReactDOMClient = require('react-dom/client');
+    jest.mock('react-server-dom-turbopack/client', () =>
+      require('react-server-dom-turbopack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-turbopack/client');
 
     ErrorBoundary = class extends React.Component {

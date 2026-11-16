@@ -60,5 +60,4 @@ afterEach(assertConsoleLogsCleared);
 
 expect.extend({
   ...require('../matchers/reactTestMatchers'),
-  ...require('../matchers/toThrow'),
 });

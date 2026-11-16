@@ -442,7 +442,6 @@ function recursivelyInsertNewFiber(
       break;
     }
     case HostHoistable: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // TODO: Hoistables should get optimistically inserted and then removed.
         recursivelyInsertNew(
@@ -456,7 +455,6 @@ function recursivelyInsertNewFiber(
       // Fall through
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         recursivelyInsertNew(
           finishedWork,
@@ -817,7 +815,6 @@ function insertDestinationClonesOfFiber(
   // to reconciliation, because those can be set on all fiber types.
   switch (finishedWork.tag) {
     case HostHoistable: {
-      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // TODO: Hoistables should get optimistically inserted and then removed.
         recursivelyInsertClones(
@@ -831,7 +828,6 @@ function insertDestinationClonesOfFiber(
       // Fall through
     }
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         recursivelyInsertClones(
           finishedWork,

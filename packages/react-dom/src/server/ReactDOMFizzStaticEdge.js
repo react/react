@@ -24,6 +24,7 @@ import {
   startFlowing,
   stopFlowing,
   abort,
+  attachAbortSignal,
   getPostponedState,
 } from 'react-server/src/ReactFizzServer';
 
@@ -131,16 +132,7 @@ function prerender(
       onFatalError,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abort(request, (signal as any).reason);
-      } else {
-        const listener = () => {
-          abort(request, (signal as any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });
@@ -197,16 +189,7 @@ function resumeAndPrerender(
       onFatalError,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abort(request, (signal as any).reason);
-      } else {
-        const listener = () => {
-          abort(request, (signal as any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });

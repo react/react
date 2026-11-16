@@ -302,8 +302,10 @@ class PromoteInterposedTemporaries extends ReactiveFunctionVisitor<InterState> {
       case 'PropertyDelete':
       case 'ComputedStore':
       case 'ComputedDelete':
-      case 'PostfixUpdate':
-      case 'PrefixUpdate':
+      case 'PostfixUpdateLocal':
+      case 'PostfixUpdateContext':
+      case 'PrefixUpdateContext':
+      case 'PrefixUpdateLocal':
       case 'StoreLocal':
       case 'StoreContext':
       case 'StoreGlobal':

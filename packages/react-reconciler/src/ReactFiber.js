@@ -183,7 +183,7 @@ function FiberNode(
     // To work around this, initialize the fields below with doubles.
     //
     // Learn more about this here:
-    // https://github.com/facebook/react/issues/14365
+    // https://github.com/react/react/issues/14365
     // https://bugs.chromium.org/p/v8/issues/detail?id=8538
 
     this.actualDuration = -0;
@@ -570,7 +570,6 @@ export function createFiberFromTypeAndProps(
       fiberTag = ClassComponent;
     }
   } else if (typeof resolvedType === 'string') {
-    // $FlowFixMe[constant-condition]
     if (supportsResources && supportsSingletons) {
       const hostContext = getHostContext();
       fiberTag = isHostHoistableType(type, pendingProps, hostContext)
@@ -578,13 +577,11 @@ export function createFiberFromTypeAndProps(
         : isHostSingletonType(type)
           ? HostSingleton
           : HostComponent;
-      // $FlowFixMe[constant-condition]
     } else if (supportsResources) {
       const hostContext = getHostContext();
       fiberTag = isHostHoistableType(type, pendingProps, hostContext)
         ? HostHoistable
         : HostComponent;
-      // $FlowFixMe[constant-condition]
     } else if (supportsSingletons) {
       fiberTag = isHostSingletonType(type) ? HostSingleton : HostComponent;
     } else {

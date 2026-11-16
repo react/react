@@ -19,8 +19,9 @@ describe('ReactPerformanceTracks', () => {
 
   beforeEach(() => {
     performanceMeasureCalls.length = 0;
-    Object.defineProperty(performance, 'measure', {
-      value: jest.fn((measureName, reusableOptions) => {
+    jest
+      .spyOn(performance, 'measure')
+      .mockImplementation((measureName, reusableOptions) => {
         performanceMeasureCalls.push([
           measureName,
           {
@@ -28,9 +29,7 @@ describe('ReactPerformanceTracks', () => {
             ...reusableOptions,
           },
         ]);
-      }),
-      configurable: true,
-    });
+      });
     console.timeStamp = () => {};
     jest.spyOn(console, 'timeStamp').mockImplementation(() => {});
 

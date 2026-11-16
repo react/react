@@ -15,6 +15,7 @@ exports.decodeReplyFromAsyncIterable = s.decodeReplyFromAsyncIterable;
 exports.decodeAction = s.decodeAction;
 exports.decodeFormState = s.decodeFormState;
 exports.registerServerReference = s.registerServerReference;
+exports.registerServerObjectReference = s.registerServerObjectReference;
 exports.registerClientReference = s.registerClientReference;
 exports.createClientModuleProxy = s.createClientModuleProxy;
 exports.createTemporaryReferenceSet = s.createTemporaryReferenceSet;

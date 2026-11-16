@@ -2188,7 +2188,9 @@ fn build_typed_globals(
     typed_globals.push(("performance".to_string(), perf_global.clone()));
     globals.insert("performance".to_string(), perf_global);
 
-    // Date
+    // Date: constructor is a function so `new Date()` gets a call signature.
+    // Zero-arg construction reads the clock (`impure_if_no_args`); `Date.now`
+    // remains a static method on the same shape.
     let date_now = add_function(
         shapes,
         Vec::new(),
@@ -2203,7 +2205,21 @@ fn build_typed_globals(
         None,
         false,
     );
-    let date_global = add_object(shapes, Some("Date"), vec![("now".to_string(), date_now)]);
+    let date_global = add_function(
+        shapes,
+        vec![("now".to_string(), date_now)],
+        FunctionSignatureBuilder {
+            rest_param: Some(Effect::Read),
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            impure: true,
+            impure_if_no_args: true,
+            canonical_name: Some("Date".to_string()),
+            ..Default::default()
+        },
+        Some("Date"),
+        false,
+    );
     typed_globals.push(("Date".to_string(), date_global.clone()));
     globals.insert("Date".to_string(), date_global);
 
@@ -2241,7 +2257,7 @@ fn build_typed_globals(
     typed_globals.push(("NaN".to_string(), Type::Primitive));
     globals.insert("NaN".to_string(), Type::Primitive);
 
-    // Map, Set, WeakMap, WeakSet constructors
+    // Map, Set, WeakMap, WeakSet, and IntersectionObserver constructors
     let map_ctor = add_function(
         shapes,
         Vec::new(),
@@ -2309,6 +2325,105 @@ fn build_typed_globals(
     );
     typed_globals.push(("WeakSet".to_string(), weak_set_ctor.clone()));
     globals.insert("WeakSet".to_string(), weak_set_ctor);
+
+    let intersection_observer_ctor = add_function(
+        shapes,
+        Vec::new(),
+        FunctionSignatureBuilder {
+            // The callback is retained for later delivery, not invoked by construction.
+            positional_params: vec![Effect::Freeze, Effect::Read],
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            ..Default::default()
+        },
+        None,
+        true,
+    );
+    typed_globals.push((
+        "IntersectionObserver".to_string(),
+        intersection_observer_ctor.clone(),
+    ));
+    globals.insert(
+        "IntersectionObserver".to_string(),
+        intersection_observer_ctor,
+    );
+
+    let resize_observer_ctor = add_function(
+        shapes,
+        Vec::new(),
+        FunctionSignatureBuilder {
+            // The callback is retained for later delivery, not invoked by construction.
+            // Unlike IntersectionObserver, the options object is not a constructor
+            // argument; it belongs to `observe(target, options)`.
+            positional_params: vec![Effect::Freeze],
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            ..Default::default()
+        },
+        None,
+        true,
+    );
+    typed_globals.push(("ResizeObserver".to_string(), resize_observer_ctor.clone()));
+    globals.insert("ResizeObserver".to_string(), resize_observer_ctor);
+
+    let mutation_observer_ctor = add_function(
+        shapes,
+        Vec::new(),
+        FunctionSignatureBuilder {
+            // The callback is retained for later delivery, not invoked by construction.
+            positional_params: vec![Effect::Freeze],
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            ..Default::default()
+        },
+        None,
+        true,
+    );
+    typed_globals.push((
+        "MutationObserver".to_string(),
+        mutation_observer_ctor.clone(),
+    ));
+    globals.insert("MutationObserver".to_string(), mutation_observer_ctor);
+
+    let performance_observer_ctor = add_function(
+        shapes,
+        Vec::new(),
+        FunctionSignatureBuilder {
+            // The callback is retained for later delivery, not invoked by construction.
+            positional_params: vec![Effect::Freeze],
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            ..Default::default()
+        },
+        None,
+        true,
+    );
+    typed_globals.push((
+        "PerformanceObserver".to_string(),
+        performance_observer_ctor.clone(),
+    ));
+    globals.insert("PerformanceObserver".to_string(), performance_observer_ctor);
+
+    let reporting_observer_ctor = add_function(
+        shapes,
+        Vec::new(),
+        FunctionSignatureBuilder {
+            // The callback is retained for later delivery, not invoked by construction.
+            // The `observe()` options are a separate constructor argument here, unlike
+            // PerformanceObserver, so they are read instead of being retained.
+            positional_params: vec![Effect::Freeze, Effect::Read],
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            ..Default::default()
+        },
+        None,
+        true,
+    );
+    typed_globals.push((
+        "ReportingObserver".to_string(),
+        reporting_observer_ctor.clone(),
+    ));
+    globals.insert("ReportingObserver".to_string(), reporting_observer_ctor);
 
     // React global object — reuses the same REACT_APIS types (matching TS behavior
     // where the same type objects are used as both standalone globals and React.* properties)

@@ -289,7 +289,7 @@ export function useModalDismissSignal(
   }, [modalRef, dismissCallback, dismissOnClickOutside]);
 }
 
-// Copied from https://github.com/facebook/react/pull/15022
+// Copied from https://github.com/react/react/pull/15022
 export function useSubscription<Value>({
   getCurrentValue,
   subscribe,

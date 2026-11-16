@@ -19,5 +19,5 @@ function shim(...args: any): empty {
 }
 
 // Test selectors (when unsupported)
-export const supportsMicrotasks = false;
+export const supportsMicrotasks: boolean = false;
 export const scheduleMicrotask = shim;

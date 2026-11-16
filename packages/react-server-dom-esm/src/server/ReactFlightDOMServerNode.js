@@ -30,6 +30,7 @@ import {
   startFlowingDebug,
   stopFlowing,
   abort,
+  attachAbortSignal,
   resolveDebugMessage,
   closeDebugChannel,
 } from 'react-server/src/ReactFlightServer';
@@ -313,18 +314,7 @@ function prerenderToNodeStream(
       false,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        const reason = (signal as any).reason;
-        abort(request, reason);
-      } else {
-        const listener = () => {
-          const reason = (signal as any).reason;
-          abort(request, reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });

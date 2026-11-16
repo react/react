@@ -5,3 +5,5 @@ React Compiler is a compiler that optimizes React applications, ensuring that on
 More information about the design and architecture of the compiler are covered in the [Design Goals](./docs/DESIGN_GOALS.md).
 
 More information about developing the compiler itself is covered in the [Development Guide](./docs/DEVELOPMENT_GUIDE.md).
+
+Instructions for publishing the Rust compiler crates are covered in [Publishing Rust Compiler Crates](./docs/RUST_CRATE_RELEASES.md).

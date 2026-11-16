@@ -143,6 +143,34 @@ export function registerServerReference<T: Function>(
   );
 }
 
+export type ServerObjectReference<T> = T & {
+  $$typeof: symbol,
+  $$id: string,
+};
+
+export function registerServerObjectReference<T>(
+  reference: T,
+  id: string,
+  exportName: null | string,
+): ServerObjectReference<T> {
+  if (__DEV__) {
+    if (typeof reference === 'function') {
+      console.error(
+        'registerServerObjectReference: The reference is a function. Use ' +
+          'registerServerReference to register a function as a Server ' +
+          'Reference.',
+      );
+    }
+  }
+  return Object.defineProperties(reference as any, {
+    $$typeof: {value: SERVER_REFERENCE_TAG},
+    $$id: {
+      value: exportName === null ? id : id + '#' + exportName,
+      configurable: true,
+    },
+  });
+}
+
 const PROMISE_PROTOTYPE = Promise.prototype;
 
 const deepProxyHandlers: Proxy$traps<mixed> = {

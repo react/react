@@ -8,7 +8,7 @@ To release DevTools, do the following steps (in order):
 Each of the scripts can be run with a `--dry` flag to test without committing or publishing any changes.
 
 ### Prepare a release
-To increment version numbers and update the [CHANGELOG](https://github.com/facebook/react/blob/main/packages/react-devtools/CHANGELOG.md), run the `prepare-release` script:
+To increment version numbers and update the [CHANGELOG](https://github.com/react/react/blob/main/packages/react-devtools/CHANGELOG.md), run the `prepare-release` script:
 ```sh
 ./prepare-release.js
 ```

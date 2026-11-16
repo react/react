@@ -1235,6 +1235,6 @@ describe('ReactTestRenderer', () => {
 
     expect(() => {
       renderer.root.findByType(NonComponent);
-    }).toThrowError(`No instances found with node type: "Unknown"`);
+    }).toThrow(`No instances found with node type: "Unknown"`);
   });
 });

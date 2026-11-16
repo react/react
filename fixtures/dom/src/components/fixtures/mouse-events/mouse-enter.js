@@ -27,7 +27,7 @@ const MouseEnter = () => {
         <a
           rel="noopener noreferrer"
           target="_blank"
-          href="https://github.com/facebook/react/issues/16763">
+          href="https://github.com/react/react/issues/16763">
           #16763
         </a>{' '}
         should not happen.

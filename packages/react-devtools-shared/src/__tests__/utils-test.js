@@ -22,7 +22,10 @@ import {
   gt,
   gte,
 } from 'react-devtools-shared/src/backend/utils';
-import {extractLocationFromComponentStack} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
+import {
+  extractLocationFromComponentStack,
+  parseStackTrace,
+} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
 import {
   REACT_SUSPENSE_LIST_TYPE as SuspenseList,
   REACT_STRICT_MODE_TYPE as StrictMode,
@@ -56,7 +59,7 @@ describe('utils', () => {
     });
 
     // Simulate a reported bug:
-    // https://github.com/facebook/react/issues/16685
+    // https://github.com/react/react/issues/16685
     // @reactVersion >= 16.0
     it('should return a fallback when the name prop is not a string', () => {
       const FauxComponent = {name: {}};
@@ -80,6 +83,30 @@ describe('utils', () => {
         ['header', null],
         ['div', null],
         ['App', null],
+      ]);
+    });
+  });
+
+  describe('parseStackTrace', () => {
+    it('should read file names from Hermes call sites', () => {
+      // Hermes call sites implement getFileName() but not getScriptNameOrSourceURL()
+      const callSite = {
+        getFunctionName: () => 'Foobar',
+        getFileName: () => 'http://localhost:8081/index.bundle',
+        getLineNumber: () => 103,
+        getColumnNumber: () => 74,
+        isNative: () => false,
+        toString: () => 'Foobar (http://localhost:8081/index.bundle:103:74)',
+      };
+      const error = {
+        name: 'Error',
+        message: '',
+        get stack() {
+          return Error.prepareStackTrace(this, [callSite]);
+        },
+      };
+      expect(parseStackTrace(error, 0)).toEqual([
+        ['Foobar', 'http://localhost:8081/index.bundle', 103, 74, 0, 0, false],
       ]);
     });
   });
@@ -160,6 +187,26 @@ describe('utils', () => {
     it('should keep argument alignment across mixed substitutions', () => {
       expect(formatConsoleArgumentsToSingleString('a %i b %s', 7, 'x')).toEqual(
         'a 7 b x',
+      );
+    });
+
+    it('should keep specifiers literal when no argument is supplied', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%d %d', 1)).toEqual('1 %d');
+      expect(formatConsoleArgumentsToSingleString('%i %i', 1)).toEqual('1 %i');
+      expect(formatConsoleArgumentsToSingleString('%f %f', 1.5)).toEqual(
+        '1.5 %f',
+      );
+    });
+
+    it('should not consume arguments for escaped specifiers', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %%s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%%d %s', 'abc')).toEqual(
+        '%d abc',
       );
     });
 
@@ -392,6 +439,19 @@ describe('utils', () => {
         'webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/components/react-dev-overlay/hot-reloader-client.js',
         307,
         11,
+      ]);
+    });
+
+    it('should strip the async prefix from a frame name', () => {
+      expect(
+        extractLocationFromComponentStack(
+          '    at async Comments (https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js:5:9236)',
+        ),
+      ).toEqual([
+        'Comments',
+        'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
+        5,
+        9236,
       ]);
     });
 

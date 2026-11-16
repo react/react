@@ -6,12 +6,19 @@
  *
  * @flow
  */
+import hasOwnProperty from 'shared/hasOwnProperty';
 
 export type Destination = ReadableStreamController;
 
 export type PrecomputedChunk = Uint8Array;
 export opaque type Chunk = Uint8Array;
 export type BinaryChunk = Uint8Array;
+
+const supportsArrayBufferDetached = hasOwnProperty.call(
+  ArrayBuffer.prototype,
+  'detached',
+);
+let didWarnAboutMissingArrayBufferDetached = false;
 
 function handleErrorInNextTick(error: any) {
   setTimeout(() => {
@@ -37,10 +44,9 @@ export function flushBuffered(destination: Destination) {
   // transform streams. https://github.com/whatwg/streams/issues/960
 }
 
-// Chunks larger than VIEW_SIZE are written directly, without copying into the
-// internal view buffer. This must be at least half of Node's internal Buffer
-// pool size (8192) to avoid corrupting the pool when using
-// renderToReadableStream, which uses a byte stream that detaches ArrayBuffers.
+// A chunk larger than VIEW_SIZE is written to the destination as is. A smaller
+// chunk is copied into currentView, which React allocates and owns, so that the
+// destination receives fewer and larger writes.
 const VIEW_SIZE = 4096;
 let currentView = null;
 let writtenBytes = 0;
@@ -55,6 +61,26 @@ export function writeChunk(
   chunk: PrecomputedChunk | Chunk | BinaryChunk,
 ): void {
   if (chunk.byteLength === 0) {
+    if (supportsArrayBufferDetached) {
+      // $FlowFixMe[prop-missing] -- supportsArrayBufferDetached implies it does exist.
+      if (chunk.buffer.detached) {
+        throw new Error(
+          'Cannot transport a detached buffer. ' +
+            'This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. ' +
+            'Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.',
+        );
+      }
+    } else if (__DEV__) {
+      if (!didWarnAboutMissingArrayBufferDetached) {
+        console.error(
+          'React encountered an empty buffer when writing in an environment that ' +
+            'does not support ArrayBuffer.prototype.detached. ' +
+            'This could be a security issue if the buffer was not actually empty. ' +
+            'Please use a modern Edge runtime that supports ArrayBuffer.prototype.detached.',
+        );
+        didWarnAboutMissingArrayBufferDetached = true;
+      }
+    }
     return;
   }
 
@@ -152,7 +178,56 @@ export function typedArrayToBinaryChunk(
   // If we passed through this straight to enqueue we wouldn't have to convert it but since
   // we need to copy the buffer in that case, we need to convert it to copy it.
   // When we copy it into another array using set() it needs to be a Uint8Array.
-  return new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
+  const view = new Uint8Array(
+    content.buffer,
+    content.byteOffset,
+    content.byteLength,
+  );
+  // A byte stream transfers, and thereby detaches, the whole ArrayBuffer of
+  // every chunk it receives. React writes a chunk larger than VIEW_SIZE
+  // directly to the destination, so such a chunk must own its whole buffer.
+  //
+  // The render consumes a typed array that spans its whole buffer, in the same
+  // way that it consumes a one shot iterable.
+  //
+  // React copies a view into a part of a buffer, because the rest of that
+  // buffer does not belong to this chunk.
+  if (content.byteLength > VIEW_SIZE) {
+    // As a heuristic we assume partial views mean multiple views on the same
+    // underlying buffer are being transported. We slice to avoid buffer detachment.
+    const isViewBufferSpanning =
+      content.byteOffset === 0 &&
+      content.byteLength === content.buffer.byteLength;
+    if (
+      !isViewBufferSpanning ||
+      // To allow resizing buffers after they have been transported.
+      // Also as a precaution in case the underlying buffer gets resized between
+      // render and write.
+      // $FlowFixMe[prop-missing] prop missing in older envs = not resizable
+      content.buffer.resizable
+    ) {
+      return view.slice();
+    }
+    if (!supportsArrayBufferDetached) {
+      // We're defensively slicing for older environments where we can't reliably
+      // check later if the ArrayBuffer became detached.
+      if (__DEV__) {
+        if (!didWarnAboutMissingArrayBufferDetached) {
+          console.error(
+            'React copied a partial view into a fresh buffer as a safety precaution ' +
+              'because the environment does not implement ArrayBuffer.prototype.detached. ' +
+              'This negatively impacts performance. ' +
+              'Please upgrade to a modern Edge runtime.',
+          );
+          didWarnAboutMissingArrayBufferDetached = true;
+        }
+      }
+      return view.slice();
+    }
+  }
+  // These are likely unique views on the underlying buffer so we can transfer them safely.
+  // We'll check again when writing if the underlying buffer became detached.
+  return view;
 }
 
 export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {

@@ -5,7 +5,7 @@
 import {useState} from 'react';
 
 /**
- * Repro for https://github.com/facebook/react/issues/35122
+ * Repro for https://github.com/react/react/issues/35122
  *
  * InferReactiveScopeVariables was excluding primitive operands
  * when considering operands for merging. We previously did not
@@ -44,7 +44,7 @@ import { c as _c } from "react/compiler-runtime";
 import { useState } from "react";
 
 /**
- * Repro for https://github.com/facebook/react/issues/35122
+ * Repro for https://github.com/react/react/issues/35122
  *
  * InferReactiveScopeVariables was excluding primitive operands
  * when considering operands for merging. We previously did not

@@ -38,7 +38,7 @@ describe('ReactDOMServerIntegrationProgress', () => {
   });
 
   itRenders('a progress in an indeterminate state', async render => {
-    // Regression test for https://github.com/facebook/react/issues/6119
+    // Regression test for https://github.com/react/react/issues/6119
     const e = await render(<progress value={null} />);
     expect(e.hasAttribute('value')).toBe(false);
     const e2 = await render(<progress value={50} />);

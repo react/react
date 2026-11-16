@@ -110,7 +110,7 @@ export default function Header(): JSX.Element {
           <p className="hidden sm:block">Share</p>
         </button>
         <Link
-          href="https://github.com/facebook/react"
+          href="https://github.com/react/react"
           target="_blank"
           rel="noreferrer noopener"
           aria-label="Open on GitHub"

@@ -100,6 +100,7 @@ describe('ReactMismatchedVersions-test', () => {
     );
   });
 
+  // @gate !source
   it('importing "react-dom/static" throws if version does not match React version', async () => {
     expect(() => require('react-dom/static')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +

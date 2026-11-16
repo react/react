@@ -28,6 +28,7 @@ function makePrefixMap(styleProp, eventName) {
  * A list of event names to a configurable list of vendor prefixes.
  */
 const vendorPrefixes = {
+  animationcancel: makePrefixMap('Animation', 'AnimationCancel'),
   animationend: makePrefixMap('Animation', 'AnimationEnd'),
   animationiteration: makePrefixMap('Animation', 'AnimationIteration'),
   animationstart: makePrefixMap('Animation', 'AnimationStart'),
@@ -58,6 +59,7 @@ if (canUseDOM) {
   // style object but the events that fire will still be prefixed, so we need
   // to check if the un-prefixed events are usable, and if not remove them from the map.
   if (!('AnimationEvent' in window)) {
+    delete vendorPrefixes.animationcancel.animation;
     delete vendorPrefixes.animationend.animation;
     delete vendorPrefixes.animationiteration.animation;
     delete vendorPrefixes.animationstart.animation;

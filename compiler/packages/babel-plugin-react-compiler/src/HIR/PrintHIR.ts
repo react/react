@@ -5,6 +5,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {getBabelLocation} from './SourceLocation';
+import type * as t from '@babel/types';
+
 import {CompilerError} from '../CompilerError';
 import {printReactiveScopeSummary} from '../ReactiveScopes/PrintReactiveFunction';
 import DisjointSet from '../Utils/DisjointSet';
@@ -685,14 +688,16 @@ export function printInstructionValue(instrValue: ReactiveValue): string {
       value = `Debugger`;
       break;
     }
-    case 'PostfixUpdate': {
-      value = `PostfixUpdate ${printPlace(instrValue.lvalue)} = ${printPlace(
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext': {
+      value = `${instrValue.kind} ${printPlace(instrValue.lvalue)} = ${printPlace(
         instrValue.value,
       )} ${instrValue.operation}`;
       break;
     }
-    case 'PrefixUpdate': {
-      value = `PrefixUpdate ${printPlace(instrValue.lvalue)} = ${
+    case 'PrefixUpdateLocal':
+    case 'PrefixUpdateContext': {
+      value = `${instrValue.kind} ${printPlace(instrValue.lvalue)} = ${
         instrValue.operation
       } ${printPlace(instrValue.value)}`;
       break;
@@ -889,7 +894,10 @@ export function printType(type: Type): string {
   }
 }
 
-export function printSourceLocation(loc: SourceLocation): string {
+export function printSourceLocation(
+  source: SourceLocation | t.SourceLocation,
+): string {
+  const loc = getBabelLocation(source);
   if (typeof loc === 'symbol') {
     return 'generated';
   } else {
@@ -897,7 +905,10 @@ export function printSourceLocation(loc: SourceLocation): string {
   }
 }
 
-export function printSourceLocationLine(loc: SourceLocation): string {
+export function printSourceLocationLine(
+  source: SourceLocation | t.SourceLocation,
+): string {
+  const loc = getBabelLocation(source);
   if (typeof loc === 'symbol') {
     return 'generated';
   } else {

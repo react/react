@@ -2,7 +2,7 @@
 import {useMemo} from 'react';
 import {Stringify} from 'shared-runtime';
 
-// derived from https://github.com/facebook/react/issues/32261
+// derived from https://github.com/react/react/issues/32261
 function Component({items}) {
   const record = useMemo(
     () =>

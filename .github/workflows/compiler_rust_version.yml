@@ -1,0 +1,50 @@
+name: (Compiler) Update Rust Crate Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: New version for all Rust compiler crates
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: compiler-rust-version
+  cancel-in-progress: false
+
+jobs:
+  update_version:
+    name: Open version bump PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ inputs.version }}
+      BASE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - name: Update crate versions
+        working-directory: compiler
+        run: |
+          scripts/update-rust-crate-version.js "$VERSION"
+          cargo check --workspace
+      - name: Verify crate versions
+        working-directory: compiler
+        run: |
+          versions=$(cargo metadata --no-deps --format-version 1 | jq -r '[.packages[] | select(.name | startswith("react_compiler")) | select(.name != "react_compiler_napi") | .version] | unique | .[]')
+          if [ "$versions" != "$VERSION" ]; then
+            echo "Expected all publishable crates to use $VERSION; found: $versions" >&2
+            exit 1
+          fi
+      - name: Open pull request
+        run: compiler/scripts/open-rust-version-pr.sh

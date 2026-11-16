@@ -199,7 +199,7 @@ describe('ReactDOMServerHydration', () => {
     expect(element.firstChild.focus).not.toHaveBeenCalled();
   });
 
-  // Regression test for https://github.com/facebook/react/issues/11726
+  // Regression test for https://github.com/react/react/issues/11726
   it('should not focus on either server or client with autofocus={false} even if there is a markup mismatch', async () => {
     const element = document.createElement('div');
     element.innerHTML = ReactDOMServer.renderToString(
@@ -492,7 +492,7 @@ describe('ReactDOMServerHydration', () => {
     }
   });
 
-  // Regression test for https://github.com/facebook/react/issues/11423
+  // Regression test for https://github.com/react/react/issues/11423
   it('should ignore noscript content on the client and not warn about mismatches', async () => {
     const callback = jest.fn();
     const TestComponent = ({onRender}) => {
@@ -583,7 +583,7 @@ describe('ReactDOMServerHydration', () => {
     await act(() => root.render(<div />));
   });
 
-  // regression test for https://github.com/facebook/react/issues/17170
+  // regression test for https://github.com/react/react/issues/17170
   it('should not warn if dangerouslySetInnerHtml=undefined', async () => {
     const domElement = document.createElement('div');
     const reactElement = (

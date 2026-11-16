@@ -195,8 +195,11 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
           loc: GeneratedSource,
         });
 
-        // different constant values, can't constant propogate
-        if (operandValue.value !== value.value) {
+        // Distinguish signed zeros while preserving NaN rejection.
+        if (
+          operandValue.value !== value.value ||
+          !Object.is(operandValue.value, value.value)
+        ) {
           return null;
         }
         break;
@@ -272,7 +275,8 @@ function evaluateInstruction(
       }
       return null;
     }
-    case 'PostfixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext': {
       const previous = read(constants, value.value);
       if (
         previous !== null &&
@@ -292,7 +296,8 @@ function evaluateInstruction(
       }
       return null;
     }
-    case 'PrefixUpdate': {
+    case 'PrefixUpdateLocal':
+    case 'PrefixUpdateContext': {
       const previous = read(constants, value.value);
       if (
         previous !== null &&
