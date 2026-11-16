@@ -8,7 +8,7 @@ React is a JavaScript library for building user interfaces.
 
 [Learn how to use React in your project](https://react.dev/learn).
 
-## Installation
+## Installation !!!!!!!!!!
 
 React has been designed for gradual adoption from the start, and **you can use as little or as much React as you need**:
 
@@ -76,3 +76,8 @@ To help you get your feet wet and get you familiar with our contribution process
 ### License
 
 React is [MIT licensed](./LICENSE).
+
+
+
+
+This file has been edited by <REACT File>
