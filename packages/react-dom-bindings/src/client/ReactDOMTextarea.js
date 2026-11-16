@@ -165,7 +165,11 @@ export function hydrateTextarea(
   // Track the value that we last observed which is the hydrated value so
   // that any change event that fires will trigger onChange on the actual
   // current value.
-  const stringValue = toString(getToStringValue(initialValue));
+  // The textarea's value normalizes \r\n and \r to \n, so compare against that.
+  let stringValue = toString(getToStringValue(initialValue));
+  if (stringValue.indexOf('\r') !== -1) {
+    stringValue = stringValue.replace(/\r\n?/g, '\n');
+  }
   const changed = trackHydrated(node as any, stringValue, false);
   if (changed) {
     // If the current value is different, that suggests that the user
