@@ -3086,17 +3086,22 @@ function updateDeferredValueImpl<T>(
   // Unlike `useState`, the `initialValue` option to `useDeferredValue` is
   // reactive: if the hook re-renders with a different initial value before
   // the final value commits, React should update to the new initial value.
-  if (prevIsInitial && initialValue !== undefined) {
+  if (prevIsInitial) {
     if (is(value, prevValue)) {
+      // The value matches the initial value that's already shown, so we're
+      // now showing the final value. Leave the initial state for good, even
+      // if no initialValue was passed this time.
       const nextState: DeferredValueState<T> = {value, isInitial: false};
       hook.memoizedState = nextState;
       return value;
     }
-    const resultValue = mountDeferredValueImpl(hook, value, initialValue);
-    if (!is(resultValue, prevValue)) {
-      markWorkInProgressReceivedUpdate();
+    if (initialValue !== undefined) {
+      const resultValue = mountDeferredValueImpl(hook, value, initialValue);
+      if (!is(resultValue, prevValue)) {
+        markWorkInProgressReceivedUpdate();
+      }
+      return resultValue;
     }
-    return resultValue;
   }
 
   if (is(value, prevValue)) {
