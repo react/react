@@ -42,6 +42,21 @@ function coerceFormActionProp(
   }
 }
 
+function getFormMethod(form: HTMLFormElement): string {
+  // A control named "method" is exposed as form.method and hides the IDL
+  // attribute. Call the prototype getter so this stays "get" | "post" | "dialog".
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLFormElement.prototype,
+    'method',
+  );
+  if (descriptor == null || descriptor.get == null) {
+    return 'get';
+  }
+  // $FlowFixMe[method-unbinding]
+  const method = descriptor.get.call(form);
+  return typeof method === 'string' ? method : 'get';
+}
+
 /**
  * This plugin invokes action functions on forms, inputs and buttons if
  * the form doesn't prevent default.
@@ -107,7 +122,7 @@ function extractEvents(
         const pendingState: FormStatus = {
           pending: true,
           data: formData,
-          method: form.method,
+          method: getFormMethod(form),
           action: action,
         };
         if (__DEV__) {
@@ -136,7 +151,7 @@ function extractEvents(
       const pendingState: FormStatus = {
         pending: true,
         data: formData,
-        method: form.method,
+        method: getFormMethod(form),
         action: action,
       };
       if (__DEV__) {
@@ -172,7 +187,7 @@ export function dispatchReplayedFormAction(
   const pendingState: FormStatus = {
     pending: true,
     data: formData,
-    method: form.method,
+    method: getFormMethod(form),
     action: action,
   };
   if (__DEV__) {
