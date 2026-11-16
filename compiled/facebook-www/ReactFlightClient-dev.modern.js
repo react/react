@@ -1232,6 +1232,15 @@ __DEV__ &&
         return "";
       }
     }
+    function createReactMetadata(requestId, kind, outcome, environment) {
+      return {
+        version: 1,
+        requestId: requestId,
+        kind: kind,
+        outcome: outcome,
+        environment: environment
+      };
+    }
     function markAllTracksInOrder() {
       supportsUserTiming &&
         (console.timeStamp(
@@ -1310,7 +1319,8 @@ __DEV__ &&
       startTime,
       endTime,
       rootEnv,
-      value
+      value,
+      requestId
     ) {
       if (supportsUserTiming && 0 < endTime) {
         var description = getIODescription(value),
@@ -1329,7 +1339,7 @@ __DEV__ &&
             ? addObjectToProperties(value, properties, 0, "")
             : void 0 !== value &&
               addValueToProperties("awaited value", value, properties, 0, "");
-          asyncInfo = getIOLongName(
+          rootEnv = getIOLongName(
             asyncInfo.awaited,
             description,
             asyncInfo.env,
@@ -1345,8 +1355,14 @@ __DEV__ &&
                   track: trackNames[trackIdx],
                   trackGroup: "Server Components \u269b",
                   properties: properties,
-                  tooltipText: asyncInfo
-                }
+                  tooltipText: rootEnv
+                },
+                react: createReactMetadata(
+                  requestId,
+                  "await",
+                  "completed",
+                  asyncInfo.env
+                )
               }
             })
           );
@@ -2825,7 +2841,8 @@ __DEV__ &&
       environmentName,
       debugStartTime,
       debugEndTime,
-      debugChannel
+      debugChannel,
+      debugRequestId
     ) {
       var chunks = new Map();
       this._bundlerConfig = bundlerConfig;
@@ -2863,6 +2880,7 @@ __DEV__ &&
       this._debugIOStarted = !1;
       setTimeout(markIOStarted.bind(this), 0);
       this._debugEndTime = void 0 === debugEndTime ? null : debugEndTime;
+      this._debugRequestId = debugRequestId;
       this._debugFindSourceMapURL = findSourceMapURL;
       this._debugChannel = debugChannel;
       this._blockedConsole = null;
@@ -3857,7 +3875,8 @@ __DEV__ &&
                       trackIdx$jscomp$1 = trackIdx$jscomp$0,
                       startTime$jscomp$2 = startTime$jscomp$1,
                       childrenEndTime$jscomp$1 = childrenEndTime$jscomp$0,
-                      error = root.reason;
+                      error = root.reason,
+                      requestId = response._debugRequestId;
                     if (supportsUserTiming) {
                       var env = componentInfo$jscomp$2.env,
                         name = componentInfo$jscomp$2.name,
@@ -3902,7 +3921,13 @@ __DEV__ &&
                             trackGroup: "Server Components \u269b",
                             tooltipText: entryName$jscomp$0 + " Errored",
                             properties: properties
-                          }
+                          },
+                          react: createReactMetadata(
+                            requestId,
+                            "component",
+                            "errored",
+                            env
+                          )
                         }
                       });
                       performance.clearMeasures(measureName);
@@ -3911,7 +3936,8 @@ __DEV__ &&
                     var componentInfo$jscomp$3 = componentInfo$jscomp$1,
                       trackIdx$jscomp$2 = trackIdx$jscomp$0,
                       startTime$jscomp$3 = startTime$jscomp$1,
-                      childrenEndTime$jscomp$2 = childrenEndTime$jscomp$0;
+                      childrenEndTime$jscomp$2 = childrenEndTime$jscomp$0,
+                      requestId$jscomp$0 = response._debugRequestId;
                     if (
                       supportsUserTiming &&
                       0 <= childrenEndTime$jscomp$2 &&
@@ -3974,7 +4000,13 @@ __DEV__ &&
                                   track: trackNames[trackIdx$jscomp$2],
                                   trackGroup: "Server Components \u269b",
                                   properties: properties$jscomp$0
-                                }
+                                },
+                                react: createReactMetadata(
+                                  requestId$jscomp$0,
+                                  "component",
+                                  "completed",
+                                  env$jscomp$0
+                                )
                               }
                             }
                           )
@@ -4012,7 +4044,8 @@ __DEV__ &&
                           time,
                           endTime,
                           env$jscomp$1,
-                          thenable.value
+                          thenable.value,
+                          response$jscomp$0._debugRequestId
                         );
                         break;
                       case "rejected":
@@ -4021,7 +4054,9 @@ __DEV__ &&
                           startTime$jscomp$4 = time,
                           endTime$jscomp$0 = endTime,
                           rootEnv = env$jscomp$1,
-                          error$jscomp$0 = thenable.reason;
+                          error$jscomp$0 = thenable.reason,
+                          requestId$jscomp$1 =
+                            response$jscomp$0._debugRequestId;
                         if (supportsUserTiming && 0 < endTime$jscomp$0) {
                           var description = getIODescription(error$jscomp$0),
                             entryName$jscomp$1 =
@@ -4070,7 +4105,13 @@ __DEV__ &&
                                       trackGroup: "Server Components \u269b",
                                       properties: properties$jscomp$1,
                                       tooltipText: tooltipText
-                                    }
+                                    },
+                                    react: createReactMetadata(
+                                      requestId$jscomp$1,
+                                      "await",
+                                      "errored",
+                                      asyncInfo$jscomp$0.env
+                                    )
                                   }
                                 }
                               )
@@ -4094,7 +4135,8 @@ __DEV__ &&
                           time,
                           endTime,
                           env$jscomp$1,
-                          void 0
+                          void 0,
+                          response$jscomp$0._debugRequestId
                         );
                     }
                   } else
@@ -4104,7 +4146,8 @@ __DEV__ &&
                       time,
                       endTime,
                       env$jscomp$1,
-                      void 0
+                      void 0,
+                      response$jscomp$0._debugRequestId
                     );
                 }
               }
@@ -4120,7 +4163,8 @@ __DEV__ &&
                     componentInfo$jscomp$4 = _componentInfo,
                     trackIdx$jscomp$4 = trackIdx$jscomp$6,
                     startTime$jscomp$5 = time,
-                    childrenEndTime$jscomp$3 = childrenEndTime;
+                    childrenEndTime$jscomp$3 = childrenEndTime,
+                    requestId$jscomp$2 = response$jscomp$0._debugRequestId;
                   if (supportsUserTiming) {
                     var env$jscomp$2 = componentInfo$jscomp$4.env,
                       name$jscomp$1 = componentInfo$jscomp$4.name,
@@ -4160,7 +4204,13 @@ __DEV__ &&
                           trackGroup: "Server Components \u269b",
                           tooltipText: entryName$jscomp$2 + " Aborted",
                           properties: properties$jscomp$2
-                        }
+                        },
+                        react: createReactMetadata(
+                          requestId$jscomp$2,
+                          "component",
+                          "aborted",
+                          env$jscomp$2
+                        )
                       }
                     });
                     performance.clearMeasures(measureName$jscomp$1);
@@ -4181,7 +4231,8 @@ __DEV__ &&
                     trackIdx$jscomp$5 = trackIdx$jscomp$6,
                     startTime$jscomp$6 = time,
                     endTime$jscomp$1 = endTime,
-                    rootEnv$jscomp$0 = _env2;
+                    rootEnv$jscomp$0 = _env2,
+                    requestId$jscomp$3 = response$jscomp$0._debugRequestId;
                   if (supportsUserTiming && 0 < endTime$jscomp$1) {
                     var entryName$jscomp$3 =
                         "await " +
@@ -4222,7 +4273,13 @@ __DEV__ &&
                                   ]
                                 ],
                                 tooltipText: tooltipText$jscomp$0
-                              }
+                              },
+                              react: createReactMetadata(
+                                requestId$jscomp$3,
+                                "await",
+                                "aborted",
+                                asyncInfo$jscomp$1.env
+                              )
                             }
                           }
                         )
@@ -4801,7 +4858,8 @@ __DEV__ &&
         environmentName,
         debugStartTime,
         options,
-        debugChannel
+        debugChannel,
+        void 0
       )._weakResponse;
     }
     function startReadingFromUniversalStream(
@@ -5164,10 +5222,10 @@ __DEV__ &&
       return hook.checkDCE ? !0 : !1;
     })({
       bundleType: 1,
-      version: "19.3.0-www-modern-df6aa4ec-20261112",
+      version: "19.3.0-www-modern-6c6f84ff-20261116",
       rendererPackageName: "react-flight-server-fb",
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-df6aa4ec-20261112",
+      reconcilerVersion: "19.3.0-www-modern-6c6f84ff-20261116",
       getCurrentComponentInfo: function () {
         return currentOwnerInDEV;
       }
