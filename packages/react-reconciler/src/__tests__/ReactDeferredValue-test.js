@@ -400,6 +400,31 @@ describe('ReactDeferredValue', () => {
     expect(root).toMatchRenderedOutput('Preview');
   });
 
+  it('stays in the initial state if initialValue is omitted before the final value commits', async () => {
+    function App({value, initialValue}) {
+      return <AsyncText text={useDeferredValue(value, initialValue)} />;
+    }
+    const root = ReactNoop.createRoot();
+
+    resolveText('Preview');
+    await act(() => root.render(<App value="A" initialValue="Preview" />));
+    assertLog(['Preview', 'Suspend! [A]']);
+    expect(root).toMatchRenderedOutput('Preview');
+
+    // Omit initialValue while the final value is still pending. The preview
+    // stays on screen, and the hook is still in its initial state.
+    await act(() => root.render(<App value="B" />));
+    assertLog(['Preview', 'Suspend! [B]']);
+    expect(root).toMatchRenderedOutput('Preview');
+
+    // The final value hasn't committed, so a new initialValue still replaces
+    // the preview.
+    resolveText('New Preview');
+    await act(() => root.render(<App value="C" initialValue="New Preview" />));
+    assertLog(['New Preview', 'Suspend! [C]']);
+    expect(root).toMatchRenderedOutput('New Preview');
+  });
+
   it('supports initialValue argument', async () => {
     function App() {
       const value = useDeferredValue('Final', 'Initial');
