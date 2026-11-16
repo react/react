@@ -2995,14 +2995,8 @@ function mountDeferredValue<T>(value: T, initialValue?: T): T {
 function updateDeferredValue<T>(value: T, initialValue?: T): T {
   const hook = updateWorkInProgressHook();
   const resolvedCurrentHook: Hook = currentHook as any;
-  const prevState: DeferredValueState<T> = resolvedCurrentHook.memoizedState;
-  return updateDeferredValueImpl(
-    hook,
-    prevState.value,
-    prevState.isInitial,
-    value,
-    initialValue,
-  );
+  const prevValue: T = resolvedCurrentHook.memoizedState;
+  return updateDeferredValueImpl(hook, prevValue, value, initialValue);
 }
 
 function rerenderDeferredValue<T>(value: T, initialValue?: T): T {
@@ -3012,14 +3006,8 @@ function rerenderDeferredValue<T>(value: T, initialValue?: T): T {
     return mountDeferredValueImpl(hook, value, initialValue);
   } else {
     // This is a rerender during an update.
-    const prevState: DeferredValueState<T> = currentHook.memoizedState;
-    return updateDeferredValueImpl(
-      hook,
-      prevState.value,
-      prevState.isInitial,
-      value,
-      initialValue,
-    );
+    const prevValue: T = currentHook.memoizedState;
+    return updateDeferredValueImpl(hook, prevValue, value, initialValue);
   }
 }
 
@@ -3042,18 +3030,13 @@ function mountDeferredValueImpl<T>(hook: Hook, value: T, initialValue?: T): T {
     // When `initialValue` is provided, we defer the initial render even if the
     // current render is not synchronous.
     initialValue !== undefined &&
-    !is(value, initialValue) &&
     // However, to avoid waterfalls, we do not defer if this render
     // was itself spawned by an earlier useDeferredValue. Check if DeferredLane
     // is part of the render lanes.
     !isRenderingDeferredWork()
   ) {
     // Render with the initial value
-    const initialState: DeferredValueState<T> = {
-      value: initialValue,
-      isInitial: true,
-    };
-    hook.memoizedState = initialState;
+    hook.memoizedState = initialValue;
 
     // Schedule a deferred render to switch to the final value.
     const deferredLane = requestDeferredLane();
@@ -3065,40 +3048,17 @@ function mountDeferredValueImpl<T>(hook: Hook, value: T, initialValue?: T): T {
 
     return initialValue;
   } else {
-    const nextState: DeferredValueState<T> = {value, isInitial: false};
-    hook.memoizedState = nextState;
+    hook.memoizedState = value;
     return value;
   }
 }
 
-type DeferredValueState<T> = {
-  value: T,
-  isInitial: boolean,
-};
-
 function updateDeferredValueImpl<T>(
   hook: Hook,
   prevValue: T,
-  prevIsInitial: boolean,
   value: T,
   initialValue?: T,
 ): T {
-  // Unlike `useState`, the `initialValue` option to `useDeferredValue` is
-  // reactive: if the hook re-renders with a different initial value before
-  // the final value commits, React should update to the new initial value.
-  if (prevIsInitial && initialValue !== undefined) {
-    if (is(value, prevValue)) {
-      const nextState: DeferredValueState<T> = {value, isInitial: false};
-      hook.memoizedState = nextState;
-      return value;
-    }
-    const resultValue = mountDeferredValueImpl(hook, value, initialValue);
-    if (!is(resultValue, prevValue)) {
-      markWorkInProgressReceivedUpdate();
-    }
-    return resultValue;
-  }
-
   if (is(value, prevValue)) {
     // The incoming value is referentially identical to the currently rendered
     // value, so we can bail out quickly.
@@ -3142,8 +3102,7 @@ function updateDeferredValueImpl<T>(
 
       // Mark this as an update to prevent the fiber from bailing out.
       markWorkInProgressReceivedUpdate();
-      const nextState: DeferredValueState<T> = {value, isInitial: false};
-      hook.memoizedState = nextState;
+      hook.memoizedState = value;
       return value;
     }
   }

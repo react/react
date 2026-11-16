@@ -521,7 +521,7 @@ function useTransition(): [
 
 function useDeferredValue<T>(value: T, initialValue?: T): T {
   const hook = nextHook();
-  const prevValue = hook !== null ? hook.memoizedState.value : value;
+  const prevValue = hook !== null ? hook.memoizedState : value;
   hookLog.push({
     displayName: null,
     primitive: 'DeferredValue',
