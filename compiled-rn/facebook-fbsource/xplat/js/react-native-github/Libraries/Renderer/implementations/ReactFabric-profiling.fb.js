@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<0ae3b9db25a6fbed5cfeb43811ec9a91>>
+ * @generated SignedSource<<bd5cf986aedeb0f658757934515fae2f>>
  */
 
 "use strict";
@@ -11587,18 +11587,25 @@ function markRootSuspended(
   spawnedLane,
   didAttemptEntireTree
 ) {
-  suspendedLanes = getEntangledLanes(root, suspendedLanes);
-  suspendedLanes &= ~workInProgressRootPingedLanes;
-  suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+  var entangledLanes = getEntangledLanes(root, suspendedLanes),
+    prewarmedLanes = 0;
+  0 !== (entangledLanes & 1073741824)
+    ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+    : (suspendedLanes = entangledLanes);
+  entangledLanes =
+    workInProgressRootPingedLanes | workInProgressRootInterleavedUpdatedLanes;
+  suspendedLanes &= ~entangledLanes;
+  prewarmedLanes &= ~entangledLanes;
   root.suspendedLanes |= suspendedLanes;
   root.pingedLanes &= ~suspendedLanes;
-  didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+  didAttemptEntireTree &&
+    (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
   didAttemptEntireTree = root.expirationTimes;
-  for (var lanes = suspendedLanes; 0 < lanes; ) {
-    var index$5 = 31 - clz32(lanes),
-      lane = 1 << index$5;
-    didAttemptEntireTree[index$5] = -1;
-    lanes &= ~lane;
+  for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+    entangledLanes = 31 - clz32(prewarmedLanes);
+    var lane = 1 << entangledLanes;
+    didAttemptEntireTree[entangledLanes] = -1;
+    prewarmedLanes &= ~lane;
   }
   0 !== spawnedLane &&
     0 !== (suspendedLanes & 261930) &&
@@ -13425,16 +13432,16 @@ batchedUpdatesImpl = function (fn, a) {
   }
 };
 var roots = new Map(),
-  internals$jscomp$inline_1542 = {
+  internals$jscomp$inline_1546 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-176df75a-20261112",
+    version: "19.3.0-native-fb-e358bedd-20261116",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-176df75a-20261112"
+    reconcilerVersion: "19.3.0-native-fb-e358bedd-20261116"
   };
 null !== extraDevToolsConfig &&
-  (internals$jscomp$inline_1542.rendererConfig = extraDevToolsConfig);
-internals$jscomp$inline_1542.getLaneLabelMap = function () {
+  (internals$jscomp$inline_1546.rendererConfig = extraDevToolsConfig);
+internals$jscomp$inline_1546.getLaneLabelMap = function () {
   for (
     var map = new Map(), lane = 1, index$184 = 0;
     31 > index$184;
@@ -13446,20 +13453,20 @@ internals$jscomp$inline_1542.getLaneLabelMap = function () {
   }
   return map;
 };
-internals$jscomp$inline_1542.injectProfilingHooks = function (profilingHooks) {
+internals$jscomp$inline_1546.injectProfilingHooks = function (profilingHooks) {
   injectedProfilingHooks = profilingHooks;
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_1868 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_1872 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_1868.isDisabled &&
-    hook$jscomp$inline_1868.supportsFiber
+    !hook$jscomp$inline_1872.isDisabled &&
+    hook$jscomp$inline_1872.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_1868.inject(
-        internals$jscomp$inline_1542
+      (rendererID = hook$jscomp$inline_1872.inject(
+        internals$jscomp$inline_1546
       )),
-        (injectedHook = hook$jscomp$inline_1868);
+        (injectedHook = hook$jscomp$inline_1872);
     } catch (err) {}
 }
 exports.createPortal = function (children, containerTag) {

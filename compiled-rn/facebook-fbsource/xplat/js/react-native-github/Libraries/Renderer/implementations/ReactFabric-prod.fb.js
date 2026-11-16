@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<536609f1c8dc3fac14595dce8d01b00d>>
+ * @generated SignedSource<<d17d08535554dd989f2f3de1cc58e06f>>
  */
 
 "use strict";
@@ -10119,18 +10119,25 @@ function markRootSuspended(
   spawnedLane,
   didAttemptEntireTree
 ) {
-  suspendedLanes = getEntangledLanes(root, suspendedLanes);
-  suspendedLanes &= ~workInProgressRootPingedLanes;
-  suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+  var entangledLanes = getEntangledLanes(root, suspendedLanes),
+    prewarmedLanes = 0;
+  0 !== (entangledLanes & 1073741824)
+    ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+    : (suspendedLanes = entangledLanes);
+  entangledLanes =
+    workInProgressRootPingedLanes | workInProgressRootInterleavedUpdatedLanes;
+  suspendedLanes &= ~entangledLanes;
+  prewarmedLanes &= ~entangledLanes;
   root.suspendedLanes |= suspendedLanes;
   root.pingedLanes &= ~suspendedLanes;
-  didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+  didAttemptEntireTree &&
+    (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
   didAttemptEntireTree = root.expirationTimes;
-  for (var lanes = suspendedLanes; 0 < lanes; ) {
-    var index$5 = 31 - clz32(lanes),
-      lane = 1 << index$5;
-    didAttemptEntireTree[index$5] = -1;
-    lanes &= ~lane;
+  for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+    entangledLanes = 31 - clz32(prewarmedLanes);
+    var lane = 1 << entangledLanes;
+    didAttemptEntireTree[entangledLanes] = -1;
+    prewarmedLanes &= ~lane;
   }
   0 !== spawnedLane &&
     0 !== (suspendedLanes & 261930) &&
@@ -11402,26 +11409,26 @@ batchedUpdatesImpl = function (fn, a) {
   }
 };
 var roots = new Map(),
-  internals$jscomp$inline_1219 = {
+  internals$jscomp$inline_1223 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-176df75a-20261112",
+    version: "19.3.0-native-fb-e358bedd-20261116",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-176df75a-20261112"
+    reconcilerVersion: "19.3.0-native-fb-e358bedd-20261116"
   };
 null !== extraDevToolsConfig &&
-  (internals$jscomp$inline_1219.rendererConfig = extraDevToolsConfig);
+  (internals$jscomp$inline_1223.rendererConfig = extraDevToolsConfig);
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_1512 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_1516 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_1512.isDisabled &&
-    hook$jscomp$inline_1512.supportsFiber
+    !hook$jscomp$inline_1516.isDisabled &&
+    hook$jscomp$inline_1516.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_1512.inject(
-        internals$jscomp$inline_1219
+      (rendererID = hook$jscomp$inline_1516.inject(
+        internals$jscomp$inline_1223
       )),
-        (injectedHook = hook$jscomp$inline_1512);
+        (injectedHook = hook$jscomp$inline_1516);
     } catch (err) {}
 }
 exports.createPortal = function (children, containerTag) {

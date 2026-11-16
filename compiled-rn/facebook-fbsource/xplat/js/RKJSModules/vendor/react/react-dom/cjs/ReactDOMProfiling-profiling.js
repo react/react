@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<410c8631919aa37cbebf4d630d7be9b9>>
+ * @generated SignedSource<<46812129fe9cc2793d798cf1c1b8a568>>
  */
 
 /*
@@ -14597,18 +14597,25 @@ function markRootSuspended(
   spawnedLane,
   didAttemptEntireTree
 ) {
-  suspendedLanes = getEntangledLanes(root, suspendedLanes);
-  suspendedLanes &= ~workInProgressRootPingedLanes;
-  suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+  var entangledLanes = getEntangledLanes(root, suspendedLanes),
+    prewarmedLanes = 0;
+  0 !== (entangledLanes & 1073741824)
+    ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+    : (suspendedLanes = entangledLanes);
+  entangledLanes =
+    workInProgressRootPingedLanes | workInProgressRootInterleavedUpdatedLanes;
+  suspendedLanes &= ~entangledLanes;
+  prewarmedLanes &= ~entangledLanes;
   root.suspendedLanes |= suspendedLanes;
   root.pingedLanes &= ~suspendedLanes;
-  didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+  didAttemptEntireTree &&
+    (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
   didAttemptEntireTree = root.expirationTimes;
-  for (var lanes = suspendedLanes; 0 < lanes; ) {
-    var index$6 = 31 - clz32(lanes),
-      lane = 1 << index$6;
-    didAttemptEntireTree[index$6] = -1;
-    lanes &= ~lane;
+  for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+    entangledLanes = 31 - clz32(prewarmedLanes);
+    var lane = 1 << entangledLanes;
+    didAttemptEntireTree[entangledLanes] = -1;
+    prewarmedLanes &= ~lane;
   }
   0 !== spawnedLane &&
     0 !== (suspendedLanes & 261930) &&
@@ -16613,20 +16620,20 @@ function debounceScrollEnd(targetInst, nativeEvent, nativeEventTarget) {
     (nativeEventTarget[internalScrollTimer] = targetInst));
 }
 for (
-  var i$jscomp$inline_2046 = 0;
-  i$jscomp$inline_2046 < simpleEventPluginEvents.length;
-  i$jscomp$inline_2046++
+  var i$jscomp$inline_2050 = 0;
+  i$jscomp$inline_2050 < simpleEventPluginEvents.length;
+  i$jscomp$inline_2050++
 ) {
-  var eventName$jscomp$inline_2047 =
-      simpleEventPluginEvents[i$jscomp$inline_2046],
-    domEventName$jscomp$inline_2048 =
-      eventName$jscomp$inline_2047.toLowerCase(),
-    capitalizedEvent$jscomp$inline_2049 =
-      eventName$jscomp$inline_2047[0].toUpperCase() +
-      eventName$jscomp$inline_2047.slice(1);
+  var eventName$jscomp$inline_2051 =
+      simpleEventPluginEvents[i$jscomp$inline_2050],
+    domEventName$jscomp$inline_2052 =
+      eventName$jscomp$inline_2051.toLowerCase(),
+    capitalizedEvent$jscomp$inline_2053 =
+      eventName$jscomp$inline_2051[0].toUpperCase() +
+      eventName$jscomp$inline_2051.slice(1);
   registerSimpleEvent(
-    domEventName$jscomp$inline_2048,
-    "on" + capitalizedEvent$jscomp$inline_2049
+    domEventName$jscomp$inline_2052,
+    "on" + capitalizedEvent$jscomp$inline_2053
   );
 }
 registerSimpleEvent(ANIMATION_CANCEL, "onAnimationCancel");
@@ -21664,16 +21671,16 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
     0 === i && attemptExplicitHydrationTarget(target);
   }
 };
-var isomorphicReactPackageVersion$jscomp$inline_2487 = React.version;
+var isomorphicReactPackageVersion$jscomp$inline_2491 = React.version;
 if (
-  "19.3.0-native-fb-176df75a-20261112" !==
-  isomorphicReactPackageVersion$jscomp$inline_2487
+  "19.3.0-native-fb-e358bedd-20261116" !==
+  isomorphicReactPackageVersion$jscomp$inline_2491
 )
   throw Error(
     formatProdErrorMessage(
       527,
-      isomorphicReactPackageVersion$jscomp$inline_2487,
-      "19.3.0-native-fb-176df75a-20261112"
+      isomorphicReactPackageVersion$jscomp$inline_2491,
+      "19.3.0-native-fb-e358bedd-20261116"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -21693,12 +21700,12 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
     null === componentOrElement ? null : componentOrElement.stateNode;
   return componentOrElement;
 };
-var internals$jscomp$inline_2494 = {
+var internals$jscomp$inline_2498 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-176df75a-20261112",
+  version: "19.3.0-native-fb-e358bedd-20261116",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-176df75a-20261112",
+  reconcilerVersion: "19.3.0-native-fb-e358bedd-20261116",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$351 = 0;
@@ -21716,16 +21723,16 @@ var internals$jscomp$inline_2494 = {
   }
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_3078 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_3082 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_3078.isDisabled &&
-    hook$jscomp$inline_3078.supportsFiber
+    !hook$jscomp$inline_3082.isDisabled &&
+    hook$jscomp$inline_3082.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_3078.inject(
-        internals$jscomp$inline_2494
+      (rendererID = hook$jscomp$inline_3082.inject(
+        internals$jscomp$inline_2498
       )),
-        (injectedHook = hook$jscomp$inline_3078);
+        (injectedHook = hook$jscomp$inline_3082);
     } catch (err) {}
 }
 function getCrossOriginStringAs(as, input) {
@@ -21986,7 +21993,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-176df75a-20261112";
+exports.version = "19.3.0-native-fb-e358bedd-20261116";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

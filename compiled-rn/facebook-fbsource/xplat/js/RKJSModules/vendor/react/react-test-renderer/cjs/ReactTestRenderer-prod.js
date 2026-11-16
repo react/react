@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<e55f9f0769ca7a61591eaa6679aa6b31>>
+ * @generated SignedSource<<83339920f71efcbbfd40ba9bfea3f489>>
  */
 
 "use strict";
@@ -9570,18 +9570,25 @@ function markRootSuspended(
   spawnedLane,
   didAttemptEntireTree
 ) {
-  suspendedLanes = getEntangledLanes(root, suspendedLanes);
-  suspendedLanes &= ~workInProgressRootPingedLanes;
-  suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+  var entangledLanes = getEntangledLanes(root, suspendedLanes),
+    prewarmedLanes = 0;
+  0 !== (entangledLanes & 1073741824)
+    ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+    : (suspendedLanes = entangledLanes);
+  entangledLanes =
+    workInProgressRootPingedLanes | workInProgressRootInterleavedUpdatedLanes;
+  suspendedLanes &= ~entangledLanes;
+  prewarmedLanes &= ~entangledLanes;
   root.suspendedLanes |= suspendedLanes;
   root.pingedLanes &= ~suspendedLanes;
-  didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+  didAttemptEntireTree &&
+    (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
   didAttemptEntireTree = root.expirationTimes;
-  for (var lanes = suspendedLanes; 0 < lanes; ) {
-    var index$4 = 31 - clz32(lanes),
-      lane = 1 << index$4;
-    didAttemptEntireTree[index$4] = -1;
-    lanes &= ~lane;
+  for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+    entangledLanes = 31 - clz32(prewarmedLanes);
+    var lane = 1 << entangledLanes;
+    didAttemptEntireTree[entangledLanes] = -1;
+    prewarmedLanes &= ~lane;
   }
   0 !== spawnedLane &&
     0 !== (suspendedLanes & 261930) &&
@@ -11102,24 +11109,24 @@ function wrapFiber(fiber) {
     fiberToWrapper.set(fiber, wrapper));
   return wrapper;
 }
-var internals$jscomp$inline_1567 = {
+var internals$jscomp$inline_1571 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-176df75a-20261112",
+  version: "19.3.0-native-fb-e358bedd-20261116",
   rendererPackageName: "react-test-renderer",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-176df75a-20261112"
+  reconcilerVersion: "19.3.0-native-fb-e358bedd-20261116"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_1568 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_1572 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_1568.isDisabled &&
-    hook$jscomp$inline_1568.supportsFiber
+    !hook$jscomp$inline_1572.isDisabled &&
+    hook$jscomp$inline_1572.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_1568.inject(
-        internals$jscomp$inline_1567
+      (rendererID = hook$jscomp$inline_1572.inject(
+        internals$jscomp$inline_1571
       )),
-        (injectedHook = hook$jscomp$inline_1568);
+        (injectedHook = hook$jscomp$inline_1572);
     } catch (err) {}
 }
 exports._Scheduler = Scheduler;
@@ -11243,4 +11250,4 @@ exports.unstable_batchedUpdates = function (fn, a) {
         flushSyncWorkAcrossRoots_impl(0, !0));
   }
 };
-exports.version = "19.3.0-native-fb-176df75a-20261112";
+exports.version = "19.3.0-native-fb-e358bedd-20261116";
