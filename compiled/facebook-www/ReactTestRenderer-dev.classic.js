@@ -13,7 +13,7 @@
 "use strict";
 __DEV__ &&
   (function () {
-    function JSCompiler_object_inline_createNodeMock_1442() {
+    function JSCompiler_object_inline_createNodeMock_1443() {
       return null;
     }
     function findHook(fiber, id) {
@@ -6465,39 +6465,57 @@ __DEV__ &&
       return mountDeferredValueImpl(hook, value, initialValue);
     }
     function updateDeferredValue(value, initialValue) {
-      var hook = updateWorkInProgressHook();
+      var hook = updateWorkInProgressHook(),
+        prevState = currentHook.memoizedState;
       return updateDeferredValueImpl(
         hook,
-        currentHook.memoizedState,
+        prevState.value,
+        prevState.isInitial,
         value,
         initialValue
       );
     }
     function rerenderDeferredValue(value, initialValue) {
       var hook = updateWorkInProgressHook();
-      return null === currentHook
-        ? mountDeferredValueImpl(hook, value, initialValue)
-        : updateDeferredValueImpl(
-            hook,
-            currentHook.memoizedState,
-            value,
-            initialValue
-          );
+      if (null === currentHook)
+        return mountDeferredValueImpl(hook, value, initialValue);
+      var prevState = currentHook.memoizedState;
+      return updateDeferredValueImpl(
+        hook,
+        prevState.value,
+        prevState.isInitial,
+        value,
+        initialValue
+      );
     }
     function mountDeferredValueImpl(hook, value, initialValue) {
       if (
         void 0 === initialValue ||
+        objectIs(value, initialValue) ||
         (0 !== (renderLanes & 1073741824) &&
           0 === (workInProgressRootRenderLanes & 261930))
       )
-        return (hook.memoizedState = value);
-      hook.memoizedState = initialValue;
+        return (hook.memoizedState = { value: value, isInitial: !1 }), value;
+      hook.memoizedState = { value: initialValue, isInitial: !0 };
       hook = requestDeferredLane();
       currentlyRenderingFiber.lanes |= hook;
       workInProgressRootSkippedLanes |= hook;
       return initialValue;
     }
-    function updateDeferredValueImpl(hook, prevValue, value, initialValue) {
+    function updateDeferredValueImpl(
+      hook,
+      prevValue,
+      prevIsInitial,
+      value,
+      initialValue
+    ) {
+      if (prevIsInitial && void 0 !== initialValue) {
+        if (objectIs(value, prevValue))
+          return (hook.memoizedState = { value: value, isInitial: !1 }), value;
+        hook = mountDeferredValueImpl(hook, value, initialValue);
+        objectIs(hook, prevValue) || (didReceiveUpdate = !0);
+        return hook;
+      }
       if (objectIs(value, prevValue)) return value;
       if (null !== currentTreeHiddenStackCursor.current)
         return (
@@ -6510,7 +6528,11 @@ __DEV__ &&
         (0 !== (renderLanes & 1073741824) &&
           0 === (workInProgressRootRenderLanes & 261930))
       )
-        return (didReceiveUpdate = !0), (hook.memoizedState = value);
+        return (
+          (didReceiveUpdate = !0),
+          (hook.memoizedState = { value: value, isInitial: !1 }),
+          value
+        );
       hook = requestDeferredLane();
       currentlyRenderingFiber.lanes |= hook;
       workInProgressRootSkippedLanes |= hook;
@@ -19170,10 +19192,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-e358bedd-20261116",
+        version: "19.3.0-www-classic-976e87ce-20261116",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-e358bedd-20261116"
+        reconcilerVersion: "19.3.0-www-classic-976e87ce-20261116"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -19194,7 +19216,7 @@ __DEV__ &&
     exports._Scheduler = Scheduler;
     exports.act = act;
     exports.create = function (element, options) {
-      var createNodeMock = JSCompiler_object_inline_createNodeMock_1442,
+      var createNodeMock = JSCompiler_object_inline_createNodeMock_1443,
         isConcurrentOnly = !0 !== global.IS_REACT_NATIVE_TEST_ENVIRONMENT,
         isConcurrent = isConcurrentOnly,
         isStrictMode = !1;
@@ -19309,5 +19331,5 @@ __DEV__ &&
     exports.unstable_batchedUpdates = function (fn, a) {
       return fn(a);
     };
-    exports.version = "19.3.0-www-classic-e358bedd-20261116";
+    exports.version = "19.3.0-www-classic-976e87ce-20261116";
   })();
