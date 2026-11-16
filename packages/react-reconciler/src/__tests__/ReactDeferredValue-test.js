@@ -823,6 +823,48 @@ describe('ReactDeferredValue', () => {
     },
   );
 
+  it("can update initial value in place if final value hasn't committed yet", async () => {
+    function App({text}) {
+      return <AsyncText text={useDeferredValue(text, `Preview ${text}...`)} />;
+    }
+
+    const root = ReactNoop.createRoot();
+
+    resolveText('Preview A...');
+    await act(() => root.render(<App text="A" />));
+    assertLog(['Preview A...', 'Suspend! [A]']);
+    expect(root).toMatchRenderedOutput('Preview A...');
+
+    resolveText('Preview B...');
+    await act(() => root.render(<App text="B" />));
+    assertLog(['Preview B...', 'Suspend! [B]']);
+    expect(root).toMatchRenderedOutput('Preview B...');
+  });
+
+  it('transition re-render while still showing initial value does not suspend on the pending final value', async () => {
+    function App({text, nav}) {
+      return (
+        <>
+          <AsyncText text={useDeferredValue(text, `Preview ${text}...`)} />
+          <Text text={nav} />
+        </>
+      );
+    }
+    const root = ReactNoop.createRoot();
+    resolveText('Preview A...');
+    await act(() =>
+      startTransition(() => root.render(<App text="A" nav="nav1" />)),
+    );
+    assertLog(['Preview A...', 'nav1', 'Suspend! [A]', 'nav1']);
+    expect(root).toMatchRenderedOutput('Preview A...nav1');
+    // Second navigation reuses the same segment (same value/initialValue) while A is still pending
+    await act(() =>
+      startTransition(() => root.render(<App text="A" nav="nav2" />)),
+    );
+    assertLog(['Preview A...', 'nav2', 'Suspend! [A]', 'nav2']);
+    expect(root).toMatchRenderedOutput('Preview A...nav2');
+  });
+
   it('avoids a useDeferredValue waterfall when separated by a Suspense boundary', async () => {
     // Same as the previous test but with a Suspense boundary separating the
     // two useDeferredValue hooks.
