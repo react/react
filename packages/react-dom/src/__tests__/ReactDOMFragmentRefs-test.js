@@ -2579,6 +2579,242 @@ describe('FragmentRefs', () => {
       );
     });
 
+    it('reads the committed children after a render that suspends', async () => {
+      const never = new Promise(() => {});
+      function Suspends() {
+        React.use(never);
+        return null;
+      }
+      const Content = React.memo(function Content({more}) {
+        return more ? (
+          <>
+            <div>
+              <Suspends />
+            </div>
+            <p id="kept">kept</p>
+          </>
+        ) : (
+          <p id="kept">kept</p>
+        );
+      });
+      const setters = {};
+      let fragmentRef;
+      function App() {
+        const [drawn, setDrawn] = React.useState(0);
+        const [more, setMore] = React.useState(false);
+        setters.setDrawn = setDrawn;
+        setters.setMore = setMore;
+        return (
+          <main data-drawn={drawn}>
+            <Fragment ref={fragmentRef}>
+              <Content more={more} />
+            </Fragment>
+          </main>
+        );
+      }
+
+      // The instance points at the fiber it was committed with. Every commit
+      // that leaves the Fragment untouched leaves that pointer a generation
+      // behind, so both parities need to be covered.
+      for (let quietCommits = 0; quietCommits < 3; quietCommits++) {
+        fragmentRef = React.createRef();
+        const rootContainer = document.createElement('div');
+        document.body.appendChild(rootContainer);
+        const root = ReactDOMClient.createRoot(rootContainer);
+
+        await act(() => root.render(<App />));
+        for (let i = 0; i < quietCommits; i++) {
+          await act(() => setters.setDrawn(i + 1));
+        }
+        const kept = rootContainer.querySelector('#kept');
+
+        // A transition whose render suspends: nothing is committed and the page
+        // still shows `<p id="kept">kept</p>` on its own.
+        await act(() => {
+          React.startTransition(() => setters.setMore(true));
+        });
+        expect(rootContainer.querySelector('div')).toBe(null);
+
+        // The instance answers from the committed tree, not from the suspended
+        // render, whose new <div> has no DOM node yet.
+        expectPosition(fragmentRef.current.compareDocumentPosition(kept), {
+          preceding: false,
+          following: false,
+          contains: false,
+          containedBy: true,
+          disconnected: false,
+          implementationSpecific: false,
+        });
+
+        await act(() => root.unmount());
+        rootContainer.remove();
+      }
+    });
+
+    it('still counts an element that a suspended render would drop', async () => {
+      const never = new Promise(() => {});
+      function Suspends() {
+        React.use(never);
+        return null;
+      }
+      const Content = React.memo(function Content({fewer}) {
+        return fewer ? (
+          <>
+            <p key="last">last</p>
+            <Suspends />
+          </>
+        ) : (
+          <>
+            <p key="first" id="first">
+              first
+            </p>
+            <p key="last">last</p>
+          </>
+        );
+      });
+      const setters = {};
+      let fragmentRef;
+      function App() {
+        const [drawn, setDrawn] = React.useState(0);
+        const [fewer, setFewer] = React.useState(false);
+        setters.setDrawn = setDrawn;
+        setters.setFewer = setFewer;
+        return (
+          <main data-drawn={drawn}>
+            <Fragment ref={fragmentRef}>
+              <Content fewer={fewer} />
+            </Fragment>
+          </main>
+        );
+      }
+
+      for (let quietCommits = 0; quietCommits < 3; quietCommits++) {
+        fragmentRef = React.createRef();
+        const rootContainer = document.createElement('div');
+        document.body.appendChild(rootContainer);
+        const root = ReactDOMClient.createRoot(rootContainer);
+
+        await act(() => root.render(<App />));
+        for (let i = 0; i < quietCommits; i++) {
+          await act(() => setters.setDrawn(i + 1));
+        }
+
+        await act(() => {
+          React.startTransition(() => setters.setFewer(true));
+        });
+
+        // <p id="first"> is gone from the suspended render but is still on the
+        // page, inside the Fragment.
+        const stillThere = rootContainer.querySelector('#first');
+        expect(stillThere.isConnected).toBe(true);
+        expectPosition(
+          fragmentRef.current.compareDocumentPosition(stillThere),
+          {
+            preceding: false,
+            following: false,
+            contains: false,
+            containedBy: true,
+            disconnected: false,
+            implementationSpecific: false,
+          },
+        );
+
+        await act(() => root.unmount());
+        rootContainer.remove();
+      }
+    });
+
+    it('reads the committed children in getSnapshotBeforeUpdate when content fails', async () => {
+      function Throws() {
+        throw new Error('content failed');
+      }
+      const Content = React.memo(function Content({failing}) {
+        return failing ? (
+          <>
+            <div>
+              <Throws />
+            </div>
+            <p id="kept">kept</p>
+          </>
+        ) : (
+          <p id="kept">kept</p>
+        );
+      });
+
+      class Boundary extends React.Component {
+        constructor(props) {
+          super(props);
+          this.state = {failed: false};
+          this.fragment = null;
+          this.read = null;
+          this.attach = fragment => {
+            if (fragment !== null) {
+              this.fragment = fragment;
+            }
+          };
+        }
+        static getDerivedStateFromError() {
+          return {failed: true};
+        }
+        getSnapshotBeforeUpdate(prevProps, prevState) {
+          if (!prevState.failed && this.state.failed) {
+            try {
+              this.read = this.fragment.compareDocumentPosition(
+                document.getElementById('kept'),
+              );
+            } catch (error) {
+              this.read = error;
+            }
+          }
+          return null;
+        }
+        componentDidUpdate() {}
+        render() {
+          return this.state.failed ? (
+            <p>failed</p>
+          ) : (
+            <Fragment ref={this.attach}>{this.props.children}</Fragment>
+          );
+        }
+      }
+
+      for (let quietCommits = 0; quietCommits < 3; quietCommits++) {
+        const rootContainer = document.createElement('div');
+        document.body.appendChild(rootContainer);
+        const boundaryRef = React.createRef();
+        const root = ReactDOMClient.createRoot(rootContainer, {
+          onCaughtError: () => {},
+        });
+        const renderBoundary = (drawn, failing) =>
+          root.render(
+            <main data-drawn={drawn}>
+              <Boundary ref={boundaryRef}>
+                <Content failing={failing} />
+              </Boundary>
+            </main>,
+          );
+
+        await act(() => renderBoundary(0, false));
+        for (let i = 0; i < quietCommits; i++) {
+          await act(() => renderBoundary(i + 1, false));
+        }
+        await act(() => renderBoundary(quietCommits, true));
+        expect(rootContainer.textContent).toBe('failed');
+
+        expectPosition(boundaryRef.current.read, {
+          preceding: false,
+          following: false,
+          contains: false,
+          containedBy: true,
+          disconnected: false,
+          implementationSpecific: false,
+        });
+
+        await act(() => root.unmount());
+        rootContainer.remove();
+      }
+    });
+
     it('handles fragment instances with one child', async () => {
       const fragmentRef = React.createRef();
       const beforeRef = React.createRef();
