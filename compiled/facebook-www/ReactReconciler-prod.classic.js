@@ -11941,18 +11941,25 @@ module.exports = function ($$$config) {
     spawnedLane,
     didAttemptEntireTree
   ) {
-    suspendedLanes = getEntangledLanes(root, suspendedLanes);
-    suspendedLanes &= ~workInProgressRootPingedLanes;
-    suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+    var entangledLanes = getEntangledLanes(root, suspendedLanes),
+      prewarmedLanes = 0;
+    0 !== (entangledLanes & 1073741824)
+      ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+      : (suspendedLanes = entangledLanes);
+    entangledLanes =
+      workInProgressRootPingedLanes | workInProgressRootInterleavedUpdatedLanes;
+    suspendedLanes &= ~entangledLanes;
+    prewarmedLanes &= ~entangledLanes;
     root.suspendedLanes |= suspendedLanes;
     root.pingedLanes &= ~suspendedLanes;
-    didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+    didAttemptEntireTree &&
+      (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
     didAttemptEntireTree = root.expirationTimes;
-    for (var lanes = suspendedLanes; 0 < lanes; ) {
-      var index$4 = 31 - clz32(lanes),
-        lane = 1 << index$4;
-      didAttemptEntireTree[index$4] = -1;
-      lanes &= ~lane;
+    for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+      entangledLanes = 31 - clz32(prewarmedLanes);
+      var lane = 1 << entangledLanes;
+      didAttemptEntireTree[entangledLanes] = -1;
+      prewarmedLanes &= ~lane;
     }
     0 !== spawnedLane &&
       0 !== (suspendedLanes & 261930) &&
@@ -14730,7 +14737,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-classic-6c6f84ff-20261116"
+      reconcilerVersion: "19.3.0-www-classic-e358bedd-20261116"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);

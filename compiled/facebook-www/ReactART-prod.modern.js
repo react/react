@@ -10078,18 +10078,25 @@ function markRootSuspended(
   spawnedLane,
   didAttemptEntireTree
 ) {
-  suspendedLanes = getEntangledLanes(root, suspendedLanes);
-  suspendedLanes &= ~workInProgressRootPingedLanes;
-  suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+  var entangledLanes = getEntangledLanes(root, suspendedLanes),
+    prewarmedLanes = 0;
+  0 !== (entangledLanes & 1073741824)
+    ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+    : (suspendedLanes = entangledLanes);
+  entangledLanes =
+    workInProgressRootPingedLanes | workInProgressRootInterleavedUpdatedLanes;
+  suspendedLanes &= ~entangledLanes;
+  prewarmedLanes &= ~entangledLanes;
   root.suspendedLanes |= suspendedLanes;
   root.pingedLanes &= ~suspendedLanes;
-  didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+  didAttemptEntireTree &&
+    (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
   didAttemptEntireTree = root.expirationTimes;
-  for (var lanes = suspendedLanes; 0 < lanes; ) {
-    var index$3 = 31 - clz32(lanes),
-      lane = 1 << index$3;
-    didAttemptEntireTree[index$3] = -1;
-    lanes &= ~lane;
+  for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+    entangledLanes = 31 - clz32(prewarmedLanes);
+    var lane = 1 << entangledLanes;
+    didAttemptEntireTree[entangledLanes] = -1;
+    prewarmedLanes &= ~lane;
   }
   0 !== spawnedLane &&
     0 !== (suspendedLanes & 261930) &&
@@ -11465,24 +11472,24 @@ var slice = Array.prototype.slice,
     };
     return Text;
   })(React.Component);
-var internals$jscomp$inline_1580 = {
+var internals$jscomp$inline_1584 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-6c6f84ff-20261116",
+  version: "19.3.0-www-modern-e358bedd-20261116",
   rendererPackageName: "react-art",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-6c6f84ff-20261116"
+  reconcilerVersion: "19.3.0-www-modern-e358bedd-20261116"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_1581 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_1585 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_1581.isDisabled &&
-    hook$jscomp$inline_1581.supportsFiber
+    !hook$jscomp$inline_1585.isDisabled &&
+    hook$jscomp$inline_1585.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_1581.inject(
-        internals$jscomp$inline_1580
+      (rendererID = hook$jscomp$inline_1585.inject(
+        internals$jscomp$inline_1584
       )),
-        (injectedHook = hook$jscomp$inline_1581);
+        (injectedHook = hook$jscomp$inline_1585);
     } catch (err) {}
 }
 var Path = Mode$1.Path;
@@ -11496,4 +11503,4 @@ exports.RadialGradient = RadialGradient;
 exports.Shape = TYPES.SHAPE;
 exports.Surface = Surface;
 exports.Text = Text;
-exports.version = "19.3.0-www-modern-6c6f84ff-20261116";
+exports.version = "19.3.0-www-modern-e358bedd-20261116";

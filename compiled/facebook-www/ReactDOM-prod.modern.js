@@ -12926,18 +12926,25 @@ function markRootSuspended(
   spawnedLane,
   didAttemptEntireTree
 ) {
-  suspendedLanes = getEntangledLanes(root, suspendedLanes);
-  suspendedLanes &= ~workInProgressRootPingedLanes;
-  suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+  var entangledLanes = getEntangledLanes(root, suspendedLanes),
+    prewarmedLanes = 0;
+  0 !== (entangledLanes & 1073741824)
+    ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+    : (suspendedLanes = entangledLanes);
+  entangledLanes =
+    workInProgressRootPingedLanes | workInProgressRootInterleavedUpdatedLanes;
+  suspendedLanes &= ~entangledLanes;
+  prewarmedLanes &= ~entangledLanes;
   root.suspendedLanes |= suspendedLanes;
   root.pingedLanes &= ~suspendedLanes;
-  didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+  didAttemptEntireTree &&
+    (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
   didAttemptEntireTree = root.expirationTimes;
-  for (var lanes = suspendedLanes; 0 < lanes; ) {
-    var index$4 = 31 - clz32(lanes),
-      lane = 1 << index$4;
-    didAttemptEntireTree[index$4] = -1;
-    lanes &= ~lane;
+  for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+    entangledLanes = 31 - clz32(prewarmedLanes);
+    var lane = 1 << entangledLanes;
+    didAttemptEntireTree[entangledLanes] = -1;
+    prewarmedLanes &= ~lane;
   }
   0 !== spawnedLane &&
     0 !== (suspendedLanes & 261930) &&
@@ -15443,20 +15450,20 @@ function debounceScrollEnd(targetInst, nativeEvent, nativeEventTarget) {
     (nativeEventTarget[internalScrollTimer] = targetInst));
 }
 for (
-  var i$jscomp$inline_1806 = 0;
-  i$jscomp$inline_1806 < simpleEventPluginEvents.length;
-  i$jscomp$inline_1806++
+  var i$jscomp$inline_1810 = 0;
+  i$jscomp$inline_1810 < simpleEventPluginEvents.length;
+  i$jscomp$inline_1810++
 ) {
-  var eventName$jscomp$inline_1807 =
-      simpleEventPluginEvents[i$jscomp$inline_1806],
-    domEventName$jscomp$inline_1808 =
-      eventName$jscomp$inline_1807.toLowerCase(),
-    capitalizedEvent$jscomp$inline_1809 =
-      eventName$jscomp$inline_1807[0].toUpperCase() +
-      eventName$jscomp$inline_1807.slice(1);
+  var eventName$jscomp$inline_1811 =
+      simpleEventPluginEvents[i$jscomp$inline_1810],
+    domEventName$jscomp$inline_1812 =
+      eventName$jscomp$inline_1811.toLowerCase(),
+    capitalizedEvent$jscomp$inline_1813 =
+      eventName$jscomp$inline_1811[0].toUpperCase() +
+      eventName$jscomp$inline_1811.slice(1);
   registerSimpleEvent(
-    domEventName$jscomp$inline_1808,
-    "on" + capitalizedEvent$jscomp$inline_1809
+    domEventName$jscomp$inline_1812,
+    "on" + capitalizedEvent$jscomp$inline_1813
   );
 }
 registerSimpleEvent(ANIMATION_CANCEL, "onAnimationCancel");
@@ -20496,16 +20503,16 @@ function getCrossOriginStringAs(as, input) {
   if ("string" === typeof input)
     return "use-credentials" === input ? input : "";
 }
-var isomorphicReactPackageVersion$jscomp$inline_2061 = React.version;
+var isomorphicReactPackageVersion$jscomp$inline_2065 = React.version;
 if (
-  "19.3.0-www-modern-6c6f84ff-20261116" !==
-  isomorphicReactPackageVersion$jscomp$inline_2061
+  "19.3.0-www-modern-e358bedd-20261116" !==
+  isomorphicReactPackageVersion$jscomp$inline_2065
 )
   throw Error(
     formatProdErrorMessage(
       527,
-      isomorphicReactPackageVersion$jscomp$inline_2061,
-      "19.3.0-www-modern-6c6f84ff-20261116"
+      isomorphicReactPackageVersion$jscomp$inline_2065,
+      "19.3.0-www-modern-e358bedd-20261116"
     )
   );
 Internals.findDOMNode = function (componentOrElement) {
@@ -20521,24 +20528,24 @@ Internals.Events = [
     return fn(a);
   }
 ];
-var internals$jscomp$inline_2592 = {
+var internals$jscomp$inline_2596 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-6c6f84ff-20261116",
+  version: "19.3.0-www-modern-e358bedd-20261116",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-6c6f84ff-20261116"
+  reconcilerVersion: "19.3.0-www-modern-e358bedd-20261116"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_2593 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_2597 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_2593.isDisabled &&
-    hook$jscomp$inline_2593.supportsFiber
+    !hook$jscomp$inline_2597.isDisabled &&
+    hook$jscomp$inline_2597.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_2593.inject(
-        internals$jscomp$inline_2592
+      (rendererID = hook$jscomp$inline_2597.inject(
+        internals$jscomp$inline_2596
       )),
-        (injectedHook = hook$jscomp$inline_2593);
+        (injectedHook = hook$jscomp$inline_2597);
     } catch (err) {}
 }
 function defaultOnDefaultTransitionIndicator() {
@@ -20967,4 +20974,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-www-modern-6c6f84ff-20261116";
+exports.version = "19.3.0-www-modern-e358bedd-20261116";

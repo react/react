@@ -13,7 +13,7 @@
 "use strict";
 __DEV__ &&
   (function () {
-    function JSCompiler_object_inline_createNodeMock_1438() {
+    function JSCompiler_object_inline_createNodeMock_1442() {
       return null;
     }
     function findHook(fiber, id) {
@@ -14202,18 +14202,26 @@ __DEV__ &&
       spawnedLane,
       didAttemptEntireTree
     ) {
-      suspendedLanes = getEntangledLanes(root, suspendedLanes);
-      suspendedLanes &= ~workInProgressRootPingedLanes;
-      suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+      var entangledLanes = getEntangledLanes(root, suspendedLanes),
+        prewarmedLanes = 0;
+      0 !== (entangledLanes & 1073741824)
+        ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+        : (suspendedLanes = entangledLanes);
+      entangledLanes =
+        workInProgressRootPingedLanes |
+        workInProgressRootInterleavedUpdatedLanes;
+      suspendedLanes &= ~entangledLanes;
+      prewarmedLanes &= ~entangledLanes;
       root.suspendedLanes |= suspendedLanes;
       root.pingedLanes &= ~suspendedLanes;
-      didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+      didAttemptEntireTree &&
+        (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
       didAttemptEntireTree = root.expirationTimes;
-      for (var lanes = suspendedLanes; 0 < lanes; ) {
-        var index = 31 - clz32(lanes),
-          lane = 1 << index;
-        didAttemptEntireTree[index] = -1;
-        lanes &= ~lane;
+      for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+        entangledLanes = 31 - clz32(prewarmedLanes);
+        var lane = 1 << entangledLanes;
+        didAttemptEntireTree[entangledLanes] = -1;
+        prewarmedLanes &= ~lane;
       }
       0 !== spawnedLane &&
         0 !== (suspendedLanes & 261930) &&
@@ -19162,10 +19170,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-6c6f84ff-20261116",
+        version: "19.3.0-www-classic-e358bedd-20261116",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-6c6f84ff-20261116"
+        reconcilerVersion: "19.3.0-www-classic-e358bedd-20261116"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -19186,7 +19194,7 @@ __DEV__ &&
     exports._Scheduler = Scheduler;
     exports.act = act;
     exports.create = function (element, options) {
-      var createNodeMock = JSCompiler_object_inline_createNodeMock_1438,
+      var createNodeMock = JSCompiler_object_inline_createNodeMock_1442,
         isConcurrentOnly = !0 !== global.IS_REACT_NATIVE_TEST_ENVIRONMENT,
         isConcurrent = isConcurrentOnly,
         isStrictMode = !1;
@@ -19301,5 +19309,5 @@ __DEV__ &&
     exports.unstable_batchedUpdates = function (fn, a) {
       return fn(a);
     };
-    exports.version = "19.3.0-www-classic-6c6f84ff-20261116";
+    exports.version = "19.3.0-www-classic-e358bedd-20261116";
   })();

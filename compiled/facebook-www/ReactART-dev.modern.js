@@ -15463,18 +15463,26 @@ __DEV__ &&
       spawnedLane,
       didAttemptEntireTree
     ) {
-      suspendedLanes = getEntangledLanes(root, suspendedLanes);
-      suspendedLanes &= ~workInProgressRootPingedLanes;
-      suspendedLanes &= ~workInProgressRootInterleavedUpdatedLanes;
+      var entangledLanes = getEntangledLanes(root, suspendedLanes),
+        prewarmedLanes = 0;
+      0 !== (entangledLanes & 1073741824)
+        ? (prewarmedLanes = entangledLanes & ~(suspendedLanes | 1073741824))
+        : (suspendedLanes = entangledLanes);
+      entangledLanes =
+        workInProgressRootPingedLanes |
+        workInProgressRootInterleavedUpdatedLanes;
+      suspendedLanes &= ~entangledLanes;
+      prewarmedLanes &= ~entangledLanes;
       root.suspendedLanes |= suspendedLanes;
       root.pingedLanes &= ~suspendedLanes;
-      didAttemptEntireTree && (root.warmLanes |= suspendedLanes);
+      didAttemptEntireTree &&
+        (root.warmLanes = root.warmLanes | suspendedLanes | prewarmedLanes);
       didAttemptEntireTree = root.expirationTimes;
-      for (var lanes = suspendedLanes; 0 < lanes; ) {
-        var index = 31 - clz32(lanes),
-          lane = 1 << index;
-        didAttemptEntireTree[index] = -1;
-        lanes &= ~lane;
+      for (prewarmedLanes = suspendedLanes; 0 < prewarmedLanes; ) {
+        entangledLanes = 31 - clz32(prewarmedLanes);
+        var lane = 1 << entangledLanes;
+        didAttemptEntireTree[entangledLanes] = -1;
+        prewarmedLanes &= ~lane;
       }
       0 !== spawnedLane &&
         0 !== (suspendedLanes & 261930) &&
@@ -20435,10 +20443,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-modern-6c6f84ff-20261116",
+        version: "19.3.0-www-modern-e358bedd-20261116",
         rendererPackageName: "react-art",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-modern-6c6f84ff-20261116"
+        reconcilerVersion: "19.3.0-www-modern-e358bedd-20261116"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -20473,7 +20481,7 @@ __DEV__ &&
     exports.Shape = Shape;
     exports.Surface = Surface;
     exports.Text = Text;
-    exports.version = "19.3.0-www-modern-6c6f84ff-20261116";
+    exports.version = "19.3.0-www-modern-e358bedd-20261116";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&
