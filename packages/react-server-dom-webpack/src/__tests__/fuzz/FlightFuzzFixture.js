@@ -216,6 +216,13 @@ async function createFixture(
           failure: node.fail === undefined ? undefined : getError(node.fail),
         });
         break;
+      case 'iterable':
+        values[name] = createAsyncIterable(
+          node.iterable.map(buildValue),
+          node.returns === undefined ? undefined : buildValue(node.returns),
+          {label: name, single: node.single === true},
+        );
+        break;
       case 'component': {
         if (node.throw) {
           const error = getError(node.component);
@@ -521,6 +528,48 @@ async function createFixture(
       failure,
     });
     return stream;
+  }
+
+  function createAsyncIterable(
+    items,
+    returnValue,
+    {label = 'iterable', single = false} = {},
+  ) {
+    const deferredResults = Array.from({length: items.length + 1}, () =>
+      createResolvablePromise(),
+    );
+    const iterationEvents = deferredResults.map((deferred, i) =>
+      createEvent(
+        i === items.length
+          ? 'return ' + label
+          : i === 0
+            ? 'start ' + label
+            : label + ' item ' + i,
+        () => deferred.resolve(),
+      ),
+    );
+    const iterableSource = {
+      async *[Symbol.asyncIterator]() {
+        for (let i = 0; i < items.length; i++) {
+          await deferredResults[i].promise;
+          yield items[i];
+        }
+        await deferredResults[items.length].promise;
+        return returnValue;
+      },
+    };
+    const iterable = single
+      ? iterableSource[Symbol.asyncIterator]()
+      : iterableSource;
+    events.push(...iterationEvents);
+    valueMetadata.set(iterable, {
+      type: 'iterable',
+      items,
+      returnValue,
+      events: iterationEvents,
+      single,
+    });
+    return iterable;
   }
 
   // The writer copies a sync iterator into an array, so its return value is

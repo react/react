@@ -1343,36 +1343,42 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         );
       }));
 
-    it('stream shared between two collections', () =>
+    it.each(['stream', 'iterable'])('%s shared between two collections', type =>
       runGraph({
         nodes: {
-          inner: {stream: []},
+          inner: {[type]: []},
           first: {set: ['inner']},
           second: {set: ['inner']},
         },
         roots: {entry: 'first', other: 'second'},
-      }));
+      }),
+    );
 
-    it('stream in repeated stream items', () =>
+    it.each(['stream', 'iterable'])('%s in repeated stream items', type =>
       runGraph({
         nodes: {
-          inner: {stream: []},
+          inner: {[type]: []},
           item: {array: ['inner']},
           outer: {stream: ['item', 'item']},
         },
         roots: {entry: 'outer', other: 'outer'},
-      }));
+      }),
+    );
 
-    it('stream shared between different stream items', () =>
-      runGraph({
-        nodes: {
-          inner: {stream: []},
-          first: {array: ['inner']},
-          second: {object: {again: 'inner'}},
-          outer: {stream: ['first', 'second']},
-        },
-        roots: {entry: 'outer', other: 'outer'},
-      }));
+    it.each(['stream', 'iterable'])(
+      '%s shared between different stream items',
+      type =>
+        runGraph({
+          nodes: {
+            inner:
+              type === 'iterable' ? {iterable: [], single: true} : {stream: []},
+            first: {array: ['inner']},
+            second: {object: {again: 'inner'}},
+            outer: {stream: ['first', 'second']},
+          },
+          roots: {entry: 'outer', other: 'outer'},
+        }),
+    );
 
     it('source stream failure while another value is still loading', () =>
       runGraph({
@@ -1436,6 +1442,91 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       }));
   });
 
+  describe('async iterable graphs', () => {
+    it.each([false, true])(
+      'can pass an async iterable with single use %s',
+      single =>
+        withFlightModules(async () => {
+          const source = {
+            async *[Symbol.asyncIterator]() {
+              yield 'first';
+              yield {value: 'second'};
+              return 'end';
+            },
+          };
+          const received = await roundTrip(
+            single ? source[Symbol.asyncIterator]() : source,
+          );
+          const iterator = received[Symbol.asyncIterator]();
+          expect(iterator === received).toBe(single);
+          expect(await iterator.next()).toStrictEqual({
+            done: false,
+            value: 'first',
+          });
+          expect(await iterator.next()).toStrictEqual({
+            done: false,
+            value: {value: 'second'},
+          });
+          expect(await iterator.next()).toStrictEqual({
+            done: true,
+            value: 'end',
+          });
+          expect(await iterator.next()).toStrictEqual({
+            done: true,
+            value: undefined,
+          });
+        }),
+    );
+
+    it('an async iterable produces independent results while its first module is loading', () =>
+      runGraph({
+        nodes: {
+          held: {module: 'loaded'},
+          first: {object: {value: 'held'}},
+          ready: {value: 'ready'},
+          end: {value: 'end'},
+          sequence: {
+            iterable: ['first', 'ready'],
+            returns: 'end',
+            single: true,
+          },
+        },
+        roots: {entry: 'sequence', other: 'sequence'},
+        events: [
+          'start sequence',
+          'sequence item 1',
+          'return sequence',
+          'load held',
+        ],
+      }));
+
+    it('an async iterable returns a cycle that was already sent', () =>
+      runGraph({
+        nodes: {
+          array: {array: ['object']},
+          object: {object: {field0: 'array', field1: 'iterable'}},
+          iterable: {iterable: [], returns: 'array'},
+        },
+        roots: {entry: 'array', other: 'array'},
+      }));
+
+    // Waits for stream items to get rows of their own; it hangs until then.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('async iterator with cyclic items and a return value', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          item: {array: ['item', 'ready', 'iterator']},
+          iterator: {
+            iterable: ['item', 'item'],
+            returns: 'item',
+            single: true,
+          },
+        },
+        roots: {entry: 'iterator', other: 'iterator'},
+      }));
+  });
+
   describe('bound Server Functions', () => {
     it('calls a delivered Server Function with bound and supplied arguments', () =>
       withFlightModules(async () => {
@@ -1456,6 +1547,28 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         },
         roots: {entry: 'fn', other: 'fn'},
         events: ['load fn', 'load ready'],
+      }));
+
+    it('a bound argument first written inside a loading stream item', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          shared: {iterable: []},
+          item: {object: {shared: 'shared', ready: 'ready'}},
+          stream: {stream: ['item']},
+          fn: {bound: ['shared']},
+          root: {array: ['stream', 'fn']},
+        },
+        roots: {entry: 'root', other: 'root'},
+        events: [
+          'load fn',
+          'stream item 0',
+          'close stream',
+          'start shared',
+          'load ready',
+        ],
+        packetSizes: [1, 20, 4288],
+        yieldBetweenPackets: false,
       }));
 
     it('function bound to its array', () =>
@@ -1929,14 +2042,17 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         readTiming: 'early',
       }));
 
-    function checkSharedInElementContext(key) {
+    function checkSharedInElementContext(type, key) {
       return withFlightModules(async () => {
         const fixture = await createFixture(
           {
             nodes: {
               a: {value: 'a'},
               b: {value: 'b'},
-              shared: {stream: ['a', 'b']},
+              shared:
+                type === 'stream'
+                  ? {stream: ['a', 'b']}
+                  : {iterable: ['a', 'b'], single: true},
             },
             roots: {entry: 'shared', other: 'shared'},
           },
@@ -1947,7 +2063,10 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
           return shared;
         }
         // Return the stream through an element first, then as an object property.
-        const first = ReactServer.createElement(Body, {key});
+        const first =
+          type === 'stream'
+            ? ReactServer.createElement(Body, {key})
+            : ReactServer.createElement(ReactServer.Fragment, null, shared);
         const oracle = createOracle(fixture, {render});
         await checkResponse(
           fixture,
@@ -1985,11 +2104,15 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
 
     // @gate FIXME
     it('a shared stream first returned through element context with key null', () =>
-      checkSharedInElementContext(null));
+      checkSharedInElementContext('stream', null));
 
     // @gate FIXME
     it('a shared stream first returned through element context with key keyed', () =>
-      checkSharedInElementContext('keyed'));
+      checkSharedInElementContext('stream', 'keyed'));
+
+    // @gate FIXME
+    it('a shared iterable first returned through element context with key null', () =>
+      checkSharedInElementContext('iterable', null));
   });
 
   const formatCaseName = (label, seed, readTiming, scheduleIndex) =>
@@ -2013,6 +2136,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                   // These produce cases that fail for now.
                   'link',
                   'stream',
+                  'iterable',
                   'iterator',
                   'component',
                   'failing component',

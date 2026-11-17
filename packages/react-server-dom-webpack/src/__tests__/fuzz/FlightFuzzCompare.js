@@ -147,6 +147,13 @@ function compareValue(fixture, {expectedValue, received, path}) {
           received,
         );
         return [];
+      case 'iterable':
+        assertKind(
+          typeof received[Symbol.asyncIterator] === 'function',
+          'an async iterable',
+          received,
+        );
+        return [];
       case 'stream':
         assertKind(
           typeof received.getReader === 'function',

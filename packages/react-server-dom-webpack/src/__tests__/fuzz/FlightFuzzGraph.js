@@ -37,6 +37,7 @@ const nodeTypes = [
   'fragment',
   'promise',
   'stream',
+  'iterable',
   'component',
 ];
 
@@ -60,6 +61,10 @@ function getReferencedNodes(node) {
         .concat(typeof node.fail === 'string' ? [node.fail] : []);
     case 'object':
       return Object.values(node.object);
+    case 'iterable':
+      return node.iterable.concat(
+        node.returns === undefined ? [] : [node.returns],
+      );
     case 'map':
       return node.map.flat();
     case 'fragment':
@@ -144,6 +149,7 @@ const graphOperations = [
   'rejected promise',
   'stream',
   'failing stream',
+  'iterable',
   'iterator',
   'element',
   'props',
@@ -401,6 +407,14 @@ function generateGraph(seed, {without = []} = {}) {
         add({stream: [], fail: addError()});
         break;
       }
+      case 'iterable': {
+        add({
+          iterable: [createStreamItem(), createStreamItem()],
+          returns: createStreamItem(),
+          single: pick(2) === 0,
+        });
+        break;
+      }
       case 'iterator': {
         singleUseNodes.push(
           add(
@@ -627,7 +641,16 @@ function* generateReductionCandidates(graph) {
         }
       }
     }
-    const options = ['cause', 'async', 'fail', 'reject', 'throw', 'loaded'];
+    const options = [
+      'cause',
+      'returns',
+      'single',
+      'async',
+      'fail',
+      'reject',
+      'throw',
+      'loaded',
+    ];
     for (let j = 0; j < options.length; j++) {
       const key = options[j];
       if (key in node) {

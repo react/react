@@ -28,6 +28,7 @@ const {
   getPromiseExpectation,
   getRenderExpectation,
   getStreamExpectations,
+  getIterableExpectation,
 } = require('./FlightFuzzReadiness');
 
 function createOracle(
@@ -216,6 +217,9 @@ function observeAsyncValue(state, metadata, pair) {
     case 'stream':
       observeStream(state, metadata, pair);
       break;
+    case 'iterable':
+      observeAsyncIterable(state, metadata, pair);
+      break;
   }
 }
 
@@ -296,6 +300,56 @@ function observeStream(state, metadata, {expectedValue, received, path}) {
     expect(last.done).toBe(true);
     handleResult(state, endCheck, last.value);
   });
+}
+
+function observeAsyncIterable(state, metadata, {received, path}) {
+  // Read once with sequential next() calls and once with concurrent ones. A
+  // single-use iterator can only be read once.
+  const modes = metadata.single ? [true] : [false, true];
+  for (let mode = 0; mode < modes.length; mode++) {
+    const readAhead = modes[mode];
+    const iterator = received[Symbol.asyncIterator]();
+    expect(iterator === received).toBe(metadata.single === true);
+    const items = metadata.items;
+    const consume = async i => {
+      const done = i >= items.length;
+      const value = done
+        ? i === items.length
+          ? metadata.returnValue
+          : undefined
+        : items[i];
+      const check = registerResultCheck(
+        state,
+        value,
+        path + (readAhead ? '.ahead' : '') + '.next' + i,
+        findModels =>
+          getIterableExpectation(state.fixture, metadata, i, value, findModels),
+      );
+      let result;
+      try {
+        result = await iterator.next();
+      } catch (error) {
+        // A rejected result doesn't prevent later next() calls.
+        handleResult(state, check, error, true);
+        return;
+      }
+      expect(result.done).toBe(done);
+      handleResult(state, check, result.value);
+    };
+    // Reads after the return value must keep returning
+    // {done: true, value: undefined}.
+    if (readAhead) {
+      for (let i = 0; i < items.length + 3; i++) {
+        runAsyncTask(state, () => consume(i));
+      }
+    } else {
+      runAsyncTask(state, async () => {
+        for (let i = 0; i < items.length + 3; i++) {
+          await consume(i);
+        }
+      });
+    }
+  }
 }
 
 // Each call returns a new array of the bound arguments followed by the

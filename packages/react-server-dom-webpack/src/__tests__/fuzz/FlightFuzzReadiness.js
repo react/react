@@ -21,7 +21,7 @@ const {isObject} = require('./FlightFuzzCompare');
 
 // Values whose contents arrive as a separate result. A containing value need
 // not wait for them.
-const separateResultTypes = ['promise', 'element', 'stream'];
+const separateResultTypes = ['promise', 'element', 'stream', 'iterable'];
 
 function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
@@ -248,12 +248,18 @@ function collectModels(fixture) {
       if (metadata.state === 'fulfilled') {
         collectModel([metadata.value]);
       }
-    } else if (metadata.type === 'stream') {
+    } else if (metadata.type === 'stream' || metadata.type === 'iterable') {
       for (let i = 0; i < metadata.items.length; i++) {
         if (!metadata.events[i].released) {
           break;
         }
         collectModel([metadata.items[i]]);
+      }
+      if (
+        metadata.type === 'iterable' &&
+        areAllEventsReleased(metadata.events)
+      ) {
+        collectModel([metadata.returnValue]);
       }
     }
   });
@@ -492,6 +498,19 @@ function getStreamExpectations(fixture, metadata) {
   };
 }
 
+// Unlike a stream read, an async iterable's next() can settle before an
+// earlier one, so each result depends only on its own item.
+function getIterableExpectation(fixture, metadata, i, value, findModels) {
+  const events = getRequiredEvents(fixture, value);
+  const produced = areAllEventsReleased(metadata.events.slice(0, i + 1));
+  return getResultExpectation(
+    value,
+    produced && canSettle(events),
+    getReleasedErrors(events),
+    produced ? findModels(value) : [],
+  );
+}
+
 module.exports = {
   separateResultTypes,
   getRequiredEvents,
@@ -502,4 +521,5 @@ module.exports = {
   getPromiseExpectation,
   getRenderExpectation,
   getStreamExpectations,
+  getIterableExpectation,
 };
