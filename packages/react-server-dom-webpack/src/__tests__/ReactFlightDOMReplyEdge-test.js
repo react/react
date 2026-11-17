@@ -17,6 +17,38 @@ let webpackServerMap;
 let ReactServerDOMServer;
 let ReactServerDOMClient;
 
+// `decodeReply` returns a thenable whose own `.then` resolves to undefined, so
+// the decoded value is observed through `Promise.resolve`. A rogue payload
+// must settle once all its input has arrived; race the result against a
+// bounded number of `setImmediate` turns and report a hang as 'pending'
+// instead of letting the test time out.
+function settleReply(thenable, turns = 10) {
+  return new Promise(resolve => {
+    let settled = false;
+    Promise.resolve(thenable).then(
+      value => {
+        settled = true;
+        resolve({status: 'resolved', value});
+      },
+      reason => {
+        settled = true;
+        resolve({status: 'rejected', reason});
+      },
+    );
+    let remaining = turns;
+    (function spin() {
+      if (settled) {
+        return;
+      }
+      if (remaining-- <= 0) {
+        resolve({status: 'pending'});
+        return;
+      }
+      setImmediate(spin);
+    })();
+  });
+}
+
 describe('ReactFlightDOMReplyEdge', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -45,6 +77,53 @@ describe('ReactFlightDOMReplyEdge', () => {
     );
 
     expect(decoded).toEqual({some: 'object'});
+  });
+
+  it.each(['Map', 'Set'])(
+    'can share a %s while its contents load',
+    async kind => {
+      let loadModule;
+      const loading = new Promise(resolve => (loadModule = resolve));
+      const ServerModule = serverExports({value: () => 'loaded'}, loading);
+      ReactServerDOMClient.registerServerReference(
+        ServerModule.value,
+        ServerModule.value.$$id,
+      );
+      const shared =
+        kind === 'Map'
+          ? new Map([['value', ServerModule.value]])
+          : new Set([ServerModule.value]);
+      const body = await ReactServerDOMClient.encodeReply(
+        Array(64).fill(shared),
+      );
+      const values = [];
+      const result = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+      await serverAct(() => {
+        result.then(value => values.push(value));
+      });
+      expect(values).toEqual([]);
+
+      await serverAct(() => loadModule());
+      expect(values).toHaveLength(1);
+      expect(values[0]).toHaveLength(64);
+      for (let i = 0; i < values[0].length; i++) {
+        const collection = values[0][i];
+        expect(collection.size).toBe(1);
+        expect(collection.values().next().value()).toBe('loaded');
+      }
+    },
+  );
+
+  it('counts repeated binary values toward the array size limit', async () => {
+    const bytes = new Uint8Array(16);
+    const body = await ReactServerDOMClient.encodeReply([bytes, bytes]);
+    await expect(
+      Promise.resolve(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap, {
+          arraySizeLimit: 20,
+        }),
+      ),
+    ).rejects.toThrow('Maximum array nesting exceeded');
   });
 
   it('can reuse an iterator in later stream items', async () => {
@@ -816,6 +895,217 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(replyResult.boundMethod()).toBe('hi, there');
   });
 
+  it('rejects a Server Reference whose metadata waits for another row', async () => {
+    // The encoder writes the metadata as a part with nothing in it to wait
+    // for. Here it takes its id from the row that refers to it.
+    const ServerModule = serverExports({fn: (...args) => args});
+    const body = new FormData();
+    body.set('0', JSON.stringify({id: ServerModule.fn.$$id, f: '$h1'}));
+    body.set('1', JSON.stringify({id: '$0:id', bound: null}));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeReply(body, webpackServerMap),
+    );
+    expect(result.status).toBe('rejected');
+    expect(result.reason.message).toBe('Invalid reference.');
+  });
+
+  it('does not install a function into a then slot through the waiting path', async () => {
+    let called = false;
+    const ServerModule = serverExports({action: () => (called = true)});
+    const body = new FormData();
+    body.set('0', JSON.stringify({then: '$1'}));
+    body.set('1', '"$h2"');
+    body.set('2', JSON.stringify({id: ServerModule.action.$$id, bound: '$@3'}));
+    body.set('3', JSON.stringify(['ARG']));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeReply(body, webpackServerMap),
+    );
+    expect(result.status).toBe('resolved');
+    expect(result.value.then).toBe(null);
+    expect(called).toBe(false);
+  });
+
+  it('does not install a function into a then slot reached through a cycle', async () => {
+    let called = false;
+    const ServerModule = serverExports({action: () => (called = true)});
+    const body = new FormData();
+    body.set('0', JSON.stringify({then: '$1:f', z: 1}));
+    body.set('1', JSON.stringify({f: '$h2', g: '$0'}));
+    body.set('2', JSON.stringify({id: ServerModule.action.$$id, bound: null}));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeReply(body, webpackServerMap),
+    );
+    expect(result.status).toBe('resolved');
+    expect(result.value.then).toBe(null);
+    expect(result.value.z).toBe(1);
+    expect(called).toBe(false);
+  });
+
+  it('nulls a function then slot nested in an array argument', async () => {
+    let called = false;
+    const ServerModule = serverExports({action: () => (called = true)});
+    const body = new FormData();
+    body.set('0', JSON.stringify([{then: '$1'}]));
+    body.set('1', '"$h2"');
+    body.set('2', JSON.stringify({id: ServerModule.action.$$id, bound: '$@3'}));
+    body.set('3', JSON.stringify(['ARG']));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeReply(body, webpackServerMap),
+    );
+    expect(result.status).toBe('resolved');
+    expect(result.value[0].then).toBe(null);
+    expect(called).toBe(false);
+  });
+
+  it('does not call a server function sitting in a then slot during decodeAction', async () => {
+    let called = false;
+    const ServerModule = serverExports({action: () => (called = true)});
+    const id = ServerModule.action.$$id;
+    const body = new FormData();
+    body.set('$ACTION_REF_0', '');
+    body.set('$ACTION_0:0', JSON.stringify({id, bound: '$@1'}));
+    body.set('$ACTION_0:1', JSON.stringify({then: '$2:f'}));
+    body.set('$ACTION_0:2', JSON.stringify({f: '$h3', g: '$1'}));
+    body.set('$ACTION_0:3', JSON.stringify({id, bound: null}));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeAction(body, webpackServerMap),
+    );
+    expect(result.status).toBe('resolved');
+    expect(called).toBe(false);
+  });
+
+  it.each(['fulfill', 'reject'])(
+    'a module can %s all the Promises of objects that depend on it',
+    async outcome => {
+      let resolveModule;
+      let rejectModule;
+      const {tail} = serverExports(
+        {tail: () => 'done'},
+        new Promise((resolve, reject) => {
+          resolveModule = resolve;
+          rejectModule = reject;
+        }),
+      );
+      const reference = ReactServerDOMClient.createServerReference(
+        tail.$$id,
+        () => {},
+      );
+      // Each object holds the previous one. Loading or failing the module
+      // must notify every subscriber, including those far down the chain.
+      const size = 5000;
+      const resolvers = [];
+      const model = Array.from(
+        {length: size},
+        () => new Promise(resolve => resolvers.push(resolve)),
+      );
+      const encoding = ReactServerDOMClient.encodeReply(model);
+      let previous = reference;
+      for (let i = 0; i < size; i++) {
+        previous = {previous};
+        resolvers[i](previous);
+        if (i % 250 === 249) {
+          await serverAct(() => {});
+        }
+      }
+      const body = await encoding;
+      let finished;
+      const consumed = new Promise(resolve => (finished = resolve));
+      const response = ReactServerDOMServer.decodeReplyFromAsyncIterable(
+        (async function* () {
+          yield* body.entries();
+          finished();
+        })(),
+        webpackServerMap,
+      );
+      const fulfilled = [];
+      const rejected = [];
+      const received = await response;
+      received.forEach(promise => {
+        promise.then(
+          value => fulfilled.push(value),
+          error => rejected.push(error),
+        );
+      });
+      await consumed;
+      await serverAct(() => {});
+      expect(fulfilled).toEqual([]);
+      expect(rejected).toEqual([]);
+
+      const failure = new Error('module failed');
+      await serverAct(() => {
+        if (outcome === 'fulfill') {
+          resolveModule();
+        } else {
+          rejectModule(failure);
+        }
+      });
+      expect(fulfilled.length).toBe(outcome === 'fulfill' ? size : 0);
+      expect(rejected.length).toBe(outcome === 'reject' ? size : 0);
+      if (outcome === 'fulfill') {
+        let last = fulfilled[size - 1];
+        for (let i = 0; i < size; i++) {
+          last = last.previous;
+        }
+        expect(last()).toBe('done');
+      } else {
+        rejected.forEach(error => expect(error).toBe(failure));
+      }
+    },
+    15000,
+  );
+
+  it('round trips deeply nested bound Server Functions', async () => {
+    const {identity} = serverExports({identity: value => value});
+    const reference = ReactServerDOMClient.createServerReference(
+      identity.$$id,
+      () => {},
+    );
+    const size = 1800;
+    let model = 'done';
+    for (let i = 0; i < size; i++) {
+      model = reference.bind(null, model);
+    }
+    const body = await ReactServerDOMClient.encodeReply(model);
+    let value = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    for (let i = 0; i < size; i++) {
+      value = value();
+    }
+    expect(value).toBe('done');
+  });
+
+  it('binds a server reference to its containing array once its module loads', async () => {
+    let resolveModule;
+    function read(array, other) {
+      return [array.length, array[1].length, other];
+    }
+    const ServerModule = serverExports(
+      {read},
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    ReactServerDOMClient.registerServerReference(
+      ServerModule.read,
+      ServerModule.read.$$id,
+    );
+    const array = [];
+    array.push(ServerModule.read.bind(null, array, null), array);
+
+    const body = await ReactServerDOMClient.encodeReply({array});
+    const observed = [];
+    const pending = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    await serverAct(() => {
+      pending.then(
+        value => observed.push(value.array[0]()),
+        error => observed.push(error.message),
+      );
+    });
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveModule());
+    const decoded = await pending;
+    expect(observed).toEqual([[2, 2, null]]);
+    expect(decoded.array[1]).toBe(decoded.array);
+  });
+
   it('warns with a tailored message if eval is not available in dev', async () => {
     // eslint-disable-next-line no-eval
     const previousEval = globalThis.eval.bind(globalThis);
@@ -841,6 +1131,138 @@ describe('ReactFlightDOMReplyEdge', () => {
       // eslint-disable-next-line no-eval
       globalThis.eval = previousEval;
     }
+  });
+
+  describe('counts arrays reached through references', () => {
+    const BIG = JSON.stringify(Array.from({length: 20}, (_, i) => i + 1));
+    const BIG_WITH_3 = BIG.slice(0, -1) + ',"$3"]';
+    const decode = (chunks, arraySizeLimit) => {
+      const body = new FormData();
+      Object.keys(chunks).forEach(k => body.set(k, chunks[k]));
+      return settleReply(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap, {
+          arraySizeLimit,
+        }),
+      );
+    };
+
+    it('counts an array each time a chunk that is already complete is referenced', async () => {
+      const r = await decode({0: '["$1","$1"]', 1: BIG}, 30);
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('counts an array reached through a chunk that waits for a typed array', async () => {
+      // The second row is only parsed when the root refers to it, because it
+      // is still reading its bytes. The root counts it once it is complete.
+      const r = await decode(
+        {
+          0: '["$1","$1"]',
+          1: BIG.slice(0, -1) + ',"$o2"]',
+          2: new Blob([new Uint8Array([1, 2, 3, 4])]),
+        },
+        30,
+      );
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('counts arrays that double through rows that each hold a typed array', async () => {
+      // Every row finishes when its own bytes are read, after the rows it
+      // refers to. Its arrays still count toward the rows that refer to it.
+      const chunks = {};
+      for (let k = 0; k < 8; k++) {
+        const next = '$' + (k + 1).toString(16);
+        const bytes = '$o' + (k + 16).toString(16);
+        chunks[k] = JSON.stringify([next, next, bytes]);
+        chunks[k + 16] = new Blob([new Uint8Array([k])]);
+      }
+      chunks[8] = '[1,2]';
+      const r = await decode(chunks, 100);
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('rejects a cyclic fan-in that exceeds the array size limit', async () => {
+      // Every reference selects the same nested array out of a chunk that is
+      // blocked by a cycle back to the root; each counts against the limit.
+      const refs = [];
+      for (let i = 0; i < 24; i++) {
+        refs.push('$1:x');
+      }
+      const r = await decode(
+        {
+          0: JSON.stringify(refs),
+          1: JSON.stringify({
+            x: [
+              [1, 2, 3],
+              [4, 5, 6],
+              [7, 8, 9],
+            ],
+            self: '$0',
+          }),
+        },
+        100,
+      );
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('rejects a billion-laughs expansion through blocked chunks', async () => {
+      // Each level references the next twice; the deepest holds a nested array
+      // and closes a cycle, so every level is counted on the resumed path.
+      const r = await decode(
+        {
+          0: '["$1","$1"]',
+          1: '["$2","$2"]',
+          2: '["$3","$3"]',
+          3: '[[1,2,3,4,5,6,7,8],"$0"]',
+        },
+        50,
+      );
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('rejects arrays that double through references into the root', async () => {
+      // root[k] is [root[k - 1], root[k - 1]]. Every row is parsed while the
+      // root is still being parsed, so its references are fulfilled before the
+      // arrays they select have their final count.
+      const chunks = {};
+      const refs = [];
+      for (let k = 1; k <= 64; k++) {
+        refs.push('"$' + k.toString(16) + '"');
+        chunks[k] = '["$0:' + (k - 1) + '","$0:' + (k - 1) + '"]';
+      }
+      chunks[0] = '[["leaf"],' + refs.join(',') + ']';
+      const r = await decode(chunks);
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it.each([
+      [
+        'a row that is a reference to another row',
+        {0: '"$2"', 2: BIG_WITH_3, 3: '["$1","$1","$1"]', 1: '"$2"'},
+      ],
+      [
+        'a path that continues into the array of another row',
+        {0: '"$2"', 2: BIG_WITH_3, 3: '["$1:0","$1:0","$1:0"]', 1: '["$2"]'},
+      ],
+      [
+        'a path that continues into a nested array of another row',
+        {
+          0: '"$2"',
+          2: '[' + BIG + ',"$3"]',
+          3: '["$1:0:0","$1:0:0","$1:0:0"]',
+          1: '["$2"]',
+        },
+      ],
+    ])('counts an array reached through %s', async (name, chunks) => {
+      const r = await decode(chunks, 50);
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
   });
 
   it('dedupes an object that is in several items of a stream', async () => {

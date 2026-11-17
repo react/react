@@ -1232,9 +1232,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'later', other: 'shared'},
       }));
 
-    // The reply host fails this until the decoder fulfills references early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a synchronous iterator that yields itself', () =>
+    it('a synchronous iterator that yields itself', () =>
       withFlightModules(async () => {
         let next = 0;
         const iterator = {
@@ -1686,9 +1684,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         yieldBetweenPackets: false,
       }));
 
-    // The reply host fails this until the decoder fulfills references early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('function bound to its array', () =>
+    it('function bound to its array', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1727,9 +1723,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'fn', other: 'fn'},
       }));
 
-    // The reply host fails this until the decoder fulfills references early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('cycle first exposed through a Promise of a bound function', () =>
+    it('cycle first exposed through a Promise of a bound function', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1740,9 +1734,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'exposure', other: 'exposure'},
       }));
 
-    // The reply host fails this until the decoder fulfills references early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('cycle first exposed through a stream item with a bound function', () =>
+    it('cycle first exposed through a stream item with a bound function', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2374,7 +2366,6 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
                     ? [
                         ...unsupportedReplyOperations,
                         // These produce cases that fail for now.
-                        'link',
                         'self',
                         'mutual',
                         'duplicate',
@@ -2383,8 +2374,6 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
                         'stream',
                         'canceled stream',
                         'iterable',
-                        'iterator',
-                        'bound function',
                         'root promise',
                         'undefined',
                         'colon',
