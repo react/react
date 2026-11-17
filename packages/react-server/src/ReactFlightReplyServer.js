@@ -246,6 +246,17 @@ export type Response = {
   _rootArrayContexts: WeakMap<$ReadOnlyArray<mixed>, NestedArrayContext>,
   _arraySizeLimit: number,
   _handlers: WeakMap<SomeChunk<any>, InitializationHandler>,
+  // The chunks that are blocked on references, to reject the ones still
+  // blocked when the reply ends.
+  _blockedChunks: Set<SomeChunk<any>>,
+  // Module loads, Blob reads and bound argument reads in progress. While this
+  // is above zero a blocked chunk can still complete.
+  _pendingReads: number,
+  // The streams the decoder created. One still open when the reply ends is
+  // errored.
+  _openStreams: Set<FlightStreamController>,
+  // Set while rejecting the chunks still blocked when the reply ends.
+  _rejectingBlocked: boolean,
   _queuedReferences: null | Array<QueuedReference>,
   _continuingReferences: boolean,
   _queuedChunkListeners: null | Array<ChunkListeners>,
@@ -535,19 +546,28 @@ function loadServerReference<A: Iterable<any>, T>(
         triggerErrorOnChunk(response, blockedPromise, error);
       }
     } else {
+      response._pendingReads++;
       preloading.then(
         () => {
-          let value;
           try {
-            value = bindServerReference(null);
-          } catch (error) {
-            triggerErrorOnChunk(response, blockedPromise, error);
-            return;
+            let value;
+            try {
+              value = bindServerReference(null);
+            } catch (error) {
+              triggerErrorOnChunk(response, blockedPromise, error);
+              return;
+            }
+            resolveServerReferenceChunk(response, blockedPromise, value);
+          } finally {
+            finishPendingRead(response);
           }
-          resolveServerReferenceChunk(response, blockedPromise, value);
         },
         error => {
-          triggerErrorOnChunk(response, blockedPromise, error);
+          try {
+            triggerErrorOnChunk(response, blockedPromise, error);
+          } finally {
+            finishPendingRead(response);
+          }
         },
       );
     }
@@ -593,6 +613,7 @@ function loadServerReference<A: Iterable<any>, T>(
   // does not parse another one's arguments in the middle of its own parse.
   // The reference above already exists, so a group check can see that the
   // function waits for its arguments.
+  response._pendingReads++;
   Promise.resolve().then(() => {
     try {
       if (chunk.status === RESOLVED_MODEL) {
@@ -614,7 +635,8 @@ function loadServerReference<A: Iterable<any>, T>(
     } catch (error) {
       rejectReference(response, handler, error);
     }
-    flushGroupChecks(response);
+    // The read counts as in progress until here.
+    finishPendingRead(response);
   });
 
   return readServerReference(
@@ -733,9 +755,23 @@ function loadServerObjectReference(
   if (serverReferencePromise === null) {
     fulfill();
   } else {
-    serverReferencePromise.then(fulfill, error => {
-      triggerErrorOnChunk(response, blockedPromise, error);
-    });
+    response._pendingReads++;
+    serverReferencePromise.then(
+      () => {
+        try {
+          fulfill();
+        } finally {
+          finishPendingRead(response);
+        }
+      },
+      error => {
+        try {
+          triggerErrorOnChunk(response, blockedPromise, error);
+        } finally {
+          finishPendingRead(response);
+        }
+      },
+    );
   }
   return readServerReference(response, blockedPromise, parentObject, key);
 }
@@ -1203,6 +1239,15 @@ export function reportGlobalError(response: Response, error: Error): void {
       }
     }
   });
+  // Reject the chunks that are still blocked, unless something is still
+  // loading.
+  if (
+    response._workDepth === 0 &&
+    response._pendingReads === 0 &&
+    response._blockedChunks.size > 0
+  ) {
+    rejectBlockedChunks(response);
+  }
 }
 
 function getChunk(response: Response, id: number): SomeChunk<any> {
@@ -1239,9 +1284,22 @@ function createModuleChunk(
   loading: Thenable<any>,
 ): BlockedChunk<any> {
   const chunk: BlockedChunk<any> = createBlockedChunk(response);
+  response._pendingReads++;
   loading.then(
-    () => initializeBlockedChunk(response, chunk, null, null),
-    error => triggerErrorOnChunk(response, chunk, error),
+    () => {
+      try {
+        initializeBlockedChunk(response, chunk, null, null);
+      } finally {
+        finishPendingRead(response);
+      }
+    },
+    error => {
+      try {
+        triggerErrorOnChunk(response, chunk, error);
+      } finally {
+        finishPendingRead(response);
+      }
+    },
   );
   return chunk;
 }
@@ -1831,7 +1889,84 @@ function flushGroupChecks(response: Response): void {
     queued.splice(0, i + 1);
     response._flushingGroupChecks = false;
   }
-  flushCallbacks(response);
+  try {
+    for (;;) {
+      // All input has arrived and nothing is loading, so a chunk that is
+      // still blocked can never complete.
+      if (isInputComplete(response) && response._blockedChunks.size > 0) {
+        rejectBlockedChunks(response);
+      }
+      if (response._workDepth > 0 || response._queuedCallbacks.length === 0) {
+        break;
+      }
+      // A callback can parse another row, like the next entry of a stream,
+      // and that row can be blocked in turn.
+      flushCallbacks(response);
+    }
+  } finally {
+    // A queued callback can still add an entry to a stream, so open streams
+    // are errored after the callbacks have run.
+    if (isInputComplete(response) && response._openStreams.size > 0) {
+      errorOpenStreams(response);
+    }
+  }
+}
+
+function isInputComplete(response: Response): boolean {
+  return (
+    response._closed &&
+    response._workDepth === 0 &&
+    response._pendingReads === 0
+  );
+}
+
+// Rejects the chunks that are still blocked when the reply has ended. They
+// only wait on each other. Rejecting one can reject others, so chunks that
+// have settled meanwhile are skipped.
+function rejectBlockedChunks(response: Response): void {
+  if (response._rejectingBlocked) {
+    return;
+  }
+  response._rejectingBlocked = true;
+  try {
+    const blocked = Array.from(response._blockedChunks);
+    const error = response._closedReason;
+    for (let i = 0; i < blocked.length; i++) {
+      const chunk = blocked[i];
+      if (chunk.status !== BLOCKED) {
+        continue;
+      }
+      const handler = response._handlers.get(chunk);
+      if (handler !== undefined) {
+        unregisterHandler(response, handler);
+      } else {
+        response._blockedChunks.delete(chunk);
+      }
+      triggerErrorOnChunk(response, chunk, error);
+    }
+  } finally {
+    response._rejectingBlocked = false;
+  }
+}
+
+// A stream that is still open when the reply has ended will never be closed.
+// Error it like a truncated connection.
+function errorOpenStreams(response: Response): void {
+  const streams = response._openStreams;
+  const open = Array.from(streams);
+  // Cleared first in case erroring a stream re-enters.
+  streams.clear();
+  for (let i = 0; i < open.length; i++) {
+    // $FlowFixMe[incompatible-type] The reason is set once the response closed.
+    open[i].error(response._closedReason);
+  }
+}
+
+// An asynchronous read has finished. Flush in case it was the last one, so
+// chunks that can no longer complete are rejected.
+function finishPendingRead(response: Response): void {
+  response._pendingReads--;
+  flushGroupChecks(response);
 }
 
 function flushCallbacks(response: Response): void {
@@ -1946,6 +2081,8 @@ function checkBlockedGroup(response: Response, queued: BlockedGroup): void {
     // They do. These handlers all wait on each other and are one group now.
     const chain: Array<BlockedGroup> = [];
     let largest = group;
+    // The live waits should lead back here within one step per blocked chunk.
+    let steps = response._blockedChunks.size + 1;
     for (let current = other; current !== group; ) {
       chain.push(current);
       if (current.size > largest.size) {
@@ -1953,7 +2090,7 @@ function checkBlockedGroup(response: Response, queued: BlockedGroup): void {
       }
       const waitingFor = current.waitingFor;
       const next =
-        waitingFor === null
+        waitingFor === null || --steps <= 0
           ? undefined
           : response._handlers.get(waitingFor.chunk);
       if (next === undefined) {
@@ -2127,6 +2264,7 @@ function registerHandler(
 ): void {
   handler.chunk = chunk;
   response._handlers.set(chunk, handler);
+  response._blockedChunks.add(chunk);
 }
 
 function unregisterHandler(
@@ -2136,6 +2274,7 @@ function unregisterHandler(
   const chunk = handler.chunk;
   if (chunk !== null) {
     response._handlers.delete(chunk);
+    response._blockedChunks.delete(chunk);
   }
   handler.references = null;
 }
@@ -2470,24 +2609,35 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
   // chunk. The buffer's bytes count against the array context of the model it
   // is read into.
   const chunk: BlockedChunk<T> = createBlockedChunk(response);
+  response._pendingReads++;
   promise.then(
     (buffer: ArrayBuffer) => {
-      let typedArray: T;
       try {
-        if (referenceArrayRoot !== null) {
-          bumpArrayCount(referenceArrayRoot, buffer.byteLength, response);
+        let typedArray: T;
+        try {
+          if (referenceArrayRoot !== null) {
+            bumpArrayCount(referenceArrayRoot, buffer.byteLength, response);
+          }
+          typedArray =
+            constructor === ArrayBuffer
+              ? (buffer as any)
+              : (new constructor(buffer) as any);
+        } catch (error) {
+          triggerErrorOnChunk(response, chunk, error);
+          return;
         }
-        typedArray =
-          constructor === ArrayBuffer
-            ? (buffer as any)
-            : (new constructor(buffer) as any);
-      } catch (error) {
-        triggerErrorOnChunk(response, chunk, error);
-        return;
+        initializeBlockedChunk(response, chunk, typedArray, null);
+      } finally {
+        finishPendingRead(response);
       }
-      initializeBlockedChunk(response, chunk, typedArray, null);
     },
-    error => triggerErrorOnChunk(response, chunk, error),
+    error => {
+      try {
+        triggerErrorOnChunk(response, chunk, error);
+      } finally {
+        finishPendingRead(response);
+      }
+    },
   );
   return waitForReference(
     response,
@@ -2509,6 +2659,7 @@ function resolveStream<T: ReadableStream | $AsyncIterable<any, any, void>>(
   const chunks = response._chunks;
   const chunk = createInitializedStreamChunk(response, stream, controller);
   chunks.set(id, chunk);
+  response._openStreams.add(controller);
 
   const prefix = response._prefix;
   // Stream chunks are written under a dedicated namespace so they can be
@@ -3133,6 +3284,10 @@ export function createResponse(
     _rootArrayContexts: new WeakMap(),
     _arraySizeLimit: arraySizeLimit,
     _handlers: new WeakMap(),
+    _blockedChunks: new Set(),
+    _pendingReads: 0,
+    _openStreams: new Set(),
+    _rejectingBlocked: false,
     _queuedReferences: null,
     _continuingReferences: false,
     _queuedChunkListeners: null,
