@@ -106,6 +106,9 @@ import {injectInternals} from './ReactFlightClientDevToolsHook';
 
 import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
 
+import type {WaitForestNode} from 'shared/ReactFlightWaitForest';
+import {findWaitRoot, linkWait, cutWait} from 'shared/ReactFlightWaitForest';
+
 import ReactVersion from 'shared/ReactVersion';
 
 import isArray from 'shared/isArray';
@@ -1090,6 +1093,10 @@ type BlockedGroup = {
   unchecked: Array<InitializationReference>,
   waitingFor: null | InitializationReference,
   checkQueued: boolean,
+  // Used by the link-cut tree in ReactFlightWaitForest.
+  pathParent: null | WaitForestNode,
+  pathLeft: null | WaitForestNode,
+  pathRight: null | WaitForestNode,
 };
 type InitializationHandler =
   | PendingInitializationHandler
@@ -2480,9 +2487,10 @@ function continueReference(
 // merged into one, and the check goes on with the references that are left.
 // A group with nothing left to wait for is initialized.
 //
-// A group waits on one reference at a time. To tell whether another
-// group's waits lead back to the one being checked, the check follows them
-// from group to group.
+// A group waits on one reference at a time, so the waits form a forest. It
+// is kept as a link-cut tree, which tells whether another group's waits
+// lead back to the one being checked. Groups that do are merged instead of
+// linked, so the forest has no loops.
 function queueGroupCheck(
   response: Response,
   handler: InitializationHandler,
@@ -2582,6 +2590,9 @@ function getBlockedGroup(handler: InitializationHandler): BlockedGroup {
       unchecked: handler.references === null ? [] : handler.references.slice(),
       waitingFor: null,
       checkQueued: false,
+      pathParent: null,
+      pathLeft: null,
+      pathRight: null,
     };
     return group;
   }
@@ -2600,6 +2611,7 @@ function checkBlockedGroup(response: Response, queued: BlockedGroup): void {
     group = group.merged;
   }
   // Look again at the reference the group was waiting for, with the rest.
+  cutWait(group);
   group.waitingFor = null;
   const first = group.handlers[0];
   if (
@@ -2632,14 +2644,16 @@ function checkBlockedGroup(response: Response, queued: BlockedGroup): void {
       unchecked.pop();
       continue;
     }
-    // Follow the waits from `other`, from group to group, to see whether
-    // they lead back here.
+    if (findWaitRoot(other) !== group) {
+      // The waits from `other` do not lead back here.
+      group.waitingFor = reference;
+      linkWait(group, other);
+      return;
+    }
+    // They do. These handlers all wait on each other and are one group now.
     const chain: Array<BlockedGroup> = [];
-    const visited: Set<BlockedGroup> = new Set();
     let largest = group;
-    let current: null | BlockedGroup = other;
-    while (current !== null && current !== group && !visited.has(current)) {
-      visited.add(current);
+    for (let current = other; current !== group; ) {
       chain.push(current);
       if (current.size > largest.size) {
         largest = current;
@@ -2649,21 +2663,27 @@ function checkBlockedGroup(response: Response, queued: BlockedGroup): void {
         waitingFor === null
           ? undefined
           : response._handlers.get(waitingFor.chunk);
-      current = next === undefined ? null : getBlockedGroup(next);
+      if (next === undefined) {
+        // The waits don't lead back here after all.
+        group.waitingFor = reference;
+        return;
+      }
+      current = getBlockedGroup(next);
     }
-    if (current !== group) {
-      // They do not lead back here.
-      group.waitingFor = reference;
-      return;
+    // The waits around the loop are cut before any member is linked to the
+    // merged group, so that the forest never holds a loop.
+    for (let i = 0; i < chain.length; i++) {
+      cutWait(chain[i]);
     }
-    // They do. These handlers all wait on each other and are one group now.
     if (largest !== group) {
       mergeBlockedGroups(largest, group);
+      linkWait(group, largest);
     }
     for (let i = 0; i < chain.length; i++) {
       const member = chain[i];
       if (member !== largest) {
         mergeBlockedGroups(largest, member);
+        linkWait(member, largest);
       }
     }
     largest.waitingFor = null;
@@ -2673,6 +2693,9 @@ function checkBlockedGroup(response: Response, queued: BlockedGroup): void {
   initializeBlockedGroup(response, group.handlers);
 }
 
+// The forest of waits is a link-cut tree in shared/ReactFlightWaitForest.
+// A group's parent is the group its wait leads into, or the group it merged
+// into.
 function mergeBlockedGroups(into: BlockedGroup, other: BlockedGroup): void {
   other.merged = into;
   into.size += other.size;
