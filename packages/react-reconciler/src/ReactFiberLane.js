@@ -847,6 +847,7 @@ export function markRootUpdated(root: FiberRoot, updateLane: Lane) {
 export function markRootSuspended(
   root: FiberRoot,
   suspendedLanes: Lanes,
+  prewarmedLanes: Lanes,
   spawnedLane: Lane,
   didAttemptEntireTree: boolean,
 ) {
@@ -857,7 +858,7 @@ export function markRootSuspended(
 
   if (didAttemptEntireTree) {
     // Mark these lanes as warm so we know there's nothing else to work on.
-    root.warmLanes |= suspendedLanes;
+    root.warmLanes |= suspendedLanes | prewarmedLanes;
   } else {
     // Render unwound without attempting all the siblings. Do no mark the lanes
     // as warm. This will cause a prewarm render to be scheduled.
