@@ -1507,14 +1507,16 @@ function parseReadableStream<T>(
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         const blockedChunk = previousBlockedChunk;
         const chunk: SomeChunk<T> = createPendingChunk(response);
-        chunk.then(enqueue, flightController.error);
-        previousBlockedChunk = chunk;
-        blockedChunk.then(function () {
+        chunk.then(v => {
           if (previousBlockedChunk === chunk) {
             // We were still the last chunk so we can now clear the queue and return
             // to synchronous emitting.
             previousBlockedChunk = null;
           }
+          enqueue(v);
+        }, flightController.error);
+        previousBlockedChunk = chunk;
+        blockedChunk.then(function () {
           resolveModelChunk(response, chunk, json, -1);
         });
       }

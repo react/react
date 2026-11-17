@@ -1172,9 +1172,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'object', other: 'object'},
       }));
 
-    // The reply host fails this until a close waits for queued stream items.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a large binary value written in two places', () =>
+    it('a large binary value written in two places', () =>
       runGraph({
         nodes: {
           binary: {special: 'large binary'},
