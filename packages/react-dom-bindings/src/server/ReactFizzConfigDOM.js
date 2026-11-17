@@ -20,6 +20,7 @@ import type {
   PreinitScriptOptions,
   PreinitModuleScriptOptions,
   ImportMap,
+  DataAttributes,
 } from 'react-dom/src/shared/ReactDOMTypes';
 
 import {
@@ -71,6 +72,7 @@ import {validateProperties as validateInputProperties} from '../shared/ReactDOMN
 import {validateProperties as validateUnknownProperties} from '../shared/ReactDOMUnknownPropertyHook';
 import warnValidStyle from '../shared/warnValidStyle';
 import {getCrossOriginString} from '../shared/crossOriginStrings';
+import {forEachDataAttribute} from '../shared/ReactDOMDataAttributes';
 
 import escapeTextForBrowser from './escapeTextForBrowser';
 import hyphenateStyleName from '../shared/hyphenateStyleName';
@@ -355,6 +357,7 @@ export type BootstrapScriptDescriptor = {
   src: string,
   integrity?: string,
   crossOrigin?: string,
+  dataAttributes?: DataAttributes,
 };
 export type ExternalRuntimeScript = {
   src: string,
@@ -609,6 +612,17 @@ export function createRenderState(
           attributeEnd,
         );
       }
+      if (
+        typeof scriptConfig !== 'string' &&
+        scriptConfig.dataAttributes != null
+      ) {
+        pushBootstrapDataAttributes(
+          bootstrapChunks,
+          '`bootstrapScripts`',
+          src,
+          scriptConfig.dataAttributes,
+        );
+      }
       pushCompletedShellIdAttribute(bootstrapChunks, resumableState);
       bootstrapChunks.push(endAsyncScript);
     }
@@ -666,12 +680,34 @@ export function createRenderState(
           attributeEnd,
         );
       }
+      if (
+        typeof scriptConfig !== 'string' &&
+        scriptConfig.dataAttributes != null
+      ) {
+        pushBootstrapDataAttributes(
+          bootstrapChunks,
+          '`bootstrapModules`',
+          src,
+          scriptConfig.dataAttributes,
+        );
+      }
       pushCompletedShellIdAttribute(bootstrapChunks, resumableState);
       bootstrapChunks.push(endAsyncScript);
     }
   }
 
   return renderState;
+}
+
+function pushBootstrapDataAttributes(
+  target: Array<Chunk | PrecomputedChunk>,
+  apiName: string,
+  src: string,
+  dataAttributes: DataAttributes,
+): void {
+  forEachDataAttribute(dataAttributes, apiName, 'src', src, (name, value) => {
+    pushStringAttribute(target, name, value);
+  });
 }
 
 export function resumeRenderState(

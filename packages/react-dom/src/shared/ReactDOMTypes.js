@@ -42,10 +42,11 @@ export type PreinitOptions =
   | {
       ...PreinitSharedOptions,
       as: 'script',
-      dataAttributes?: PreinitDataAttributes,
+      dataAttributes?: DataAttributes,
     };
 // Maps `data-*` attribute names to values, e.g. {'data-framework': 'next'}.
-export type PreinitDataAttributes = {+[attributeName: string]: string};
+// Used by `ReactDOM.preinit()` scripts and by bootstrap script descriptors.
+export type DataAttributes = {+[attributeName: string]: string};
 export type PreinitModuleOptions = {
   as?: string,
   crossOrigin?: string,
