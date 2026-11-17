@@ -7602,6 +7602,41 @@ body {
       );
     });
 
+    it('accepts a `dataAttributes` option', async () => {
+      function App({ssr}) {
+        const prefix = ssr ? 'ssr ' : 'browser ';
+        ReactDOM.preinitModule(prefix + 'module', {
+          dataAttributes: {'data-framework': 'next'},
+        });
+        return <div>hello</div>;
+      }
+      await act(() => {
+        renderToPipeableStream(<App ssr={true} />).pipe(writable);
+      });
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <script
+            type="module"
+            src="ssr module"
+            data-framework="next"
+            async=""
+          />
+          <div>hello</div>
+        </div>,
+      );
+
+      ReactDOMClient.hydrateRoot(container, <App />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <script
+          type="module"
+          src="browser module"
+          data-framework="next"
+          async=""
+        />,
+      );
+    });
+
     it('warns if you provide invalid arguments', async () => {
       function App() {
         ReactDOM.preinitModule();

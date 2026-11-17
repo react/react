@@ -2138,7 +2138,7 @@ describe('ReactFlightDOM', () => {
     expect(hintRows.length).toEqual(6);
   });
 
-  it('forwards the `dataAttributes` of a preinit script through the hint', async () => {
+  it('forwards the `dataAttributes` of preinit and preinitModule scripts through hints', async () => {
     function Component() {
       return <p>hello world</p>;
     }
@@ -2148,6 +2148,9 @@ describe('ReactFlightDOM', () => {
     async function ServerComponent() {
       FlightReactDOM.preinit('init', {
         as: 'script',
+        dataAttributes: {'data-framework': 'next'},
+      });
+      FlightReactDOM.preinitModule('module', {
         dataAttributes: {'data-framework': 'next'},
       });
       return <ClientComponent />;
@@ -2184,9 +2187,10 @@ describe('ReactFlightDOM', () => {
       root.render(<App />);
     });
 
-    expect(getMeaningfulChildren(document.head)).toEqual(
+    expect(getMeaningfulChildren(document.head)).toEqual([
       <script async="" src="init" data-framework="next" />,
-    );
+      <script type="module" async="" src="module" data-framework="next" />,
+    ]);
     expect(getMeaningfulChildren(container)).toEqual(<p>hello world</p>);
   });
 

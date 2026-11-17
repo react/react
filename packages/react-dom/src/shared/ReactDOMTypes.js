@@ -45,7 +45,8 @@ export type PreinitOptions =
       dataAttributes?: DataAttributes,
     };
 // Maps `data-*` attribute names to values, e.g. {'data-framework': 'next'}.
-// Used by `ReactDOM.preinit()` scripts and by bootstrap script descriptors.
+// Used by `ReactDOM.preinit()` and `ReactDOM.preinitModule()` scripts and by
+// bootstrap script descriptors.
 export type DataAttributes = {+[attributeName: string]: string};
 export type PreinitModuleOptions = {
   as?: string,
@@ -53,6 +54,7 @@ export type PreinitModuleOptions = {
   integrity?: string,
   nonce?: string,
   fetchPriority?: FetchPriorityEnum,
+  dataAttributes?: DataAttributes,
 };
 
 export type CrossOriginEnum = '' | 'use-credentials' | CrossOriginString;
@@ -96,6 +98,8 @@ export type PreinitModuleScriptOptions = {
   integrity?: ?string,
   nonce?: ?string,
   fetchPriority?: ?string,
+  // `data-*` attributes, like PreinitScriptOptions.
+  [dataAttributeName: string]: ?string,
 };
 
 export type HostDispatcher = {

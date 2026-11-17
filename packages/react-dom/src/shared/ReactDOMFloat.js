@@ -13,6 +13,7 @@ import type {
   PreinitOptions,
   PreinitModuleOptions,
   PreinitScriptOptions,
+  PreinitModuleScriptOptions,
 } from './ReactDOMTypes';
 
 import ReactDOMSharedInternals from 'shared/ReactDOMSharedInternals';
@@ -344,20 +345,33 @@ export function preinitModule(href: string, options?: ?PreinitModuleOptions) {
           options.as,
           options.crossOrigin,
         );
+        const moduleOptions: Required<PreinitModuleScriptOptions> = {
+          crossOrigin,
+          integrity:
+            typeof options.integrity === 'string'
+              ? options.integrity
+              : undefined,
+          nonce: typeof options.nonce === 'string' ? options.nonce : undefined,
+          fetchPriority:
+            typeof options.fetchPriority === 'string'
+              ? options.fetchPriority
+              : undefined,
+        };
+        if (options.dataAttributes != null) {
+          // Same as preinit: copy the validated `data-*` entries onto the
+          // options, which the hosts copy onto the script's props.
+          forEachDataAttribute(
+            options.dataAttributes,
+            'ReactDOM.preinitModule()',
+            'href',
+            href,
+            (name, value) => {
+              moduleOptions[name] = value;
+            },
+          );
+        }
         ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
-          .M(/* preinitModuleScript */ href, {
-            crossOrigin,
-            integrity:
-              typeof options.integrity === 'string'
-                ? options.integrity
-                : undefined,
-            nonce:
-              typeof options.nonce === 'string' ? options.nonce : undefined,
-            fetchPriority:
-              typeof options.fetchPriority === 'string'
-                ? options.fetchPriority
-                : undefined,
-          });
+          .M(/* preinitModuleScript */ href, moduleOptions);
       }
     } else if (options == null) {
       ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
