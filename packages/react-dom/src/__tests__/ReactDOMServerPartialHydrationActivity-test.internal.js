@@ -172,6 +172,100 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref.current).toBe(span);
   });
 
+  it('updates Fragment refs when an Activity boundary hydrates', async () => {
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+    const fragmentRef = React.createRef();
+    const nestedFragmentRef = React.createRef();
+    const hostRef = React.createRef();
+    let pingCount = 0;
+    let nestedPingCount = 0;
+    const observerState =
+      require('./utils/IntersectionMocks').mockIntersectionObserver();
+    const observer = new window.IntersectionObserver(() => {});
+
+    function Child() {
+      if (suspend) {
+        throw promise;
+      } else {
+        return (
+          <>
+            <p id="top" ref={hostRef}>
+              <input id="field" />
+            </p>
+            text
+          </>
+        );
+      }
+    }
+
+    function attachFragmentRef(fragment) {
+      if (fragment !== null) {
+        fragmentRef.current = fragment;
+        fragment.addEventListener('ping', () => pingCount++);
+        fragment.observeUsing(observer);
+      }
+    }
+
+    function attachNestedFragmentRef(fragment) {
+      if (fragment !== null) {
+        nestedFragmentRef.current = fragment;
+        fragment.addEventListener('ping', () => nestedPingCount++);
+      }
+    }
+
+    function App() {
+      return (
+        <div>
+          <React.Fragment ref={attachFragmentRef}>
+            <React.Fragment ref={attachNestedFragmentRef}>
+              <Activity mode="visible">
+                <Child />
+              </Activity>
+            </React.Fragment>
+          </React.Fragment>
+        </div>
+      );
+    }
+
+    suspend = false;
+    const container = document.createElement('div');
+    container.innerHTML = ReactDOMServer.renderToString(<App />);
+    const top = container.querySelector('#top');
+    const field = container.querySelector('#field');
+    const text = top.nextSibling;
+
+    suspend = true;
+    const root = ReactDOMClient.hydrateRoot(container, <App />);
+    await waitForAll([]);
+
+    expect(fragmentRef.current).not.toBe(null);
+    expect(nestedFragmentRef.current).not.toBe(null);
+    expect(hostRef.current).toBe(null);
+    expect(observerState.observedTargets).toEqual([]);
+
+    suspend = false;
+    resolve();
+    await promise;
+    await waitForAll([]);
+
+    expect(hostRef.current).toBe(top);
+    field.dispatchEvent(new window.Event('ping', {bubbles: true}));
+    text.dispatchEvent(new window.Event('ping', {bubbles: true}));
+    expect({
+      heard: pingCount,
+      observed: observerState.observedTargets.includes(top),
+      handle:
+        top.reactFragments != null &&
+        top.reactFragments.has(fragmentRef.current) &&
+        top.reactFragments.has(nestedFragmentRef.current),
+      nestedHeard: nestedPingCount,
+    }).toEqual({heard: 2, observed: true, handle: true, nestedHeard: 2});
+
+    await act(() => root.unmount());
+  });
+
   it('can hydrate siblings of a suspended component without errors', async () => {
     let suspend = false;
     let resolve;

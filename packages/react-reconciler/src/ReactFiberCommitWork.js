@@ -255,6 +255,7 @@ import {
 } from './ReactFiberCommitHostEffects';
 import {
   commitFragmentInstanceDeletionEffects,
+  commitHydratedFragmentInstanceInsertionEffects,
   commitFragmentInstanceInsertionEffects,
 } from './ReactFiberFragmentInstance';
 import {
@@ -2509,6 +2510,10 @@ function commitMutationEffectsOnFiber(
       const newState: OffscreenState | null = finishedWork.memoizedState;
       const isHidden = newState !== null;
       const wasHidden = current !== null && current.memoizedState !== null;
+
+      if (flags & Hydrating) {
+        commitHydratedFragmentInstanceInsertionEffects(finishedWork);
+      }
 
       if (disableLegacyMode || finishedWork.mode & ConcurrentMode) {
         // Before committing the children, track on the stack whether this
