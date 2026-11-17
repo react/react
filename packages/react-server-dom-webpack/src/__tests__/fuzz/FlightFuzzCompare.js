@@ -116,6 +116,14 @@ function compareValue(fixture, {expectedValue, received, path}) {
       case 'promise':
         assertKind(typeof received.then === 'function', 'a thenable', received);
         return [];
+      case 'element':
+        // Flight may deliver a lazy element before its props are ready.
+        // Rendering and the component's props callback check its contents.
+        // The key can only be read from an element that is not lazy.
+        if (received.$$typeof === Symbol.for('react.transitional.element')) {
+          assertSame(received.key, expectedValue.key);
+        }
+        return [];
       case 'error':
         return compareError(expectedValue, received, path);
       default:

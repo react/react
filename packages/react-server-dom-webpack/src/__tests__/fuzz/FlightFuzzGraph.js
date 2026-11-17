@@ -20,6 +20,7 @@ const nodeTypes = [
   'value',
   'date',
   'special',
+  'host',
   'module',
   'error',
   'array',
@@ -27,6 +28,9 @@ const nodeTypes = [
   'set',
   'map',
   'bound',
+  'element',
+  'props',
+  'fragment',
   'promise',
 ];
 
@@ -48,6 +52,11 @@ function getReferencedNodes(node) {
       return Object.values(node.object);
     case 'map':
       return node.map.flat();
+    case 'fragment':
+      return node.fragment;
+    case 'element':
+      return [].concat(node.element);
+    case 'props':
     case 'promise':
       return [node[getNodeType(node)]];
     default:
@@ -96,7 +105,10 @@ const graphOperations = [
   'map key',
   'promise',
   'rejected promise',
+  'element',
+  'props',
   'bound function',
+  'fragment',
   'failing module',
   'after eof',
   'root promise',
@@ -138,6 +150,7 @@ function generateGraph(seed, {without = []} = {}) {
   // Different nodes can represent the same Map key (for example, 0 and -0).
   // Compare their values so adding a key doesn't overwrite an existing entry.
   const keyValues = new Map();
+  const propsKeys = new Map();
   const getMapKeyValue = name => {
     if (!keyValues.has(name)) {
       const node = nodes[name];
@@ -148,6 +161,12 @@ function generateGraph(seed, {without = []} = {}) {
           break;
         case 'special':
           value = specialValueFactories[node.special]();
+          break;
+        case 'props':
+          if (!propsKeys.has(node.props)) {
+            propsKeys.set(node.props, {});
+          }
+          value = propsKeys.get(node.props);
           break;
       }
       keyValues.set(name, value);
@@ -205,6 +224,9 @@ function generateGraph(seed, {without = []} = {}) {
   );
   add({special: pickFrom(specials)});
   add({special: pickFrom(specials)});
+  if (!without.includes('host')) {
+    add({host: 'atom'});
+  }
   const moduleCount = 2 + pick(2);
   for (let i = 0; i < moduleCount; i++) {
     const node = {module: 'export-' + i};
@@ -275,6 +297,24 @@ function generateGraph(seed, {without = []} = {}) {
         add({promise: addError(), reject: true});
         break;
       }
+      case 'element': {
+        add({
+          element:
+            pick(2) === 0
+              ? pickFrom(referenceTargets)
+              : [pickFrom(referenceTargets), pickFrom(referenceTargets)],
+        });
+        break;
+      }
+      case 'props': {
+        const elements = names.filter(name => 'element' in nodes[name]);
+        if (elements.length === 0) {
+          add({props: add({element: pickFrom(referenceTargets)})});
+        } else {
+          add({props: pickFrom(elements)});
+        }
+        break;
+      }
       case 'bound function': {
         add({
           bound:
@@ -282,6 +322,13 @@ function generateGraph(seed, {without = []} = {}) {
               ? []
               : [pickFrom(referenceTargets), pickFrom(referenceTargets)],
         });
+        break;
+      }
+      case 'fragment': {
+        const hosts = names.filter(name => 'host' in nodes[name]);
+        if (hosts.length > 0) {
+          add({fragment: [pickFrom(hosts), pickFrom(hosts)]});
+        }
         break;
       }
       case 'failing module': {
@@ -402,7 +449,7 @@ function* generateReductionCandidates(graph) {
     // Try removing large pieces first, so that it does not take one run for
     // every removed item.
     const list = type === 'object' ? Object.keys(node.object) : node[type];
-    if (Array.isArray(list)) {
+    if (Array.isArray(list) && type !== 'element') {
       for (let width = list.length; width > 0; width = Math.floor(width / 2)) {
         for (let start = 0; start < list.length; start += width) {
           const kept = list.slice(0, start).concat(list.slice(start + width));

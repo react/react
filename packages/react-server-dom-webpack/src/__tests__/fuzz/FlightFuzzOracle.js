@@ -19,16 +19,22 @@ const {
 } = require('./FlightFuzzCompare');
 const {
   separateResultTypes,
+  getRequiredEvents,
+  getReleasedErrors,
+  areAllEventsReleased,
   createModelLookup,
   getRootExpectation,
   getPromiseExpectation,
+  getRenderExpectation,
 } = require('./FlightFuzzReadiness');
 
 function createOracle(
   fixture = {valueMetadata: new Map(), requiredEvents: new Map()},
+  {render} = {},
 ) {
   const state = {
     fixture,
+    render,
     expectedByReceived: new WeakMap(),
     receivedValues: [],
     observedAsyncValues: new WeakSet(),
@@ -41,6 +47,25 @@ function createOracle(
   return {
     observeValue(expectedValue, received) {
       observeValue(state, expectedValue, received, 'value');
+    },
+    observeProps(element, received) {
+      guard(state, () => {
+        const events = getRequiredEvents(fixture, element.props);
+        if (
+          !areAllEventsReleased(events) ||
+          getReleasedErrors(events).length > 0
+        ) {
+          throw new Error(
+            'A component received props before their inputs arrived',
+          );
+        }
+        observeValue(
+          state,
+          element.props,
+          received,
+          'props of ' + element.type.name,
+        );
+      });
     },
     subscribeToRoot(root, expectedValue, {subscribeAgain = false} = {}) {
       const check = registerResultCheck(
@@ -151,6 +176,9 @@ function observeAsyncValue(state, metadata, pair) {
     case 'promise':
       observePromise(state, metadata, pair);
       break;
+    case 'element':
+      observeElement(state, pair);
+      break;
   }
 }
 
@@ -162,6 +190,26 @@ function observePromise(state, metadata, {expectedValue, received, path}) {
     findModels => getPromiseExpectation(state.fixture, metadata, findModels),
   );
   subscribe(state, received, check, true);
+}
+
+function observeElement(state, {expectedValue, received, path}) {
+  const check = registerResultCheck(
+    state,
+    expectedValue,
+    path + '.render',
+    findModels =>
+      getRenderExpectation(state.fixture, expectedValue, findModels),
+  );
+  runAsyncTask(state, async () => {
+    let html;
+    try {
+      html = await state.render(received);
+    } catch (error) {
+      handleResult(state, check, error, true);
+      return;
+    }
+    handleResult(state, check, html);
+  });
 }
 
 // Each call returns a new array of the bound arguments followed by the
@@ -273,6 +321,14 @@ function assertExpectedError(error, expected, path) {
           .join(' or '),
     );
   }
+}
+
+function runAsyncTask(state, run) {
+  state.pendingTasks++;
+  Promise.resolve()
+    .then(run)
+    .catch(error => recordFailure(state, error))
+    .then(() => state.pendingTasks--);
 }
 
 function guard(state, run) {

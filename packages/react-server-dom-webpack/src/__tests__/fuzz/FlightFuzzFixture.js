@@ -13,7 +13,10 @@ const {
   specialValueFactories,
 } = require('./FlightFuzzGraph');
 
-async function createFixture(graph, {WebpackMock}) {
+async function createFixture(
+  graph,
+  {React, ReactServer, WebpackMock, observeProps},
+) {
   checkReachability(graph);
   const {nodes} = graph;
   const events = [];
@@ -48,6 +51,13 @@ async function createFixture(graph, {WebpackMock}) {
         break;
       case 'special':
         values[name] = specialValueFactories[node.special]();
+        break;
+      case 'host':
+        values[name] = createHostElement(
+          'span',
+          {title: node.host},
+          '<span title="' + node.host + '"></span>',
+        );
         break;
       case 'module': {
         const load = createResolvablePromise();
@@ -125,7 +135,7 @@ async function createFixture(graph, {WebpackMock}) {
         break;
     }
   }
-  // Build values that need existing arguments.
+  // Build values that need existing arguments or props.
   const buildingValues = new Set();
   const buildValue = name => {
     if (Object.prototype.hasOwnProperty.call(values, name)) {
@@ -142,6 +152,11 @@ async function createFixture(graph, {WebpackMock}) {
     buildingValues.add(name);
     const node = nodes[name];
     switch (getNodeType(node)) {
+      case 'fragment':
+        values[name] = createFragment(node.fragment.map(buildValue), {
+          key: name,
+        });
+        break;
       case 'bound':
         values[name] = createServerFunction((...args) => args, {
           bound: node.bound.map(buildValue),
@@ -149,6 +164,26 @@ async function createFixture(graph, {WebpackMock}) {
           loaded: node.loaded === true,
         });
         break;
+      case 'element': {
+        // Give generated elements keys to avoid array-key warnings.
+        const props = Array.isArray(node.element)
+          ? {
+              value: buildValue(node.element[0]),
+              other: buildValue(node.element[1]),
+            }
+          : {value: buildValue(node.element)};
+        values[name] = createClientElement(props, {name, key: name});
+        break;
+      }
+      case 'props': {
+        const element = buildValue(node.props);
+        const metadata = valueMetadata.get(element);
+        if (metadata === undefined || metadata.type !== 'element') {
+          throw new Error(node.props + ' is not an element node');
+        }
+        values[name] = element.props;
+        break;
+      }
       default:
         break;
     }
@@ -288,6 +323,54 @@ async function createFixture(graph, {WebpackMock}) {
     events.push(event);
     requiredEvents.set(fn, [event]);
     return fn;
+  }
+
+  function createClientElement(props, {name, key} = {}) {
+    const id = name || 'component-' + valueMetadata.size;
+    const load = createResolvablePromise();
+    const Component = receivedProps => {
+      observeProps(element, receivedProps);
+      return React.createElement('span', null, id);
+    };
+    const {Component: Type} = WebpackMock.clientExports(
+      {Component},
+      id,
+      id + '.js',
+      load.promise,
+    );
+    const element = ReactServer.createElement(
+      Type,
+      key === undefined ? props : {key, ...props},
+    );
+    valueMetadata.set(element, {
+      type: 'element',
+      html: '<span>' + id + '</span>',
+    });
+    const loadEvent = createEvent('load ' + id, () => load.resolve(), {
+      isClient: true,
+    });
+    events.push(loadEvent);
+    requiredEvents.set(element, [loadEvent]);
+    return element;
+  }
+
+  function createHostElement(type, props, html) {
+    const element = ReactServer.createElement(type, props);
+    valueMetadata.set(element, {type: 'element', html});
+    return element;
+  }
+
+  function createFragment(children, {key}) {
+    const element = ReactServer.createElement(
+      ReactServer.Fragment,
+      {key},
+      ...children,
+    );
+    valueMetadata.set(element, {
+      type: 'element',
+      html: children.map(child => valueMetadata.get(child).html).join(''),
+    });
+    return element;
   }
 
   function createError(message) {
