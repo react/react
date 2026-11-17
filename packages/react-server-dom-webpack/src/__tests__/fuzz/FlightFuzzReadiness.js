@@ -11,6 +11,11 @@
 // and which errors they may be rejected with.
 //
 // A result is due when the events it depends on have run.
+//
+// Two results can contain the same object. The server writes it in the result
+// it writes first, and the other one refers to it. So a result may also wait
+// for another result that has been produced and contains one of its objects,
+// or be rejected with that result's error. The root is always written first.
 
 const {isObject} = require('./FlightFuzzCompare');
 
@@ -71,6 +76,10 @@ function getReleasedErrors(events) {
     .map(event => event.error);
 }
 
+function getModelErrors(models) {
+  return models.flatMap(model => getReleasedErrors(model.events));
+}
+
 function areAllEventsReleased(events) {
   return Array.from(events).every(event => event.released);
 }
@@ -87,29 +96,140 @@ function isRootProduced(fixture) {
   );
 }
 
-// value: what the result fulfills with.
-// inputsReady: the result's own inputs are released or one of them failed.
-// errors: the errors of its own released inputs.
-function getResultExpectation(value, inputsReady, errors) {
-  return {
-    value,
-    canFulfill: inputsReady && errors.length === 0,
-    errors: inputsReady ? errors : [],
-    mustSettle: inputsReady,
+// Splits the source values into the parts that the server writes separately.
+// The code calls such a part a model. The root is one, and so is the value of
+// each Promise that has resolved.
+// For each model this records the events it depends on, and the other models
+// that may have written one of its objects first. It returns a map from the
+// value at the top of each model to that model.
+function collectModels(fixture) {
+  const modelsByRootValue = new Map();
+  const modelsByValue = new Map();
+  const separateValues = new Set();
+
+  function collectModel(rootValues) {
+    const model = {
+      events: new Set(),
+      referencedModels: new Set(),
+    };
+    const todo = rootValues.slice();
+    const seen = new Set();
+    while (todo.length > 0) {
+      const value = todo.pop();
+      if (!isObject(value) || seen.has(value)) {
+        continue;
+      }
+      seen.add(value);
+      if (rootValues.includes(value)) {
+        modelsByRootValue.set(value, model);
+      }
+      modelsByValue.set(value, (modelsByValue.get(value) || []).concat(model));
+      const metadata = fixture.valueMetadata.get(value);
+      if (
+        metadata !== undefined &&
+        separateResultTypes.includes(metadata.type)
+      ) {
+        separateValues.add(value);
+        continue;
+      }
+      (fixture.requiredEvents.get(value) || []).forEach(event =>
+        model.events.add(event),
+      );
+      todo.push(...getValueDependencies(fixture, value));
+    }
+    return model;
+  }
+
+  // Nothing has been written before the root itself is available.
+  if (!isRootProduced(fixture)) {
+    return modelsByRootValue;
+  }
+  const rootModel = collectModel([
+    fixture.rootPromise == null ? fixture.model : fixture.resolvedModel,
+  ]);
+  // A result that the source has not produced yet has not written anything.
+  separateValues.forEach(value => {
+    const metadata = fixture.valueMetadata.get(value);
+    if (metadata.type === 'promise') {
+      if (metadata.state === 'fulfilled') {
+        collectModel([metadata.value]);
+      }
+    }
+  });
+  modelsByValue.forEach(models => {
+    // The root is written first, so an object that is in the root is written
+    // there. Otherwise any model that contains the object may have written it,
+    // and the others refer to it.
+    const rootModels = models.filter(model => model === rootModel);
+    models.forEach(model => {
+      const possibleSources =
+        rootModels.length > 0
+          ? rootModels
+          : models.filter(other => other !== model);
+      possibleSources.forEach(source => model.referencedModels.add(source));
+    });
+  });
+  return modelsByRootValue;
+}
+
+// Returns a function that takes a value and returns the models its result may
+// depend on. Working this out is slow, so one lookup is shared by all the
+// checks that run after the same event. Create a new one after the next event.
+function createModelLookup(fixture) {
+  let modelsByRootValue = null;
+  return value => {
+    if (modelsByRootValue === null) {
+      modelsByRootValue = collectModels(fixture);
+    }
+    const model = modelsByRootValue.get(value);
+    if (model === undefined) {
+      return [];
+    }
+    const models = [];
+    const seen = new Set();
+    const todo = [model];
+    while (todo.length > 0) {
+      const current = todo.pop();
+      if (!seen.has(current)) {
+        seen.add(current);
+        models.push(current);
+        current.referencedModels.forEach(next => todo.push(next));
+      }
+    }
+    return models;
   };
 }
 
-function getRootExpectation(fixture, value) {
+// value: what the result fulfills with.
+// inputsReady: the result's own inputs are released or one of them failed.
+// errors: the errors of its own released inputs.
+// models: the other models that may have written one of its objects.
+function getResultExpectation(value, inputsReady, errors, models) {
+  return {
+    value,
+    canFulfill: inputsReady && errors.length === 0,
+    errors: (inputsReady ? errors : []).concat(getModelErrors(models)),
+    // If one of the result's own inputs failed, it has to be rejected now,
+    // even if another model it may depend on is still loading.
+    mustSettle:
+      inputsReady &&
+      (errors.length > 0 ||
+        models.every(model => canSettle(Array.from(model.events)))),
+  };
+}
+
+function getRootExpectation(fixture, value, findModels) {
   const events = getRequiredEvents(fixture, value);
   const produced = isRootProduced(fixture);
   return getResultExpectation(
     value,
     produced && canSettle(events),
     getReleasedErrors(events),
+    produced ? findModels(value) : [],
   );
 }
 
-function getPromiseExpectation(fixture, metadata) {
+function getPromiseExpectation(fixture, metadata, findModels) {
   const events = getRequiredEvents(fixture, metadata.value);
   const produced = metadata.state === 'fulfilled';
   let errors;
@@ -122,11 +242,15 @@ function getPromiseExpectation(fixture, metadata) {
     metadata.value,
     metadata.state === 'rejected' || (produced && canSettle(events)),
     errors,
+    // Until the result's own value is available, another model's error is
+    // not a reason for it to be rejected.
+    produced ? findModels(metadata.value) : [],
   );
 }
 
 module.exports = {
   separateResultTypes,
+  createModelLookup,
   getRootExpectation,
   getPromiseExpectation,
 };

@@ -19,6 +19,7 @@ const {
 } = require('./FlightFuzzCompare');
 const {
   separateResultTypes,
+  createModelLookup,
   getRootExpectation,
   getPromiseExpectation,
 } = require('./FlightFuzzReadiness');
@@ -41,15 +42,19 @@ function createOracle(
       observeValue(state, expectedValue, received, 'value');
     },
     subscribeToRoot(root, expectedValue, {subscribeAgain = false} = {}) {
-      const check = registerResultCheck(state, expectedValue, 'root', () =>
-        getRootExpectation(fixture, expectedValue),
+      const check = registerResultCheck(
+        state,
+        expectedValue,
+        'root',
+        findModels => getRootExpectation(fixture, expectedValue, findModels),
       );
       subscribe(state, root, check, subscribeAgain);
     },
     getMissingResults() {
       throwIfFailed(state);
+      const findModels = createModelLookup(fixture);
       return state.resultChecks.filter(
-        check => !check.done && check.getExpectation().mustSettle,
+        check => !check.done && check.getExpectation(findModels).mustSettle,
       );
     },
     isComplete() {
@@ -132,8 +137,11 @@ function observeAsyncValue(state, metadata, pair) {
 }
 
 function observePromise(state, metadata, {expectedValue, received, path}) {
-  const check = registerResultCheck(state, expectedValue, path + '.then', () =>
-    getPromiseExpectation(state.fixture, metadata),
+  const check = registerResultCheck(
+    state,
+    expectedValue,
+    path + '.then',
+    findModels => getPromiseExpectation(state.fixture, metadata, findModels),
   );
   subscribe(state, received, check, true);
 }
@@ -180,7 +188,7 @@ function subscribe(state, thenable, check, subscribeAgain) {
 function handleResult(state, check, value, rejected = false) {
   guard(state, () => {
     expect(check.done).toBe(false);
-    const expectation = check.getExpectation();
+    const expectation = check.getExpectation(createModelLookup(state.fixture));
     if (rejected) {
       if (expectation.errors.length === 0) {
         throw new Error(

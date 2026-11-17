@@ -698,6 +698,43 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         events: ['reject failed', 'load ready'],
       }));
 
+    it('shared object in two Promise results whose modules load and fail separately', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          failed: {module: 'failed', fail: 'load'},
+          shared: {object: {}},
+          loading: {array: ['shared', 'ready']},
+          failing: {array: ['shared', 'failed']},
+          first: {promise: 'loading'},
+          second: {promise: 'failing'},
+          last: {promise: 'shared'},
+          roots: {array: ['first', 'second', 'last']},
+        },
+        roots: {entry: 'roots', other: 'roots'},
+        events: [
+          'resolve first to loading',
+          'resolve second to failing',
+          'resolve last to shared',
+          'reject failed',
+          'load ready',
+        ],
+      }));
+
+    it.each(['', ':', '%3A', '%25:', ':%3A:', 'constructor', '01', '0', '🙂'])(
+      'references through the property name %j',
+      key =>
+        runGraph({
+          nodes: {
+            ready: {module: 'export-0'},
+            shared: {object: {ready: 'ready'}},
+            object: {object: {[key]: 'shared', repeat: 'shared'}},
+            later: {promise: 'shared'},
+          },
+          roots: {entry: 'object', other: 'later'},
+        }),
+    );
+
     it('server error through a rejected Promise', () =>
       runGraph({
         nodes: {
@@ -733,6 +770,36 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
   });
 
   describe('collection graphs', () => {
+    it('cycle first exposed through two Promises', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          member: {object: {field0: 'ready', field1: 'set'}},
+          set: {set: ['member']},
+          first: {promise: 'member'},
+          second: {promise: 'set'},
+        },
+        roots: {entry: 'first', other: 'second'},
+      }));
+
+    it('Map keys and values wait for their client modules', () =>
+      runGraph({
+        nodes: {
+          key: {module: 'key'},
+          ready: {module: 'ready'},
+          literal: {value: 'literal'},
+          object: {object: {value: 'ready'}},
+          map: {
+            map: [
+              ['key', 'object'],
+              ['literal', 'ready'],
+            ],
+          },
+          later: {promise: 'map'},
+        },
+        roots: {entry: 'map', other: 'later'},
+      }));
+
     // @gate FIXME
     it('Set containing itself', () =>
       runGraph({
