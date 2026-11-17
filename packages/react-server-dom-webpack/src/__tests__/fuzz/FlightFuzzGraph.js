@@ -37,6 +37,7 @@ const nodeTypes = [
   'fragment',
   'promise',
   'stream',
+  'bytes',
   'iterable',
   'component',
 ];
@@ -149,6 +150,8 @@ const graphOperations = [
   'rejected promise',
   'stream',
   'failing stream',
+  'canceled stream',
+  'byte stream',
   'iterable',
   'iterator',
   'element',
@@ -407,6 +410,14 @@ function generateGraph(seed, {without = []} = {}) {
         add({stream: [], fail: addError()});
         break;
       }
+      case 'canceled stream': {
+        add({stream: [createStreamItem()], cancel: true});
+        break;
+      }
+      case 'byte stream': {
+        add({bytes: 1 + pick(3)});
+        break;
+      }
       case 'iterable': {
         add({
           iterable: [createStreamItem(), createStreamItem()],
@@ -629,6 +640,9 @@ function* generateReductionCandidates(graph) {
       for (let width = list.length; width > 0; width = Math.floor(width / 2)) {
         for (let start = 0; start < list.length; start += width) {
           const kept = list.slice(0, start).concat(list.slice(start + width));
+          if (type === 'stream' && node.cancel && kept.length === 0) {
+            continue;
+          }
           yield replace({
             ...node,
             [listKey]:

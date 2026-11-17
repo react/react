@@ -7,8 +7,9 @@
 
 'use strict';
 
-// Compares received values with their source values, and subscribes to every
-// Promise it finds in them. After each source event the test asks which
+// Compares received values with their source values. It also reads every
+// Promise, stream, iterable and byte stream it finds in them, renders elements
+// and calls Server Functions. After each source event the test asks which
 // results are due and have not arrived.
 
 const {
@@ -29,6 +30,9 @@ const {
   getRenderExpectation,
   getStreamExpectations,
   getIterableExpectation,
+  getCanceledExpectation,
+  getProducedByteCount,
+  getByteReadExpectation,
 } = require('./FlightFuzzReadiness');
 
 function createOracle(
@@ -220,6 +224,12 @@ function observeAsyncValue(state, metadata, pair) {
     case 'iterable':
       observeAsyncIterable(state, metadata, pair);
       break;
+    case 'bytes':
+      observeByteStream(state, metadata, pair);
+      break;
+    case 'canceled':
+      observeCanceledStream(state, metadata, pair);
+      break;
   }
 }
 
@@ -350,6 +360,72 @@ function observeAsyncIterable(state, metadata, {received, path}) {
       });
     }
   }
+}
+
+function observeByteStream(state, metadata, {expectedValue, received, path}) {
+  const expectedBytes = [].concat(...metadata.chunks.map(c => Array.from(c)));
+  runAsyncTask(state, async () => {
+    const reader = received.getReader({mode: 'byob'});
+    const receivedBytes = [];
+    for (;;) {
+      const offset = receivedBytes.length;
+      const check = registerResultCheck(
+        state,
+        expectedValue,
+        path + '.byte' + offset,
+        () => getByteReadExpectation(metadata, offset),
+      );
+      let result;
+      try {
+        result = await reader.read(
+          new Uint8Array(1 + (receivedBytes.length % 3)),
+        );
+      } catch (error) {
+        handleResult(state, check, error, true);
+        return;
+      }
+      const {done, value} = result;
+      if (value) {
+        receivedBytes.push(...value);
+      }
+      expect(receivedBytes).toEqual(
+        expectedBytes.slice(
+          0,
+          Math.min(receivedBytes.length, getProducedByteCount(metadata)),
+        ),
+      );
+      if (done) {
+        expect(areAllEventsReleased(metadata.events)).toBe(true);
+        expect(receivedBytes).toEqual(expectedBytes);
+        handleResult(state, check, undefined);
+        break;
+      }
+      expect(receivedBytes.length).toBeGreaterThan(offset);
+      handleResult(state, check, undefined);
+    }
+  });
+}
+
+function observeCanceledStream(state, metadata, {received, path}) {
+  const check = registerResultCheck(
+    state,
+    metadata.first,
+    path + '.first',
+    findModels => getCanceledExpectation(state.fixture, metadata, findModels),
+  );
+  runAsyncTask(state, async () => {
+    const reader = received.getReader();
+    let item;
+    try {
+      item = await reader.read();
+    } catch (error) {
+      handleResult(state, check, error, true);
+      return;
+    }
+    expect(item.done).toBe(false);
+    await reader.cancel('canceled by the test');
+    handleResult(state, check, item.value);
+  });
 }
 
 // Each call returns a new array of the bound arguments followed by the

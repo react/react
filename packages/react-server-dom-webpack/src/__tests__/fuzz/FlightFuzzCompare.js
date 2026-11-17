@@ -155,6 +155,8 @@ function compareValue(fixture, {expectedValue, received, path}) {
         );
         return [];
       case 'stream':
+      case 'bytes':
+      case 'canceled':
         assertKind(
           typeof received.getReader === 'function',
           'a readable stream',

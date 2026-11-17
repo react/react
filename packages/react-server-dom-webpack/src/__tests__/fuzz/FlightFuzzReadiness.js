@@ -21,7 +21,14 @@ const {isObject} = require('./FlightFuzzCompare');
 
 // Values whose contents arrive as a separate result. A containing value need
 // not wait for them.
-const separateResultTypes = ['promise', 'element', 'stream', 'iterable'];
+const separateResultTypes = [
+  'promise',
+  'element',
+  'stream',
+  'iterable',
+  'bytes',
+  'canceled',
+];
 
 function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
@@ -248,6 +255,9 @@ function collectModels(fixture) {
       if (metadata.state === 'fulfilled') {
         collectModel([metadata.value]);
       }
+    } else if (metadata.type === 'canceled') {
+      // Its first item is enqueued when the source stream is constructed.
+      collectModel([metadata.first]);
     } else if (metadata.type === 'stream' || metadata.type === 'iterable') {
       for (let i = 0; i < metadata.items.length; i++) {
         if (!metadata.events[i].released) {
@@ -511,6 +521,36 @@ function getIterableExpectation(fixture, metadata, i, value, findModels) {
   );
 }
 
+function getCanceledExpectation(fixture, metadata, findModels) {
+  const events = getRequiredEvents(fixture, metadata.first);
+  return getResultExpectation(
+    metadata.first,
+    canSettle(events),
+    getReleasedErrors(events),
+    findModels(metadata.first),
+  );
+}
+
+function getProducedByteCount(metadata) {
+  let count = 0;
+  for (let i = 0; i < metadata.chunks.length; i++) {
+    if (!metadata.events[i].released) {
+      break;
+    }
+    count += metadata.chunks[i].length;
+  }
+  return count;
+}
+
+// A BYOB read with the default one-byte minimum is due once any byte past the
+// offset is produced, without waiting for another chunk to fill the buffer.
+function getByteReadExpectation(metadata, offset) {
+  const available =
+    getProducedByteCount(metadata) > offset ||
+    areAllEventsReleased(metadata.events);
+  return getResultExpectation(undefined, available, [], []);
+}
+
 module.exports = {
   separateResultTypes,
   getRequiredEvents,
@@ -522,4 +562,7 @@ module.exports = {
   getRenderExpectation,
   getStreamExpectations,
   getIterableExpectation,
+  getCanceledExpectation,
+  getProducedByteCount,
+  getByteReadExpectation,
 };

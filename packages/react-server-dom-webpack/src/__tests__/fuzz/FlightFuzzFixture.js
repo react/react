@@ -211,10 +211,19 @@ async function createFixture(
         break;
       }
       case 'stream':
-        values[name] = createStream(node.stream.map(buildValue), {
-          label: name,
-          failure: node.fail === undefined ? undefined : getError(node.fail),
-        });
+        values[name] = node.cancel
+          ? createCanceledStream(node.stream.map(buildValue), {label: name})
+          : createStream(node.stream.map(buildValue), {
+              label: name,
+              failure:
+                node.fail === undefined ? undefined : getError(node.fail),
+            });
+        break;
+      case 'bytes':
+        values[name] = createByteStream(
+          Array.from({length: node.bytes}, (_, i) => new Uint8Array([i, 7])),
+          {label: name},
+        );
         break;
       case 'iterable':
         values[name] = createAsyncIterable(
@@ -294,7 +303,11 @@ async function createFixture(
         }
         break;
       case 'stream':
-        if (node.fail !== undefined && serializedNodes.has(name)) {
+        if (
+          node.fail !== undefined &&
+          !node.cancel &&
+          serializedNodes.has(name)
+        ) {
           expectedErrors.set(getError(node.fail), 'failing ' + name);
         }
         break;
@@ -474,6 +487,49 @@ async function createFixture(
         : requiredEvents.get(renderedElement) || []),
     ]);
     return element;
+  }
+
+  function createByteStream(chunks, {label = 'bytes'} = {}) {
+    let controller;
+    let produced = 0;
+    const stream = new ReadableStream({
+      type: 'bytes',
+      start: c => (controller = c),
+    });
+    const streamEvents = [];
+    const pump = () => {
+      while (produced < chunks.length && streamEvents[produced].released) {
+        controller.enqueue(chunks[produced++].slice());
+      }
+      if (produced === chunks.length) {
+        controller.close();
+      }
+    };
+    for (let i = 0; i < chunks.length; i++) {
+      streamEvents.push(createEvent(label + ' chunk ' + i, pump));
+    }
+    events.push(...streamEvents);
+    valueMetadata.set(stream, {type: 'bytes', chunks, events: streamEvents});
+    return stream;
+  }
+
+  // Client-side cancellation must not break later server writes.
+  function createCanceledStream(items, {label = 'canceled stream'} = {}) {
+    let controller;
+    const stream = new ReadableStream({
+      start(c) {
+        controller = c;
+        controller.enqueue(items[0]);
+      },
+    });
+    events.push(
+      createEvent('enqueue into ' + label + ' after cancellation', () => {
+        controller.enqueue({discarded: true});
+        controller.close();
+      }),
+    );
+    valueMetadata.set(stream, {type: 'canceled', first: items[0]});
+    return stream;
   }
 
   function createHostElement(type, props, html) {

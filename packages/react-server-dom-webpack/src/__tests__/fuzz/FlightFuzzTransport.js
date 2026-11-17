@@ -137,7 +137,10 @@ function startFlightResponse({
   // Split output into uneven packets to exercise partial reads.
   async function flush() {
     await tick();
-    const bytes = Buffer.concat(queued);
+    // A broken byte-stream reader may transfer the packet's buffer. Give
+    // the transport its own buffer so this can fail the case without also
+    // detaching Node's shared Buffer pool and breaking Jest's file reads.
+    const bytes = new Uint8Array(Buffer.concat(queued));
     queued = [];
     for (let offset = 0; offset < bytes.length; ) {
       const size = packetSizes[packet++ % packetSizes.length];
