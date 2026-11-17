@@ -46531,6 +46531,9 @@ function outlineFunctions(fn, fbtOperands) {
             const { value, lvalue } = instr;
             if (value.kind === 'FunctionExpression' ||
                 value.kind === 'ObjectMethod') {
+                if (value.loweredFunc.func.directives.some(directive => OPT_OUT_DIRECTIVES.has(directive))) {
+                    continue;
+                }
                 outlineFunctions(value.loweredFunc.func, fbtOperands);
             }
             if (value.kind === 'FunctionExpression' &&
