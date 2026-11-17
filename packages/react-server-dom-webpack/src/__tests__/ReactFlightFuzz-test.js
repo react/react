@@ -1417,9 +1417,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // DEV leaves an unhandled rejection here until then handles it.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('stream item with a failing module', () =>
+    it('stream item with a failing module', () =>
       runGraph({
         nodes: {
           broken: {module: 'export-0', fail: 'load'},
