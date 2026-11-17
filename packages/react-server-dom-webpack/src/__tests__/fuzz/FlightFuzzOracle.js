@@ -33,6 +33,7 @@ function createOracle(
     receivedValues: [],
     observedAsyncValues: new WeakSet(),
     thenableResults: new WeakMap(),
+    functionCalls: new Map(),
     resultChecks: [],
     failures: [],
     pendingTasks: 0,
@@ -65,10 +66,14 @@ function createOracle(
       );
     },
     // Compare every received value again to catch values that changed after
-    // delivery. Async values must still be the ones observed.
+    // delivery. Server Functions are called again, and async values must still
+    // be the ones observed.
     async checkForMutations() {
       state.pendingTasks++;
       try {
+        state.functionCalls.forEach((call, received) =>
+          observeServerFunction(state, received, call.metadata),
+        );
         const visited = new Set();
         state.receivedValues.forEach(root =>
           traverse(state, root, false, visited),
@@ -110,6 +115,19 @@ function traverse(state, root, observe, visited = new Set()) {
       const metadata = fixture.valueMetadata.get(expectedValue);
       if (metadata === undefined) {
         // There is nothing to subscribe to.
+      } else if (metadata.type === 'function') {
+        if (observe) {
+          observeServerFunction(state, received, metadata);
+        }
+        const call = state.functionCalls.get(received);
+        if (call === undefined) {
+          throw new Error('A received Server Function was replaced');
+        }
+        children.push({
+          expectedValue: metadata.result,
+          received: call.result,
+          path: path + '()',
+        });
       } else if (separateResultTypes.includes(metadata.type)) {
         if (!state.observedAsyncValues.has(received)) {
           if (!observe) {
@@ -144,6 +162,26 @@ function observePromise(state, metadata, {expectedValue, received, path}) {
     findModels => getPromiseExpectation(state.fixture, metadata, findModels),
   );
   subscribe(state, received, check, true);
+}
+
+// Each call returns a new array of the bound arguments followed by the
+// supplied ones. The bound arguments must stay the same objects.
+function observeServerFunction(state, received, metadata) {
+  const result = received(...metadata.args);
+  let bound = null;
+  if (metadata.bound.length > 0) {
+    expect(Array.isArray(result)).toBe(true);
+    const previous = state.functionCalls.get(received);
+    if (previous !== undefined) {
+      previous.bound.forEach((value, i) => {
+        if (!Object.is(result[i], value)) {
+          throw new Error('A Server Function changed a bound argument');
+        }
+      });
+    }
+    bound = result.slice(0, metadata.bound.length);
+  }
+  state.functionCalls.set(received, {metadata, result, bound});
 }
 
 function registerResultCheck(state, expectedValue, path, getExpectation) {

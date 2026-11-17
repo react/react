@@ -47,9 +47,11 @@ if (!Number.isSafeInteger(caseCount) || caseCount < 1) {
 if (!Number.isSafeInteger(shrinkBudget) || shrinkBudget < 0) {
   throw new Error('FLIGHT_FUZZ_SHRINK must be a nonnegative replay budget.');
 }
-// TODO: Some generated cases take longer than the default timeout on CI. It
-// would be better to find out why than to raise it. Finding a smaller case
-// runs the failed case many times, so that needs much longer.
+// The largest generated cases, a chain of 2048 bound functions, take longer
+// than the default timeout on a slow machine. The client reads such a response
+// in about 20ms. The rest is this test rendering it and checking it after
+// every event. Finding a smaller case runs the failed case many times, so that
+// needs much longer.
 jest.setTimeout(shrinkBudget > 0 ? 600000 : 15000);
 // Keep the first seed unchanged so the printed command replays that case.
 const seeds = Array.from({length: caseCount}, (_, i) =>
@@ -995,6 +997,100 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       }));
   });
 
+  describe('bound Server Functions', () => {
+    it('calls a delivered Server Function with bound and supplied arguments', () =>
+      withFlightModules(async () => {
+        const {fn} = WebpackMock.serverExports({fn: (...args) => args});
+        const received = await roundTrip(fn.bind(null, 'bound'));
+        const first = received('argument');
+        expect(first).toEqual(['bound', 'argument']);
+        expect(received('argument')).toEqual(['bound', 'argument']);
+        expect(received('argument')).not.toBe(first);
+      }));
+
+    it('a bound object finishes loading before the function is delivered', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          argument: {object: {value: 'ready'}},
+          fn: {bound: ['argument']},
+        },
+        roots: {entry: 'fn', other: 'fn'},
+        events: ['load fn', 'load ready'],
+      }));
+
+    // @gate FIXME
+    it('function bound to its array', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['container']},
+          container: {array: ['fn', 'container', 'ready']},
+        },
+        roots: {entry: 'container', other: 'container'},
+      }));
+
+    // @gate FIXME
+    it('function bound to its Map', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['container']},
+          container: {
+            map: [
+              ['fn', 'ready'],
+              ['container', 'container'],
+            ],
+          },
+        },
+        roots: {entry: 'container', other: 'container'},
+      }));
+
+    // @gate FIXME
+    it('cycle first exposed through a bound function', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['region']},
+          region: {set: ['fn', 'region', 'ready']},
+        },
+        roots: {entry: 'fn', other: 'fn'},
+      }));
+
+    // @gate FIXME
+    it('cycle first exposed through a Promise of a bound function', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['region']},
+          region: {object: {field0: 'fn', field1: 'region', field2: 'ready'}},
+          exposure: {promise: 'fn'},
+        },
+        roots: {entry: 'exposure', other: 'exposure'},
+      }));
+
+    // @gate FIXME
+    it('a repeated Server Function bound to its loading container', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          argument: {object: {value: 'ready', fn: 'fn'}},
+          fn: {bound: ['argument']},
+          first: {promise: 'argument'},
+          result: {promise: 'fn'},
+        },
+        roots: {entry: 'first', other: 'result'},
+        events: [
+          'load fn',
+          'resolve first to argument',
+          'resolve result to fn',
+          'load ready',
+        ],
+        packetSizes: [1, 25, 2091],
+        yieldBetweenPackets: true,
+      }));
+  });
+
   describe('other graphs', () => {
     // This hangs until colons in reference paths are escaped.
     // eslint-disable-next-line jest/no-disabled-tests
@@ -1079,6 +1175,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                   'duplicate',
                   'map key',
                   'promise',
+                  'bound function',
                   'undefined',
                   'colon',
                 ],

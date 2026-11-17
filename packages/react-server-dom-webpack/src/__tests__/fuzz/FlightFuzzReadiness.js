@@ -26,7 +26,12 @@ const separateResultTypes = ['promise'];
 function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
   if (metadata !== undefined) {
-    return [];
+    switch (metadata.type) {
+      case 'function':
+        return metadata.bound;
+      default:
+        return [];
+    }
   }
   if (value instanceof Set) {
     return Array.from(value);
@@ -106,6 +111,7 @@ function collectModels(fixture) {
   const modelsByRootValue = new Map();
   const modelsByValue = new Map();
   const separateValues = new Set();
+  const boundArgumentModels = new Map();
 
   function collectModel(rootValues) {
     const model = {
@@ -135,6 +141,12 @@ function collectModels(fixture) {
       (fixture.requiredEvents.get(value) || []).forEach(event =>
         model.events.add(event),
       );
+      if (metadata !== undefined && metadata.type === 'function') {
+        // Bound arguments are written as a separate model, even when the
+        // function is in the root.
+        separateValues.add(value);
+        continue;
+      }
       todo.push(...getValueDependencies(fixture, value));
     }
     return model;
@@ -150,11 +162,18 @@ function collectModels(fixture) {
   // A result that the source has not produced yet has not written anything.
   separateValues.forEach(value => {
     const metadata = fixture.valueMetadata.get(value);
-    if (metadata.type === 'promise') {
+    if (metadata.type === 'function') {
+      boundArgumentModels.set(value, collectModel(metadata.bound));
+    } else if (metadata.type === 'promise') {
       if (metadata.state === 'fulfilled') {
         collectModel([metadata.value]);
       }
     }
+  });
+  boundArgumentModels.forEach((argumentModel, fn) => {
+    modelsByValue
+      .get(fn)
+      .forEach(model => model.referencedModels.add(argumentModel));
   });
   modelsByValue.forEach(models => {
     // The root is written first, so an object that is in the root is written

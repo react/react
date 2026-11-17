@@ -43,7 +43,7 @@ function startFlightResponse({
 }) {
   const manifest = {
     moduleMap: null,
-    serverModuleMap: null,
+    serverModuleMap: WebpackMock.webpackServerMap,
     moduleLoading: null,
   };
   const errors = [];

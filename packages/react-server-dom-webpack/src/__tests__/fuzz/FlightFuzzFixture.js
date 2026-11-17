@@ -125,6 +125,39 @@ async function createFixture(graph, {WebpackMock}) {
         break;
     }
   }
+  // Build values that need existing arguments.
+  const buildingValues = new Set();
+  const buildValue = name => {
+    if (Object.prototype.hasOwnProperty.call(values, name)) {
+      return values[name];
+    }
+    if (!Object.prototype.hasOwnProperty.call(nodes, name)) {
+      return getValue(name);
+    }
+    if (buildingValues.has(name)) {
+      throw new Error(
+        name + ' must be constructed before its own dependencies',
+      );
+    }
+    buildingValues.add(name);
+    const node = nodes[name];
+    switch (getNodeType(node)) {
+      case 'bound':
+        values[name] = createServerFunction((...args) => args, {
+          bound: node.bound.map(buildValue),
+          label: name,
+          loaded: node.loaded === true,
+        });
+        break;
+      default:
+        break;
+    }
+    buildingValues.delete(name);
+    return values[name];
+  };
+  for (const name in nodes) {
+    buildValue(name);
+  }
   for (const name in nodes) {
     const node = nodes[name];
     switch (getNodeType(node)) {
@@ -230,6 +263,31 @@ async function createFixture(graph, {WebpackMock}) {
         metadata.reason = reason;
       },
     );
+  }
+
+  function createServerFunction(
+    implementation,
+    {bound = [], label, loaded = false} = {},
+  ) {
+    const ready = loaded ? null : createResolvablePromise();
+    const exported = WebpackMock.serverExports(
+      {fn: implementation},
+      ready === null ? undefined : ready.promise,
+    );
+    const fn = bound.length ? exported.fn.bind(null, ...bound) : exported.fn;
+    const result = implementation(...bound);
+    valueMetadata.set(fn, {type: 'function', bound, args: [], result});
+    if (ready === null) {
+      return fn;
+    }
+    const event = createEvent(
+      'load ' + (label || 'server function'),
+      () => ready.resolve(),
+      {isClient: true},
+    );
+    events.push(event);
+    requiredEvents.set(fn, [event]);
+    return fn;
   }
 
   function createError(message) {

@@ -23,6 +23,8 @@ function describeValue(value) {
       return JSON.stringify(value);
     case 'number':
       return Object.is(value, -0) ? '-0' : String(value);
+    case 'function':
+      return 'function ' + (value.name || '(anonymous)');
     case 'object':
       if (value === null) {
         return 'null';
@@ -108,6 +110,9 @@ function compareValue(fixture, {expectedValue, received, path}) {
   assertKind(isObject(received), 'an object', received);
   if (metadata !== undefined) {
     switch (metadata.type) {
+      case 'function':
+        assertKind(typeof received === 'function', 'a function', received);
+        return [];
       case 'promise':
         assertKind(typeof received.then === 'function', 'a thenable', received);
         return [];

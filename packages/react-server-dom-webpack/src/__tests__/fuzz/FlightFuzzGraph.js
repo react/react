@@ -26,6 +26,7 @@ const nodeTypes = [
   'object',
   'set',
   'map',
+  'bound',
   'promise',
 ];
 
@@ -41,6 +42,7 @@ function getReferencedNodes(node) {
   switch (getNodeType(node)) {
     case 'array':
     case 'set':
+    case 'bound':
       return node[getNodeType(node)];
     case 'object':
       return Object.values(node.object);
@@ -94,6 +96,7 @@ const graphOperations = [
   'map key',
   'promise',
   'rejected promise',
+  'bound function',
   'failing module',
   'after eof',
   'root promise',
@@ -272,6 +275,15 @@ function generateGraph(seed, {without = []} = {}) {
         add({promise: addError(), reject: true});
         break;
       }
+      case 'bound function': {
+        add({
+          bound:
+            pick(3) === 0
+              ? []
+              : [pickFrom(referenceTargets), pickFrom(referenceTargets)],
+        });
+        break;
+      }
       case 'failing module': {
         const modules = names.filter(
           name => 'module' in nodes[name] && nodes[name].fail === undefined,
@@ -319,22 +331,33 @@ function generateGraph(seed, {without = []} = {}) {
 // Generates a large graph that waits for only a few events.
 function generateScaleGraph(seed) {
   const pick = createRandom(seed + '/scale');
-  const shape = 'wide';
-  const size = 2 ** (5 + pick(4));
+  const shape = ['bound', 'wide'][pick(2)];
+  const size = 2 ** (5 + pick(shape === 'bound' ? 7 : 4));
   const nodes = {
     tail: {module: 'loaded'},
     value: {value: 'done'},
   };
-  nodes.shared = {object: {tail: 'tail', value: 'value'}};
-  const items = [];
-  for (let i = 0; i < size; i++) {
-    const name = 'item' + i;
-    nodes[name] =
-      pick(2) === 0 ? {set: ['shared']} : {map: [['value', 'shared']]};
-    items.push(name);
+  let entry;
+  if (shape === 'bound') {
+    let previous = 'tail';
+    for (let i = 0; i < size; i++) {
+      const name = 'bound' + i;
+      nodes[name] = {bound: [previous], loaded: true};
+      previous = name;
+    }
+    entry = previous;
+  } else {
+    nodes.shared = {object: {tail: 'tail', value: 'value'}};
+    const items = [];
+    for (let i = 0; i < size; i++) {
+      const name = 'item' + i;
+      nodes[name] =
+        pick(2) === 0 ? {set: ['shared']} : {map: [['value', 'shared']]};
+      items.push(name);
+    }
+    nodes.items = {array: items};
+    entry = 'items';
   }
-  nodes.items = {array: items};
-  const entry = 'items';
   return {
     shape,
     size,
@@ -395,7 +418,7 @@ function* generateReductionCandidates(graph) {
         }
       }
     }
-    const options = ['async', 'fail', 'reject'];
+    const options = ['async', 'fail', 'reject', 'loaded'];
     for (let j = 0; j < options.length; j++) {
       const key = options[j];
       if (key in node) {
