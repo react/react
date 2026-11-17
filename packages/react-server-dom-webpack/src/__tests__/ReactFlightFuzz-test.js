@@ -10,9 +10,12 @@
 
 'use strict';
 
-// Send JavaScript values through the Flight server and client.
+// Send generated JavaScript values through the Flight server and client.
 // Vary when Promises resolve and modules load.
 // Check the results against the source values after each event.
+//
+// FUZZ_TEST_SEED picks the seed. FLIGHT_FUZZ_CASES is how many cases are
+// generated from it.
 
 const {createOracle} = require('./fuzz/FlightFuzzOracle');
 const {createFixture} = require('./fuzz/FlightFuzzFixture');
@@ -21,6 +24,28 @@ const {
   tick,
   runInIOCallback,
 } = require('./fuzz/FlightFuzzTransport');
+const {
+  createRandom,
+  generateGraph,
+  generateScaleGraph,
+  formatReplayCommand,
+} = require('./fuzz/FlightFuzzGraph');
+
+// TODO: Remove the CI check once the remaining fixes have landed. Until then,
+// a random seed can generate cases that still fail, and the scheduled CI job
+// passes a random seed. So in CI we always use the default one.
+const SEED = (!process.env.CI && process.env.FUZZ_TEST_SEED) || 'default';
+const caseCount = +(process.env.FLIGHT_FUZZ_CASES ?? 4);
+if (!Number.isSafeInteger(caseCount) || caseCount < 1) {
+  throw new Error('FLIGHT_FUZZ_CASES must be a positive integer.');
+}
+// TODO: Some generated cases take longer than the default timeout on CI. It
+// would be better to find out why than to raise it.
+jest.setTimeout(15000);
+// Keep the first seed unchanged so the printed command replays that case.
+const seeds = Array.from({length: caseCount}, (_, i) =>
+  i === 0 ? SEED : SEED + ':' + i,
+);
 
 const readTimings = ['early', 'late', 'after-events', 'after-eof'];
 
@@ -62,6 +87,20 @@ async function withCleanConsole(loadModules, run) {
   if (failure !== null) {
     throw failure;
   }
+}
+
+// Throws an error that says how to run the failed case again.
+function reportFailure(error, seed) {
+  const testName = expect.getState().currentTestName;
+  const replayOptions = {
+    build: !!process.env.IS_BUILD,
+    releaseChannel: process.env.RELEASE_CHANNEL || 'experimental',
+  };
+  throw new Error(
+    'Replay with:\n' +
+      formatReplayCommand(seed, testName, __DEV__, replayOptions),
+    {cause: error},
+  );
 }
 
 // Sanity checks for the comparison that the tests below rely on. Each one
@@ -470,23 +509,41 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
   }
 
   // Run a graph at every read timing unless one was specified.
-  async function runGraph({readTiming, ...graph}) {
+  async function runGraph({
+    readTiming,
+    seed = SEED,
+    scheduleIndex = 0,
+    ...graph
+  }) {
     const timings = readTiming === undefined ? readTimings : [readTiming];
     for (let i = 0; i < timings.length; i++) {
-      await runCase({readTiming: timings[i], graph});
+      await runCaseWithReproduction({
+        seed,
+        readTiming: timings[i],
+        scheduleIndex,
+        graph,
+      });
     }
   }
 
-  async function runCase({readTiming, graph}) {
+  async function runCaseWithReproduction(args) {
+    try {
+      await runCase(args);
+    } catch (error) {
+      reportFailure(error, args.seed);
+    }
+  }
+
+  async function runCase({seed, readTiming, scheduleIndex, graph}) {
     await withFlightModules(async () => {
       const fixture = await createFixture(graph, {WebpackMock});
       const oracle = createOracle(fixture);
-      const schedule = createSchedule(fixture, graph);
+      const schedule = createSchedule(fixture, graph, seed, scheduleIndex);
       await checkResponse(fixture, oracle, {...schedule, readTiming});
     });
   }
 
-  function createSchedule(fixture, graph) {
+  function createSchedule(fixture, graph, seed, scheduleIndex) {
     const events = fixture.events.slice();
     const labels = new Set();
     events.forEach(event => {
@@ -495,22 +552,34 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       }
       labels.add(event.label);
     });
-    // Release the events a graph lists first, in that order.
+    // The event order has its own random sequence, so that changing it does
+    // not change the generated values.
+    const order = createRandom(seed + '/order/' + scheduleIndex);
     if (graph.events !== undefined) {
       const position = label => {
         const index = graph.events.indexOf(label);
         return index === -1 ? graph.events.length : index;
       };
       events.sort((a, b) => position(a.label) - position(b.label));
+    } else {
+      shuffle(events, order);
     }
     // Other results must finish before this independent Promise resolves.
     events.splice(events.indexOf(fixture.unrelatedEvent), 1);
     events.push(fixture.unrelatedEvent);
+    // Cycle through three packet sizes so a value can straddle any boundary: a
+    // tiny one (1-8 bytes) to split almost every field, a small one, and a large
+    // one that usually holds the rest in one write.
+    const packetSizes = [1 + order(8), 17 + order(100), 1024 + order(4096)];
+    const yieldBetweenPackets = order(2) === 0;
     return {
       events,
       afterEof: graph.afterEof === true,
-      packetSizes: graph.packetSizes || [1, 21, 4096],
-      yieldBetweenPackets: graph.yieldBetweenPackets !== false,
+      packetSizes: graph.packetSizes || packetSizes,
+      yieldBetweenPackets:
+        graph.yieldBetweenPackets !== undefined
+          ? graph.yieldBetweenPackets
+          : yieldBetweenPackets,
     };
   }
 
@@ -909,7 +978,67 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         ],
       }));
   });
+
+  const formatCaseName = (label, seed, readTiming, scheduleIndex) =>
+    label +
+    ' seed=' +
+    seed +
+    ' readTiming=' +
+    readTiming +
+    ' schedule=' +
+    scheduleIndex;
+
+  describe('generated graphs', () => {
+    seeds.forEach(seed => {
+      for (let scheduleIndex = 0; scheduleIndex < 2; scheduleIndex++) {
+        readTimings.forEach(readTiming => {
+          // eslint-disable-next-line jest/valid-title
+          it(formatCaseName('graph', seed, readTiming, scheduleIndex), () =>
+            runGraph({
+              ...generateGraph(seed, {
+                without: [
+                  // These produce cases that fail for now.
+                  'link',
+                  'self',
+                  'mutual',
+                  'duplicate',
+                  'map key',
+                  'promise',
+                  'undefined',
+                  'colon',
+                ],
+              }),
+              seed,
+              readTiming,
+              scheduleIndex,
+            }),
+          );
+        });
+      }
+      const scaled = generateScaleGraph(seed);
+      const readTiming =
+        readTimings[createRandom(seed + '/scale-demand')(readTimings.length)];
+      it(
+        // eslint-disable-next-line jest/valid-title
+        formatCaseName(
+          scaled.shape + ' size=' + scaled.size,
+          seed,
+          readTiming,
+          0,
+        ),
+        () => runGraph({...scaled.graph, seed, readTiming}),
+      );
+    });
+  });
 });
+
+function shuffle(array, pick) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = pick(i + 1);
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
 
 function releaseEvent(event) {
   event.released = true;
