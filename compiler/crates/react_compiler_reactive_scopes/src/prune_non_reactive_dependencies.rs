@@ -13,8 +13,8 @@ use rustc_hash::FxHashSet;
 use react_compiler_hir::{
     EvaluationOrder, IdentifierId, InstructionValue, Place, PrunedReactiveScopeBlock,
     ReactiveFunction, ReactiveInstruction, ReactiveScopeBlock, ReactiveValue,
-    environment::Environment, is_primitive_type, is_use_ref_type, object_shape,
-    visitors as hir_visitors,
+    environment::Environment, is_primitive_type, is_use_operator_type, is_use_ref_type,
+    object_shape, visitors as hir_visitors,
 };
 
 use crate::visitors::{self, ReactiveFunctionTransform, ReactiveFunctionVisitor};
@@ -122,7 +122,10 @@ fn is_set_optimistic_type(ty: &react_compiler_hir::Type) -> bool {
 /// TS: `pruneNonReactiveDependencies`
 pub fn prune_non_reactive_dependencies(func: &mut ReactiveFunction, env: &mut Environment) {
     let reactive_ids = collect_reactive_identifiers(func, env);
-    let mut visitor = PruneVisitor { env };
+    let mut visitor = PruneVisitor {
+        env,
+        hook_call_results: FxHashSet::default(),
+    };
     let mut state = reactive_ids;
     visitors::transform_reactive_function(func, &mut visitor, &mut state)
         .expect("PruneNonReactiveDependencies should not fail");
@@ -130,6 +133,15 @@ pub fn prune_non_reactive_dependencies(func: &mut ReactiveFunction, env: &mut En
 
 struct PruneVisitor<'a> {
     env: &'a mut Environment,
+    /// Identifiers produced directly by a hook (or the `use` operator) call.
+    ///
+    /// These are kept as dependencies even when they are non-reactive: hooks are
+    /// not memoizable, so the call must stay outside of the memoized block. If we
+    /// dropped the dependency, then codegen (which inlines the value of an unnamed
+    /// temporary at its use site) would move the call inside the block's `if`,
+    /// making the hook conditional. `useRef` is the only built-in hook whose result
+    /// is non-reactive (a ref has a stable identity), so it is the case we hit.
+    hook_call_results: FxHashSet<IdentifierId>,
 }
 
 impl<'a> ReactiveFunctionTransform for PruneVisitor<'a> {
@@ -204,6 +216,20 @@ impl<'a> ReactiveFunctionTransform for PruneVisitor<'a> {
                     }
                 }
             }
+            ReactiveValue::Instruction(InstructionValue::CallExpression { callee, .. })
+            | ReactiveValue::Instruction(InstructionValue::MethodCall {
+                property: callee, ..
+            }) => {
+                if let Some(lv) = lvalue {
+                    let callee_ty = &self.env.types
+                        [self.env.identifiers[callee.identifier.0 as usize].type_.0 as usize];
+                    if self.env.get_hook_kind_for_id(callee.identifier)?.is_some()
+                        || is_use_operator_type(callee_ty)
+                    {
+                        self.hook_call_results.insert(lv.identifier);
+                    }
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -217,12 +243,15 @@ impl<'a> ReactiveFunctionTransform for PruneVisitor<'a> {
         self.traverse_scope(scope, state)?;
 
         let scope_id = scope.scope;
+        let hook_call_results = &self.hook_call_results;
         let scope_data = &mut self.env.scopes[scope_id.0 as usize];
 
-        // Remove non-reactive dependencies
-        scope_data
-            .dependencies
-            .retain(|dep| state.contains(&dep.identifier));
+        // Remove non-reactive dependencies, but keep the ones that refer to the
+        // result of a hook call: the call itself must not be hoisted into the
+        // memoized block, even if its result can't change.
+        scope_data.dependencies.retain(|dep| {
+            state.contains(&dep.identifier) || hook_call_results.contains(&dep.identifier)
+        });
 
         // If any deps remain, mark all declarations and reassignments as reactive
         if !scope_data.dependencies.is_empty() {
