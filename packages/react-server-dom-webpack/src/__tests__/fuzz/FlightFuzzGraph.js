@@ -36,6 +36,7 @@ const nodeTypes = [
   'props',
   'fragment',
   'promise',
+  'stream',
   'component',
 ];
 
@@ -53,7 +54,10 @@ function getReferencedNodes(node) {
     case 'set':
     case 'iterator':
     case 'bound':
-      return node[getNodeType(node)];
+    case 'stream':
+      return node[getNodeType(node)]
+        .concat('returns' in node ? [node.returns] : [])
+        .concat(typeof node.fail === 'string' ? [node.fail] : []);
     case 'object':
       return Object.values(node.object);
     case 'map':
@@ -138,6 +142,8 @@ const graphOperations = [
   'map key',
   'promise',
   'rejected promise',
+  'stream',
+  'failing stream',
   'iterator',
   'element',
   'props',
@@ -162,12 +168,12 @@ function generateGraph(seed, {without = []} = {}) {
   const nodes = {};
   const referenceTargets = [];
   // Sync iterators must only be serialized once. Don't reuse them in another
-  // container.
+  // container or put them in stream items that may be serialized again.
   const singleUseNodes = [];
   const containers = [];
+  const streamItemNodes = [];
   const counts = {};
-  const add = (node, {target = true} = {}) => {
-    const type = getNodeType(node);
+  const add = (node, {target = true, type = getNodeType(node)} = {}) => {
     counts[type] = (counts[type] || 0) + 1;
     const name = type + (counts[type] - 1);
     names.push(name);
@@ -251,6 +257,15 @@ function generateGraph(seed, {without = []} = {}) {
     } else {
       node[getNodeType(node)].push(item);
     }
+  };
+  const createStreamItem = (
+    item = pickFrom(referenceTargets),
+    target = true,
+  ) => {
+    const name = add({array: [item]}, {type: 'item', target});
+    containers.push(name);
+    streamItemNodes.push(name);
+    return name;
   };
 
   add({value: 'value'});
@@ -342,6 +357,48 @@ function generateGraph(seed, {without = []} = {}) {
       }
       case 'rejected promise': {
         add({promise: addError(), reject: true});
+        break;
+      }
+      case 'stream': {
+        const choice = pick(3);
+        if (choice === 0) {
+          // Reuse one value across both items, which are only in the stream, so a
+          // typed array or a nested stream is re-emitted for each item.
+          const shared = pickFrom(referenceTargets);
+          add({
+            stream: [
+              createStreamItem(shared, false),
+              createStreamItem(shared, false),
+            ],
+          });
+        } else if (choice === 1) {
+          // Reuse a sync iterator across stream items. The items are only in the
+          // stream, so the writer re-reads the iterator for the second item; its
+          // contents must be retained after the first item consumes it.
+          const iterator = add(
+            {
+              iterator: [
+                pickFrom(referenceTargets),
+                pickFrom(referenceTargets),
+              ],
+            },
+            {target: false},
+          );
+          add({
+            stream: [
+              createStreamItem(iterator, false),
+              createStreamItem(iterator, false),
+            ],
+          });
+        } else {
+          add({stream: [createStreamItem(), createStreamItem()]});
+        }
+        break;
+      }
+      case 'failing stream': {
+        // An error can discard queued items before the writer reads them.
+        // Use an empty stream so the expected result is unambiguous.
+        add({stream: [], fail: addError()});
         break;
       }
       case 'iterator': {
@@ -439,7 +496,10 @@ function generateGraph(seed, {without = []} = {}) {
       if (referenceTargets.includes(names[i])) {
         addReference(pickFrom(existing), names[i]);
       } else if (singleUseNodes.includes(names[i])) {
-        addReference(pickFrom(existing), names[i]);
+        addReference(
+          pickFrom(existing.filter(name => !streamItemNodes.includes(name))),
+          names[i],
+        );
       }
     }
   }

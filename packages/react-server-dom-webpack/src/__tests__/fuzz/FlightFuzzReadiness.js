@@ -21,7 +21,7 @@ const {isObject} = require('./FlightFuzzCompare');
 
 // Values whose contents arrive as a separate result. A containing value need
 // not wait for them.
-const separateResultTypes = ['promise', 'element'];
+const separateResultTypes = ['promise', 'element', 'stream'];
 
 function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
@@ -129,6 +129,7 @@ function isElementProduced(metadata) {
 // Splits the source values into the parts that the server writes separately.
 // The code calls such a part a model. The root is one, and so is the value of
 // each Promise that has resolved.
+// Stream items, rendered output and bound arguments are models too.
 // For each model this records the events it depends on, and the other models
 // that may have written one of its objects first. It returns a map from the
 // value at the top of each model to that model.
@@ -246,6 +247,13 @@ function collectModels(fixture) {
     } else if (metadata.type === 'promise') {
       if (metadata.state === 'fulfilled') {
         collectModel([metadata.value]);
+      }
+    } else if (metadata.type === 'stream') {
+      for (let i = 0; i < metadata.items.length; i++) {
+        if (!metadata.events[i].released) {
+          break;
+        }
+        collectModel([metadata.items[i]]);
       }
     }
   });
@@ -417,6 +425,73 @@ function getRenderExpectation(fixture, element, findModels) {
   );
 }
 
+function getStreamExpectations(fixture, metadata) {
+  const items = metadata.items;
+  const isProducedThrough = i =>
+    areAllEventsReleased(metadata.events.slice(0, i + 1));
+  const isClosed = () => areAllEventsReleased(metadata.events);
+  const getStreamErrors = () =>
+    isClosed() && metadata.failure !== undefined
+      ? [fixture.valueMetadata.get(metadata.failure)]
+      : [];
+  const canSettleThrough = i => {
+    for (let j = 0; j <= i; j++) {
+      if (!canSettle(getRequiredEvents(fixture, items[j]))) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const getModelsThrough = (i, findModels) =>
+    items.slice(0, i + 1).flatMap(findModels);
+  return {
+    getItemExpectation(i, findModels) {
+      const errors = getReleasedErrors(getRequiredEvents(fixture, items[i]));
+      const expectation = getResultExpectation(
+        items[i],
+        isProducedThrough(i) && canSettleThrough(i),
+        errors,
+        isProducedThrough(i) ? getModelsThrough(i, findModels) : [],
+      );
+      // A stream error discards queued items. This read may receive an error
+      // from a later item, even while an earlier item's inputs are pending.
+      const laterErrors = items
+        .slice(i + 1)
+        .filter((item, offset) => isProducedThrough(i + 1 + offset))
+        .flatMap(item => getReleasedErrors(getRequiredEvents(fixture, item)))
+        .concat(getStreamErrors());
+      const referenceErrors = items
+        .slice(i)
+        .filter((item, offset) => isProducedThrough(i + offset))
+        .flatMap(item => getModelErrors(findModels(item)));
+      if (laterErrors.length > 0 || referenceErrors.length > 0) {
+        expectation.errors = laterErrors.concat(referenceErrors, errors);
+      }
+      // Reads settle in order. An earlier item may still be waiting for
+      // another model that wrote one of its objects first, and then this
+      // item waits behind it, even if one of its own inputs has failed.
+      if (
+        i > 0 &&
+        !getModelsThrough(i - 1, findModels).every(model =>
+          canSettle(Array.from(model.events)),
+        )
+      ) {
+        expectation.mustSettle = false;
+      }
+      return expectation;
+    },
+    getEndExpectation(findModels) {
+      const errors = getStreamErrors();
+      return getResultExpectation(
+        undefined,
+        isClosed() && (errors.length > 0 || canSettleThrough(items.length - 1)),
+        errors,
+        isClosed() ? getModelsThrough(items.length - 1, findModels) : [],
+      );
+    },
+  };
+}
+
 module.exports = {
   separateResultTypes,
   getRequiredEvents,
@@ -426,4 +501,5 @@ module.exports = {
   getRootExpectation,
   getPromiseExpectation,
   getRenderExpectation,
+  getStreamExpectations,
 };

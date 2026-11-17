@@ -122,7 +122,8 @@ function assertSingleSource(expectedByReceived, expectedValue, received) {
 // Compares the contents of one source value with one received value, without
 // looking into nested values. Returns the nested pairs to compare next. The
 // caller tracks identity and stops at cycles. Values with fixture metadata
-// are only checked for their kind here; their results are observed separately.
+// (Promises, streams, elements, Server Functions) are only checked for their
+// kind here; their results are observed separately.
 function compareValue(fixture, {expectedValue, received, path}) {
   if (!isObject(expectedValue)) {
     assertSame(received, expectedValue);
@@ -143,6 +144,13 @@ function compareValue(fixture, {expectedValue, received, path}) {
         assertKind(
           typeof received.next === 'function',
           'an iterator',
+          received,
+        );
+        return [];
+      case 'stream':
+        assertKind(
+          typeof received.getReader === 'function',
+          'a readable stream',
           received,
         );
         return [];

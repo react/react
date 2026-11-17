@@ -161,7 +161,7 @@ async function createFixture(
         break;
     }
   }
-  // Build values that need existing arguments or props.
+  // Build values that need existing arguments, props, or stream items.
   const buildingValues = new Set();
   const buildValue = name => {
     if (Object.prototype.hasOwnProperty.call(values, name)) {
@@ -210,6 +210,12 @@ async function createFixture(
         values[name] = createClientElement(props, {name, key: name});
         break;
       }
+      case 'stream':
+        values[name] = createStream(node.stream.map(buildValue), {
+          label: name,
+          failure: node.fail === undefined ? undefined : getError(node.fail),
+        });
+        break;
       case 'component': {
         if (node.throw) {
           const error = getError(node.component);
@@ -278,6 +284,11 @@ async function createFixture(
       case 'error':
         if (node.cause !== undefined) {
           values[name].cause = getValue(node.cause);
+        }
+        break;
+      case 'stream':
+        if (node.fail !== undefined && serializedNodes.has(name)) {
+          expectedErrors.set(getError(node.fail), 'failing ' + name);
         }
         break;
       case 'component':
@@ -475,6 +486,41 @@ async function createFixture(
       html: children.map(child => valueMetadata.get(child).html).join(''),
     });
     return element;
+  }
+
+  // Events can be released out of order, but stream items must be enqueued
+  // in order. The last event closes or errors the stream.
+  function createStream(items, {label = 'stream', failure} = {}) {
+    let controller;
+    let produced = 0;
+    const stream = new ReadableStream({start: c => (controller = c)});
+    const streamEvents = [];
+    const pump = () => {
+      while (produced < items.length && streamEvents[produced].released) {
+        controller.enqueue(items[produced++]);
+      }
+      if (produced === items.length && streamEvents[items.length].released) {
+        if (failure === undefined) {
+          controller.close();
+        } else {
+          controller.error(failure);
+        }
+      }
+    };
+    for (let i = 0; i < items.length; i++) {
+      streamEvents.push(createEvent(label + ' item ' + i, pump));
+    }
+    streamEvents.push(
+      createEvent((failure === undefined ? 'close ' : 'fail ') + label, pump),
+    );
+    events.push(...streamEvents);
+    valueMetadata.set(stream, {
+      type: 'stream',
+      items,
+      events: streamEvents,
+      failure,
+    });
+    return stream;
   }
 
   // The writer copies a sync iterator into an array, so its return value is

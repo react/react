@@ -11,7 +11,7 @@
 'use strict';
 
 // Send generated JavaScript values through the Flight server and client.
-// Vary when Promises resolve and modules load.
+// Vary when Promises resolve, modules load, and stream items are produced.
 // Check the results against the source values after each event.
 //
 // FUZZ_TEST_SEED picks the seed. FLIGHT_FUZZ_CASES is how many cases are
@@ -603,7 +603,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
     }).then(stream => new Response(stream).text());
   }
 
-  async function withResponse(model, read) {
+  async function withResponse(model, read, {onError: handleError} = {}) {
     const transport = startFlightResponse({
       ReactServerDOMServer,
       ReactServerDOMClient,
@@ -612,9 +612,12 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       model,
       packetSizes: [1, 21, 4096],
       yieldBetweenPackets: true,
-      onError(error) {
-        throw error;
-      },
+      onError:
+        handleError === undefined
+          ? error => {
+              throw error;
+            }
+          : handleError,
     });
     try {
       await transport.flush();
@@ -745,6 +748,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
     fixture,
     oracle,
     {readTiming, events, packetSizes, yieldBetweenPackets, afterEof = false},
+    model = fixture.model,
   ) {
     const reported = [];
     if (readTiming === 'after-eof') {
@@ -763,7 +767,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       ReactServerDOMClient,
       WebpackMock,
       host,
-      model: fixture.model,
+      model,
       packetSizes,
       yieldBetweenPackets,
       onError(error) {
@@ -850,7 +854,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       await checkProgress('after all events');
       await transport.drain(
         () => oracle.isComplete(),
-        () => 'every outcome and render',
+        () => 'every outcome, render and stream item',
       );
       fixture.expectedErrors.forEach((thrower, error) => {
         if (!reported.includes(error)) {
@@ -1124,6 +1128,19 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'object', other: 'object'},
       }));
 
+    // Edge fails this until a typed array written twice reuses its row.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('a large binary value written in two places', () =>
+      runGraph({
+        nodes: {
+          binary: {special: 'large binary'},
+          first: {array: ['binary']},
+          second: {object: {again: 'binary'}},
+          stream: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
     it('Blob beside a cycle', () =>
       runGraph({
         nodes: {
@@ -1227,6 +1244,198 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       }));
   });
 
+  describe('data streams and shared sequences', () => {
+    it('delivers ordered data stream reads before source close and EOF', () =>
+      withFlightModules(async () => {
+        let controller;
+        const data = new ReadableStream({start: c => (controller = c)});
+        await withResponse(
+          {data, independent: new Promise(() => {})},
+          async ({response, transport}) => {
+            const received = await readRoot(transport);
+            const reader = received.data.getReader();
+            const results = [];
+            reader.read().then(
+              result => results.push(result),
+              error => results.push({error}),
+            );
+            await flushAction(transport, () => {});
+            expect(results).toEqual([]);
+            await flushAction(transport, () => controller.enqueue('first'));
+            await transport.drain(
+              () => results.length === 1,
+              () => 'first literal stream read',
+            );
+            expect(results).toStrictEqual([{done: false, value: 'first'}]);
+            reader.read().then(
+              result => results.push(result),
+              error => results.push({error}),
+            );
+            await flushAction(transport, () =>
+              controller.enqueue({value: 'second'}),
+            );
+            await transport.drain(
+              () => results.length === 2,
+              () => 'second literal stream read',
+            );
+            expect(results).toStrictEqual([
+              {done: false, value: 'first'},
+              {done: false, value: {value: 'second'}},
+            ]);
+            expect(transport.isClosed).toBe(false);
+            expect(transport.isServerDone).toBe(false);
+            reader.read().then(
+              result => results.push(result),
+              error => results.push({error}),
+            );
+            await flushAction(transport, () => controller.close());
+            await transport.drain(
+              () => results.length === 3,
+              () => 'literal stream end',
+            );
+            expect(results[2]).toStrictEqual({done: true, value: undefined});
+            expect(transport.isClosed).toBe(false);
+            expect(transport.isServerDone).toBe(false);
+          },
+        );
+      }));
+
+    it('keeps a Promise fulfilled when its delivered stream later fails', () =>
+      withFlightModules(async () => {
+        let controller;
+        const data = new ReadableStream({start: c => (controller = c)});
+        const error = new Error('source stream failed');
+        const reported = [];
+        await withResponse(
+          {data: Promise.resolve(data), unrelated: new Promise(() => {})},
+          async ({response, transport}) => {
+            const model = await readRoot(transport);
+            const received = await readRoot(transport, model.data);
+            let result;
+            const failedRead = received
+              .getReader()
+              .read()
+              .then(
+                value => (result = {value}),
+                reason => (result = {error: reason}),
+              );
+            await flushAction(transport, () => controller.error(error));
+            await transport.drain(
+              () => result !== undefined,
+              () => 'literal stream failure',
+            );
+            await failedRead;
+            expect(result.error).toEqual(
+              expect.objectContaining({digest: 'stream failure'}),
+            );
+            expect(await model.data).toBe(received);
+            expect(reported).toEqual([error]);
+            expect(transport.isClosed).toBe(false);
+            expect(transport.isServerDone).toBe(false);
+          },
+          {
+            onError(reason) {
+              expect(reason).toBe(error);
+              reported.push(reason);
+              return 'stream failure';
+            },
+          },
+        );
+      }));
+
+    it('stream shared between two collections', () =>
+      runGraph({
+        nodes: {
+          inner: {stream: []},
+          first: {set: ['inner']},
+          second: {set: ['inner']},
+        },
+        roots: {entry: 'first', other: 'second'},
+      }));
+
+    it('stream in repeated stream items', () =>
+      runGraph({
+        nodes: {
+          inner: {stream: []},
+          item: {array: ['inner']},
+          outer: {stream: ['item', 'item']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }));
+
+    it('stream shared between different stream items', () =>
+      runGraph({
+        nodes: {
+          inner: {stream: []},
+          first: {array: ['inner']},
+          second: {object: {again: 'inner'}},
+          outer: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }));
+
+    it('source stream failure while another value is still loading', () =>
+      runGraph({
+        nodes: {
+          error: {error: 'stream failed'},
+          stream: {stream: [], fail: 'error'},
+          ready: {module: 'loaded'},
+          object: {object: {ready: 'ready'}},
+          later: {promise: 'object'},
+        },
+        roots: {entry: 'stream', other: 'later'},
+        events: ['resolve later to object', 'fail stream', 'load ready'],
+      }));
+
+    // @gate FIXME
+    it('an iterator reused in later stream items', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'first'},
+          iterator: {iterator: ['value']},
+          first: {object: {iterator: 'iterator'}},
+          second: {object: {iterator: 'iterator'}},
+          stream: {stream: ['first', 'second']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    // Waits for stream items to get rows of their own; it hangs until then.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('streamed array containing itself', () =>
+      runGraph({
+        nodes: {
+          item: {array: ['item']},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    // DEV leaves an unhandled rejection here until then handles it.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('stream item with a failing module', () =>
+      runGraph({
+        nodes: {
+          broken: {module: 'export-0', fail: 'load'},
+          item: {array: ['broken']},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('two stream items each waiting on a module', () =>
+      runGraph({
+        nodes: {
+          first: {module: 'export-0'},
+          second: {module: 'export-1'},
+          item0: {set: ['first']},
+          item1: {set: ['second']},
+          stream: {stream: ['item0', 'item1']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+  });
+
   describe('bound Server Functions', () => {
     it('calls a delivered Server Function with bound and supplied arguments', () =>
       withFlightModules(async () => {
@@ -1291,6 +1500,18 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
           fn: {bound: ['region']},
           region: {object: {field0: 'fn', field1: 'region', field2: 'ready'}},
           exposure: {promise: 'fn'},
+        },
+        roots: {entry: 'exposure', other: 'exposure'},
+      }));
+
+    it('cycle first exposed through a stream item with a bound function', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['region']},
+          region: {array: ['fn', 'region', 'ready']},
+          item: {array: ['fn']},
+          exposure: {stream: ['item']},
         },
         roots: {entry: 'exposure', other: 'exposure'},
       }));
@@ -1374,6 +1595,16 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
           'resolve second to element',
           'load ready',
         ],
+      }));
+
+    it('a Fragment first received inside a stream item', () =>
+      runGraph({
+        nodes: {
+          fragment: {fragment: []},
+          item: {array: ['fragment']},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
       }));
 
     it('props object referenced again while a prop is loading', () =>
@@ -1523,6 +1754,22 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'error', other: 'error'},
       }));
 
+    it.each(['cause', 'errors'])(
+      'failing stream reachable only through Error.%s',
+      property =>
+        runGraph({
+          nodes: {
+            failure: {error: 'stream failed'},
+            stream: {stream: [], fail: 'failure'},
+            error: {
+              error: 'outer',
+              [property]: property === 'cause' ? 'stream' : ['stream'],
+            },
+          },
+          roots: {entry: 'error', other: 'error'},
+        }),
+    );
+
     it('Error whose cause is still loading', () =>
       runGraph({
         nodes: {
@@ -1593,6 +1840,28 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         },
         roots: {entry: 'cycle', other: 'cycle'},
       }));
+
+    // This hangs in DEV until an Error's cause refers to the row it was
+    // written to.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('a streamed Error that is its own cause', () =>
+      runGraph({
+        nodes: {
+          error: {error: 'self cause', cause: 'error'},
+          stream: {stream: ['error']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('a streamed object containing an Error whose cause is the object', () =>
+      runGraph({
+        nodes: {
+          error: {error: 'item cause', cause: 'item'},
+          item: {object: {error: 'error'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
   });
 
   describe('other graphs', () => {
@@ -1660,6 +1929,40 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         readTiming: 'early',
       }));
 
+    function checkSharedInElementContext(key) {
+      return withFlightModules(async () => {
+        const fixture = await createFixture(
+          {
+            nodes: {
+              a: {value: 'a'},
+              b: {value: 'b'},
+              shared: {stream: ['a', 'b']},
+            },
+            roots: {entry: 'shared', other: 'shared'},
+          },
+          {React, ReactServer, WebpackMock},
+        );
+        const shared = fixture.model.entry;
+        function Body() {
+          return shared;
+        }
+        // Return the stream through an element first, then as an object property.
+        const first = ReactServer.createElement(Body, {key});
+        const oracle = createOracle(fixture, {render});
+        await checkResponse(
+          fixture,
+          oracle,
+          {
+            readTiming: 'early',
+            events: fixture.events,
+            packetSizes: [1, 21, 4096],
+            yieldBetweenPackets: true,
+          },
+          {...fixture.model, entry: first},
+        );
+      });
+    }
+
     // Node fails this in DEV until debug info reuses a value's reference.
     // eslint-disable-next-line jest/no-disabled-tests
     it.skip('a Promise resolves before another value containing it finishes loading', () =>
@@ -1679,6 +1982,14 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
           'load ready',
         ],
       }));
+
+    // @gate FIXME
+    it('a shared stream first returned through element context with key null', () =>
+      checkSharedInElementContext(null));
+
+    // @gate FIXME
+    it('a shared stream first returned through element context with key keyed', () =>
+      checkSharedInElementContext('keyed'));
   });
 
   const formatCaseName = (label, seed, readTiming, scheduleIndex) =>
@@ -1701,6 +2012,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                 without: [
                   // These produce cases that fail for now.
                   'link',
+                  'stream',
                   'iterator',
                   'component',
                   'failing component',

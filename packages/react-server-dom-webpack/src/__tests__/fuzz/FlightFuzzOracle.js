@@ -27,6 +27,7 @@ const {
   getRootExpectation,
   getPromiseExpectation,
   getRenderExpectation,
+  getStreamExpectations,
 } = require('./FlightFuzzReadiness');
 
 function createOracle(
@@ -212,6 +213,9 @@ function observeAsyncValue(state, metadata, pair) {
     case 'element':
       observeElement(state, pair);
       break;
+    case 'stream':
+      observeStream(state, metadata, pair);
+      break;
   }
 }
 
@@ -242,6 +246,55 @@ function observeElement(state, {expectedValue, received, path}) {
       return;
     }
     handleResult(state, check, html);
+  });
+}
+
+function observeStream(state, metadata, {expectedValue, received, path}) {
+  const {items} = metadata;
+  const {getItemExpectation, getEndExpectation} = getStreamExpectations(
+    state.fixture,
+    metadata,
+  );
+  const itemChecks = items.map((item, i) =>
+    registerResultCheck(state, item, path + '.item' + i, findModels =>
+      getItemExpectation(i, findModels),
+    ),
+  );
+  const endCheck = registerResultCheck(
+    state,
+    expectedValue,
+    path + '.end',
+    getEndExpectation,
+  );
+  runAsyncTask(state, async () => {
+    const reader = received.getReader();
+    for (let i = 0; i < items.length; i++) {
+      let item;
+      try {
+        item = await reader.read();
+      } catch (error) {
+        handleResult(state, itemChecks[i], error, true);
+        // No further reads are possible after a stream error.
+        for (let j = i + 1; j < items.length; j++) {
+          itemChecks[j].done = true;
+        }
+        endCheck.done = true;
+        return;
+      }
+      if (item.done) {
+        throw new Error(path + '.item' + i + ': ended early');
+      }
+      handleResult(state, itemChecks[i], item.value);
+    }
+    let last;
+    try {
+      last = await reader.read();
+    } catch (error) {
+      handleResult(state, endCheck, error, true);
+      return;
+    }
+    expect(last.done).toBe(true);
+    handleResult(state, endCheck, last.value);
   });
 }
 
