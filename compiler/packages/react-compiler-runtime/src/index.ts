@@ -400,11 +400,11 @@ export function $structuralCheck(
     } else if (typeof oldValue === 'function') {
       // Bail on functions for now
       return;
-    } else if (isNaN(oldValue) || isNaN(newValue)) {
-      if (isNaN(oldValue) !== isNaN(newValue)) {
+    } else if (Number.isNaN(oldValue) || Number.isNaN(newValue)) {
+      if (Number.isNaN(oldValue) !== Number.isNaN(newValue)) {
         error(
-          `${isNaN(oldValue) ? 'NaN' : 'non-NaN value'}`,
-          `${isNaN(newValue) ? 'NaN' : 'non-NaN value'}`,
+          `${Number.isNaN(oldValue) ? 'NaN' : 'non-NaN value'}`,
+          `${Number.isNaN(newValue) ? 'NaN' : 'non-NaN value'}`,
           path,
           depth,
         );
