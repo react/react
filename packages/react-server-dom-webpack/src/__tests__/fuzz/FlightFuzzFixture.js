@@ -15,7 +15,7 @@ const {
 
 async function createFixture(
   graph,
-  {React, ReactServer, WebpackMock, observeProps},
+  {React, ReactServer, WebpackMock, observeProps, createServerReference},
 ) {
   checkReachability(graph);
   const {nodes} = graph;
@@ -84,6 +84,18 @@ async function createFixture(
         );
         break;
       case 'module': {
+        if (createServerReference !== undefined) {
+          // Replies cannot carry client references. Use a Server Function
+          // whose module loads when the corresponding event is released.
+          values[name] = createServerFunction(() => node.module, {
+            label: name,
+            loadError:
+              node.fail === undefined
+                ? undefined
+                : new Error('module ' + name + ' failed to ' + node.fail),
+          });
+          break;
+        }
         const load = createResolvablePromise();
         const evaluate = node.async === true ? createResolvablePromise() : null;
         const loadError =
@@ -402,23 +414,31 @@ async function createFixture(
 
   function createServerFunction(
     implementation,
-    {bound = [], label, loaded = false} = {},
+    {bound = [], label, loadError, loaded = false} = {},
   ) {
     const ready = loaded ? null : createResolvablePromise();
     const exported = WebpackMock.serverExports(
       {fn: implementation},
       ready === null ? undefined : ready.promise,
     );
-    const fn = bound.length ? exported.fn.bind(null, ...bound) : exported.fn;
+    const reference =
+      createServerReference === undefined
+        ? exported.fn
+        : createServerReference(exported.fn.$$id, () => {
+            throw new Error('The fuzz does not call back into the server.');
+          });
+    const fn = bound.length ? reference.bind(null, ...bound) : reference;
     const result = implementation(...bound);
     valueMetadata.set(fn, {type: 'function', bound, args: [], result});
     if (ready === null) {
       return fn;
     }
     const event = createEvent(
-      'load ' + (label || 'server function'),
-      () => ready.resolve(),
-      {isClient: true},
+      (loadError !== undefined ? 'reject ' : 'load ') +
+        (label || 'server function'),
+      () =>
+        loadError !== undefined ? ready.reject(loadError) : ready.resolve(),
+      {isClient: true, error: loadError},
     );
     events.push(event);
     requiredEvents.set(fn, [event]);
