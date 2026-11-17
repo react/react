@@ -48,6 +48,9 @@ function getValueDependencies(fixture, value) {
   if (value instanceof Map) {
     return Array.from(value.entries()).flat();
   }
+  if (value instanceof FormData) {
+    return Array.from(value.values());
+  }
   return Array.isArray(value) ||
     Object.getPrototypeOf(value) === Object.prototype
     ? Object.values(value)

@@ -29,6 +29,7 @@ async function createFixture(
   const events = [];
   const requiredEvents = new Map();
   const valueMetadata = new Map();
+  const bytes = new Map();
   const expectedErrors = new Map();
 
   const values = {};
@@ -56,8 +57,24 @@ async function createFixture(
       case 'date':
         values[name] = new Date(node.date);
         break;
+      case 'binary':
+        values[name] = new Uint8Array([node.binary, 10, 255]);
+        saveBytes(values[name]);
+        break;
+      case 'text':
+        values[name] = node.text + '🙂'.repeat(400);
+        break;
+      case 'blob':
+        values[name] = new Blob([node.blob], {type: 'text/plain'});
+        break;
       case 'special':
         values[name] = specialValueFactories[node.special]();
+        if (
+          values[name] instanceof ArrayBuffer ||
+          ArrayBuffer.isView(values[name])
+        ) {
+          saveBytes(values[name]);
+        }
         break;
       case 'host':
         values[name] = createHostElement(
@@ -324,6 +341,7 @@ async function createFixture(
     events,
     requiredEvents,
     valueMetadata,
+    bytes,
     expectedErrors,
     unrelatedEvent,
     rootPromise,
@@ -482,6 +500,15 @@ async function createFixture(
       digest: 'digest:' + message,
     });
     return error;
+  }
+
+  function saveBytes(value) {
+    // The writer may detach ArrayBuffers. Keep a copy of their bytes.
+    const view =
+      value instanceof ArrayBuffer
+        ? new Uint8Array(value)
+        : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    bytes.set(value, Array.from(view));
   }
 
   return fixture;

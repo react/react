@@ -19,6 +19,9 @@ const Random = require('random-seed');
 const nodeTypes = [
   'value',
   'date',
+  'binary',
+  'text',
+  'blob',
   'special',
   'host',
   'module',
@@ -98,8 +101,25 @@ const specialValueFactories = {
   infinity: () => -Infinity,
   symbol: () => Symbol.for('flight-fuzz'),
   escaped: () => '$escaped\n🙂',
+  buffer: () => new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer,
+  'typed array': () => new Int16Array([1, -2, 3]),
+  'data view': () => new DataView(new ArrayBuffer(7), 1, 5),
+  'bigint array': () => new BigInt64Array([42n, -1n]),
+  'float array': () => new Float64Array([1.5, -2.25, 0]),
+  'clamped array': () => new Uint8ClampedArray([0, 128, 255]),
   undefined: () => undefined,
   'positive infinity': () => Infinity,
+  // Larger than a packet, to exercise fragmented binary data.
+  'large binary': () => Uint8Array.from({length: 6000}, (_, i) => i % 251),
+  'large blob': () => new Blob(['blob-'.repeat(1200)], {type: 'text/plain'}),
+  'form data': () => {
+    const form = new FormData();
+    form.append('repeated', 'first');
+    form.append('repeated', 'second');
+    // A response sends a File as a Blob, without its name, on purpose.
+    form.append('file', new Blob(['🙂']));
+    return form;
+  },
 };
 
 function createRandom(seed) {
@@ -183,6 +203,9 @@ function generateGraph(seed, {without = []} = {}) {
         case 'special':
           value = specialValueFactories[node.special]();
           break;
+        case 'text':
+          value = node.text + '🙂'.repeat(400);
+          break;
         case 'props':
           if (!propsKeys.has(node.props)) {
             propsKeys.set(node.props, {});
@@ -240,6 +263,9 @@ function generateGraph(seed, {without = []} = {}) {
   add({value: false});
   add({value: null});
   add({date: 1700000000000 + pick(100000)});
+  add({binary: pick(256)});
+  add({text: 'text-' + pick(1000)});
+  add({blob: 'blob-' + pick(1000)});
   const specials = Object.keys(specialValueFactories).filter(
     name => !without.includes(name),
   );

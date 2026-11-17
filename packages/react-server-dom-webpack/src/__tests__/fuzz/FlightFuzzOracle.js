@@ -14,6 +14,7 @@
 const {
   isObject,
   assertSingleSource,
+  assertBlobContents,
   compareValue,
   throwAtPath,
 } = require('./FlightFuzzCompare');
@@ -101,8 +102,13 @@ function createOracle(
           observeServerFunction(state, received, call.metadata),
         );
         const visited = new Set();
-        state.receivedValues.forEach(root =>
+        const blobs = state.receivedValues.flatMap(root =>
           traverse(state, root, false, visited),
+        );
+        await Promise.all(
+          blobs.map(({expectedValue, received}) =>
+            assertBlobContents(expectedValue, received),
+          ),
         );
         throwIfFailed(state);
       } finally {
@@ -121,8 +127,10 @@ function observeValue(state, expectedValue, received, path) {
 // With `observe`, this also subscribes to each async value it finds. Without
 // it, finding an async value it has not seen means a delivered value was
 // replaced.
+// Returns the Blobs whose contents the caller reads.
 function traverse(state, root, observe, visited = new Set()) {
   const {fixture} = state;
+  const blobs = [];
   const todo = [root];
   while (todo.length > 0) {
     const pair = todo.pop();
@@ -140,7 +148,15 @@ function traverse(state, root, observe, visited = new Set()) {
       visited.add(received);
       const metadata = fixture.valueMetadata.get(expectedValue);
       if (metadata === undefined) {
-        // There is nothing to subscribe to.
+        if (expectedValue instanceof Blob) {
+          if (observe) {
+            runAsyncTask(state, () =>
+              assertBlobContents(expectedValue, received),
+            );
+          } else {
+            blobs.push(pair);
+          }
+        }
       } else if (metadata.type === 'function') {
         if (observe) {
           observeServerFunction(state, received, metadata);
@@ -185,6 +201,7 @@ function traverse(state, root, observe, visited = new Set()) {
       throwAtPath(error, path);
     }
   }
+  return blobs;
 }
 
 function observeAsyncValue(state, metadata, pair) {

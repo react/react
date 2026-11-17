@@ -59,6 +59,13 @@ const seeds = Array.from({length: caseCount}, (_, i) =>
 );
 
 const readTimings = ['early', 'late', 'after-events', 'after-eof'];
+const NativeAbortController = global.AbortController;
+class FuzzAbortController extends NativeAbortController {
+  constructor() {
+    super();
+    require('node:events').setMaxListeners(Infinity, this.signal);
+  }
+}
 
 // Restore console methods between cases to avoid retaining old server modules.
 const consoleMethods = Object.fromEntries(
@@ -80,14 +87,32 @@ async function withCleanConsole(loadModules, run) {
   } finally {
     try {
       if (loaded) {
+        const {assertConsoleErrorDev} = require('internal-test-utils');
         const {
           assertConsoleLogsCleared,
         } = require('internal-test-utils/consoleMock');
-        try {
-          assertConsoleLogsCleared();
-        } catch (error) {
-          if (failure === null) {
-            failure = error;
+        const checks = [
+          // Allow the warning on runtimes without ArrayBuffer.prototype.detached.
+          () =>
+            assertConsoleErrorDev(
+              global.__loggedErrors
+                .map(entry => entry[0])
+                .filter(
+                  message =>
+                    typeof message === 'string' &&
+                    message.includes('ArrayBuffer.prototype.detached'),
+                ),
+              {withoutStack: true},
+            ),
+          assertConsoleLogsCleared,
+        ];
+        for (let i = 0; i < checks.length; i++) {
+          try {
+            checks[i]();
+          } catch (error) {
+            if (failure === null) {
+              failure = error;
+            }
           }
         }
       }
@@ -208,6 +233,14 @@ describe('ReactFlightFuzz oracle', () => {
     const source = new Error('expected');
     expectMismatch(source, new Error('changed'), {
       valueMetadata: new Map([[source, {type: 'error'}]]),
+    });
+  });
+
+  it('rejects different bytes', () => {
+    const source = new Uint8Array([1, 2]);
+    expectMismatch(source, new Uint8Array([1, 3]), {
+      valueMetadata: new Map(),
+      bytes: new Map([[source, [1, 2]]]),
     });
   });
 
@@ -408,6 +441,15 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       const received = await roundTrip({zero: -0, notANumber: NaN});
       expect(received.zero).toBe(-0);
       expect(received.notANumber).toBeNaN();
+    }));
+
+  it('keeps the bytes of a typed array view', () =>
+    withFlightModules(async () => {
+      const received = await roundTrip(
+        new Uint8Array([0, 1, 2, 3]).subarray(1, 3),
+      );
+      expect(received).toBeInstanceOf(Uint8Array);
+      expect(Array.from(received)).toEqual([1, 2]);
     }));
 
   it('keeps distinct objects apart when one is shared', () =>
@@ -835,7 +877,13 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
   }
 
   async function withFlightModules(run) {
-    await withCleanConsole(loadModules, run);
+    const previousAbortController = global.AbortController;
+    global.AbortController = FuzzAbortController;
+    try {
+      await withCleanConsole(loadModules, run);
+    } finally {
+      global.AbortController = previousAbortController;
+    }
   }
 
   describe('plain graphs', () => {
@@ -1020,6 +1068,52 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
   });
 
   describe('native graph values', () => {
+    it('native contents share a cycle while a client module is loading', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          bigint: {special: 'bigint'},
+          nan: {special: 'nan'},
+          negativeZero: {special: 'negative zero'},
+          infinity: {special: 'infinity'},
+          symbol: {special: 'symbol'},
+          escaped: {special: 'escaped'},
+          text: {text: 'text'},
+          date: {date: 1700000000000},
+          buffer: {special: 'buffer'},
+          binary: {binary: 3},
+          typed: {special: 'typed array'},
+          view: {special: 'data view'},
+          bigints: {special: 'bigint array'},
+          blob: {blob: 'blob'},
+          form: {special: 'form data'},
+          atoms: {
+            array: [
+              'bigint',
+              'nan',
+              'negativeZero',
+              'infinity',
+              'symbol',
+              'escaped',
+              'text',
+              'date',
+              'buffer',
+              'binary',
+              'typed',
+              'view',
+              'bigints',
+              'blob',
+              'form',
+              'ready',
+              'cycle',
+            ],
+          },
+          cycle: {object: {values: 'atoms', self: 'cycle'}},
+          later: {promise: 'atoms'},
+        },
+        roots: {entry: 'cycle', other: 'later'},
+      }));
+
     // @gate FIXME
     it('keeps undefined object properties', () =>
       runGraph({
@@ -1028,6 +1122,16 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
           object: {object: {present: 'missing'}},
         },
         roots: {entry: 'object', other: 'object'},
+      }));
+
+    it('Blob beside a cycle', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          blob: {blob: 'blob'},
+          array: {array: ['blob', 'ready', 'array']},
+        },
+        roots: {entry: 'array', other: 'blob'},
       }));
   });
 
@@ -1438,6 +1542,57 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         },
         roots: {entry: 'error', other: 'cell'},
       }));
+
+    it('built-in values with a cycle and a loading module', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          nothing: {value: null},
+          flag: {value: true},
+          bigint: {special: 'bigint'},
+          nan: {special: 'nan'},
+          negativeZero: {special: 'negative zero'},
+          infinity: {special: 'infinity'},
+          symbol: {special: 'symbol'},
+          escaped: {special: 'escaped'},
+          text: {text: 'text'},
+          date: {date: 1700000000000},
+          buffer: {special: 'buffer'},
+          binary: {binary: 3},
+          typed: {special: 'typed array'},
+          view: {special: 'data view'},
+          bigints: {special: 'bigint array'},
+          blob: {blob: 'blob'},
+          form: {special: 'form data'},
+          host: {host: 'atom'},
+          atoms: {
+            array: [
+              'nothing',
+              'flag',
+              'bigint',
+              'nan',
+              'negativeZero',
+              'infinity',
+              'symbol',
+              'escaped',
+              'text',
+              'date',
+              'buffer',
+              'binary',
+              'typed',
+              'view',
+              'bigints',
+              'blob',
+              'form',
+              'host',
+              'ready',
+              'cycle',
+            ],
+          },
+          cycle: {object: {field0: 'atoms', field1: 'cycle'}},
+        },
+        roots: {entry: 'cycle', other: 'cycle'},
+      }));
   });
 
   describe('other graphs', () => {
@@ -1476,6 +1631,33 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         },
         roots: {entry: 'region', other: 'region'},
         afterEof: true,
+      }));
+
+    it('an element that fails before its props have arrived', () =>
+      runGraph({
+        nodes: {
+          text0: {value: null},
+          blob0: {blob: 'blob-14'},
+          module1: {module: 'export-1', fail: 'load'},
+          array0: {array: ['element0', 'blob0']},
+          set0: {set: ['promise0']},
+          map0: {map: [['text0', 'item0']]},
+          item0: {array: ['module1', 'set0']},
+          element0: {element: 'map0'},
+          promise0: {promise: 'element0'},
+        },
+        roots: {entry: 'array0', other: 'array0'},
+        rootPromise: true,
+        events: [
+          'resolve promise0 to element0',
+          'reject module1',
+          'resolve the root Promise',
+          'load element0',
+          'resolve an unrelated Promise',
+        ],
+        packetSizes: [5, 29, 3263],
+        yieldBetweenPackets: true,
+        readTiming: 'early',
       }));
 
     // Node fails this in DEV until debug info reuses a value's reference.

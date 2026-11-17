@@ -160,7 +160,7 @@ function startFlightResponse({
       if (predicate()) {
         return;
       }
-      // Edge streams may need a timer or I/O callback.
+      // Blob reads and Edge streams may need a timer or I/O callback.
       await new Promise(resolve => setTimeout(resolve, 1));
     }
     const error = new Error('No progress: ' + describe());
