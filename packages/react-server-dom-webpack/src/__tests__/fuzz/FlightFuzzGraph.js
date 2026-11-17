@@ -27,6 +27,7 @@ const nodeTypes = [
   'object',
   'set',
   'map',
+  'iterator',
   'bound',
   'element',
   'props',
@@ -47,6 +48,7 @@ function getReferencedNodes(node) {
   switch (getNodeType(node)) {
     case 'array':
     case 'set':
+    case 'iterator':
     case 'bound':
       return node[getNodeType(node)];
     case 'object':
@@ -116,6 +118,7 @@ const graphOperations = [
   'map key',
   'promise',
   'rejected promise',
+  'iterator',
   'element',
   'props',
   'component',
@@ -138,6 +141,9 @@ function generateGraph(seed, {without = []} = {}) {
   const names = [];
   const nodes = {};
   const referenceTargets = [];
+  // Sync iterators must only be serialized once. Don't reuse them in another
+  // container.
+  const singleUseNodes = [];
   const containers = [];
   const counts = {};
   const add = (node, {target = true} = {}) => {
@@ -312,6 +318,20 @@ function generateGraph(seed, {without = []} = {}) {
         add({promise: addError(), reject: true});
         break;
       }
+      case 'iterator': {
+        singleUseNodes.push(
+          add(
+            {
+              iterator: [
+                pickFrom(referenceTargets),
+                pickFrom(referenceTargets),
+              ],
+            },
+            {target: false},
+          ),
+        );
+        break;
+      }
       case 'element': {
         add({
           element:
@@ -391,6 +411,8 @@ function generateGraph(seed, {without = []} = {}) {
     // Connect new nodes to existing containers so they can be reached from a root.
     for (let i = before; i < names.length; i++) {
       if (referenceTargets.includes(names[i])) {
+        addReference(pickFrom(existing), names[i]);
+      } else if (singleUseNodes.includes(names[i])) {
         addReference(pickFrom(existing), names[i]);
       }
     }

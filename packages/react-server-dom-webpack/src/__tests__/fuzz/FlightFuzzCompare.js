@@ -113,6 +113,13 @@ function compareValue(fixture, {expectedValue, received, path}) {
       case 'function':
         assertKind(typeof received === 'function', 'a function', received);
         return [];
+      case 'iterator':
+        assertKind(
+          typeof received.next === 'function',
+          'an iterator',
+          received,
+        );
+        return [];
       case 'promise':
         assertKind(typeof received.then === 'function', 'a thenable', received);
         return [];

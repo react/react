@@ -303,6 +303,14 @@ describe('ReactFlightFuzz oracle', () => {
     await tick();
     expect(() => oracle.getMissingResults()).toThrow('unexpected rejection');
   });
+
+  it('rejects an iterator that never completes', () => {
+    const source = ['item'].values();
+    const received = {next: () => ({done: false, value: 'item'})};
+    expectMismatch(source, received, {
+      valueMetadata: new Map([[source, {type: 'iterator', items: ['item']}]]),
+    });
+  });
 });
 
 describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
@@ -1023,6 +1031,98 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       }));
   });
 
+  describe('synchronous iterator graphs', () => {
+    it('keeps the order of a synchronous iterator', () =>
+      withFlightModules(async () => {
+        const received = await roundTrip(['first', {value: 'second'}].values());
+        expect(received.next()).toStrictEqual({done: false, value: 'first'});
+        expect(received.next()).toStrictEqual({
+          done: false,
+          value: {value: 'second'},
+        });
+        expect(received.next()).toStrictEqual({done: true, value: undefined});
+      }));
+
+    it('iterator over values still loading', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          shared: {object: {field0: 'ready'}},
+          iterator: {iterator: ['shared', 'ready']},
+          object: {object: {field0: 'shared', field1: 'iterator'}},
+        },
+        roots: {entry: 'object', other: 'object'},
+      }));
+
+    // Node fails this in DEV until debug info stops consuming iterators.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('iterator resolved by a Promise', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          shared: {object: {field0: 'ready'}},
+          iterator: {iterator: ['shared', 'ready']},
+          later: {promise: 'iterator'},
+        },
+        roots: {entry: 'later', other: 'shared'},
+      }));
+
+    it('a synchronous iterator that yields itself', () =>
+      withFlightModules(async () => {
+        let next = 0;
+        const iterator = {
+          [Symbol.iterator]() {
+            return this;
+          },
+          next() {
+            return next++ === 0
+              ? {done: false, value: iterator}
+              : {done: true, value: undefined};
+          },
+        };
+        const model = iterator;
+        const transport = startFlightResponse({
+          ReactServerDOMServer,
+          ReactServerDOMClient,
+          WebpackMock,
+          host,
+          model,
+          packetSizes: [1, 21, 4096],
+          yieldBetweenPackets: true,
+          onError(error) {
+            throw error;
+          },
+        });
+        let result;
+        let failure;
+        transport.root.then(
+          value => (result = value),
+          error => (failure = error),
+        );
+        try {
+          await transport.finish();
+          await transport.drain(
+            () => result !== undefined || failure !== undefined,
+            () => 'the self-yielding iterator',
+          );
+          if (failure !== undefined) {
+            throw failure;
+          }
+          expect(result[Symbol.iterator]()).toBe(result);
+          expect(result.next()).toEqual({
+            done: false,
+            value: result,
+          });
+          expect(result.next()).toEqual({
+            done: true,
+            value: undefined,
+          });
+        } finally {
+          await transport.dispose();
+        }
+      }));
+  });
+
   describe('bound Server Functions', () => {
     it('calls a delivered Server Function with bound and supplied arguments', () =>
       withFlightModules(async () => {
@@ -1205,6 +1305,28 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
           element: {element: 'value'},
         },
         roots: {entry: 'element', other: 'data'},
+      }));
+
+    it('a shared element stays stable when a cyclic model finishes loading', () =>
+      runGraph({
+        nodes: {
+          value: {value: null},
+          ready: {module: 'loaded'},
+          shared: {array: []},
+          data: {object: {shared: 'shared'}},
+          entry: {array: ['ready', 'data']},
+          nested: {array: ['shared']},
+          map: {map: [['value', 'nested']]},
+          element: {element: ['value', 'map']},
+          holder: {object: {first: 'element', second: 'entry'}},
+          iterator: {iterator: ['holder']},
+          copy: {array: ['element']},
+          set: {set: ['iterator', 'copy']},
+        },
+        roots: {entry: 'entry', other: 'set'},
+        events: ['load element', 'load ready'],
+        packetSizes: [4, 106, 2367],
+        yieldBetweenPackets: false,
       }));
   });
 
@@ -1397,6 +1519,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                 without: [
                   // These produce cases that fail for now.
                   'link',
+                  'iterator',
                   'component',
                   'failing component',
                   'error',

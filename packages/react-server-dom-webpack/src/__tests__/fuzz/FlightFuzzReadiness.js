@@ -36,6 +36,8 @@ function getValueDependencies(fixture, value) {
           : [];
       case 'function':
         return metadata.bound;
+      case 'iterator':
+        return metadata.items;
       default:
         return [];
     }
@@ -77,7 +79,12 @@ function getRequiredEvents(fixture, value) {
 }
 
 function isOutlined(fixture, value) {
-  return value instanceof Set || value instanceof Map;
+  const metadata = fixture.valueMetadata.get(value);
+  return (
+    value instanceof Set ||
+    value instanceof Map ||
+    (metadata !== undefined && metadata.type === 'iterator')
+  );
 }
 
 function getReleasedErrors(events) {
@@ -197,9 +204,10 @@ function collectModels(fixture) {
         continue;
       }
       if (isOutlined(fixture, value)) {
-        // The entries of a Set or a Map are written as a row of their own.
-        // The model that holds the value waits for that row, but a failure
-        // next to the value does not settle it.
+        // The entries of a Set or a Map, and the items of an iterator, are
+        // written as a row of their own. The model that holds the value
+        // waits for that row, but a failure next to the value does not
+        // settle it.
         separateValues.add(value);
         continue;
       }
@@ -243,8 +251,8 @@ function collectModels(fixture) {
       .get(fn)
       .forEach(model => model.referencedModels.add(argumentModel));
   });
-  // The row of a Set or a Map is written while a model that holds the value
-  // is written. Any of them may have been the one.
+  // The row of a Set, a Map or an iterator is written while a model that
+  // holds the value is written. Any of them may have been the one.
   const holders = new Map();
   outlinedModels.forEach((outlinedModel, value) => {
     holders.set(outlinedModel, modelsByValue.get(value));

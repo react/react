@@ -39,6 +39,7 @@ function createOracle(
     receivedValues: [],
     observedAsyncValues: new WeakSet(),
     thenableResults: new WeakMap(),
+    iteratorItems: new WeakMap(),
     functionCalls: new Map(),
     resultChecks: [],
     failures: [],
@@ -91,8 +92,8 @@ function createOracle(
       );
     },
     // Compare every received value again to catch values that changed after
-    // delivery. Server Functions are called again, and async values must still
-    // be the ones observed.
+    // delivery. Server Functions are called again, and iterators and async
+    // values must still be the ones observed.
     async checkForMutations() {
       state.pendingTasks++;
       try {
@@ -153,6 +154,21 @@ function traverse(state, root, observe, visited = new Set()) {
           received: call.result,
           path: path + '()',
         });
+      } else if (metadata.type === 'iterator') {
+        if (observe && !state.iteratorItems.has(received)) {
+          observeIterator(state, metadata, received);
+        }
+        const items = state.iteratorItems.get(received);
+        if (items === undefined) {
+          throw new Error('A received iterator was replaced');
+        }
+        items.forEach((item, i) =>
+          children.push({
+            expectedValue: metadata.items[i],
+            received: item,
+            path: path + '.item' + i,
+          }),
+        );
       } else if (separateResultTypes.includes(metadata.type)) {
         if (!state.observedAsyncValues.has(received)) {
           if (!observe) {
@@ -230,6 +246,19 @@ function observeServerFunction(state, received, metadata) {
     bound = result.slice(0, metadata.bound.length);
   }
   state.functionCalls.set(received, {metadata, result, bound});
+}
+
+function observeIterator(state, metadata, received) {
+  const items = [];
+  for (let i = 0; i < metadata.items.length; i++) {
+    const result = received.next();
+    expect(result.done).toBe(false);
+    items.push(result.value);
+  }
+  const last = received.next();
+  expect(last.done).toBe(true);
+  expect(last.value).toBe(undefined);
+  state.iteratorItems.set(received, items);
 }
 
 function registerResultCheck(state, expectedValue, path, getExpectation) {

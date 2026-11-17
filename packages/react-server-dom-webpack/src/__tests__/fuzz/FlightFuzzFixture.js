@@ -161,6 +161,9 @@ async function createFixture(
     buildingValues.add(name);
     const node = nodes[name];
     switch (getNodeType(node)) {
+      case 'iterator':
+        values[name] = createIterator(node.iterator.map(buildValue));
+        break;
       case 'error':
         values[name] = createAggregateError(
           node.error,
@@ -454,6 +457,14 @@ async function createFixture(
       html: children.map(child => valueMetadata.get(child).html).join(''),
     });
     return element;
+  }
+
+  // The writer copies a sync iterator into an array, so its return value is
+  // not transmitted.
+  function createIterator(items) {
+    const iterator = items[Symbol.iterator]();
+    valueMetadata.set(iterator, {type: 'iterator', items});
+    return iterator;
   }
 
   function createError(message) {
