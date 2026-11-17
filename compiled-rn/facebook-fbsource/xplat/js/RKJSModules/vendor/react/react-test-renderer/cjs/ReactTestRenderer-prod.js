@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<04ed85804e09e40c98fefebe247d71e1>>
+ * @generated SignedSource<<75fdcfcb6995634149999e370bc581e0>>
  */
 
 "use strict";
@@ -3838,12 +3838,15 @@ function updateDeferredValueImpl(
   value,
   initialValue
 ) {
-  if (prevIsInitial && void 0 !== initialValue) {
+  if (prevIsInitial) {
     if (objectIs(value, prevValue))
       return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-    hook = mountDeferredValueImpl(hook, value, initialValue);
-    objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-    return hook;
+    if (void 0 !== initialValue)
+      return (
+        (hook = mountDeferredValueImpl(hook, value, initialValue)),
+        objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+        hook
+      );
   }
   if (objectIs(value, prevValue)) return value;
   if (null !== currentTreeHiddenStackCursor.current)
@@ -11133,10 +11136,10 @@ function wrapFiber(fiber) {
 }
 var internals$jscomp$inline_1574 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-976e87ce-20261116",
+  version: "19.3.0-native-fb-1cd5eb8e-20261116",
   rendererPackageName: "react-test-renderer",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-976e87ce-20261116"
+  reconcilerVersion: "19.3.0-native-fb-1cd5eb8e-20261116"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1575 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11272,4 +11275,4 @@ exports.unstable_batchedUpdates = function (fn, a) {
         flushSyncWorkAcrossRoots_impl(0, !0));
   }
 };
-exports.version = "19.3.0-native-fb-976e87ce-20261116";
+exports.version = "19.3.0-native-fb-1cd5eb8e-20261116";

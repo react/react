@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<0eacfc81f4933f7652951c146be27d75>>
+ * @generated SignedSource<<f4b7f7c408c502ab0f0ce82293e5210b>>
  */
 
 /*
@@ -9398,12 +9398,15 @@ __DEV__ &&
       value,
       initialValue
     ) {
-      if (prevIsInitial && void 0 !== initialValue) {
+      if (prevIsInitial) {
         if (objectIs(value, prevValue))
           return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-        hook = mountDeferredValueImpl(hook, value, initialValue);
-        objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-        return hook;
+        if (void 0 !== initialValue)
+          return (
+            (hook = mountDeferredValueImpl(hook, value, initialValue)),
+            objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+            hook
+          );
       }
       if (objectIs(value, prevValue)) return value;
       if (null !== currentTreeHiddenStackCursor.current)
@@ -32481,11 +32484,11 @@ __DEV__ &&
     };
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-native-fb-976e87ce-20261116" !== isomorphicReactPackageVersion)
+      if ("19.3.0-native-fb-1cd5eb8e-20261116" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-native-fb-976e87ce-20261116\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-native-fb-1cd5eb8e-20261116\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -32522,10 +32525,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-native-fb-976e87ce-20261116",
+          version: "19.3.0-native-fb-1cd5eb8e-20261116",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-native-fb-976e87ce-20261116"
+          reconcilerVersion: "19.3.0-native-fb-1cd5eb8e-20261116"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -32675,5 +32678,5 @@ __DEV__ &&
       listenToAllSupportedEvents(container);
       return new ReactDOMHydrationRoot(initialChildren);
     };
-    exports.version = "19.3.0-native-fb-976e87ce-20261116";
+    exports.version = "19.3.0-native-fb-1cd5eb8e-20261116";
   })();

@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<8f03039e9f7ada1392814dddd871fd18>>
+ * @generated SignedSource<<3449fa922ccc0b02b4e9117190d5e3b8>>
  */
 
 /*
@@ -6141,12 +6141,15 @@ function updateDeferredValueImpl(
   value,
   initialValue
 ) {
-  if (prevIsInitial && void 0 !== initialValue) {
+  if (prevIsInitial) {
     if (objectIs(value, prevValue))
       return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-    hook = mountDeferredValueImpl(hook, value, initialValue);
-    objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-    return hook;
+    if (void 0 !== initialValue)
+      return (
+        (hook = mountDeferredValueImpl(hook, value, initialValue)),
+        objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+        hook
+      );
   }
   if (objectIs(value, prevValue)) return value;
   if (null !== currentTreeHiddenStackCursor.current)
@@ -21695,14 +21698,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2494 = React.version;
 if (
-  "19.3.0-native-fb-976e87ce-20261116" !==
+  "19.3.0-native-fb-1cd5eb8e-20261116" !==
   isomorphicReactPackageVersion$jscomp$inline_2494
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2494,
-      "19.3.0-native-fb-976e87ce-20261116"
+      "19.3.0-native-fb-1cd5eb8e-20261116"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -21724,10 +21727,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2501 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-976e87ce-20261116",
+  version: "19.3.0-native-fb-1cd5eb8e-20261116",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-976e87ce-20261116",
+  reconcilerVersion: "19.3.0-native-fb-1cd5eb8e-20261116",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$353 = 0;
@@ -22015,7 +22018,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-976e87ce-20261116";
+exports.version = "19.3.0-native-fb-1cd5eb8e-20261116";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

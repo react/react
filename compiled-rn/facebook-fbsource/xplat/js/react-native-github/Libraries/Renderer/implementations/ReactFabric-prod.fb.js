@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<b07923edfb56b6b121a5116c6e5a685f>>
+ * @generated SignedSource<<443558d531481bba525a51953ceba91b>>
  */
 
 "use strict";
@@ -4199,12 +4199,15 @@ function updateDeferredValueImpl(
   value,
   initialValue
 ) {
-  if (prevIsInitial && void 0 !== initialValue) {
+  if (prevIsInitial) {
     if (objectIs(value, prevValue))
       return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-    hook = mountDeferredValueImpl(hook, value, initialValue);
-    objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-    return hook;
+    if (void 0 !== initialValue)
+      return (
+        (hook = mountDeferredValueImpl(hook, value, initialValue)),
+        objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+        hook
+      );
   }
   if (objectIs(value, prevValue)) return value;
   if (null !== currentTreeHiddenStackCursor.current)
@@ -11433,10 +11436,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1226 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-976e87ce-20261116",
+    version: "19.3.0-native-fb-1cd5eb8e-20261116",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-976e87ce-20261116"
+    reconcilerVersion: "19.3.0-native-fb-1cd5eb8e-20261116"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1226.rendererConfig = extraDevToolsConfig);

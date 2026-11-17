@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<45f34dcac5b19af443d8fddd4e36fdcd>>
+ * @generated SignedSource<<82f0500369c839138cfe825f62fb2c4e>>
  */
 
 "use strict";
@@ -5638,12 +5638,15 @@ __DEV__ &&
       value,
       initialValue
     ) {
-      if (prevIsInitial && void 0 !== initialValue) {
+      if (prevIsInitial) {
         if (objectIs(value, prevValue))
           return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-        hook = mountDeferredValueImpl(hook, value, initialValue);
-        objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-        return hook;
+        if (void 0 !== initialValue)
+          return (
+            (hook = mountDeferredValueImpl(hook, value, initialValue)),
+            objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+            hook
+          );
       }
       if (objectIs(value, prevValue)) return value;
       if (null !== currentTreeHiddenStackCursor.current)
@@ -17184,10 +17187,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-976e87ce-20261116",
+        version: "19.3.0-native-fb-1cd5eb8e-20261116",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-976e87ce-20261116"
+        reconcilerVersion: "19.3.0-native-fb-1cd5eb8e-20261116"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -17333,5 +17336,5 @@ __DEV__ &&
             flushSyncWorkAcrossRoots_impl(0, !0));
       }
     };
-    exports.version = "19.3.0-native-fb-976e87ce-20261116";
+    exports.version = "19.3.0-native-fb-1cd5eb8e-20261116";
   })();

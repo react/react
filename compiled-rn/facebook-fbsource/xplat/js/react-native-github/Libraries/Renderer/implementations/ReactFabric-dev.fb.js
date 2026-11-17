@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<6dec99142ea1f8a5c729b679ed5fbdc0>>
+ * @generated SignedSource<<e03a93006e169d74f7d60cc34425be89>>
  */
 
 "use strict";
@@ -6897,12 +6897,15 @@ __DEV__ &&
       value,
       initialValue
     ) {
-      if (prevIsInitial && void 0 !== initialValue) {
+      if (prevIsInitial) {
         if (objectIs(value, prevValue))
           return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-        hook = mountDeferredValueImpl(hook, value, initialValue);
-        objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-        return hook;
+        if (void 0 !== initialValue)
+          return (
+            (hook = mountDeferredValueImpl(hook, value, initialValue)),
+            objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+            hook
+          );
       }
       if (objectIs(value, prevValue)) return value;
       if (null !== currentTreeHiddenStackCursor.current)
@@ -20125,10 +20128,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-976e87ce-20261116",
+        version: "19.3.0-native-fb-1cd5eb8e-20261116",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-976e87ce-20261116"
+        reconcilerVersion: "19.3.0-native-fb-1cd5eb8e-20261116"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

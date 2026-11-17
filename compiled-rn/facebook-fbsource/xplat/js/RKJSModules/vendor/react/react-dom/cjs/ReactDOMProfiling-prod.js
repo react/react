@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<40d1fbe7cda5c65874b58a7a9756ad2e>>
+ * @generated SignedSource<<bd4b6e3b18462e697d273e4966997245>>
  */
 
 /*
@@ -5653,12 +5653,15 @@ function updateDeferredValueImpl(
   value,
   initialValue
 ) {
-  if (prevIsInitial && void 0 !== initialValue) {
+  if (prevIsInitial) {
     if (objectIs(value, prevValue))
       return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-    hook = mountDeferredValueImpl(hook, value, initialValue);
-    objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-    return hook;
+    if (void 0 !== initialValue)
+      return (
+        (hook = mountDeferredValueImpl(hook, value, initialValue)),
+        objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+        hook
+      );
   }
   if (objectIs(value, prevValue)) return value;
   if (null !== currentTreeHiddenStackCursor.current)
@@ -19626,14 +19629,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2147 = React.version;
 if (
-  "19.3.0-native-fb-976e87ce-20261116" !==
+  "19.3.0-native-fb-1cd5eb8e-20261116" !==
   isomorphicReactPackageVersion$jscomp$inline_2147
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2147,
-      "19.3.0-native-fb-976e87ce-20261116"
+      "19.3.0-native-fb-1cd5eb8e-20261116"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -19655,10 +19658,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2724 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-976e87ce-20261116",
+  version: "19.3.0-native-fb-1cd5eb8e-20261116",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-976e87ce-20261116"
+  reconcilerVersion: "19.3.0-native-fb-1cd5eb8e-20261116"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_2725 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -19930,4 +19933,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-976e87ce-20261116";
+exports.version = "19.3.0-native-fb-1cd5eb8e-20261116";
