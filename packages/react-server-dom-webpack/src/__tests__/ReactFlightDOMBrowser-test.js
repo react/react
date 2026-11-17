@@ -557,6 +557,43 @@ describe('ReactFlightDOMBrowser', () => {
     expect(container.innerHTML).toBe('<b>ready</b>');
   });
 
+  it('completes a cyclic Set exposed by separate Promise results', async () => {
+    let resolveSet;
+    let resolveArray;
+    const set = new Set();
+    const array = [set];
+    set.add(set);
+    set.add(array);
+    const model = {
+      set: new Promise(resolve => (resolveSet = resolve)),
+      array: new Promise(resolve => (resolveArray = resolve)),
+    };
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    await serverAct(() => resolveSet(set));
+    await serverAct(() => resolveArray(array));
+
+    const observed = [];
+    await act(() => {
+      response.then(value => {
+        value.set.then(received => {
+          const [self, back] = Array.from(received);
+          observed.push([received.size, self instanceof Set, back[0].size]);
+        });
+        value.array.then(received => {
+          const [self, back] = Array.from(received[0]);
+          observed.push([received[0].size, self instanceof Set, back[0].size]);
+        });
+      });
+    });
+    expect(observed).toEqual([
+      [2, true, 2],
+      [2, true, 2],
+    ]);
+  });
+
   it('should resolve deduped objects in nested children of blocked models', async () => {
     let resolveOuterClientComponentChunk;
     let resolveInnerClientComponentChunk;
@@ -3200,9 +3237,9 @@ describe('ReactFlightDOMBrowser', () => {
               [
                 "Object.<anonymous>",
                 "/packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js",
-                3125,
+                3162,
                 19,
-                3109,
+                3146,
                 89,
               ],
             ],
@@ -4081,6 +4118,56 @@ describe('ReactFlightDOMBrowser', () => {
     iterator.next().then(
       result => {
         outcome = result;
+      },
+      error => {
+        outcome = error;
+      },
+    );
+    await act(() => {});
+
+    expect(outcome).toBe('pending');
+  });
+
+  it('does not resolve a cycle that refers to a halted row with unstable_allowPartialStream', async () => {
+    const controller = new AbortController();
+
+    function AbortDuringRender() {
+      controller.abort();
+      return null;
+    }
+
+    const model = {};
+    // Outlined into its own row, which refers back to the root row.
+    model.map = new Map([['self', model]]);
+    model.trigger = <AbortDuringRender />;
+    // Not serializable. After the abort above, the prerender replaces it with
+    // a reference to a row that is never written instead of reporting an error.
+    model.missing = Symbol('not global');
+
+    const {pendingResult} = await serverAct(async () => {
+      return {
+        pendingResult: ReactServerDOMStaticServer.prerender(model, webpackMap, {
+          signal: controller.signal,
+        }),
+      };
+    });
+    const {prelude} = await serverAct(() => pendingResult);
+
+    const response = ReactServerDOMClient.createFromReadableStream(
+      passThrough(prelude),
+      {
+        unstable_allowPartialStream: true,
+      },
+    );
+
+    // Let the client read the whole prelude and close before the root row is
+    // first read, so that the missing row is looked up after the close.
+    await act(() => {});
+
+    let outcome = 'pending';
+    response.then(
+      value => {
+        outcome = value;
       },
       error => {
         outcome = error;

@@ -975,7 +975,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'map', other: 'later'},
       }));
 
-    // @gate FIXME
     it('Set containing itself', () =>
       runGraph({
         nodes: {
@@ -985,7 +984,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'set', other: 'set'},
       }));
 
-    // @gate FIXME
     it('Map containing itself', () =>
       runGraph({
         nodes: {
@@ -1001,7 +999,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'map', other: 'map'},
       }));
 
-    // @gate FIXME
     it('two collections containing each other', () =>
       runGraph({
         nodes: {
@@ -1058,7 +1055,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'container', other: 'container'},
       }));
 
-    // @gate FIXME
     it('function bound to its Map', () =>
       runGraph({
         nodes: {
@@ -1074,7 +1070,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'container', other: 'container'},
       }));
 
-    // @gate FIXME
     it('cycle first exposed through a bound function', () =>
       runGraph({
         nodes: {
@@ -1402,19 +1397,9 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                 without: [
                   // These produce cases that fail for now.
                   'link',
-                  'self',
-                  'mutual',
-                  'duplicate',
-                  'map key',
-                  'promise',
-                  'element',
-                  'props',
                   'component',
                   'failing component',
-                  'bound function',
                   'error',
-                  'aggregate error',
-                  'fragment',
                   'undefined',
                   'colon',
                 ],

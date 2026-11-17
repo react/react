@@ -1028,6 +1028,9 @@ type InitializationReference = {
   path: Array<string>,
   // The chunk the reference waits for.
   chunk: SomeChunk<any>,
+  // For a Set or a Map: the collection itself. It is created empty and put in
+  // the slot before its entries are fulfilled.
+  collection: null | Set<any> | Map<any, any>,
   // Whether that chunk has been initialized.
   released: boolean,
   // Whether the slot holds its final value. Until then, `pathIndex` is where
@@ -1860,6 +1863,21 @@ function wakeInitializedChunk<T>(
   }
 }
 
+function fillCollection(
+  collection: Set<any> | Map<any, any>,
+  entries: Array<any>,
+): void {
+  if (collection instanceof Set) {
+    for (let i = 0; i < entries.length; i++) {
+      collection.add(entries[i]);
+    }
+  } else {
+    for (let i = 0; i < entries.length; i++) {
+      collection.set(entries[i][0], entries[i][1]);
+    }
+  }
+}
+
 // Initializes the handler's chunk once the handler has no references left to
 // wait on. `handler.chunk` is null while the handler's model is still parsing.
 // `initializeModelChunk` handles that case when the parse ends.
@@ -2305,6 +2323,12 @@ function mapReference(
 ): any {
   const input = reference.input;
   reference.input = null;
+  const collection = reference.collection;
+  if (collection !== null) {
+    // Every entry is fulfilled now, so they can be added.
+    fillCollection(collection, input);
+    return collection;
+  }
   // `map` is called outside of a parse here. If it starts something that the
   // model has to wait for, like a module load, that has to count against this
   // handler.
@@ -2805,6 +2829,19 @@ function waitForReference<T>(
   );
   addReferenceListener(referencedChunk, reference);
 
+  if (
+    path.length === 0 &&
+    ((map as any) === createSet || (map as any) === createMap)
+  ) {
+    // Create the collection before its entries exist, so that an entry that
+    // refers back to it gets this same object.
+    const collection: Set<any> | Map<any, any> =
+      (map as any) === createSet ? new Set() : new Map();
+    reference.collection = collection;
+    fulfillReferenceIfParsed(response, reference);
+    return collection as any;
+  }
+
   fulfillReferenceIfParsed(response, reference);
   if (key === __PROTO__) {
     return null as any;
@@ -2865,6 +2902,7 @@ function createInitializationReference<T>(
     map,
     path,
     chunk,
+    collection: null,
     released: false,
     fulfilled: false,
     pathIndex: 0,

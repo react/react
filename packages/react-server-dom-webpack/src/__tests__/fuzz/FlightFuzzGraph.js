@@ -418,7 +418,7 @@ function generateGraph(seed, {without = []} = {}) {
 // Generates a large graph that waits for only a few events.
 function generateScaleGraph(seed) {
   const pick = createRandom(seed + '/scale');
-  const shape = ['bound', 'wide'][pick(2)];
+  const shape = ['bound', 'wide', 'cycle'][pick(3)];
   const size = 2 ** (5 + pick(shape === 'bound' ? 7 : 4));
   const nodes = {
     tail: {module: 'loaded'},
@@ -433,7 +433,7 @@ function generateScaleGraph(seed) {
       previous = name;
     }
     entry = previous;
-  } else {
+  } else if (shape === 'wide') {
     nodes.shared = {object: {tail: 'tail', value: 'value'}};
     const items = [];
     for (let i = 0; i < size; i++) {
@@ -444,6 +444,18 @@ function generateScaleGraph(seed) {
     }
     nodes.items = {array: items};
     entry = 'items';
+  } else {
+    const cells = [];
+    for (let i = 0; i < size; i++) {
+      const next = 'cells';
+      nodes['cell' + i] =
+        pick(2) === 0 ? {object: {next, tail: 'tail'}} : {set: [next, 'tail']};
+      cells.push('cell' + i);
+    }
+    // Point each cell back to the Set. This creates a large cycle without
+    // deeply nesting the values the writer traverses synchronously.
+    nodes.cells = {set: cells};
+    entry = 'cells';
   }
   return {
     shape,

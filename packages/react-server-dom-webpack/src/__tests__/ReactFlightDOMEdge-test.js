@@ -602,6 +602,44 @@ describe('ReactFlightDOMEdge', () => {
     expect(value).toBe('done');
   });
 
+  it('delivers a Set containing itself with its entries already installed', async () => {
+    const set = new Set();
+    set.add(set);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(set),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        const self = Array.from(value)[0];
+        observed.push([value.size, self instanceof Set && self.size]);
+      });
+    });
+    expect(observed).toEqual([[1, 1]]);
+  });
+
+  it('delivers a Map containing itself with its entries already installed', async () => {
+    const map = new Map();
+    map.set('self', map);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(map),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const observed = [];
+    await serverAct(() => {
+      response.then(value => {
+        const self = value.get('self');
+        observed.push([value.size, self instanceof Map && self.size]);
+      });
+    });
+    expect(observed).toEqual([[1, 1]]);
+  });
+
   // @gate __DEV__
   it('fills in the cause of an Error that loads after the Error', async () => {
     let resolveCause;
@@ -3965,6 +4003,49 @@ describe('ReactFlightDOMEdge', () => {
     }
   });
 
+  it('completes a later cyclic model after a bound server reference loads', async () => {
+    const serverModule = serverExports({read: async function read() {}});
+    const id = serverModule.read.$$id;
+    // A response whose model holds a bound server reference. Constructing the
+    // bound function outside a parse must not leave an initialization handler
+    // behind that would stop a later response from completing its cycles.
+    const a = openRawResponse();
+    a.write('0:{"read":"$h1"}');
+    await flushImmediates();
+    a.write('1:{"id":' + JSON.stringify(id) + ',"bound":"$@2"}');
+    await flushImmediates();
+    a.write('2:[1]');
+    await flushImmediates();
+    a.close();
+    await flushImmediates();
+    // The model resolved, which means its bound function was constructed.
+    expect(typeof a.value.read).toBe('function');
+
+    // A self-referential Set reached through a Promise. Its cycle only
+    // completes if cycle checks still run.
+    const b = openRawResponse();
+    b.write('0:{"p":"$@1"}');
+    await flushImmediates();
+    b.write('1:"$W2"');
+    await flushImmediates();
+    b.write('2:["$1","x"]');
+    await flushImmediates();
+    b.close();
+    await flushImmediates();
+
+    let resolved = false;
+    let set;
+    b.value.p.then(value => {
+      resolved = true;
+      set = value;
+    });
+    await flushImmediates();
+    expect(resolved).toBe(true);
+    expect(set instanceof Set).toBe(true);
+    expect(set.has(set)).toBe(true);
+    expect(set.has('x')).toBe(true);
+  });
+
   it('completes a cycle blocked on a slow client module after the stream closes', async () => {
     let resolveModule;
     const blockOnModule = new Promise(resolve => {
@@ -4188,6 +4269,44 @@ describe('ReactFlightDOMEdge', () => {
     );
     await flushImmediates();
     expect(reason.message).toBe('module failed');
+  });
+
+  it('reads a cyclic model of another response while a client module is evaluated', async () => {
+    // The Map is sent in a row of its own, so the two rows refer to each other.
+    const cyclic = {};
+    cyclic.map = new Map([['self', cyclic]]);
+    const cyclicStream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(cyclic, webpackMap),
+    );
+    const other = ReactServerDOMClient.createFromReadableStream(cyclicStream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    // Every row of the other response has arrived, and nothing has read it.
+    await flushImmediates();
+
+    let read = 'not read';
+    const clientModule = clientExports({
+      get value() {
+        other.then(result => {
+          read = result;
+        });
+        return 'client value';
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {value: clientModule.value},
+        webpackMap,
+      ),
+    );
+    const root = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    // The rows arrive before the model is read, so the export is read while
+    // the model is parsed.
+    await flushImmediates();
+    expect((await root).value).toBe('client value');
+    expect(read.map.get('self')).toBe(read);
   });
 
   it('initializes elements whose props refer to each other together', async () => {
