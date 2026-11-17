@@ -1751,6 +1751,16 @@ function initializeBlockedChunk<T>(
   value: T,
   reason: InitializedChunk<T>['reason'],
 ): void {
+  const resolveListeners = markChunkInitialized(response, chunk, value, reason);
+  wakeInitializedChunk(response, chunk as any, resolveListeners);
+}
+
+function markChunkInitialized<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: InitializedChunk<T>['reason'],
+): null | Array<InitializationReference | (T => mixed)> {
   const resolveListeners = chunk.value;
   if (__DEV__) {
     // Only a blocked chunk receives debug info, so release the set here.
@@ -1760,10 +1770,18 @@ function initializeBlockedChunk<T>(
   initializedChunk.status = INITIALIZED;
   initializedChunk.value = value;
   initializedChunk.reason = reason;
+  return resolveListeners;
+}
+
+function wakeInitializedChunk<T>(
+  response: Response,
+  chunk: InitializedChunk<T>,
+  resolveListeners: null | Array<InitializationReference | (T => mixed)>,
+): void {
   if (resolveListeners !== null) {
-    wakeChunk(response, resolveListeners, value, initializedChunk);
+    wakeChunk(response, resolveListeners, chunk.value, chunk);
   } else if (__DEV__) {
-    processChunkDebugInfo(response, initializedChunk, value);
+    processChunkDebugInfo(response, chunk, chunk.value);
   }
 }
 
