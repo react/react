@@ -19,6 +19,12 @@ async function createFixture(
 ) {
   checkReachability(graph);
   const {nodes} = graph;
+  const serializedNodes = getReachableNodes(graph, {
+    // All Promises are also sent through model.outcomes below.
+    roots: Object.values(graph.roots).concat(
+      Object.keys(nodes).filter(name => getNodeType(nodes[name]) === 'promise'),
+    ),
+  });
   const events = [];
   const requiredEvents = new Map();
   const valueMetadata = new Map();
@@ -175,6 +181,29 @@ async function createFixture(
         values[name] = createClientElement(props, {name, key: name});
         break;
       }
+      case 'component': {
+        if (node.throw) {
+          const error = getError(node.component);
+          values[name] = createServerElement(
+            undefined,
+            () => {
+              throw error;
+            },
+            {label: name, failure: error, key: name},
+          );
+        } else {
+          const renderedElement = createClientElement(
+            {value: buildValue(node.component)},
+            {name: name + ' body'},
+          );
+          values[name] = createServerElement(
+            valueMetadata.get(renderedElement).html,
+            () => renderedElement,
+            {label: name, key: name, renderedElement},
+          );
+        }
+        break;
+      }
       case 'props': {
         const element = buildValue(node.props);
         const metadata = valueMetadata.get(element);
@@ -216,6 +245,11 @@ async function createFixture(
           }
           values[name].set(getValue(key), getValue(item));
         });
+        break;
+      case 'component':
+        if (node.throw && serializedNodes.has(name)) {
+          expectedErrors.set(getError(node.component), 'thrown by ' + name);
+        }
         break;
       case 'promise': {
         const deferred = deferredPromises.get(name);
@@ -351,6 +385,41 @@ async function createFixture(
     });
     events.push(loadEvent);
     requiredEvents.set(element, [loadEvent]);
+    return element;
+  }
+
+  // Suspend the Server Component until the test releases its render event.
+  function createServerElement(
+    html,
+    render,
+    {label = 'server component', failure, key, renderedElement} = {},
+  ) {
+    const deferred = createResolvablePromise();
+    async function Body() {
+      await deferred.promise;
+      return render();
+    }
+    const element = ReactServer.createElement(
+      Body,
+      key === undefined ? null : {key},
+    );
+    const renderEvent = createEvent('render ' + label, () =>
+      deferred.resolve(),
+    );
+    events.push(renderEvent);
+    valueMetadata.set(element, {
+      type: 'element',
+      html,
+      failure,
+      renderEvent,
+      renderedElement,
+    });
+    requiredEvents.set(element, [
+      renderEvent,
+      ...(renderedElement === undefined
+        ? []
+        : requiredEvents.get(renderedElement) || []),
+    ]);
     return element;
   }
 

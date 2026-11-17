@@ -105,6 +105,10 @@ function isRootProduced(fixture) {
   );
 }
 
+function isElementProduced(metadata) {
+  return metadata.renderEvent === undefined || metadata.renderEvent.released;
+}
+
 // Splits the source values into the parts that the server writes separately.
 // The code calls such a part a model. The root is one, and so is the value of
 // each Promise that has resolved.
@@ -140,7 +144,9 @@ function collectModels(fixture) {
       modelsByValue.set(value, (modelsByValue.get(value) || []).concat(model));
       const metadata = fixture.valueMetadata.get(value);
       if (metadata !== undefined && metadata.type === 'element') {
-        if (!visitedElements.has(value)) {
+        if (metadata.renderEvent !== undefined) {
+          separateValues.add(value);
+        } else if (!visitedElements.has(value)) {
           // An error in the props belongs to the element. The model that
           // contains the element can still be delivered, because it can hold
           // a lazy element.
@@ -213,7 +219,11 @@ function collectModels(fixture) {
       return;
     }
     const metadata = fixture.valueMetadata.get(value);
-    if (metadata.type === 'function') {
+    if (metadata.type === 'element') {
+      if (isElementProduced(metadata)) {
+        collectModel([metadata.renderedElement]);
+      }
+    } else if (metadata.type === 'function') {
       boundArgumentModels.set(value, collectModel(metadata.bound));
     } else if (metadata.type === 'promise') {
       if (metadata.state === 'fulfilled') {
@@ -335,11 +345,22 @@ function getRootExpectation(fixture, value, findModels) {
 }
 
 function getPromiseExpectation(fixture, metadata, findModels) {
+  const valueMetadata = fixture.valueMetadata.get(metadata.value);
   const events = getRequiredEvents(fixture, metadata.value);
-  const produced = metadata.state === 'fulfilled';
+  const isElement =
+    valueMetadata !== undefined && valueMetadata.type === 'element';
+  if (isElement && valueMetadata.renderEvent !== undefined) {
+    // A Promise resolving to a Server Component waits for its output.
+    events.push(valueMetadata.renderEvent);
+  }
+  const produced =
+    metadata.state === 'fulfilled' &&
+    (!isElement || isElementProduced(valueMetadata));
   let errors;
   if (metadata.state === 'rejected') {
     errors = [fixture.valueMetadata.get(metadata.reason)];
+  } else if (isElement && valueMetadata.failure !== undefined) {
+    errors = [fixture.valueMetadata.get(valueMetadata.failure)];
   } else {
     errors = getReleasedErrors(events);
   }
@@ -355,14 +376,26 @@ function getPromiseExpectation(fixture, metadata, findModels) {
 
 function getRenderExpectation(fixture, element, findModels) {
   const metadata = fixture.valueMetadata.get(element);
+  const output = metadata.renderedElement;
   const events = (fixture.requiredEvents.get(element) || []).concat(
     getRequiredEvents(fixture, element.props),
+    output === undefined ? [] : getRequiredEvents(fixture, output.props),
   );
+  const produced = isElementProduced(metadata);
   return getResultExpectation(
     metadata.html,
-    canSettle(events),
-    getReleasedErrors(events),
-    findModels(element).concat(findModels(element.props)),
+    produced && canSettle(events),
+    metadata.failure === undefined
+      ? getReleasedErrors(events)
+      : [fixture.valueMetadata.get(metadata.failure)],
+    produced
+      ? findModels(element).concat(
+          findModels(element.props),
+          output === undefined
+            ? []
+            : findModels(output).concat(findModels(output.props)),
+        )
+      : [],
   );
 }
 

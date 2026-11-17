@@ -32,6 +32,7 @@ const nodeTypes = [
   'props',
   'fragment',
   'promise',
+  'component',
 ];
 
 function getNodeType(node) {
@@ -58,15 +59,16 @@ function getReferencedNodes(node) {
       return [].concat(node.element);
     case 'props':
     case 'promise':
+    case 'component':
       return [node[getNodeType(node)]];
     default:
       return [];
   }
 }
 
-function getReachableNodes(graph) {
+function getReachableNodes(graph, {roots = Object.values(graph.roots)} = {}) {
   const reached = new Set();
-  const todo = Object.values(graph.roots);
+  const todo = roots.slice();
   while (todo.length > 0) {
     const name = todo.pop();
     const node = graph.nodes[name];
@@ -107,6 +109,8 @@ const graphOperations = [
   'rejected promise',
   'element',
   'props',
+  'component',
+  'failing component',
   'bound function',
   'fragment',
   'failing module',
@@ -315,6 +319,14 @@ function generateGraph(seed, {without = []} = {}) {
         }
         break;
       }
+      case 'component': {
+        add({component: pickFrom(referenceTargets)});
+        break;
+      }
+      case 'failing component': {
+        add({component: addError(), throw: true});
+        break;
+      }
       case 'bound function': {
         add({
           bound:
@@ -465,7 +477,7 @@ function* generateReductionCandidates(graph) {
         }
       }
     }
-    const options = ['async', 'fail', 'reject', 'loaded'];
+    const options = ['async', 'fail', 'reject', 'throw', 'loaded'];
     for (let j = 0; j < options.length; j++) {
       const key = options[j];
       if (key in node) {
