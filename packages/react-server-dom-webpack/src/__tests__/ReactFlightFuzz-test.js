@@ -1538,7 +1538,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'bytes', other: 'data'},
       }));
 
-    // @gate FIXME
     it('byte stream closed while a read is waiting', () =>
       runGraph({
         nodes: {array: {array: ['bytes']}, bytes: {bytes: 3}},
@@ -1557,7 +1556,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'first', other: 'second'},
       }));
 
-    // @gate FIXME
     it('bytes in repeated stream items', () =>
       runGraph({
         nodes: {
@@ -1568,7 +1566,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'outer', other: 'outer'},
       }));
 
-    // @gate FIXME
     it('bytes shared between different stream items', () =>
       runGraph({
         nodes: {
@@ -1693,6 +1690,21 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
           exposure: {stream: ['item']},
         },
         roots: {entry: 'exposure', other: 'exposure'},
+      }));
+
+    it('FormData bound to a function in a larger graph', () =>
+      runGraph({
+        nodes: {
+          form: {special: 'form data'},
+          set: {set: ['bytes', 'map', 'fn']},
+          outerMap: {map: [['set', 'iterable']]},
+          bytes: {bytes: 3},
+          map: {map: []},
+          fn: {bound: ['form']},
+          iterable: {iterable: []},
+        },
+        roots: {entry: 'map', other: 'outerMap'},
+        rootPromise: true,
       }));
 
     it('a repeated Server Function bound to its loading container', () =>
@@ -2255,7 +2267,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                   'link',
                   'stream',
                   'canceled stream',
-                  'byte stream',
                   'iterable',
                   'iterator',
                   'component',
