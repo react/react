@@ -394,6 +394,20 @@ function resolveModelChunk<T>(
     // a stream chunk since any other row shouldn't have more than one entry.
     const streamChunk: InitializedStreamChunk<any> = chunk as any;
     const controller = streamChunk.reason;
+    // Only a stream chunk takes more than one field. A repeated field for any
+    // other chunk is an error.
+    const maybeController: mixed = controller;
+    if (
+      maybeController === null ||
+      typeof maybeController !== 'object' ||
+      typeof (maybeController as any).enqueueModel !== 'function'
+    ) {
+      reportGlobalError(
+        response,
+        new Error('A reply field was provided more than once.'),
+      );
+      return;
+    }
     if (value[0] === 'C') {
       controller.close(value === 'C' ? '"$undefined"' : value.slice(1));
     } else {
@@ -1218,6 +1232,10 @@ function initializeModelChunk<T>(
 // Report that any missing chunks in the model is now going to throw this
 // error upon read. Also notify any pending promises.
 export function reportGlobalError(response: Response, error: Error): void {
+  if (response._closed) {
+    // Everything that could be settled was settled by the first report.
+    return;
+  }
   response._closed = true;
   response._closedReason = error;
   response._chunks.forEach(chunk => {
