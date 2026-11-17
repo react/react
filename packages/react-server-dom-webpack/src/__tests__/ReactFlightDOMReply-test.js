@@ -239,6 +239,21 @@ describe('ReactFlightDOMReply', () => {
     expect(formDataB2.get('greeting')).toBe('hi');
   });
 
+  it('can pass FormData alongside many collections', async () => {
+    const formData = new FormData();
+    formData.set('greeting', 'hello');
+    const sets = Array.from({length: 12}, (_, i) => new Set([i]));
+
+    const body = await ReactServerDOMClient.encodeReply({sets, formData});
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(Array.from(result.formData).length).toBe(1);
+    expect(result.formData.get('greeting')).toBe('hello');
+  });
+
   it('can pass a Date as a reply', async () => {
     const d = new Date(1234567890123);
     const body = await ReactServerDOMClient.encodeReply(d);
