@@ -1582,9 +1582,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
   });
 
   describe('stream cancellation', () => {
-    // This flickers on Edge until rows for a canceled stream are dropped.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('stream canceled while the writer is still producing', () =>
+    it('stream canceled while the writer is still producing', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
