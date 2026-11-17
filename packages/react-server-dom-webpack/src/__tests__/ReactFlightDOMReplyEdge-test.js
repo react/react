@@ -49,6 +49,44 @@ function settleReply(thenable, turns = 10) {
   });
 }
 
+// Builds the FormData for one guard payload in a chosen path mode. `row.make`
+// receives a `ref` helper that returns a reference body for a chunk id. In the
+// 'waiting' and 'cycle' modes the reference points at a fresh wrapper chunk
+// that stays BLOCKED while the target is referenced (on a Blob read, or on a
+// cycle back to the root) and exposes the target's own value through `:v`, so
+// the reference resolves through the resumed path with the same observable
+// value. Reference bodies encode chunk ids in hex; the backing store keys each
+// chunk in decimal, so row ids (< 16, identical in both) are written as-is and
+// wrapper ids are converted.
+function buildGuardPayload(mode, row) {
+  const chunks = {};
+  let nextId = 100;
+  const hex = n => n.toString(16);
+  const blob = () => new Blob([new Uint8Array([1, 2, 3, 4])]);
+  function ref(id, path) {
+    let body;
+    if (mode === 'immediate' || row.block !== id) {
+      body = hex(id);
+    } else if (mode === 'cycle') {
+      const w = nextId++;
+      chunks[w] = JSON.stringify({v: '$' + hex(id), back: '$0'});
+      body = hex(w) + ':v';
+    } else {
+      const w = nextId++;
+      const b = nextId++;
+      chunks[w] = JSON.stringify({v: '$' + hex(id), pad: '$o' + hex(b)});
+      chunks[b] = blob();
+      body = hex(w) + ':v';
+    }
+    return path === undefined ? body : body + ':' + path;
+  }
+  const spec = row.make(ref);
+  Object.assign(chunks, spec.chunks);
+  const body = new FormData();
+  Object.keys(chunks).forEach(k => body.set(k, chunks[k]));
+  return {body, spec};
+}
+
 describe('ReactFlightDOMReplyEdge', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -113,6 +151,15 @@ describe('ReactFlightDOMReplyEdge', () => {
       }
     },
   );
+
+  it('rejects a Map with a primitive entry', async () => {
+    const body = new FormData();
+    body.set('0', '"$Q1"');
+    body.set('1', '["ab"]');
+    await expect(
+      Promise.resolve(ReactServerDOMServer.decodeReply(body, webpackServerMap)),
+    ).rejects.toThrow();
+  });
 
   it('counts repeated binary values toward the array size limit', async () => {
     const bytes = new Uint8Array(16);
@@ -350,9 +397,7 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
   });
 
-  // Writing this cycle also requires the reader to fill the Map before delivery.
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can pass a stream item that contains itself', async () => {
+  it('can pass a stream item that contains itself', async () => {
     const item = ['first'];
     item.push(item);
     item.push({back: item});
@@ -1133,6 +1178,32 @@ describe('ReactFlightDOMReplyEdge', () => {
     }
   });
 
+  describe('reply collection shapes the writer never emits', () => {
+    const decode = chunks => {
+      const body = new FormData();
+      Object.keys(chunks).forEach(k => body.set(k, chunks[k]));
+      return settleReply(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap),
+      );
+    };
+
+    // A Map waits for the key and value of each entry, wherever the entry
+    // comes from, so an entry supplied by reference is read once it is filled.
+    it('builds a Map whose entry pairs are supplied by reference', async () => {
+      const r = await decode({
+        0: '["$Q1","$2"]',
+        1: '["$0:1"]',
+        2: '["k","$0:0"]',
+      });
+      expect(r.status).toBe('resolved');
+      const map = r.value[0];
+      expect(map).toBeInstanceOf(Map);
+      expect(map.size).toBe(1);
+      expect(map.get('k')).toBe(map);
+      expect(r.value[1]).toEqual(['k', map]);
+    });
+  });
+
   describe('counts arrays reached through references', () => {
     const BIG = JSON.stringify(Array.from({length: 20}, (_, i) => i + 1));
     const BIG_WITH_3 = BIG.slice(0, -1) + ',"$3"]';
@@ -1262,6 +1333,419 @@ describe('ReactFlightDOMReplyEdge', () => {
       const r = await decode(chunks, 50);
       expect(r.status).toBe('rejected');
       expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+  });
+
+  describe('leaves no decoder state behind for the next decode', () => {
+    // A well-founded cycle whose resolution depends on the cycle machinery, so
+    // it only settles if the module-level parse state is clean.
+    const canary = () => {
+      const body = new FormData();
+      body.set('0', '"$W1"');
+      body.set('1', '["$0","x"]');
+      return settleReply(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap),
+      );
+    };
+
+    it('a server reference whose module loads after its entry does not leak parse state', async () => {
+      let loadModule;
+      const loading = new Promise(resolve => (loadModule = resolve));
+      const ServerModule = serverExports({fn: () => 'ok'}, loading);
+      const body = new FormData();
+      body.set('0', JSON.stringify({a: '$h1'}));
+      body.set(
+        '1',
+        JSON.stringify({id: ServerModule.fn.$$id, bound: null, pad: '$o2'}),
+      );
+      body.set('2', new Blob([new Uint8Array([1, 2, 3, 4])]));
+      const pending = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+      // Let the Blob read settle while the module is still loading, so the
+      // server reference resolves outside any parse.
+      Promise.resolve(pending).then(
+        () => {},
+        () => {},
+      );
+      for (let i = 0; i < 6; i++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      // An independent, well-founded decode must still settle afterward.
+      const result = await canary();
+      expect(result.status).toBe('resolved');
+      expect(result.value).toBeInstanceOf(Set);
+      expect(result.value.has('x')).toBe(true);
+      await serverAct(() => loadModule());
+    });
+
+    it('two interleaved async-iterable decodes each resolve their own cycle', async () => {
+      const feed = entries => {
+        const iterable = {
+          async *[Symbol.asyncIterator]() {
+            // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+            for (const entry of entries) {
+              yield entry;
+              await null;
+            }
+          },
+        };
+        return ReactServerDOMServer.decodeReplyFromAsyncIterable(
+          iterable,
+          webpackServerMap,
+        );
+      };
+      const first = feed([
+        ['1', JSON.stringify({a: null, c: '$0'})],
+        ['0', '"$1:a"'],
+      ]);
+      const second = feed([
+        ['1', '["$0","y"]'],
+        ['0', '"$W1"'],
+      ]);
+      const firstResult = await settleReply(first);
+      const secondResult = await settleReply(second);
+      expect(firstResult.status).toBe('resolved');
+      expect(firstResult.value).toBe(null);
+      expect(secondResult.status).toBe('resolved');
+      expect(secondResult.value).toBeInstanceOf(Set);
+      expect(secondResult.value.has('y')).toBe(true);
+    });
+  });
+
+  // Each hardening guard enforced by the decoder, written as a hand-crafted
+  // chunk graph with its expected outcome. A guard has to hold both when the
+  // referenced chunk has already initialized (the immediate path) and when it
+  // is still BLOCKED and its value is installed later (the resumed path). Every
+  // reference row runs the same payload in both modes, plus a cyclic mode where
+  // the target is reached from inside a cycle back to the root; the outcome
+  // must match. Parse-time guards that fire before any reference is resolved
+  // run once.
+  describe('enforces guards on the immediate and resumed reference paths', () => {
+    let fnId;
+    let called;
+    beforeEach(() => {
+      called = false;
+      const m = serverExports({action: () => (called = true)});
+      fnId = m.action.$$id;
+    });
+
+    const metaField = () => JSON.stringify({id: fnId, bound: null});
+
+    const rows = [
+      // A function reaching a `then` slot must be dropped to null, never
+      // installed, so the containing object is not an invokable thenable.
+      {
+        name: 'then slot filled by a function via $N',
+        block: 1,
+        cycle: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({then: '$' + ref(1)}),
+            1: '"$h2"',
+            2: metaField(),
+          },
+          resolves: v => expect(v.then).toBe(null),
+          noCall: true,
+        }),
+      },
+      {
+        name: 'then slot filled by a function via $N:path',
+        block: 1,
+        cycle: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({then: '$' + ref(1, 'f')}),
+            1: JSON.stringify({f: '$h2'}),
+            2: metaField(),
+          },
+          resolves: v => expect(v.then).toBe(null),
+          noCall: true,
+        }),
+      },
+      {
+        name: 'then slot nested in an array argument',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify([{then: '$' + ref(1)}]),
+            1: '"$h2"',
+            2: metaField(),
+          },
+          resolves: v => expect(v[0].then).toBe(null),
+          noCall: true,
+        }),
+      },
+      {
+        name: 'then slot inside a Map entry value',
+        block: 3,
+        make: ref => ({
+          chunks: {
+            0: '"$Q1"',
+            1: JSON.stringify([['k', '$2']]),
+            2: JSON.stringify({then: '$' + ref(3)}),
+            3: '"$h4"',
+            4: metaField(),
+          },
+          resolves: v => expect(v.get('k').then).toBe(null),
+          noCall: true,
+        }),
+      },
+      // A reference path may only descend through plain own properties.
+      {
+        name: 'path walk into a Map',
+        block: 1,
+        cycle: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, 'x')}),
+            1: '"$Q2"',
+            2: JSON.stringify([['k', 'v']]),
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk into a Set',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, '0')}),
+            1: '"$W2"',
+            2: JSON.stringify(['x']),
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk into a typed array',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, '0')}),
+            1: '"$o2"',
+            2: new Blob([new Uint8Array([9, 9])]),
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk into a string',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, 'x')}),
+            1: JSON.stringify('hi'),
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk into null',
+        block: 1,
+        make: ref => ({
+          chunks: {0: JSON.stringify({a: '$' + ref(1, 'x')}), 1: 'null'},
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk to a non-own property',
+        block: 1,
+        make: ref => ({
+          chunks: {0: JSON.stringify({a: '$' + ref(1, 'toString')}), 1: '{}'},
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk to a __proto__ segment',
+        block: 1,
+        make: ref => ({
+          chunks: {0: JSON.stringify({a: '$' + ref(1, '__proto__')}), 1: '{}'},
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk to a constructor segment',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, 'constructor')}),
+            1: '{}',
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      // A collection is only constructed from an inline array of valid entries.
+      {
+        name: 'Map with a primitive entry',
+        block: 1,
+        cycle: true,
+        make: ref => ({
+          chunks: {
+            0: '"$Q' + ref(1) + '"',
+            1: JSON.stringify([['k', 'v'], 'primitive']),
+          },
+          rejects: /Invalid Map initializer/,
+        }),
+      },
+      {
+        name: 'Map initializer that is not an array',
+        block: 1,
+        make: ref => ({
+          chunks: {0: '"$Q' + ref(1) + '"', 1: JSON.stringify('nope')},
+          rejects: /Invalid Map initializer/,
+        }),
+      },
+      {
+        name: 'Set initializer that is not an array',
+        block: 1,
+        make: ref => ({
+          chunks: {0: '"$W' + ref(1) + '"', 1: '{}'},
+          rejects: /Invalid Set initializer/,
+        }),
+      },
+      // Guards that fire while the referenced row is parsed, before any
+      // resumed path exists.
+      {
+        name: '__proto__ key is dropped at parse',
+        parseTime: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({__proto__: '$1', keep: 1}),
+            1: JSON.stringify({polluted: true}),
+          },
+          resolves: v => {
+            expect(Object.prototype.hasOwnProperty.call(v, '__proto__')).toBe(
+              false,
+            );
+            expect(v.keep).toBe(1);
+            expect({}.polluted).toBe(undefined);
+          },
+        }),
+      },
+      {
+        name: 'typed array id reused',
+        parseTime: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify(['$o1', '$o1']),
+            1: new Blob([new Uint8Array([1])]),
+          },
+          rejects: /Already initialized typed array/,
+        }),
+      },
+      {
+        name: 'stream id reused',
+        parseTime: true,
+        make: ref => ({
+          chunks: {0: JSON.stringify(['$R1', '$R1'])},
+          rejects: /Already initialized stream/,
+        }),
+      },
+      {
+        name: 'Blob backed by a non-Blob',
+        parseTime: true,
+        make: ref => ({
+          chunks: {0: '"$B1"', 1: 'not a blob'},
+          rejects: /Referenced Blob is not a Blob/,
+        }),
+      },
+      {
+        name: 'BigInt over the digit limit',
+        parseTime: true,
+        make: ref => ({
+          chunks: {0: JSON.stringify('$n' + '9'.repeat(301))},
+          rejects: /BigInt is too large/,
+        }),
+      },
+      {
+        name: 'bound arguments over the limit',
+        parseTime: true,
+        make: ref => ({
+          chunks: {
+            0: '"$h1"',
+            1: JSON.stringify({id: fnId, bound: '$@2'}),
+            2: JSON.stringify(new Array(1001).fill(0)),
+          },
+          rejects: /too many bound arguments/,
+        }),
+      },
+      {
+        name: 'nested arrays over the size limit',
+        parseTime: true,
+        opts: {arraySizeLimit: 10},
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify([
+              ['aaaaaa', 'bbbbbb'],
+              ['cccccc', 'dddddd'],
+            ]),
+          },
+          rejects: /Maximum array nesting exceeded/,
+        }),
+      },
+      {
+        name: 'reference to a missing chunk',
+        parseTime: true,
+        make: ref => ({
+          chunks: {0: '"$9"'},
+          rejects: /./,
+        }),
+      },
+    ];
+
+    const modesFor = row =>
+      row.parseTime
+        ? ['immediate']
+        : row.cycle
+          ? ['immediate', 'waiting', 'cycle']
+          : ['immediate', 'waiting'];
+
+    rows.forEach(row => {
+      modesFor(row).forEach(mode => {
+        it(`${row.name} (${mode})`, async () => {
+          const {body, spec} = buildGuardPayload(mode, row);
+          const result = await settleReply(
+            ReactServerDOMServer.decodeReply(body, webpackServerMap, row.opts),
+          );
+          if (spec.rejects) {
+            expect(result.status).toBe('rejected');
+            expect(result.reason.message).toMatch(spec.rejects);
+          } else {
+            expect(result.status).toBe('resolved');
+            spec.resolves(result.value);
+          }
+          if (spec.noCall) {
+            expect(called).toBe(false);
+          }
+        });
+      });
+    });
+
+    it('a well-founded decode still resolves after every guard payload', async () => {
+      // A guard path that left module-level parse state behind would break the
+      // next response. Run every payload, then a well-founded cycle that only
+      // settles if that state is clean.
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const modes = modesFor(row);
+        for (let j = 0; j < modes.length; j++) {
+          const mode = modes[j];
+          const {body} = buildGuardPayload(mode, row);
+          await settleReply(
+            ReactServerDOMServer.decodeReply(body, webpackServerMap, row.opts),
+          );
+          const canaryBody = new FormData();
+          canaryBody.set('0', '"$W1"');
+          canaryBody.set('1', '["$0","x"]');
+          const canary = await settleReply(
+            ReactServerDOMServer.decodeReply(canaryBody, webpackServerMap),
+          );
+          if (canary.status !== 'resolved') {
+            throw new Error(
+              `canary did not resolve after ${row.name} (${mode}): ${canary.status}`,
+            );
+          }
+        }
+      }
     });
   });
 

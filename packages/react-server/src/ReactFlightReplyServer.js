@@ -980,6 +980,9 @@ type InitializationReference = {
   arrayRoot: null | NestedArrayContext,
   // The chunk the reference waits for.
   chunk: SomeChunk<any>,
+  // The Set or Map being constructed. Without a path, it is in the slot
+  // before its entries.
+  collection: null | Set<any> | Map<any, any>,
   // Whether that chunk has been initialized.
   released: boolean,
   // Whether the slot holds its final value. Until then, `pathIndex` is where
@@ -1501,6 +1504,16 @@ function fulfillReference(
     }
 
     if (reference.map !== createModel) {
+      if (reference.map === createMap || reference.map === createSet) {
+        // Claim the initializer before waiting for its slots, so that only
+        // one constructor ever waits for them.
+        let collection = reference.collection;
+        if (collection === null) {
+          collection = reference.collection =
+            reference.map === createSet ? new Set() : new Map();
+        }
+        claimCollectionInitializer(response, collection, value);
+      }
       reference.input = value;
       constructReference(response, reference);
       return;
@@ -1620,6 +1633,11 @@ function mapReference(
 ): any {
   const input = reference.input;
   reference.input = null;
+  const collection = reference.collection;
+  if (collection !== null) {
+    // Every entry is fulfilled now, so they can be added.
+    return fillCollection(response, collection, input);
+  }
   // `map` is called outside of a parse here. If it starts something that the
   // model has to wait for, like a module load, that has to count against this
   // handler.
@@ -2048,6 +2066,20 @@ function waitForReference<T>(
   );
   addReferenceListener(referencedChunk, reference);
 
+  if (
+    path.length === 0 &&
+    ((map as any) === createSet || (map as any) === createMap)
+  ) {
+    // The collection exists before its entries do, so a reference to it from
+    // inside the entries is to the final object. Only one reference can claim
+    // the entries.
+    const collection: Set<any> | Map<any, any> =
+      (map as any) === createSet ? new Set() : new Map();
+    reference.collection = collection;
+    fulfillReferenceIfParsed(response, reference);
+    return collection as any;
+  }
+
   fulfillReferenceIfParsed(response, reference);
   if (key === __PROTO__) {
     return null as any;
@@ -2109,6 +2141,7 @@ function createInitializationReference<T>(
     path,
     arrayRoot,
     chunk,
+    collection: null,
     released: false,
     fulfilled: false,
     pathIndex: 0,
@@ -2287,36 +2320,70 @@ function createMap(
   response: Response,
   model: Array<[any, any]>,
 ): Map<any, any> {
+  const collection = new Map<any, any>();
+  claimCollectionInitializer(response, collection, model);
+  return fillCollection(response, collection, model) as any;
+}
+
+function createSet(response: Response, model: Array<any>): Set<any> {
+  const collection = new Set<any>();
+  claimCollectionInitializer(response, collection, model);
+  return fillCollection(response, collection, model) as any;
+}
+
+// Claim before waiting for the entries, so only one constructor waits for
+// them.
+function claimCollectionInitializer(
+  response: Response,
+  collection: Set<any> | Map<any, any>,
+  model: Array<any>,
+): void {
   if (!isArray(model) || isServerReferenceObject(response, model)) {
+    if (collection instanceof Set) {
+      throw new Error('Invalid Set initializer.');
+    }
     throw new Error('Invalid Map initializer.');
   }
-  if ((model as any).$$consumed === true) {
+  if ((model as any).$$consumed !== undefined) {
+    if (collection instanceof Set) {
+      throw new Error('Already initialized Set.');
+    }
     throw new Error('Already initialized Map.');
   }
   // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
   (model as any).$$consumed = true;
-  const map = new Map(model);
-  return map;
 }
 
-function createSet(response: Response, model: Array<any>): Set<any> {
-  if (!isArray(model) || isServerReferenceObject(response, model)) {
-    throw new Error('Invalid Set initializer.');
+function fillCollection(
+  response: Response,
+  collection: Set<any> | Map<any, any>,
+  model: Array<any>,
+): Set<any> | Map<any, any> {
+  if (collection instanceof Set) {
+    for (let i = 0; i < model.length; i++) {
+      collection.add(model[i]);
+    }
+  } else {
+    for (let i = 0; i < model.length; i++) {
+      const entry = model[i];
+      // Match the Map constructor's requirement for an entry object.
+      if (
+        entry === null ||
+        (typeof entry !== 'object' && typeof entry !== 'function')
+      ) {
+        throw new Error('Invalid Map initializer.');
+      }
+      collection.set(entry[0], entry[1]);
+    }
   }
-  if ((model as any).$$consumed === true) {
-    throw new Error('Already initialized Set.');
-  }
-  // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
-  (model as any).$$consumed = true;
-  const set = new Set(model);
-  return set;
+  return collection;
 }
 
 function extractIterator(response: Response, model: Array<any>): Iterator<any> {
   if (!isArray(model) || isServerReferenceObject(response, model)) {
     throw new Error('Invalid Iterator initializer.');
   }
-  if ((model as any).$$consumed === true) {
+  if ((model as any).$$consumed !== undefined) {
     throw new Error('Already initialized Iterator.');
   }
   // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
