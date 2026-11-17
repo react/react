@@ -27,6 +27,13 @@ function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
   if (metadata !== undefined) {
     switch (metadata.type) {
+      case 'error':
+        return __DEV__
+          ? [
+              value.cause,
+              value instanceof AggregateError ? value.errors : undefined,
+            ]
+          : [];
       case 'function':
         return metadata.bound;
       default:

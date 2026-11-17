@@ -186,15 +186,36 @@ function compareValue(fixture, {expectedValue, received, path}) {
   }));
 }
 
-// Production omits an Error's message.
+// Production omits an Error's message, cause and aggregated errors.
 function compareError(expectedValue, received, path) {
   assertKind(received instanceof Error, 'an Error', received);
   if (!__DEV__) {
     return [];
   }
+  const children = [];
   assertSame(received.name, expectedValue.name);
   assertSame(received.message, expectedValue.message);
-  return [];
+  assertSame('cause' in received, 'cause' in expectedValue);
+  if ('cause' in expectedValue) {
+    children.push({
+      expectedValue: expectedValue.cause,
+      received: received.cause,
+      path: path + '.cause',
+    });
+  }
+  if (expectedValue instanceof AggregateError) {
+    assertKind(
+      received instanceof AggregateError,
+      'an AggregateError',
+      received,
+    );
+    children.push({
+      expectedValue: expectedValue.errors,
+      received: received.errors,
+      path: path + '.errors',
+    });
+  }
+  return children;
 }
 
 function throwAtPath(error, path) {

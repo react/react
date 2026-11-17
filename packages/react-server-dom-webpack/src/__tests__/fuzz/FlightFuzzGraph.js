@@ -61,12 +61,19 @@ function getReferencedNodes(node) {
     case 'promise':
     case 'component':
       return [node[getNodeType(node)]];
+    case 'error':
+      return (node.cause === undefined ? [] : [node.cause]).concat(
+        node.errors === undefined ? [] : node.errors,
+      );
     default:
       return [];
   }
 }
 
-function getReachableNodes(graph, {roots = Object.values(graph.roots)} = {}) {
+function getReachableNodes(
+  graph,
+  {roots = Object.values(graph.roots), includeErrorProperties = true} = {},
+) {
   const reached = new Set();
   const todo = roots.slice();
   while (todo.length > 0) {
@@ -74,7 +81,9 @@ function getReachableNodes(graph, {roots = Object.values(graph.roots)} = {}) {
     const node = graph.nodes[name];
     if (!reached.has(name) && node !== undefined) {
       reached.add(name);
-      todo.push(...getReferencedNodes(node));
+      if (includeErrorProperties || getNodeType(node) !== 'error') {
+        todo.push(...getReferencedNodes(node));
+      }
     }
   }
   return reached;
@@ -112,6 +121,8 @@ const graphOperations = [
   'component',
   'failing component',
   'bound function',
+  'error',
+  'aggregate error',
   'fragment',
   'failing module',
   'after eof',
@@ -336,6 +347,19 @@ function generateGraph(seed, {without = []} = {}) {
         });
         break;
       }
+      case 'error': {
+        nodes[addError()].cause = pickFrom(referenceTargets);
+        break;
+      }
+      case 'aggregate error': {
+        // Use existing values: AggregateError copies the array in its constructor.
+        const aggregated = [
+          pickFrom(referenceTargets),
+          pickFrom(referenceTargets),
+        ];
+        nodes[addError()].errors = aggregated;
+        break;
+      }
       case 'fragment': {
         const hosts = names.filter(name => 'host' in nodes[name]);
         if (hosts.length > 0) {
@@ -373,8 +397,12 @@ function generateGraph(seed, {without = []} = {}) {
   }
   const roots = {entry: pickFrom(containers), other: pickFrom(containers)};
   // Make every generated node reachable so the writer sees all expected errors.
+  // Error causes don't count here because production doesn't serialize them.
   for (;;) {
-    const reached = getReachableNodes({nodes, roots});
+    const reached = getReachableNodes(
+      {nodes, roots},
+      {includeErrorProperties: false},
+    );
     const missing = referenceTargets.filter(name => !reached.has(name));
     if (missing.length === 0) {
       break;
@@ -460,15 +488,17 @@ function* generateReductionCandidates(graph) {
     const type = getNodeType(node);
     // Try removing large pieces first, so that it does not take one run for
     // every removed item.
-    const list = type === 'object' ? Object.keys(node.object) : node[type];
-    if (Array.isArray(list) && type !== 'element') {
+    const listKey = type === 'error' ? 'errors' : type;
+    const list =
+      listKey === 'object' ? Object.keys(node.object) : node[listKey];
+    if (Array.isArray(list) && listKey !== 'element') {
       for (let width = list.length; width > 0; width = Math.floor(width / 2)) {
         for (let start = 0; start < list.length; start += width) {
           const kept = list.slice(0, start).concat(list.slice(start + width));
           yield replace({
             ...node,
-            [type]:
-              type === 'object'
+            [listKey]:
+              listKey === 'object'
                 ? Object.fromEntries(
                     kept.map(field => [field, node.object[field]]),
                   )
@@ -477,7 +507,7 @@ function* generateReductionCandidates(graph) {
         }
       }
     }
-    const options = ['async', 'fail', 'reject', 'throw', 'loaded'];
+    const options = ['cause', 'async', 'fail', 'reject', 'throw', 'loaded'];
     for (let j = 0; j < options.length; j++) {
       const key = options[j];
       if (key in node) {

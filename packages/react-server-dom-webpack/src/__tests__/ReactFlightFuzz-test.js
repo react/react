@@ -1275,6 +1275,62 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       }));
   });
 
+  describe('Error properties and mixed graph values', () => {
+    it('exposes Error causes and AggregateError members in DEV', () =>
+      withFlightModules(async () => {
+        const cause = {detail: 'source'};
+        const received = await roundTrip({
+          error: new Error('single', {cause}),
+          aggregate: new AggregateError([cause], 'several', {cause}),
+        });
+        expect(received.error).toBeInstanceOf(Error);
+        expect(received.aggregate).toBeInstanceOf(Error);
+        if (__DEV__) {
+          expect(received.error.message).toBe('single');
+          expect(received.error.cause).toEqual({detail: 'source'});
+          expect(received.aggregate).toBeInstanceOf(AggregateError);
+          expect(received.aggregate.message).toBe('several');
+          expect(received.aggregate.cause).toEqual({detail: 'source'});
+          expect(received.aggregate.errors).toEqual([{detail: 'source'}]);
+        } else {
+          expect('cause' in received.error).toBe(false);
+          expect('cause' in received.aggregate).toBe(false);
+          expect('errors' in received.aggregate).toBe(false);
+        }
+      }));
+
+    // This hangs in DEV until an Error's cause refers to the row it was
+    // written to.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('an Error that is its own cause', () =>
+      runGraph({
+        nodes: {error: {error: 'self cause', cause: 'error'}},
+        roots: {entry: 'error', other: 'error'},
+      }));
+
+    // @gate FIXME || !__DEV__
+    it('Error whose cause is still loading', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          error: {error: 'cause loading', cause: 'ready'},
+          set: {set: ['error']},
+        },
+        roots: {entry: 'set', other: 'set'},
+      }));
+
+    // @gate FIXME || !__DEV__
+    it('Error with cyclic cause', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          cell: {object: {field0: 'ready', field1: 'error'}},
+          error: {error: 'cyclic cause', cause: 'cell'},
+        },
+        roots: {entry: 'error', other: 'cell'},
+      }));
+  });
+
   describe('other graphs', () => {
     // This hangs until colons in reference paths are escaped.
     // eslint-disable-next-line jest/no-disabled-tests
@@ -1364,6 +1420,8 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                   'component',
                   'failing component',
                   'bound function',
+                  'error',
+                  'aggregate error',
                   'fragment',
                   'undefined',
                   'colon',

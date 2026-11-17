@@ -24,6 +24,7 @@ async function createFixture(
     roots: Object.values(graph.roots).concat(
       Object.keys(nodes).filter(name => getNodeType(nodes[name]) === 'promise'),
     ),
+    includeErrorProperties: __DEV__,
   });
   const events = [];
   const requiredEvents = new Map();
@@ -116,7 +117,9 @@ async function createFixture(
         break;
       }
       case 'error':
-        values[name] = createError(node.error);
+        if (node.errors === undefined) {
+          values[name] = createError(node.error);
+        }
         break;
       case 'array':
         values[name] = [];
@@ -158,6 +161,12 @@ async function createFixture(
     buildingValues.add(name);
     const node = nodes[name];
     switch (getNodeType(node)) {
+      case 'error':
+        values[name] = createAggregateError(
+          node.error,
+          node.errors.map(buildValue),
+        );
+        break;
       case 'fragment':
         values[name] = createFragment(node.fragment.map(buildValue), {
           key: name,
@@ -245,6 +254,11 @@ async function createFixture(
           }
           values[name].set(getValue(key), getValue(item));
         });
+        break;
+      case 'error':
+        if (node.cause !== undefined) {
+          values[name].cause = getValue(node.cause);
+        }
         break;
       case 'component':
         if (node.throw && serializedNodes.has(name)) {
@@ -450,11 +464,21 @@ async function createFixture(
     return error;
   }
 
+  function createAggregateError(message, errors) {
+    const error = new AggregateError(errors, message);
+    valueMetadata.set(error, {
+      type: 'error',
+      digest: 'digest:' + message,
+    });
+    return error;
+  }
+
   return fixture;
 }
 
 function checkReachability(graph) {
   const {nodes} = graph;
+  // Keep source references valid even when production omits Error properties.
   const reached = getReachableNodes(graph);
   Object.keys(nodes).forEach(name => {
     if (!reached.has(name)) {
