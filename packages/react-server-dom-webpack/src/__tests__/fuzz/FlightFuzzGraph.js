@@ -11,10 +11,21 @@
 //
 //   nodes: {
 //     array: {array: ['array']},
-//     set: {set: ['array']},
+//     promise: {promise: 'array'},
 //   },
-//   roots: {entry: 'array', other: 'set'},
-const nodeTypes = ['value', 'date', 'special', 'array', 'object', 'set', 'map'];
+//   roots: {entry: 'array', other: 'promise'},
+const nodeTypes = [
+  'value',
+  'date',
+  'special',
+  'module',
+  'error',
+  'array',
+  'object',
+  'set',
+  'map',
+  'promise',
+];
 
 function getNodeType(node) {
   const type = nodeTypes.find(candidate => candidate in node);
@@ -33,6 +44,8 @@ function getReferencedNodes(node) {
       return Object.values(node.object);
     case 'map':
       return node.map.flat();
+    case 'promise':
+      return [node[getNodeType(node)]];
     default:
       return [];
   }

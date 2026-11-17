@@ -13,9 +13,13 @@ const {
   specialValueFactories,
 } = require('./FlightFuzzGraph');
 
-function createFixture(graph) {
+async function createFixture(graph, {WebpackMock}) {
   checkReachability(graph);
   const {nodes} = graph;
+  const events = [];
+  const requiredEvents = new Map();
+  const valueMetadata = new Map();
+  const expectedErrors = new Map();
 
   const values = {};
   const getValue = name => {
@@ -23,6 +27,14 @@ function createFixture(graph) {
       throw new Error('The graph refers to ' + name + ', which is not a node');
     }
     return values[name];
+  };
+  const deferredPromises = new Map();
+  const getError = name => {
+    const error = getValue(name);
+    if (!(error instanceof Error)) {
+      throw new Error(name + ' is used as an Error but is not an error node');
+    }
+    return error;
   };
   // Allocate containers before filling them so references can form cycles.
   for (const name in nodes) {
@@ -37,6 +49,59 @@ function createFixture(graph) {
       case 'special':
         values[name] = specialValueFactories[node.special]();
         break;
+      case 'module': {
+        const load = createResolvablePromise();
+        const evaluate = node.async === true ? createResolvablePromise() : null;
+        const loadError =
+          node.fail === 'load'
+            ? new Error('module ' + name + ' failed to load')
+            : undefined;
+        const evaluationError =
+          node.fail === 'evaluate'
+            ? new Error('module ' + name + ' failed to evaluate')
+            : undefined;
+        let exports = WebpackMock.clientExports(
+          evaluate === null ? {value: node.module} : evaluate.promise,
+          name,
+          name + '.js',
+          load.promise,
+        );
+        let evaluateEvent = null;
+        if (evaluate !== null) {
+          // Awaiting the module proxy marks this as an async import.
+          exports = await exports;
+          evaluateEvent = createEvent(
+            'evaluate ' + name,
+            () =>
+              evaluationError !== undefined
+                ? evaluate.reject(evaluationError)
+                : evaluate.resolve({value: node.module}),
+            {error: evaluationError, isClient: true},
+          );
+          events.push(evaluateEvent);
+        }
+        const reference = exports.value;
+        values[name] = reference;
+        valueMetadata.set(reference, {type: 'module', value: node.module});
+        const loadEvent = createEvent(
+          (loadError !== undefined ? 'reject ' : 'load ') + name,
+          () =>
+            loadError !== undefined ? load.reject(loadError) : load.resolve(),
+          {error: loadError, isClient: true},
+        );
+        events.push(loadEvent);
+        if (evaluateEvent !== null) {
+          evaluateEvent.after = loadEvent;
+        }
+        requiredEvents.set(
+          reference,
+          evaluateEvent === null ? [loadEvent] : [loadEvent, evaluateEvent],
+        );
+        break;
+      }
+      case 'error':
+        values[name] = createError(node.error);
+        break;
       case 'array':
         values[name] = [];
         break;
@@ -49,6 +114,13 @@ function createFixture(graph) {
       case 'map':
         values[name] = new Map();
         break;
+      case 'promise': {
+        const deferred = createResolvablePromise();
+        trackPromise(deferred.promise);
+        deferredPromises.set(name, deferred);
+        values[name] = deferred.promise;
+        break;
+      }
       default:
         break;
     }
@@ -77,16 +149,98 @@ function createFixture(graph) {
           values[name].set(getValue(key), getValue(item));
         });
         break;
+      case 'promise': {
+        const deferred = deferredPromises.get(name);
+        if (node.reject) {
+          const error = getError(node.promise);
+          events.push(
+            createEvent('reject ' + name, () => {
+              expectedErrors.set(error, 'rejecting ' + name);
+              deferred.reject(error);
+            }),
+          );
+        } else {
+          const target = getValue(node.promise);
+          events.push(
+            createEvent('resolve ' + name + ' to ' + node.promise, () =>
+              deferred.resolve(target),
+            ),
+          );
+        }
+        break;
+      }
       default:
         break;
     }
   }
 
+  // Other results must be able to finish while this Promise is still pending.
+  const unrelated = createResolvablePromise();
+  trackPromise(unrelated.promise);
+  const unrelatedEvent = createEvent('resolve an unrelated Promise', () =>
+    unrelated.resolve('end'),
+  );
+  events.push(unrelatedEvent);
   const model = {
     entry: getValue(graph.roots.entry),
     other: getValue(graph.roots.other),
+    // Include all Promises so a rejected parent can't hide their results.
+    outcomes: Array.from(
+      deferredPromises.values(),
+      deferred => deferred.promise,
+    ),
+    unrelated: unrelated.promise,
   };
-  return {model};
+  let rootPromise = null;
+  if (graph.rootPromise) {
+    const root = createResolvablePromise();
+    trackPromise(root.promise);
+    rootPromise = root.promise;
+    events.unshift(
+      createEvent('resolve the root Promise', () => root.resolve(model)),
+    );
+  }
+  const fixture = {
+    model: rootPromise === null ? model : rootPromise,
+    events,
+    requiredEvents,
+    valueMetadata,
+    expectedErrors,
+    unrelatedEvent,
+    rootPromise,
+    resolvedModel: rootPromise === null ? null : model,
+  };
+
+  function trackPromise(promise) {
+    // Track native settlement without relying on React's thenable fields.
+    const metadata = {
+      type: 'promise',
+      state: 'pending',
+      value: undefined,
+      reason: undefined,
+    };
+    valueMetadata.set(promise, metadata);
+    promise.then(
+      value => {
+        metadata.state = 'fulfilled';
+        metadata.value = value;
+      },
+      reason => {
+        metadata.state = 'rejected';
+        metadata.reason = reason;
+      },
+    );
+  }
+
+  function createError(message) {
+    const error = new Error(message);
+    // Server rejections are matched by digest in both modes.
+    const digest = 'digest:' + message;
+    valueMetadata.set(error, {type: 'error', digest});
+    return error;
+  }
+
+  return fixture;
 }
 
 function checkReachability(graph) {
@@ -97,6 +251,22 @@ function checkReachability(graph) {
       throw new Error(name + ' is not reachable from the roots');
     }
   });
+}
+
+function createEvent(label, run, {error, isClient = false} = {}) {
+  return {label, run, released: false, error, isClient, after: undefined};
+}
+
+function createResolvablePromise() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  // Prevent unhandled rejections before the reader has subscribed.
+  promise.then(undefined, () => {});
+  return {promise, resolve, reject};
 }
 
 module.exports = {createFixture};

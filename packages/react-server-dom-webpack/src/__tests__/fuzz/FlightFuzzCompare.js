@@ -93,13 +93,30 @@ function assertSingleSource(expectedByReceived, expectedValue, received) {
 
 // Compares the contents of one source value with one received value, without
 // looking into nested values. Returns the nested pairs to compare next. The
-// caller tracks identity and stops at cycles.
-function compareValue({expectedValue, received, path}) {
+// caller tracks identity and stops at cycles. Values with fixture metadata
+// are only checked for their kind here; their results are observed separately.
+function compareValue(fixture, {expectedValue, received, path}) {
   if (!isObject(expectedValue)) {
     assertSame(received, expectedValue);
     return [];
   }
+  const metadata = fixture.valueMetadata.get(expectedValue);
+  if (metadata !== undefined && metadata.type === 'module') {
+    assertSame(received, metadata.value);
+    return [];
+  }
   assertKind(isObject(received), 'an object', received);
+  if (metadata !== undefined) {
+    switch (metadata.type) {
+      case 'promise':
+        assertKind(typeof received.then === 'function', 'a thenable', received);
+        return [];
+      case 'error':
+        return compareError(expectedValue, received, path);
+      default:
+        throw new Error('Unknown value type: ' + metadata.type);
+    }
+  }
   if (expectedValue instanceof Set) {
     assertKind(received instanceof Set, 'a Set', received);
     assertSame(received.size, expectedValue.size);
@@ -154,6 +171,17 @@ function compareValue({expectedValue, received, path}) {
     received: received[key],
     path: isArray ? path + '[' + key + ']' : path + '.' + key,
   }));
+}
+
+// Production omits an Error's message.
+function compareError(expectedValue, received, path) {
+  assertKind(received instanceof Error, 'an Error', received);
+  if (!__DEV__) {
+    return [];
+  }
+  assertSame(received.name, expectedValue.name);
+  assertSame(received.message, expectedValue.message);
+  return [];
 }
 
 function throwAtPath(error, path) {

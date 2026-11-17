@@ -13,12 +13,32 @@ const MAX_FLUSH_ATTEMPTS = 30;
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+// Run source events in a native callback for React's async tracing.
+// Microtasks and setImmediate are treated as continuations of existing I/O.
+function runInIOCallback(fn) {
+  return new Promise((resolve, reject) => {
+    const {MessageChannel} = require('node:worker_threads');
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      try {
+        resolve(fn());
+      } catch (error) {
+        reject(error);
+      }
+    };
+    channel.port2.postMessage(undefined);
+  });
+}
+
 function startFlightResponse({
   ReactServerDOMServer,
   ReactServerDOMClient,
   WebpackMock,
   host,
   model,
+  packetSizes,
+  yieldBetweenPackets,
   onError,
 }) {
   const manifest = {
@@ -31,6 +51,7 @@ function startFlightResponse({
   let serverDone = false;
   let closed = false;
   let disposed = false;
+  let packet = 0;
   let send;
   let end;
   let abort;
@@ -113,12 +134,19 @@ function startFlightResponse({
     });
   }
 
+  // Split output into uneven packets to exercise partial reads.
   async function flush() {
     await tick();
-    if (queued.length > 0) {
-      send(Buffer.concat(queued));
-    }
+    const bytes = Buffer.concat(queued);
     queued = [];
+    for (let offset = 0; offset < bytes.length; ) {
+      const size = packetSizes[packet++ % packetSizes.length];
+      send(bytes.subarray(offset, offset + size));
+      offset += size;
+      if (yieldBetweenPackets) {
+        await tick();
+      }
+    }
 
     await tick();
     if (errors.length) {
@@ -141,7 +169,14 @@ function startFlightResponse({
 
   return {
     root,
+    get isClosed() {
+      return closed;
+    },
+    get isServerDone() {
+      return serverDone;
+    },
     flush,
+    drain,
     // Flush all server output without closing the client stream. Pending
     // values must complete without relying on EOF.
     finish: () =>
@@ -176,4 +211,4 @@ function startFlightResponse({
   };
 }
 
-module.exports = {startFlightResponse};
+module.exports = {startFlightResponse, tick, runInIOCallback};
