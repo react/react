@@ -10,10 +10,14 @@
 
 'use strict';
 
+import {patchMessageChannel} from '../../../../scripts/jest/patchMessageChannel';
+
 // Send generated JavaScript values through the Flight server and client.
 // Vary when Promises resolve, modules load, and stream items are produced.
 // Check the results against the source values after each event.
 // The reply host encodes on the client and decodes on the server instead.
+// The reply-temporary host sends the decoded reply back to the client with
+// temporary reference sets on both sides.
 //
 // FUZZ_TEST_SEED picks the seed. FLIGHT_FUZZ_CASES is how many cases are
 // generated from it.
@@ -35,6 +39,10 @@ const {
   formatGraphTest,
   formatReplayCommand,
 } = require('./fuzz/FlightFuzzGraph');
+const {
+  roundTripTemporaryReferences,
+  compareTemporaryReferences,
+} = require('./fuzz/FlightFuzzTemporaryReferences');
 
 // TODO: Remove the CI check once the remaining fixes have landed. Until then,
 // a random seed can generate cases that still fail, and the scheduled CI job
@@ -2426,6 +2434,280 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
           0,
         ),
         () => runGraph({...scaled.graph, seed, readTiming}),
+      );
+    });
+  });
+
+  // Paste a failing graph's test here.
+});
+
+// The reply-temporary host encodes the graph as a reply, decodes it, reads out
+// its async values and renders the result back to the client. Every source
+// event is released before encoding, so it does not use the event schedule or
+// the oracle above. It adds values that can only be sent with a temporary
+// reference set: opaque leaves and a synchronously settling thenable.
+//
+// It leaves out client modules, Server Functions, rendered elements, Errors,
+// rejections, canceled and byte streams, and the response options. Symbols are
+// generated as opaque leaves, and FormData is left out.
+const REPLY_TEMPORARY_WITHOUT = [
+  'module',
+  'failing module',
+  'bound function',
+  'element',
+  'props',
+  'component',
+  'failing component',
+  'fragment',
+  'host',
+  'error',
+  'aggregate error',
+  'rejected promise',
+  'failing stream',
+  'canceled stream',
+  'byte stream',
+  'after eof',
+  'root promise',
+  'symbol',
+  'form data',
+];
+const REPLY_TEMPORARY_EXTRA = [
+  'opaque leaf',
+  'opaque item',
+  'shared item',
+  'thenable item',
+];
+
+describe('ReactFlightFuzz (reply-temporary)', () => {
+  let React;
+  let ReactServer;
+  let ReactServerDOMServer;
+  let ReactServerDOMClient;
+  let WebpackMock;
+  let serverAct;
+
+  function loadModules() {
+    Object.defineProperties(console, consoleMethods);
+    jest.resetModules();
+    // serverAct flushes the server scheduler through Jest's timer mocks, so this
+    // host uses them rather than the real timers the other hosts switch to.
+    jest.useFakeTimers();
+    patchMessageChannel(require('scheduler'));
+    serverAct = require('internal-test-utils').serverAct;
+    jest.mock('react', () => require('react/react.react-server'));
+    jest.doMock('react-server-dom-webpack/server', () =>
+      require('react-server-dom-webpack/server.edge'),
+    );
+    WebpackMock = require('./utils/WebpackMock');
+    ReactServerDOMServer = require('react-server-dom-webpack/server.edge');
+    ReactServer = require('react');
+    jest.resetModules();
+    __unmockReact();
+    React = require('react');
+    ReactServerDOMClient = require('react-server-dom-webpack/client.edge');
+  }
+
+  // Returns null on success, or the error and the graph.
+  async function runCase(graph) {
+    let ran = false;
+    try {
+      await withCleanConsole(loadModules, async () => {
+        const fixture = await createFixture(graph, {
+          React,
+          ReactServer,
+          WebpackMock,
+          observeProps() {},
+        });
+        // encodeReply waits for the source Promises, streams and iterables, so
+        // every writer event is released before encoding begins.
+        fixture.events.forEach(releaseEvent);
+        ran = true;
+        const sourceRoot = {
+          entry: fixture.model.entry,
+          other: fixture.model.other,
+        };
+        const received = await roundTripTemporaryReferences(
+          {ReactServerDOMServer, ReactServerDOMClient, WebpackMock, serverAct},
+          sourceRoot,
+        );
+        await compareTemporaryReferences(fixture, sourceRoot, received);
+      });
+      return null;
+    } catch (error) {
+      // The case itself is invalid, so there is nothing to run again.
+      if (!ran) {
+        throw error;
+      }
+      return {error, graph};
+    }
+  }
+
+  async function runGraph(graph, seed = SEED) {
+    const failure = await runCase(graph);
+    if (failure !== null) {
+      await reportFailure(failure, {
+        seed,
+        readTiming: 'after-events',
+        pastedName: 'ReactFlightFuzz (reply-temporary) pasted',
+        replay: runCase,
+      });
+    }
+  }
+
+  describe('named regression cases', () => {
+    // A stream item outlined because it holds a shared object must not come
+    // back as undefined.
+    it('outlined stream item with a shared sub-object', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          item: {object: {a: 'shared', b: 'shared'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('outlined async iterable item with a shared sub-object', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          item: {object: {a: 'shared', b: 'shared'}},
+          iterable: {iterable: ['item'], single: true},
+        },
+        roots: {entry: 'iterable', other: 'iterable'},
+      }));
+
+    // An element, function or symbol inside a stream item must not leave a
+    // reference the server cannot resolve.
+    // @gate FIXME
+    it('opaque leaves inside a stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'plain'},
+          plain: {object: {value: 'value'}},
+          el: {opaqueElement: true},
+          fn: {opaqueFunction: true},
+          sym: {opaqueSymbol: true},
+          item: {object: {el: 'el', fn: 'fn', sym: 'sym', plain: 'plain'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    // @gate FIXME
+    it('opaque leaf inside an async iterable return value', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'first'},
+          first: {object: {value: 'value'}},
+          el: {opaqueElement: true},
+          returned: {object: {el: 'el'}},
+          iterable: {iterable: ['first'], returns: 'returned', single: true},
+        },
+        roots: {entry: 'iterable', other: 'iterable'},
+      }));
+
+    // A thenable that settles synchronously to another object of its stream
+    // item must not leave a reference to a part that is never written.
+    it('synchronous thenable resolving to an object of its stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          thenable: {syncThenable: 'shared'},
+          item: {object: {x: 'shared', p: 'thenable'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('asynchronous thenable resolving to an object of its stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          thenable: {promise: 'shared'},
+          item: {object: {x: 'shared', p: 'thenable'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+  });
+
+  describe('temporary reference graphs', () => {
+    it('opaque leaves in ordinary containers', () =>
+      runGraph({
+        nodes: {
+          el: {opaqueElement: true},
+          fn: {opaqueFunction: true},
+          sym: {opaqueSymbol: true},
+          holder: {object: {el: 'el', fn: 'fn', sym: 'sym'}},
+          repeat: {array: ['el', 'fn', 'sym']},
+          root: {object: {holder: 'holder', repeat: 'repeat'}},
+        },
+        roots: {entry: 'root', other: 'holder'},
+      }));
+
+    it('a shared sub-object across a Map, a Set and the item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'shared'},
+          shared: {object: {value: 'value'}},
+          key: {value: 'key'},
+          map: {map: [['key', 'shared']]},
+          set: {set: ['shared']},
+          item: {object: {map: 'map', set: 'set', direct: 'shared'}},
+          stream: {stream: ['item']},
+        },
+        roots: {entry: 'stream', other: 'stream'},
+      }));
+
+    it('a nested stream inside a stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'leaf'},
+          leaf: {object: {value: 'value'}},
+          innerItem: {object: {leaf: 'leaf'}},
+          inner: {stream: ['innerItem']},
+          item: {object: {inner: 'inner'}},
+          outer: {stream: ['item']},
+        },
+        roots: {entry: 'outer', other: 'outer'},
+      }));
+
+    it('a self cycle carried through a stream item', () =>
+      runGraph({
+        nodes: {
+          value: {value: 'leaf'},
+          leaf: {object: {value: 'value'}},
+          item: {object: {leaf: 'leaf'}},
+          stream: {stream: ['item']},
+          root: {object: {stream: 'stream', self: 'root'}},
+        },
+        roots: {entry: 'root', other: 'root'},
+      }));
+  });
+
+  describe('generated graphs', () => {
+    seeds.forEach(seed => {
+      // Waits for the reply decoder to create a Set or Map where its marker
+      // is; generated cycles through Sets and Maps fail until then.
+      // eslint-disable-next-line jest/no-disabled-tests
+      it.skip('graph seed=' + seed, () =>
+        runGraph(
+          generateGraph(seed, {
+            without: [
+              ...REPLY_TEMPORARY_WITHOUT,
+              // These produce cases that fail for now.
+              'undefined',
+              'colon',
+            ],
+            extra: REPLY_TEMPORARY_EXTRA,
+          }),
+          seed,
+        ),
       );
     });
   });
