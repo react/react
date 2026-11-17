@@ -1048,7 +1048,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         events: ['load fn', 'load ready'],
       }));
 
-    // @gate FIXME
     it('function bound to its array', () =>
       runGraph({
         nodes: {
@@ -1086,7 +1085,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'fn', other: 'fn'},
       }));
 
-    // @gate FIXME
     it('cycle first exposed through a Promise of a bound function', () =>
       runGraph({
         nodes: {
@@ -1098,7 +1096,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'exposure', other: 'exposure'},
       }));
 
-    // @gate FIXME
     it('a repeated Server Function bound to its loading container', () =>
       runGraph({
         nodes: {
@@ -1180,7 +1177,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         ],
       }));
 
-    // @gate FIXME
     it('props object referenced again while a prop is loading', () =>
       runGraph({
         nodes: {
@@ -1205,9 +1201,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'element', other: 'selected'},
       }));
 
-    // This fails on most runs until references are fulfilled early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('element reaching itself through its props', () =>
+    it('element reaching itself through its props', () =>
       runGraph({
         nodes: {
           payload: {module: 'export-0'},
@@ -1308,7 +1302,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'error', other: 'error'},
       }));
 
-    // @gate FIXME || !__DEV__
     it('Error whose cause is still loading', () =>
       runGraph({
         nodes: {
