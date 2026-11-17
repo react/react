@@ -2289,7 +2289,7 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
   );
 
   pingTask(request, newTask);
-  return serializeLazyID(newTask.id);
+  return serializeLazyReference(request, task.model, newTask.id);
 }
 
 function outlineTask(request: Request, task: Task): ReactJSONValue {
@@ -2314,7 +2314,7 @@ function outlineTask(request: Request, task: Task): ReactJSONValue {
   }
   // This didn't complete synchronously so it wouldn't have even if we didn't
   // outline it, so this would reduce to a lazy reference even in prod.
-  return serializeLazyID(newTask.id);
+  return serializeLazyReference(request, task.model, newTask.id);
 }
 
 function outlineHaltedTask(
@@ -3083,6 +3083,30 @@ function serializeLazyID(id: number): string {
   return '$L' + id.toString(16);
 }
 
+function serializeLazyReference(
+  request: Request,
+  model: ReactClientValue,
+  id: number,
+): string {
+  const lazyReference = serializeLazyID(id);
+  // createTask registered the element by the new task's id. A later occurrence
+  // of the same element would otherwise make the model holding it wait for the
+  // component to render, even though it is reduced to a lazy here. Point those
+  // occurrences at the lazy reference too.
+  if (
+    typeof model === 'object' &&
+    model !== null &&
+    ((model as any).$$typeof === REACT_ELEMENT_TYPE ||
+      (model as any).$$typeof === REACT_LAZY_TYPE)
+  ) {
+    const entry = request.writtenObjects.get(model);
+    if (entry !== undefined && entry.reference === serializeByValueID(id)) {
+      writeToDedupeMap(request, model, id, lazyReference);
+    }
+  }
+  return lazyReference;
+}
+
 function serializePromiseID(id: number): string {
   return '$@' + id.toString(16);
 }
@@ -3311,6 +3335,9 @@ function outlineModelWithFormatContext(
     null, // have any context on the server but can on the client.
   );
   retryTask(request, newTask);
+  if (newTask.status !== COMPLETED) {
+    serializeLazyReference(request, value, newTask.id);
+  }
   return newTask.id;
 }
 
@@ -3761,7 +3788,7 @@ function renderModel(
         task.implicitSlot = prevImplicitSlot;
 
         if (wasReactNode) {
-          return serializeLazyID(newTask.id);
+          return serializeLazyReference(request, task.model, newTask.id);
         }
         return serializeByValueID(newTask.id);
       }
@@ -3845,12 +3872,8 @@ function renderModelDestructive(
               modelRoot = null;
             } else {
               // We've already emitted this as an outlined object, so we can refer to that by its
-              // existing ID. TODO: We should use a lazy reference since, unlike plain objects,
-              // elements might suspend so it might not have emitted yet even if we have the ID for
-              // it. However, this creates an extra wrapper when it's not needed. We should really
-              // detect whether this already was emitted and synchronously available. In that
-              // case we can refer to it synchronously and only make it lazy otherwise.
-              // We currently don't have a data structure that lets us see that though.
+              // existing ID. An element that suspended is remembered by a lazy reference, so
+              // referring to it does not wait for it. See serializeLazyReference.
               return existingEntry.reference;
             }
           } else if (parentPropertyName.indexOf(':') === -1) {
