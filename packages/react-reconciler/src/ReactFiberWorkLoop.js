@@ -196,6 +196,7 @@ import {
   includesExpiredLane,
   getNextLanes,
   getEntangledLanes,
+  DeferredLane,
   getLanesToRetrySynchronouslyOnError,
   upgradePendingLanesToSync,
   markRootSuspended as _markRootSuspended,
@@ -1817,16 +1818,34 @@ function markRootSuspended(
   didAttemptEntireTree: boolean,
 ) {
   // When suspending, we should always mark the entangled lanes as suspended.
-  suspendedLanes = getEntangledLanes(root, suspendedLanes);
+  const entangledLanes = getEntangledLanes(root, suspendedLanes);
+  let prewarmedLanes = NoLanes;
+  if (!includesSomeLane(entangledLanes, DeferredLane)) {
+    suspendedLanes = entangledLanes;
+  } else {
+    // Except for a deferred render. It's entangled with the lanes that spawned
+    // it, so that it includes their updates. But it renders the final values
+    // instead of the initial ones, so its suspending doesn't mean those lanes
+    // are blocked. It only counts as having prewarmed them.
+    prewarmedLanes = removeLanes(
+      entangledLanes,
+      mergeLanes(suspendedLanes, DeferredLane),
+    );
+  }
 
   // When suspending, we should always exclude lanes that were pinged or (more
   // rarely, since we try to avoid it) updated during the render phase.
-  suspendedLanes = removeLanes(suspendedLanes, workInProgressRootPingedLanes);
-  suspendedLanes = removeLanes(
-    suspendedLanes,
+  const excludedLanes = mergeLanes(
+    workInProgressRootPingedLanes,
     workInProgressRootInterleavedUpdatedLanes,
   );
-  _markRootSuspended(root, suspendedLanes, spawnedLane, didAttemptEntireTree);
+  _markRootSuspended(
+    root,
+    removeLanes(suspendedLanes, excludedLanes),
+    removeLanes(prewarmedLanes, excludedLanes),
+    spawnedLane,
+    didAttemptEntireTree,
+  );
 }
 
 export function flushRoot(root: FiberRoot, lanes: Lanes) {
