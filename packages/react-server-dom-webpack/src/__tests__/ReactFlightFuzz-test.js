@@ -1128,9 +1128,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'object', other: 'object'},
       }));
 
-    // Edge fails this until a typed array written twice reuses its row.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a large binary value written in two places', () =>
+    it('a large binary value written in two places', () =>
       runGraph({
         nodes: {
           binary: {special: 'large binary'},
