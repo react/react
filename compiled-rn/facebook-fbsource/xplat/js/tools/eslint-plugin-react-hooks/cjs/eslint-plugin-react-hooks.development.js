@@ -12,7 +12,7 @@
  * @lightSyntaxTransform
  * @preventMunge
  * @oncall react_core
- * @generated SignedSource<<e2ad1915e71ec107b36d0bd915195e5c>>
+ * @generated SignedSource<<7b1a1ba8a36d1d71f92436bb79bb0a0c>>
  */
 
 'use strict';
@@ -46578,6 +46578,9 @@ function outlineFunctions(fn, fbtOperands) {
             const { value, lvalue } = instr;
             if (value.kind === 'FunctionExpression' ||
                 value.kind === 'ObjectMethod') {
+                if (value.loweredFunc.func.directives.some(directive => OPT_OUT_DIRECTIVES.has(directive))) {
+                    continue;
+                }
                 outlineFunctions(value.loweredFunc.func, fbtOperands);
             }
             if (value.kind === 'FunctionExpression' &&

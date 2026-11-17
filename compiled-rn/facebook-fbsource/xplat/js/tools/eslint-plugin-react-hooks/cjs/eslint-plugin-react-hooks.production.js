@@ -6,7 +6,7 @@
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
- * @generated SignedSource<<b75bf7bdd530f019a09f147d502c0718>>
+ * @generated SignedSource<<60aa9a529431fce59abfaa3ad6d182bf>>
  */
 
 'use strict';
@@ -46357,6 +46357,9 @@ function outlineFunctions(fn, fbtOperands) {
             const { value, lvalue } = instr;
             if (value.kind === 'FunctionExpression' ||
                 value.kind === 'ObjectMethod') {
+                if (value.loweredFunc.func.directives.some(directive => OPT_OUT_DIRECTIVES.has(directive))) {
+                    continue;
+                }
                 outlineFunctions(value.loweredFunc.func, fbtOperands);
             }
             if (value.kind === 'FunctionExpression' &&
