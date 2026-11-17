@@ -164,6 +164,7 @@ function startFlightResponse({
       await new Promise(resolve => setTimeout(resolve, 1));
     }
     const error = new Error('No progress: ' + describe());
+    error.fuzzFailure = 'liveness';
     throw error;
   }
 

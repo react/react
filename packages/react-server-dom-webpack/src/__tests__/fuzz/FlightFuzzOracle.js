@@ -252,6 +252,9 @@ function throwIfFailed(state) {
 }
 
 function recordFailure(state, error) {
+  if (error.fuzzFailure === undefined) {
+    error.fuzzFailure = 'observation: ' + error.message;
+  }
   state.failures.push(error);
 }
 

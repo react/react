@@ -16,6 +16,8 @@
 //
 // FUZZ_TEST_SEED picks the seed. FLIGHT_FUZZ_CASES is how many cases are
 // generated from it.
+// FLIGHT_FUZZ_SHRINK is how many times a failed case may be run again to find
+// a smaller one.
 
 const {createOracle} = require('./fuzz/FlightFuzzOracle');
 const {createFixture} = require('./fuzz/FlightFuzzFixture');
@@ -28,6 +30,8 @@ const {
   createRandom,
   generateGraph,
   generateScaleGraph,
+  shrinkGraph,
+  formatGraphTest,
   formatReplayCommand,
 } = require('./fuzz/FlightFuzzGraph');
 
@@ -36,12 +40,17 @@ const {
 // passes a random seed. So in CI we always use the default one.
 const SEED = (!process.env.CI && process.env.FUZZ_TEST_SEED) || 'default';
 const caseCount = +(process.env.FLIGHT_FUZZ_CASES ?? 4);
+const shrinkBudget = +(process.env.FLIGHT_FUZZ_SHRINK ?? 0);
 if (!Number.isSafeInteger(caseCount) || caseCount < 1) {
   throw new Error('FLIGHT_FUZZ_CASES must be a positive integer.');
 }
+if (!Number.isSafeInteger(shrinkBudget) || shrinkBudget < 0) {
+  throw new Error('FLIGHT_FUZZ_SHRINK must be a nonnegative replay budget.');
+}
 // TODO: Some generated cases take longer than the default timeout on CI. It
-// would be better to find out why than to raise it.
-jest.setTimeout(15000);
+// would be better to find out why than to raise it. Finding a smaller case
+// runs the failed case many times, so that needs much longer.
+jest.setTimeout(shrinkBudget > 0 ? 600000 : 15000);
 // Keep the first seed unchanged so the printed command replays that case.
 const seeds = Array.from({length: caseCount}, (_, i) =>
   i === 0 ? SEED : SEED + ':' + i,
@@ -89,18 +98,63 @@ async function withCleanConsole(loadModules, run) {
   }
 }
 
-// Throws an error that says how to run the failed case again.
-function reportFailure(error, seed) {
+// Throws an error that says how to run the failed case again. If
+// FLIGHT_FUZZ_SHRINK is set, it first looks for a smaller case that fails the
+// same way.
+async function reportFailure(original, {seed, readTiming, pastedName, replay}) {
   const testName = expect.getState().currentTestName;
   const replayOptions = {
     build: !!process.env.IS_BUILD,
     releaseChannel: process.env.RELEASE_CHANNEL || 'experimental',
   };
-  throw new Error(
-    'Replay with:\n' +
-      formatReplayCommand(seed, testName, __DEV__, replayOptions),
-    {cause: error},
-  );
+  const buildReport = (failure, reduction) =>
+    'Replay the original with:\n' +
+    formatReplayCommand(seed, testName, __DEV__, replayOptions) +
+    '\n' +
+    reduction +
+    '\nPaste this case next to the generated graphs and run with:\n' +
+    formatReplayCommand(seed, pastedName, __DEV__, replayOptions) +
+    '\n\n' +
+    formatGraphTest(failure.graph, readTiming);
+  let failure = original;
+  let reduction = '';
+  if (shrinkBudget > 0) {
+    // Looking for a smaller case can take longer than the test timeout, so
+    // print the report for the original case first. It goes to stderr because
+    // console output would fail the case.
+    process.stderr.write('\n' + buildReport(original, '') + '\n');
+    const signature = error => error.fuzzFailure || error.message;
+    const reduced = await shrinkGraph(
+      original.graph,
+      async candidate => {
+        let result;
+        try {
+          result = await replay(candidate);
+        } catch (error) {
+          // A smaller case can be invalid, for example when something still
+          // refers to a node that was replaced.
+          return false;
+        }
+        return result !== null &&
+          signature(result.error) === signature(original.error)
+          ? result
+          : false;
+      },
+      shrinkBudget,
+    );
+    if (reduced.reproduction !== null) {
+      failure = reduced.reproduction;
+    }
+    reduction =
+      '\nReduced from ' +
+      Object.keys(original.graph.nodes).length +
+      ' to ' +
+      Object.keys(failure.graph.nodes).length +
+      ' nodes in ' +
+      reduced.attempts +
+      ' replays. Each accepted reduction failed twice.\n';
+  }
+  throw new Error(buildReport(failure, reduction), {cause: failure.error});
 }
 
 // Sanity checks for the comparison that the tests below rely on. Each one
@@ -508,7 +562,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
     });
   }
 
-  // Run a graph at every read timing unless one was specified.
+  // Run a pasted case at every read timing unless one was specified.
   async function runGraph({
     readTiming,
     seed = SEED,
@@ -527,20 +581,41 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
   }
 
   async function runCaseWithReproduction(args) {
-    try {
-      await runCase(args);
-    } catch (error) {
-      reportFailure(error, args.seed);
+    const failure = await runCase(args);
+    if (failure !== null) {
+      await reportFailure(failure, {
+        seed: args.seed,
+        readTiming: args.readTiming,
+        pastedName: 'ReactFlightFuzz (' + host + ') pasted',
+        replay: graph => runCase({...args, graph}),
+      });
     }
   }
 
+  // Returns null on success, or the error and the graph with its schedule.
   async function runCase({seed, readTiming, scheduleIndex, graph}) {
-    await withFlightModules(async () => {
-      const fixture = await createFixture(graph, {WebpackMock});
-      const oracle = createOracle(fixture);
-      const schedule = createSchedule(fixture, graph, seed, scheduleIndex);
-      await checkResponse(fixture, oracle, {...schedule, readTiming});
-    });
+    let replayGraph;
+    try {
+      await withFlightModules(async () => {
+        const fixture = await createFixture(graph, {WebpackMock});
+        const oracle = createOracle(fixture);
+        const schedule = createSchedule(fixture, graph, seed, scheduleIndex);
+        replayGraph = {
+          ...graph,
+          events: schedule.events.map(event => event.label),
+          packetSizes: schedule.packetSizes,
+          yieldBetweenPackets: schedule.yieldBetweenPackets,
+        };
+        await checkResponse(fixture, oracle, {...schedule, readTiming});
+      });
+      return null;
+    } catch (error) {
+      // The case itself is invalid, so there is nothing to run again.
+      if (replayGraph === undefined) {
+        throw error;
+      }
+      return {error, graph: replayGraph};
+    }
   }
 
   function createSchedule(fixture, graph, seed, scheduleIndex) {
@@ -1030,6 +1105,8 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       );
     });
   });
+
+  // Paste a failing graph's test here.
 });
 
 function shuffle(array, pick) {

@@ -185,6 +185,9 @@ function compareError(expectedValue, received, path) {
 }
 
 function throwAtPath(error, path) {
+  if (error.fuzzFailure === undefined) {
+    error.fuzzFailure = 'value: ' + error.message;
+  }
   if (error.path === undefined) {
     error.message = path + ': ' + error.message;
     error.path = path;

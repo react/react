@@ -350,6 +350,150 @@ function generateScaleGraph(seed) {
   };
 }
 
+// Preserve node order and scheduling while removing unreachable nodes.
+function pruneGraph(graph) {
+  const reached = getReachableNodes(graph);
+  const nodes = {};
+  const names = Object.keys(graph.nodes);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    if (reached.has(name)) {
+      nodes[name] = graph.nodes[name];
+    }
+  }
+  return {...graph, nodes};
+}
+
+function* generateReductionCandidates(graph) {
+  const names = Object.keys(graph.nodes);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    yield {...graph, roots: {entry: name, other: name}};
+  }
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    const node = graph.nodes[name];
+    const replace = next => ({...graph, nodes: {...graph.nodes, [name]: next}});
+    yield replace({value: null});
+    const type = getNodeType(node);
+    // Try removing large pieces first, so that it does not take one run for
+    // every removed item.
+    const list = type === 'object' ? Object.keys(node.object) : node[type];
+    if (Array.isArray(list)) {
+      for (let width = list.length; width > 0; width = Math.floor(width / 2)) {
+        for (let start = 0; start < list.length; start += width) {
+          const kept = list.slice(0, start).concat(list.slice(start + width));
+          yield replace({
+            ...node,
+            [type]:
+              type === 'object'
+                ? Object.fromEntries(
+                    kept.map(field => [field, node.object[field]]),
+                  )
+                : kept,
+          });
+        }
+      }
+    }
+    const options = ['async', 'fail', 'reject'];
+    for (let j = 0; j < options.length; j++) {
+      const key = options[j];
+      if (key in node) {
+        const next = {...node};
+        delete next[key];
+        yield replace(next);
+      }
+    }
+  }
+  const options = ['rootPromise', 'afterEof'];
+  for (let i = 0; i < options.length; i++) {
+    const key = options[i];
+    if (graph[key]) {
+      const next = {...graph};
+      delete next[key];
+      yield next;
+    }
+  }
+}
+
+async function shrinkGraph(original, reproduces, budget) {
+  let graph = original;
+  let attempts = 0;
+  let reproduction = null;
+  const seen = new Set([JSON.stringify(graph)]);
+  for (;;) {
+    let changed = false;
+    const previousSize = JSON.stringify(graph).length;
+    const candidates = generateReductionCandidates(graph);
+    for (;;) {
+      const step = candidates.next();
+      if (step.done) {
+        break;
+      }
+      if (attempts + 2 > budget) {
+        return {graph, attempts, reproduction};
+      }
+      const next = pruneGraph(step.value);
+      const key = JSON.stringify(next);
+      if (key.length >= previousSize || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      attempts++;
+      if (!(await reproduces(next))) {
+        continue;
+      }
+      // Require two consecutive failures before accepting a smaller graph.
+      attempts++;
+      const confirmed = await reproduces(next);
+      if (!confirmed) {
+        continue;
+      }
+      graph = next;
+      reproduction = confirmed;
+      changed = true;
+      break;
+    }
+    if (!changed) {
+      return {graph, attempts, reproduction};
+    }
+  }
+}
+
+function formatGraphTest(graph, readTiming) {
+  const lines = ["it('pasted', () =>", '  runGraph({', '    nodes: {'];
+  for (const name in graph.nodes) {
+    lines.push(
+      '      ' +
+        JSON.stringify(name) +
+        ': ' +
+        JSON.stringify(graph.nodes[name]) +
+        ',',
+    );
+  }
+  lines.push('    },');
+  for (const key in graph) {
+    if (
+      !['nodes', 'events', 'packetSizes', 'yieldBetweenPackets'].includes(key)
+    ) {
+      lines.push(
+        '    ' + JSON.stringify(key) + ': ' + JSON.stringify(graph[key]) + ',',
+      );
+    }
+  }
+  ['events', 'packetSizes', 'yieldBetweenPackets'].forEach(key => {
+    if (graph[key] !== undefined) {
+      lines.push('    ' + key + ': ' + JSON.stringify(graph[key]) + ',');
+    }
+  });
+  lines.push(
+    '    readTiming: ' + JSON.stringify(readTiming) + ',',
+    '  }),',
+    ');',
+  );
+  return lines.join('\n');
+}
+
 function formatReplayCommand(
   seed,
   testName,
@@ -378,5 +522,7 @@ module.exports = {
   createRandom,
   generateGraph,
   generateScaleGraph,
+  shrinkGraph,
+  formatGraphTest,
   formatReplayCommand,
 };
