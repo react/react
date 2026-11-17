@@ -152,16 +152,17 @@ function traverse(state, root, observe, visited = new Set()) {
       assertSingleSource(state.expectedByReceived, expectedValue, received);
       const metadata = fixture.valueMetadata.get(expectedValue);
       if (
-        // A reply does not keep these values in one place.
-        !state.isReply &&
-        (ArrayBuffer.isView(expectedValue) ||
-          expectedValue instanceof ArrayBuffer ||
-          (metadata !== undefined &&
-            (metadata.type === 'iterator' ||
-              metadata.type === 'stream' ||
-              metadata.type === 'canceled' ||
-              metadata.type === 'bytes' ||
-              metadata.type === 'iterable')))
+        // A reply copies a typed array when it encodes it, so it can encode
+        // it a second time.
+        (!state.isReply &&
+          (ArrayBuffer.isView(expectedValue) ||
+            expectedValue instanceof ArrayBuffer)) ||
+        (metadata !== undefined &&
+          (metadata.type === 'iterator' ||
+            metadata.type === 'stream' ||
+            metadata.type === 'canceled' ||
+            metadata.type === 'bytes' ||
+            metadata.type === 'iterable'))
       ) {
         assertSingleCopy(state.receivedByExpected, expectedValue, received);
       }

@@ -803,4 +803,189 @@ describe('ReactFlightDOMReply', () => {
     const result = await ReactServerDOMServer.decodeReply(body);
     expect(result.hello).toBe('world');
   });
+
+  // Round-trips a value through a reply and then renders a model referring to
+  // the decoded value back to the client, so that temporary references resolve
+  // to their original client objects by identity.
+  async function roundTripThroughTemporaryReferences(
+    makeClientValue,
+    makeModel,
+  ) {
+    const clientReferences = ReactServerDOMClient.createTemporaryReferenceSet();
+    const body = await ReactServerDOMClient.encodeReply(makeClientValue(), {
+      temporaryReferences: clientReferences,
+    });
+    const serverReferences = ReactServerDOMServer.createTemporaryReferenceSet();
+    const decoded = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+      {temporaryReferences: serverReferences},
+    );
+    const model = await makeModel(decoded);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, null, {
+        temporaryReferences: serverReferences,
+      }),
+    );
+    return ReactServerDOMClient.createFromReadableStream(stream, {
+      temporaryReferences: clientReferences,
+    });
+  }
+
+  it('returns an outlined ReadableStream item by identity with temporary references', async () => {
+    const X = {x: 1};
+    const item = {a: X, b: X};
+    const response = await roundTripThroughTemporaryReferences(
+      () => ({
+        s: new ReadableStream({
+          start(c) {
+            c.enqueue(item);
+            c.close();
+          },
+        }),
+      }),
+      async decoded => {
+        const received = (await decoded.s.getReader().read()).value;
+        return {item: received};
+      },
+    );
+    expect(response.item).toBe(item);
+  });
+
+  it('returns an outlined async iterable item by identity with temporary references', async () => {
+    const X = {x: 1};
+    const item = {a: X, b: X};
+    const response = await roundTripThroughTemporaryReferences(
+      () => ({
+        s: (async function* () {
+          yield item;
+        })(),
+      }),
+      async decoded => {
+        const received = (await decoded.s[Symbol.asyncIterator]().next()).value;
+        return {item: received};
+      },
+    );
+    expect(response.item).toBe(item);
+  });
+
+  it('returns an outlined async iterable return value by identity with temporary references', async () => {
+    const X = {x: 1};
+    const item = {a: X, b: X};
+    const response = await roundTripThroughTemporaryReferences(
+      () => ({
+        s: (async function* () {
+          return item;
+        })(),
+      }),
+      async decoded => {
+        const iterator = decoded.s[Symbol.asyncIterator]();
+        const received = (await iterator.next()).value;
+        return {item: received};
+      },
+    );
+    expect(response.item).toBe(item);
+  });
+
+  it('returns a cyclic stream item by identity with temporary references', async () => {
+    const item = {};
+    item.self = item;
+    const response = await roundTripThroughTemporaryReferences(
+      () => ({
+        s: new ReadableStream({
+          start(c) {
+            c.enqueue(item);
+            c.close();
+          },
+        }),
+      }),
+      async decoded => {
+        const received = (await decoded.s.getReader().read()).value;
+        return {item: received};
+      },
+    );
+    expect(response.item).toBe(item);
+  });
+
+  it('returns opaque values inside a ReadableStream item by identity with temporary references', async () => {
+    const fn = function opaque() {};
+    const el = <div />;
+    const sym = Symbol('opaque');
+
+    await expect(
+      ReactServerDOMClient.encodeReply({
+        s: new ReadableStream({
+          start(c) {
+            c.enqueue({fn: function fn2() {}, el: <span />, plain: {p: 1}});
+            c.close();
+          },
+        }),
+      }),
+    ).rejects.toThrow(
+      'Client Functions cannot be passed directly to Server Functions.',
+    );
+
+    const item = {fn, el, sym, plain: {p: 1}};
+    const response = await roundTripThroughTemporaryReferences(
+      () => ({
+        s: new ReadableStream({
+          start(c) {
+            c.enqueue(item);
+            c.close();
+          },
+        }),
+      }),
+      async decoded => {
+        const received = (await decoded.s.getReader().read()).value;
+        return {
+          fn: received.fn,
+          el: received.el,
+          sym: received.sym,
+          item: received,
+        };
+      },
+    );
+    expect(response.fn).toBe(fn);
+    expect(response.el).toBe(el);
+    expect(response.sym).toBe(sym);
+    expect(response.item).toBe(item);
+  });
+
+  it('returns opaque values inside an async iterable item by identity with temporary references', async () => {
+    const fn = function opaque() {};
+    const el = <div />;
+    const sym = Symbol('opaque');
+
+    await expect(
+      ReactServerDOMClient.encodeReply({
+        s: (async function* () {
+          yield {fn: function fn2() {}, el: <span />, plain: {p: 1}};
+        })(),
+      }),
+    ).rejects.toThrow(
+      'Client Functions cannot be passed directly to Server Functions.',
+    );
+
+    const item = {fn, el, sym, plain: {p: 1}};
+    const response = await roundTripThroughTemporaryReferences(
+      () => ({
+        s: (async function* () {
+          yield item;
+        })(),
+      }),
+      async decoded => {
+        const received = (await decoded.s[Symbol.asyncIterator]().next()).value;
+        return {
+          fn: received.fn,
+          el: received.el,
+          sym: received.sym,
+          item: received,
+        };
+      },
+    );
+    expect(response.fn).toBe(fn);
+    expect(response.el).toBe(el);
+    expect(response.sym).toBe(sym);
+    expect(response.item).toBe(item);
+  });
 });
