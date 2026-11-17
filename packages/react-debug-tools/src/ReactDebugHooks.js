@@ -521,7 +521,24 @@ function useTransition(): [
 
 function useDeferredValue<T>(value: T, initialValue?: T): T {
   const hook = nextHook();
-  const prevValue = hook !== null ? hook.memoizedState.value : value;
+  let prevValue = value;
+  if (hook !== null) {
+    const state = hook.memoizedState;
+    // Older versions of React store the deferred value directly, instead of in
+    // a {value, isInitial} wrapper. We can't check the React version here, so
+    // we check the shape instead. The caveat: on an older version, a deferred
+    // value that happens to be an object with its own `isInitial` property is
+    // mistaken for the wrapper, and its `value` property is shown instead.
+    if (
+      typeof state === 'object' &&
+      state !== null &&
+      hasOwnProperty.call(state, 'isInitial')
+    ) {
+      prevValue = state.value;
+    } else {
+      prevValue = state;
+    }
+  }
   hookLog.push({
     displayName: null,
     primitive: 'DeferredValue',
