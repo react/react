@@ -622,6 +622,10 @@ export type Request = {
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
   writtenObjects: WeakMap<Reference, WrittenObjectEntry>,
+  // The stream items that were written as rows of their own.
+  streamItemRows: null | Set<number>,
+  // The error that the last failed stream item was reported with.
+  reportedItemError: null | {error: mixed, digest: string},
   writtenImportStrings: Map<string, string>,
   // The combined length of the keys in writtenImportStrings.
   writtenImportStringsSize: number,
@@ -750,6 +754,8 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
+  this.streamItemRows = null;
+  this.reportedItemError = null;
   this.writtenImportStrings = new Map();
   this.writtenImportStringsSize = 0;
   this.temporaryReferences = temporaryReferences;
@@ -3735,6 +3741,59 @@ function serializeImportString(request: Request, value: string): string {
 
 let modelRoot: null | ReactClientValue = false;
 
+// A stream item is written inside its stream's row, so it has no id that a
+// reference could name. We reserve an id for each item, and only write the
+// item as a row of its own if something ends up referring to it.
+type StreamItem = {
+  entryId: number,
+  isReferenced: boolean,
+  // An iterator inside an item can settle synchronously and write its own item.
+  parent: null | StreamItem,
+};
+
+let streamItem: null | StreamItem = null;
+// The task of the stream whose item is being written.
+let streamItemTask: null | Task = null;
+
+function tryReferToStreamItemEntry(
+  request: Request,
+  task: Task,
+  entry: WrittenObjectEntry,
+  value: Reference,
+): boolean {
+  let item = streamItem;
+  while (item !== null) {
+    if (entry.id === item.entryId) {
+      if ((value as any) !== modelRoot) {
+        item.isReferenced = true;
+      }
+      return true;
+    }
+    item = item.parent;
+  }
+  const rows = request.streamItemRows;
+  if (rows !== null && rows.has(entry.id)) {
+    return true;
+  }
+  if (task === streamItemTask) {
+    // This was written inline in an earlier item, and that copy can't be
+    // referred to. Outline it now, so that later items can refer to this row.
+    // This only dedupes from the third time on. Deduping from the second time
+    // would mean giving every item a row, which the client would have to keep.
+    outlineModel(request, value as any);
+    // outlineModel registered the value again. Use that entry, because for an
+    // element whose component hasn't finished, the reference is lazy.
+    const outlinedEntry = request.writtenObjects.get(value);
+    if (outlinedEntry !== undefined) {
+      entry.id = outlinedEntry.id;
+      entry.reference = outlinedEntry.reference;
+    }
+    return true;
+  }
+  // Outside of a stream item, we write this again and remember it by path.
+  return false;
+}
+
 function renderModel(
   request: Request,
   task: Task,
@@ -3889,7 +3948,11 @@ function renderModelDestructive(
           // by another Server Component.
         } else {
           const existingEntry = writtenObjects.get(value);
-          if (existingEntry !== undefined) {
+          if (
+            existingEntry !== undefined &&
+            (existingEntry.id >= 0 ||
+              tryReferToStreamItemEntry(request, task, existingEntry, value))
+          ) {
             if (modelRoot === value) {
               // This is the ID we're currently emitting so we need to write it
               // once but if we discover it again, we refer to it by id.
@@ -4131,9 +4194,17 @@ function renderModelDestructive(
       return promiseReference;
     }
 
-    if (existingEntry !== undefined) {
+    if (
+      existingEntry !== undefined &&
+      (existingEntry.id >= 0 ||
+        tryReferToStreamItemEntry(request, task, existingEntry, value))
+    ) {
       if (modelRoot === value) {
-        if (existingEntry.reference !== serializeByValueID(task.id)) {
+        if (
+          // A negative id means this is the stream item that is being written.
+          existingEntry.id >= 0 &&
+          existingEntry.reference !== serializeByValueID(task.id)
+        ) {
           // Turns out that we already have this root at a different reference.
           // Use that after all.
           return existingEntry.reference;
@@ -5420,7 +5491,7 @@ function renderDebugModel(
 
     const writtenObjects = request.writtenObjects;
     const existingEntry = writtenObjects.get(value);
-    if (existingEntry !== undefined) {
+    if (existingEntry !== undefined && existingEntry.id >= 0) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
       return existingEntry.reference;
@@ -6347,7 +6418,12 @@ function erroredTask(request: Request, task: Task, error: mixed): void {
     }
   }
   task.status = ERRORED;
-  const digest = logRecoverableError(request, error, task);
+  const reported = request.reportedItemError;
+  request.reportedItemError = null;
+  const digest =
+    reported !== null && reported.error === error
+      ? reported.digest
+      : logRecoverableError(request, error, task);
   emitErrorChunk(
     request,
     task.id,
@@ -6516,9 +6592,93 @@ function tryStreamTaskWithRequest(request: Request, task: Task): void {
     canEmitDebugInfo = false;
   }
   const parentSerializedSize = serializedSize;
+  const item = task.model;
+  if (
+    typeof item !== 'object' ||
+    item === null ||
+    !(
+      isArray(item) ||
+      getPrototypeOf(item) === ObjectPrototype ||
+      item instanceof Map ||
+      item instanceof Set
+    )
+  ) {
+    // Everything else is written the way any row is.
+    try {
+      emitChunk(request, task, item);
+    } finally {
+      serializedSize = parentSerializedSize;
+      if (__DEV__) {
+        canEmitDebugInfo = prevCanEmitDebugInfo;
+      }
+    }
+    return;
+  }
+  const streamId = task.id;
+  const itemId = request.nextChunkId++;
+  const parentItem = streamItem;
+  const parentItemTask = streamItemTask;
+  const previousModelRoot = modelRoot;
+  let reserved: null | StreamItem = null;
+  streamItemTask = task;
   try {
-    emitChunk(request, task, task.model);
+    if (request.writtenObjects.get(item) === undefined) {
+      reserved = streamItem = {
+        entryId: -itemId,
+        isReferenced: false,
+        parent: parentItem,
+      };
+      // The id is negative to mark that it is only reserved.
+      writeToDedupeMap(request, item, -itemId, serializeByValueID(itemId));
+      // Make the item the model that is being written, so that it is written
+      // here and not as a reference to itself.
+      modelRoot = item;
+    } else {
+      // The item was written before. It is written as a reference.
+      modelRoot = null;
+    }
+    // The rest is inlined from emitChunk, so that we can choose the row id
+    // once we know whether something referred to the item.
+    const resolvedModel = resolveModel(request, task, {'': item}, '', item);
+    // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
+    const json: string = stringify(resolvedModel);
+    if (reserved !== null && reserved.isReferenced) {
+      request.pendingChunks++;
+      emitModelChunk(request, itemId, json);
+      emitModelChunk(request, streamId, stringify(serializeByValueID(itemId)));
+    } else {
+      emitModelChunk(request, streamId, json);
+    }
+  } catch (x) {
+    if (reserved !== null && reserved.isReferenced) {
+      // Something already refers to the reserved id. Write an error row for
+      // it, so that those references are rejected and don't wait forever.
+      request.pendingChunks++;
+      const digest = logRecoverableError(request, x, task);
+      emitErrorChunk(
+        request,
+        itemId,
+        digest,
+        x,
+        false,
+        __DEV__ ? task.debugOwner : null,
+      );
+      if (task.status === PENDING) {
+        // The stream fails with this error next. Don't report it twice.
+        request.reportedItemError = {error: x, digest};
+      }
+    }
+    throw x;
   } finally {
+    if (reserved !== null && reserved.isReferenced) {
+      if (request.streamItemRows === null) {
+        request.streamItemRows = new Set();
+      }
+      request.streamItemRows.add(-itemId);
+    }
+    streamItem = parentItem;
+    streamItemTask = parentItemTask;
+    modelRoot = previousModelRoot;
     serializedSize = parentSerializedSize;
     if (__DEV__) {
       canEmitDebugInfo = prevCanEmitDebugInfo;
