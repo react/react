@@ -1391,7 +1391,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         events: ['resolve later to object', 'fail stream', 'load ready'],
       }));
 
-    // @gate FIXME
     it('an iterator reused in later stream items', () =>
       runGraph({
         nodes: {

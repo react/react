@@ -2290,6 +2290,32 @@ describe('ReactFlightDOMEdge', () => {
     ).toEqual(expectedBytes);
   });
 
+  it('can reuse an iterator in later stream items', async () => {
+    const iterator = ['first', 'second'].values();
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue({iterator});
+        controller.enqueue({iterator});
+        controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(source, {}),
+    );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const reader = result.getReader();
+    const first = await reader.read();
+    const second = await reader.read();
+    expect(first.done).toBe(false);
+    expect(second.done).toBe(false);
+    // Both items have the same iterator, and it has its items once.
+    expect(second.value.iterator).toBe(first.value.iterator);
+    expect(Array.from(first.value.iterator)).toEqual(['first', 'second']);
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('can pass a stream a second time after a stream item held it', async () => {
     const inner = new ReadableStream({
       start(c) {

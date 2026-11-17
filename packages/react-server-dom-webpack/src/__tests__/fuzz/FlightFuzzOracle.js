@@ -14,6 +14,7 @@
 
 const {
   isObject,
+  assertSingleCopy,
   assertSingleSource,
   assertBlobContents,
   compareValue,
@@ -43,6 +44,7 @@ function createOracle(
     fixture,
     render,
     expectedByReceived: new WeakMap(),
+    receivedByExpected: new WeakMap(),
     receivedValues: [],
     observedAsyncValues: new WeakSet(),
     thenableResults: new WeakMap(),
@@ -147,12 +149,25 @@ function traverse(state, root, observe, visited = new Set()) {
         continue;
       }
       assertSingleSource(state.expectedByReceived, expectedValue, received);
-      // A source object may arrive as several copies. Visit each copy once.
+      const metadata = fixture.valueMetadata.get(expectedValue);
+      if (
+        ArrayBuffer.isView(expectedValue) ||
+        expectedValue instanceof ArrayBuffer ||
+        (metadata !== undefined &&
+          (metadata.type === 'iterator' ||
+            metadata.type === 'stream' ||
+            metadata.type === 'canceled' ||
+            metadata.type === 'bytes' ||
+            metadata.type === 'iterable'))
+      ) {
+        assertSingleCopy(state.receivedByExpected, expectedValue, received);
+      }
+      // Any other source object may arrive as several copies. Visit each
+      // copy once.
       if (visited.has(received)) {
         continue;
       }
       visited.add(received);
-      const metadata = fixture.valueMetadata.get(expectedValue);
       if (metadata === undefined) {
         if (expectedValue instanceof Blob) {
           if (observe) {

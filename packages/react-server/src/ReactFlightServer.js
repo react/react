@@ -3529,8 +3529,15 @@ function serializeIterator(
   request: Request,
   iterator: Iterator<ReactClientValue>,
 ): string {
-  const id = outlineModel(request, Array.from(iterator));
-  return '$i' + id.toString(16);
+  const itemsId = outlineModel(request, Array.from(iterator));
+  // The marker makes a new iterator wherever it is read. Write it to a row of
+  // its own, so that every place that has this iterator gets the same one.
+  request.pendingChunks++;
+  const id = request.nextChunkId++;
+  emitModelChunk(request, id, stringify('$i' + itemsId.toString(16)));
+  const reference = serializeByValueID(id);
+  writeToDedupeMap(request, iterator, id, reference);
+  return reference;
 }
 
 function serializeTypedArray(
