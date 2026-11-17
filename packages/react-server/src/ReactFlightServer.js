@@ -4649,8 +4649,10 @@ function serializeErrorValue(request: Request, error: Error): string {
     const errorInfo: ReactErrorInfoDev = {name, message, stack, env};
     if ('cause' in error) {
       const cause: ReactClientValue = error.cause as any;
-      const causeId = outlineModel(request, cause);
-      errorInfo.cause = serializeByValueID(causeId);
+      // The cause is written inside an array, so that it is written like any
+      // other value. If it was written before, the array refers to it.
+      const causeId = outlineModel(request, [cause]);
+      errorInfo.cause = serializeByValueID(causeId) + ':0';
     }
     if (
       typeof AggregateError !== 'undefined' &&
@@ -4699,8 +4701,9 @@ function serializeDebugErrorValue(
     if ('cause' in error) {
       counter.objectLimit--;
       const cause: ReactClientValue = error.cause as any;
-      const causeId = outlineDebugModel(request, counter, cause);
-      errorInfo.cause = serializeByValueID(causeId);
+      // See serializeErrorValue.
+      const causeId = outlineDebugModel(request, counter, [cause]);
+      errorInfo.cause = serializeByValueID(causeId) + ':0';
     }
     if (
       typeof AggregateError !== 'undefined' &&
