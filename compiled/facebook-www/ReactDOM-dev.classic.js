@@ -8920,12 +8920,15 @@ __DEV__ &&
       value,
       initialValue
     ) {
-      if (prevIsInitial && void 0 !== initialValue) {
+      if (prevIsInitial) {
         if (objectIs(value, prevValue))
           return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-        hook = mountDeferredValueImpl(hook, value, initialValue);
-        objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-        return hook;
+        if (void 0 !== initialValue)
+          return (
+            (hook = mountDeferredValueImpl(hook, value, initialValue)),
+            objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+            hook
+          );
       }
       if (objectIs(value, prevValue)) return value;
       if (null !== currentTreeHiddenStackCursor.current)
@@ -33773,11 +33776,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-classic-976e87ce-20261116" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-classic-1cd5eb8e-20261116" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-classic-976e87ce-20261116\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-classic-1cd5eb8e-20261116\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -33820,10 +33823,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-classic-976e87ce-20261116",
+          version: "19.3.0-www-classic-1cd5eb8e-20261116",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-classic-976e87ce-20261116"
+          reconcilerVersion: "19.3.0-www-classic-1cd5eb8e-20261116"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -34448,7 +34451,7 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-classic-976e87ce-20261116";
+    exports.version = "19.3.0-www-classic-1cd5eb8e-20261116";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

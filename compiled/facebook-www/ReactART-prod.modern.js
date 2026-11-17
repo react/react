@@ -3787,12 +3787,15 @@ function updateDeferredValueImpl(
   value,
   initialValue
 ) {
-  if (prevIsInitial && void 0 !== initialValue) {
+  if (prevIsInitial) {
     if (objectIs(value, prevValue))
       return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-    hook = mountDeferredValueImpl(hook, value, initialValue);
-    objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-    return hook;
+    if (void 0 !== initialValue)
+      return (
+        (hook = mountDeferredValueImpl(hook, value, initialValue)),
+        objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+        hook
+      );
   }
   if (objectIs(value, prevValue)) return value;
   if (null !== currentTreeHiddenStackCursor.current)
@@ -11496,10 +11499,10 @@ var slice = Array.prototype.slice,
   })(React.Component);
 var internals$jscomp$inline_1587 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-976e87ce-20261116",
+  version: "19.3.0-www-modern-1cd5eb8e-20261116",
   rendererPackageName: "react-art",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-976e87ce-20261116"
+  reconcilerVersion: "19.3.0-www-modern-1cd5eb8e-20261116"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1588 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11525,4 +11528,4 @@ exports.RadialGradient = RadialGradient;
 exports.Shape = TYPES.SHAPE;
 exports.Surface = Surface;
 exports.Text = Text;
-exports.version = "19.3.0-www-modern-976e87ce-20261116";
+exports.version = "19.3.0-www-modern-1cd5eb8e-20261116";

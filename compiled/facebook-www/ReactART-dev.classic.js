@@ -6772,12 +6772,15 @@ __DEV__ &&
       value,
       initialValue
     ) {
-      if (prevIsInitial && void 0 !== initialValue) {
+      if (prevIsInitial) {
         if (objectIs(value, prevValue))
           return (hook.memoizedState = { value: value, isInitial: !1 }), value;
-        hook = mountDeferredValueImpl(hook, value, initialValue);
-        objectIs(hook, prevValue) || (didReceiveUpdate = !0);
-        return hook;
+        if (void 0 !== initialValue)
+          return (
+            (hook = mountDeferredValueImpl(hook, value, initialValue)),
+            objectIs(hook, prevValue) || (didReceiveUpdate = !0),
+            hook
+          );
       }
       if (objectIs(value, prevValue)) return value;
       if (null !== currentTreeHiddenStackCursor.current)
@@ -20694,10 +20697,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-976e87ce-20261116",
+        version: "19.3.0-www-classic-1cd5eb8e-20261116",
         rendererPackageName: "react-art",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-976e87ce-20261116"
+        reconcilerVersion: "19.3.0-www-classic-1cd5eb8e-20261116"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -20732,7 +20735,7 @@ __DEV__ &&
     exports.Shape = Shape;
     exports.Surface = Surface;
     exports.Text = Text;
-    exports.version = "19.3.0-www-classic-976e87ce-20261116";
+    exports.version = "19.3.0-www-classic-1cd5eb8e-20261116";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&
