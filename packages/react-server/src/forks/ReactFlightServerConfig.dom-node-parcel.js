@@ -20,7 +20,7 @@ export const requestStorage: AsyncLocalStorage<Request | void> =
   new AsyncLocalStorage();
 
 export const supportsComponentStorage = __DEV__;
-export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =
+export const componentStorage: AsyncLocalStorage<WeakRef<ReactComponentInfo> | void> =
   supportsComponentStorage ? new AsyncLocalStorage() : (null as any);
 
 export * from '../ReactFlightServerConfigDebugNode';

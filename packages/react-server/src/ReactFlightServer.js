@@ -167,6 +167,10 @@ import {
 
 // DEV-only set containing internal objects that should not be limited and turned into getters.
 const doNotLimit: WeakSet<Reference> = __DEV__ ? new WeakSet() : (null as any);
+const debugPropsRefs: WeakMap<
+  ReactComponentInfo,
+  WeakRef<{[name: string]: mixed}>,
+> = new WeakMap();
 
 function defaultFilterStackFrame(
   filename: string,
@@ -630,6 +634,8 @@ export type Request = {
   abortTime: number,
   // DEV-only
   pendingDebugChunks: number,
+  asyncOwners: Set<ReactComponentInfo>,
+  asyncOwnersReleased: boolean,
   // See completedRegularChunks for why some entries are preceded by the
   // NEXT_TWO_CHUNKS_ARE_ATOMIC sentinel.
   completedDebugChunks: Array<
@@ -755,6 +761,8 @@ function RequestInstance(
 
   if (__DEV__) {
     this.pendingDebugChunks = 0;
+    this.asyncOwners = new Set();
+    this.asyncOwnersReleased = false;
     this.completedDebugChunks = [] as Array<
       Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
     >;
@@ -898,6 +906,30 @@ export function resolveRequest(): null | Request {
     if (store) return store;
   }
   return null;
+}
+
+export function retainAsyncOwner(owner: ReactComponentInfo): void {
+  if (__DEV__) {
+    const request = resolveRequest();
+    if (request !== null && !request.asyncOwnersReleased) {
+      let current: null | ReactComponentInfo = owner;
+      while (current !== null) {
+        request.asyncOwners.add(current);
+        current = current.owner == null ? null : current.owner;
+      }
+    }
+  }
+}
+
+function releaseAsyncOwners(request: Request): void {
+  if (__DEV__) {
+    for (const owner of request.asyncOwners) {
+      // $FlowFixMe[cannot-write]
+      owner.props = null;
+    }
+    request.asyncOwners.clear();
+    request.asyncOwnersReleased = true;
+  }
 }
 
 function runWithRequest<A, R>(
@@ -1845,6 +1877,7 @@ function renderFunctionComponent<Props>(
           : filterStackTrace(request, parseStackTrace(task.debugStack, 1));
       // $FlowFixMe[cannot-write]
       componentDebugInfo.props = props;
+      debugPropsRefs.set(componentDebugInfo, new WeakRef(props));
       // $FlowFixMe[cannot-write]
       componentDebugInfo.debugStack = task.debugStack;
       // $FlowFixMe[cannot-write]
@@ -1874,12 +1907,13 @@ function renderFunctionComponent<Props>(
     // $FlowFixMe[constant-condition]
     if (supportsComponentStorage) {
       // Run the component in an Async Context that tracks the current owner.
+      const componentInfoRef = new WeakRef(componentDebugInfo);
       if (task.debugTask) {
         result = task.debugTask.run(
           // $FlowFixMe[method-unbinding]
           componentStorage.run.bind(
             componentStorage,
-            componentDebugInfo,
+            componentInfoRef,
             callComponentInDEV,
             Component,
             props,
@@ -1888,7 +1922,7 @@ function renderFunctionComponent<Props>(
         );
       } else {
         result = componentStorage.run(
-          componentDebugInfo,
+          componentInfoRef,
           callComponentInDEV,
           Component,
           props,
@@ -2023,12 +2057,13 @@ function warnForMissingKey(
     // $FlowFixMe[constant-condition]
     if (supportsComponentStorage) {
       // Run the component in an Async Context that tracks the current owner.
+      const componentInfoRef = new WeakRef(componentDebugInfo);
       if (debugTask) {
         debugTask.run(
           // $FlowFixMe[method-unbinding]
           componentStorage.run.bind(
             componentStorage,
-            componentDebugInfo,
+            componentInfoRef,
             callComponentInDEV,
             logKeyError,
             null,
@@ -2037,7 +2072,7 @@ function warnForMissingKey(
         );
       } else {
         componentStorage.run(
-          componentDebugInfo,
+          componentInfoRef,
           callComponentInDEV,
           logKeyError,
           null,
@@ -2708,8 +2743,10 @@ function visitAsyncNodeImpl(
               visited.set(ioNode, null);
 
               // Ensure the owner is already outlined.
-              if (node.owner != null) {
-                outlineComponentInfo(request, node.owner);
+              const owner =
+                node.owner === null ? null : node.owner.deref() || null;
+              if (owner !== null) {
+                outlineComponentInfo(request, owner);
               }
 
               // We log the environment at the time when the last promise pigned ping which may
@@ -2721,7 +2758,7 @@ function visitAsyncNodeImpl(
               emitDebugChunk(request, task.id, {
                 awaited: ioNode as any as ReactIOInfo, // This is deduped by this reference.
                 env: env,
-                owner: node.owner,
+                owner: owner,
                 stack:
                   node.stack === null
                     ? null
@@ -4460,6 +4497,7 @@ function logRecoverableError(
 function fatalError(request: Request, error: mixed): void {
   const onFatalError = request.onFatalError;
   onFatalError(error);
+  releaseAsyncOwners(request);
   if (enableTaint) {
     cleanupTaintQueue(request);
   }
@@ -4939,8 +4977,20 @@ function outlineComponentInfo(
     componentDebugInfo.stack = componentInfo.stack;
   }
   // Ensure we serialize props after the stack to favor the stack being complete.
-  // $FlowFixMe[cannot-write]
-  componentDebugInfo.props = componentInfo.props;
+  const props = componentInfo.props;
+  if (props != null) {
+    // $FlowFixMe[cannot-write]
+    componentDebugInfo.props = props;
+  } else {
+    const propsRef = debugPropsRefs.get(componentInfo);
+    if (propsRef !== undefined) {
+      const retainedProps = propsRef.deref();
+      if (retainedProps !== undefined) {
+        // $FlowFixMe[cannot-write]
+        componentDebugInfo.props = retainedProps;
+      }
+    }
+  }
 
   const id = outlineDebugModel(request, counter, componentDebugInfo);
   const ref = serializeByValueID(id);
@@ -5088,7 +5138,7 @@ function serializeIONode(
       }
     }
   }
-  const owner = ioNode.owner;
+  const owner = ioNode.owner === null ? null : ioNode.owner.deref() || null;
   // Ensure the owner is already outlined.
   if (owner != null) {
     outlineComponentInfo(request, owner);
@@ -6746,6 +6796,20 @@ function flushCompletedChunks(request: Request): void {
       close(request.debugDestination);
       request.debugDestination = null;
     }
+    if (
+      request.status === CLOSED &&
+      request.destination === null &&
+      request.debugDestination === null &&
+      request.pendingChunks === 0 &&
+      request.pendingDebugChunks === 0 &&
+      request.completedImportChunks.length === 0 &&
+      request.completedHintChunks.length === 0 &&
+      request.completedRegularChunks.length === 0 &&
+      request.completedErrorChunks.length === 0 &&
+      request.completedDebugChunks.length === 0
+    ) {
+      releaseAsyncOwners(request);
+    }
   }
 }
 
@@ -6797,6 +6861,7 @@ export function startFlowing(request: Request, destination: Destination): void {
   if (request.status === CLOSING) {
     request.status = CLOSED;
     closeWithError(destination, request.fatalError);
+    releaseAsyncOwners(request);
     return;
   }
   if (request.status === CLOSED) {
@@ -6822,6 +6887,7 @@ export function startFlowingDebug(
   if (request.status === CLOSING) {
     request.status = CLOSED;
     closeWithError(debugDestination, request.fatalError);
+    releaseAsyncOwners(request);
     return;
   }
   if (request.status === CLOSED) {

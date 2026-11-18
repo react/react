@@ -4160,4 +4160,141 @@ describe('ReactFlightAsyncDebugInfo', () => {
       expect(ioEntry.awaited.name).toBe('getData');
     }
   });
+
+  it('releases async component props after the Flight response completes', async () => {
+    const v8 = require('v8');
+    const vm = require('vm');
+    v8.setFlagsFromString('--expose-gc');
+    const gc = vm.runInNewContext('gc');
+    v8.setFlagsFromString('--no-expose-gc');
+
+    const {setImmediate: realSetImmediate} = require('timers');
+    const {setTimeout: realSetTimeout} = require('timers');
+    const {AsyncResource} = require('async_hooks');
+    const gcResource = new AsyncResource('gc');
+    function tick() {
+      return new Promise(resolve => realSetImmediate(resolve));
+    }
+
+    let startWorker: () => void = () => {};
+    const startSignal: Promise<void> = new Promise(resolve => {
+      startWorker = resolve;
+    });
+    let releaseWorker: () => void = () => {};
+    const releaseSignal: Promise<void> = new Promise(resolve => {
+      releaseWorker = resolve;
+    });
+    let finishIterations: () => void = () => {};
+    const iterationsDone: Promise<void> = new Promise(resolve => {
+      finishIterations = resolve;
+    });
+    const workerHolder: {promise: null | Promise<void>} = {promise: null};
+    let workerFinished = false;
+    let workerRef: null | WeakRef<Promise<void>> = null;
+    let propsRef: null | WeakRef<{sentinel: {}, store: {}}> = null;
+    let storeRef: null | WeakRef<{}> = null;
+    let sentinelRef: null | WeakRef<{}> = null;
+
+    async function runBackgroundWork() {
+      await startSignal;
+      for (let i = 0; i < 3; i++) {
+        await new Promise(resolve => realSetTimeout(resolve, 1));
+      }
+      finishIterations();
+      await releaseSignal;
+      workerFinished = true;
+    }
+
+    function Component(componentProps: {store: {}}) {
+      // Start the worker in the component's async owner context.
+      const workerPromise = runBackgroundWork();
+      Object.defineProperty(componentProps.store, 'worker', {
+        value: workerPromise,
+      });
+      workerHolder.promise = workerPromise;
+      workerRef = new WeakRef(workerPromise);
+      return null;
+    }
+
+    async function renderAndDropReferences() {
+      let sentinel: null | {} = {};
+      let store: null | {} = {};
+      let props: null | {sentinel: {}, store: {}} = {sentinel, store};
+      propsRef = new WeakRef(props);
+      storeRef = new WeakRef(store);
+      sentinelRef = new WeakRef(sentinel);
+
+      const writable = new Stream.Writable({
+        write(chunk, encoding, callback) {
+          callback();
+        },
+      });
+      const finished = new Promise((resolve, reject) => {
+        writable.once('finish', resolve);
+        writable.once('error', reject);
+      });
+      ReactServerDOMServer.renderToPipeableStream(
+        React.createElement(Component, props),
+      ).pipe(writable);
+      await finished;
+      props = null;
+      store = null;
+      sentinel = null;
+    }
+
+    async function waitForCollection<T: {}>(weakRef: WeakRef<T>) {
+      for (let i = 0; i < 100; i++) {
+        gc();
+        await tick();
+        const collected = weakRef.deref() === undefined;
+        await tick();
+        if (collected) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    try {
+      await renderAndDropReferences();
+      startWorker();
+      await iterationsDone;
+
+      const retainedWorkerPromise = workerHolder.promise;
+      if (
+        retainedWorkerPromise === null ||
+        workerRef === null ||
+        propsRef === null ||
+        storeRef === null ||
+        sentinelRef === null
+      ) {
+        throw new Error('The component did not start its background worker.');
+      }
+      expect(workerRef.deref()).toBe(retainedWorkerPromise);
+      expect(workerFinished).toBe(false);
+      const sentinelCollected = await gcResource.runInAsyncScope(() =>
+        waitForCollection(sentinelRef),
+      );
+      expect(sentinelCollected).toBe(true);
+      const propsCollected = await gcResource.runInAsyncScope(() =>
+        waitForCollection(propsRef),
+      );
+      expect(propsCollected).toBe(true);
+      const storeCollected = await gcResource.runInAsyncScope(() =>
+        waitForCollection(storeRef),
+      );
+      expect(storeCollected).toBe(true);
+      expect(workerFinished).toBe(false);
+      expect(workerRef.deref()).toBe(retainedWorkerPromise);
+    } finally {
+      startWorker();
+      releaseWorker();
+      const workerPromise = workerHolder.promise;
+      if (workerPromise !== null) {
+        await workerPromise;
+        workerHolder.promise = null;
+      }
+      gcResource.emitDestroy();
+    }
+  });
 });

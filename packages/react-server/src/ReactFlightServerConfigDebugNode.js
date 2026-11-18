@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {ReactStackTrace} from 'shared/ReactTypes';
+import type {ReactComponentInfo, ReactStackTrace} from 'shared/ReactTypes';
 
 import type {
   AsyncSequence,
@@ -26,7 +26,11 @@ import {
   UNRESOLVED_AWAIT_NODE,
 } from './ReactFlightAsyncSequence';
 import {resolveOwner} from './flight/ReactFlightCurrentOwner';
-import {resolveRequest, isAwaitInUserspace} from './ReactFlightServer';
+import {
+  resolveRequest,
+  retainAsyncOwner,
+  isAwaitInUserspace,
+} from './ReactFlightServer';
 import {createHook, executionAsyncId, AsyncResource} from 'async_hooks';
 import {parseStackTracePrivate} from './ReactFlightServerConfig';
 
@@ -36,6 +40,21 @@ const getAsyncId = AsyncResource.prototype.asyncId;
 const pendingOperations: Map<number, AsyncSequence> = __DEV__
   ? new Map()
   : (null as any);
+
+let lastOwnerRef: WeakRef<ReactComponentInfo> | null = null;
+
+function createOwnerRef(
+  owner: ReactComponentInfo | null,
+): null | WeakRef<ReactComponentInfo> {
+  if (owner === null) {
+    return null;
+  }
+  retainAsyncOwner(owner);
+  if (lastOwnerRef === null || lastOwnerRef.deref() !== owner) {
+    lastOwnerRef = new WeakRef(owner);
+  }
+  return lastOwnerRef;
+}
 
 // Keep the last resolved await as a workaround for async functions missing data.
 let lastRanAwait: null | AwaitNode = null;
@@ -116,7 +135,7 @@ export function initAsyncDebugInfo(): void {
             const current = pendingOperations.get(currentAsyncId);
             node = {
               tag: UNRESOLVED_AWAIT_NODE,
-              owner: resolveOwner(),
+              owner: createOwnerRef(resolveOwner()),
               stack: stack,
               start: performance.now(),
               end: -1.1, // set when resolved.
@@ -128,7 +147,7 @@ export function initAsyncDebugInfo(): void {
             const owner = resolveOwner();
             node = {
               tag: UNRESOLVED_PROMISE_NODE,
-              owner: owner,
+              owner: createOwnerRef(owner),
               stack:
                 owner === null ? null : parseStackTracePrivate(new Error(), 5),
               start: performance.now(),
@@ -169,7 +188,7 @@ export function initAsyncDebugInfo(): void {
             const owner = resolveOwner();
             node = {
               tag: IO_NODE,
-              owner: owner,
+              owner: createOwnerRef(owner),
               stack:
                 owner === null ? parseStackTracePrivate(new Error(), 3) : null,
               start: performance.now(),
@@ -186,7 +205,7 @@ export function initAsyncDebugInfo(): void {
             const owner = resolveOwner();
             node = {
               tag: IO_NODE,
-              owner: owner,
+              owner: createOwnerRef(owner),
               stack:
                 owner === null ? parseStackTracePrivate(new Error(), 3) : null,
               start: performance.now(),
