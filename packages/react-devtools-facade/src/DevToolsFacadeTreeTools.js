@@ -46,6 +46,12 @@ export type HookNode = {
   subHooks: Array<HookNode>,
 };
 
+// Meta for type: 'suspense'. isSuspended is true while the boundary shows its
+// fallback.
+export type SuspenseMeta = {isSuspended: boolean};
+
+export type NodeMeta = SuspenseMeta | null;
+
 export type NodeInfo = {
   uid: string,
   type: string,
@@ -53,6 +59,7 @@ export type NodeInfo = {
   key?: string,
   props?: {[string]: mixed},
   hooks?: Array<HookNode>,
+  meta: NodeMeta,
 };
 
 export type SourceLocation = {
@@ -451,6 +458,7 @@ export function createTreeTools(
       uid: getUid(fiber),
       type: getTypeTagForFiber(internals, fiber),
       name: getDisplayName(internals, fiber),
+      meta: null,
     };
     if (fiber.key != null) {
       info.key = String(fiber.key);
@@ -458,6 +466,14 @@ export function createTreeTools(
     const props = normalizeProps(fiber.memoizedProps);
     if (props != null) {
       info.props = props;
+    }
+    if (fiber.tag === internals.ReactTypeOfWork.SuspenseComponent) {
+      // A non-null memoizedState on a SuspenseComponent fiber means the
+      // boundary is blocked.
+      // TODO: A dehydrated boundary pending hydration also has a non-null
+      // memoizedState but still shows its SSR content, so it arguably
+      // shouldn't count as suspended.
+      info.meta = {isSuspended: fiber.memoizedState !== null};
     }
     if (includeHooks) {
       // Hooks are only inspectable for function components, forwardRef, and
