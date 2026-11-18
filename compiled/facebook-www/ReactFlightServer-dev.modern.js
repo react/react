@@ -1660,7 +1660,7 @@ __DEV__ &&
           { objectLimit: 2 * debugStack.length + 1 },
           debugStack
         );
-        request.writtenObjects.set(debugStack, serializeByValueID(id));
+        writeToDedupeMap(request, debugStack, id, serializeByValueID(id));
       }
       request = [
         REACT_ELEMENT_TYPE,
@@ -1732,7 +1732,7 @@ __DEV__ &&
         null === model ||
         null !== keyPath ||
         implicitSlot ||
-        request.writtenObjects.set(model, serializeByValueID(id));
+        writeToDedupeMap(request, model, id, serializeByValueID(id));
       var task = {
         id: id,
         status: PENDING$1,
@@ -1821,6 +1821,11 @@ __DEV__ &&
             : (jsonValue[_resolved] = resolvedValue);
         }
       return jsonValue;
+    }
+    function writeToDedupeMap(request, value, id, reference) {
+      id = { id: id, reference: reference };
+      request.writtenObjects.set(value, id);
+      return id;
     }
     function serializeByValueID(id) {
       return "$" + id.toString(16);
@@ -2200,28 +2205,31 @@ __DEV__ &&
       if ("object" === typeof value) {
         switch (value.$$typeof) {
           case REACT_ELEMENT_TYPE:
-            var elementReference = null,
+            var elementEntry = null,
               _writtenObjects = request.writtenObjects;
             if (null === task.keyPath && !task.implicitSlot) {
-              var _existingReference = _writtenObjects.get(value);
-              if (void 0 !== _existingReference)
+              var _existingEntry = _writtenObjects.get(value);
+              if (void 0 !== _existingEntry)
                 if (modelRoot === value) modelRoot = null;
-                else return _existingReference;
+                else return _existingEntry.reference;
               else
                 -1 === parentPropertyName.indexOf(":") &&
-                  ((_existingReference = _writtenObjects.get(parent)),
-                  void 0 !== _existingReference &&
-                    ((elementReference =
-                      _existingReference + ":" + parentPropertyName),
-                    _writtenObjects.set(value, elementReference)));
+                  ((_existingEntry = _writtenObjects.get(parent)),
+                  void 0 !== _existingEntry &&
+                    (elementEntry = writeToDedupeMap(
+                      request,
+                      value,
+                      _existingEntry.id,
+                      _existingEntry.reference + ":" + parentPropertyName
+                    )));
             }
             if (serializedSize > MAX_ROW_SIZE) return deferTask(request, task);
-            if ((_existingReference = value._debugInfo))
+            if ((_existingEntry = value._debugInfo))
               if (canEmitDebugInfo)
-                forwardDebugInfo(request, task, _existingReference);
+                forwardDebugInfo(request, task, _existingEntry);
               else return outlineTask(request, task);
-            _existingReference = value.props;
-            var refProp = _existingReference.ref;
+            _existingEntry = value.props;
+            var refProp = _existingEntry.ref;
             refProp = void 0 !== refProp ? refProp : null;
             task.debugOwner = value._owner;
             task.debugStack = value._debugStack;
@@ -2248,19 +2256,19 @@ __DEV__ &&
               value.type,
               value.key,
               refProp,
-              _existingReference,
+              _existingEntry,
               value._store.validated
             );
             "object" === typeof request &&
               null !== request &&
-              null !== elementReference &&
+              null !== elementEntry &&
               (_writtenObjects.has(request) ||
-                _writtenObjects.set(request, elementReference));
+                _writtenObjects.set(request, elementEntry));
             return request;
           case REACT_LAZY_TYPE:
             if (serializedSize > MAX_ROW_SIZE) return deferTask(request, task);
             task.thenableState = null;
-            elementReference = callLazyInitInDEV(value);
+            elementEntry = callLazyInitInDEV(value);
             if (request.status === ABORTING) throw null;
             if ((_writtenObjects = value._debugInfo))
               if (canEmitDebugInfo)
@@ -2271,7 +2279,7 @@ __DEV__ &&
               task,
               parent,
               parentPropertyName,
-              elementReference
+              elementEntry
             );
           case REACT_LEGACY_ELEMENT_TYPE:
             throw Error(
@@ -2287,12 +2295,12 @@ __DEV__ &&
           );
         if (
           void 0 !== request.temporaryReferences &&
-          ((elementReference = request.temporaryReferences.get(value)),
-          void 0 !== elementReference)
+          ((elementEntry = request.temporaryReferences.get(value)),
+          void 0 !== elementEntry)
         )
-          return "$T" + elementReference;
-        elementReference = request.writtenObjects;
-        _writtenObjects = elementReference.get(value);
+          return "$T" + elementEntry;
+        elementEntry = request.writtenObjects;
+        _writtenObjects = elementEntry.get(value);
         if ("function" === typeof value.then) {
           if (void 0 !== _writtenObjects) {
             if (null !== task.keyPath || task.implicitSlot)
@@ -2300,41 +2308,43 @@ __DEV__ &&
                 "$@" + serializeThenable(request, task, value).toString(16)
               );
             if (modelRoot === value) modelRoot = null;
-            else return _writtenObjects;
+            else return _writtenObjects.reference;
           }
-          request = "$@" + serializeThenable(request, task, value).toString(16);
-          elementReference.set(value, request);
-          return request;
+          task = serializeThenable(request, task, value);
+          elementEntry = "$@" + task.toString(16);
+          writeToDedupeMap(request, value, task, elementEntry);
+          return elementEntry;
         }
         if (void 0 !== _writtenObjects)
           if (modelRoot === value) {
-            if (_writtenObjects !== serializeByValueID(task.id))
-              return _writtenObjects;
+            if (_writtenObjects.reference !== serializeByValueID(task.id))
+              return _writtenObjects.reference;
             modelRoot = null;
-          } else return _writtenObjects;
+          } else return _writtenObjects.reference;
         else if (
           -1 === parentPropertyName.indexOf(":") &&
-          ((_writtenObjects = elementReference.get(parent)),
-          void 0 !== _writtenObjects)
+          ((elementEntry = elementEntry.get(parent)), void 0 !== elementEntry)
         ) {
-          _existingReference = parentPropertyName;
+          _writtenObjects = parentPropertyName;
           if (isArrayImpl(parent) && parent[0] === REACT_ELEMENT_TYPE)
             switch (parentPropertyName) {
               case "1":
-                _existingReference = "type";
+                _writtenObjects = "type";
                 break;
               case "2":
-                _existingReference = "key";
+                _writtenObjects = "key";
                 break;
               case "3":
-                _existingReference = "props";
+                _writtenObjects = "props";
                 break;
               case "4":
-                _existingReference = "_owner";
+                _writtenObjects = "_owner";
             }
-          elementReference.set(
+          writeToDedupeMap(
+            request,
             value,
-            _writtenObjects + ":" + _existingReference
+            elementEntry.id,
+            elementEntry.reference + ":" + _writtenObjects
           );
         }
         if (isArrayImpl(value)) return renderFragment(request, task, value);
@@ -2371,28 +2381,27 @@ __DEV__ &&
           return serializeTypedArray(request, "V", value);
         if ("function" === typeof Blob && value instanceof Blob)
           return serializeBlob(request, value);
-        if ((elementReference = getIteratorFn(value)))
+        if ((elementEntry = getIteratorFn(value)))
           return (
-            (elementReference = elementReference.call(value)),
-            elementReference === value
+            (elementEntry = elementEntry.call(value)),
+            elementEntry === value
               ? "$i" +
-                outlineModel(request, Array.from(elementReference)).toString(16)
-              : renderFragment(request, task, Array.from(elementReference))
+                outlineModel(request, Array.from(elementEntry)).toString(16)
+              : renderFragment(request, task, Array.from(elementEntry))
           );
         if (
           "function" === typeof ReadableStream &&
           value instanceof ReadableStream
         )
           return serializeReadableStream(request, task, value);
-        elementReference = value[ASYNC_ITERATOR];
-        if ("function" === typeof elementReference)
-          return renderAsyncFragment(request, task, value, elementReference);
+        elementEntry = value[ASYNC_ITERATOR];
+        if ("function" === typeof elementEntry)
+          return renderAsyncFragment(request, task, value, elementEntry);
         if (value instanceof Date) return "$D" + value.toJSON();
-        elementReference = getPrototypeOf(value);
+        elementEntry = getPrototypeOf(value);
         if (
-          elementReference !== ObjectPrototype$1 &&
-          (null === elementReference ||
-            null !== getPrototypeOf(elementReference))
+          elementEntry !== ObjectPrototype$1 &&
+          (null === elementEntry || null !== getPrototypeOf(elementEntry))
         )
           throw Error(
             "Only plain objects, and a few built-ins, can be passed to Client Components from Server Components. Classes or null prototypes are not supported." +
@@ -2487,11 +2496,10 @@ __DEV__ &&
       }
       if ("symbol" === typeof value) {
         task = request.writtenSymbols;
-        elementReference = task.get(value);
-        if (void 0 !== elementReference)
-          return serializeByValueID(elementReference);
-        elementReference = value.description;
-        if (Symbol.for(elementReference) !== value)
+        elementEntry = task.get(value);
+        if (void 0 !== elementEntry) return serializeByValueID(elementEntry);
+        elementEntry = value.description;
+        if (Symbol.for(elementEntry) !== value)
           throw Error(
             "Only global symbols received from Symbol.for(...) can be passed to Client Components. The symbol Symbol.for(" +
               (value.description + ") cannot be found among global symbols.") +
@@ -2499,7 +2507,7 @@ __DEV__ &&
           );
         request.pendingChunks++;
         _writtenObjects = request.nextChunkId++;
-        emitSymbolChunk(request, _writtenObjects, elementReference);
+        emitSymbolChunk(request, _writtenObjects, elementEntry);
         task.set(value, _writtenObjects);
         return serializeByValueID(_writtenObjects);
       }
@@ -2760,10 +2768,10 @@ __DEV__ &&
           (componentDebugInfo.stack = componentInfo.stack);
       componentDebugInfo.props = componentInfo.props;
       existingRef = outlineDebugModel(request, existingRef, componentDebugInfo);
-      existingRef = serializeByValueID(existingRef);
-      request.writtenDebugObjects.set(componentInfo, existingRef);
-      request.writtenObjects.set(componentInfo, existingRef);
-      return existingRef;
+      componentDebugInfo = serializeByValueID(existingRef);
+      request.writtenDebugObjects.set(componentInfo, componentDebugInfo);
+      writeToDedupeMap(request, componentInfo, existingRef, componentDebugInfo);
+      return componentDebugInfo;
     }
     function emitTypedArrayChunk(request, id, tag, typedArray, debug) {
       debug ? request.pendingDebugChunks++ : request.pendingChunks++;
@@ -2870,7 +2878,7 @@ __DEV__ &&
             return serializeByValueID(request);
           }
         parent = request.writtenObjects.get(value);
-        if (void 0 !== parent) return parent;
+        if (void 0 !== parent) return parent.reference;
         if (0 >= counter.objectLimit && !doNotLimit.has(value))
           return serializeDeferredObject(request, value);
         counter.objectLimit--;
@@ -3453,8 +3461,10 @@ __DEV__ &&
           emitDebugChunk(request, task.id, { env: currentEnv }));
         task.timed && markOperationEndTime(request, task, performance.now());
         if ("object" === typeof resolvedModel && null !== resolvedModel)
-          request.writtenObjects.set(
+          writeToDedupeMap(
+            request,
             resolvedModel,
+            task.id,
             serializeByValueID(task.id)
           ),
             emitChunk(request, task, resolvedModel);
