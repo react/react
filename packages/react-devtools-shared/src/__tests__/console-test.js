@@ -402,6 +402,33 @@ describe('console', () => {
     ]);
   });
 
+  it('should dim a Symbol passed to a numeric specifier in Strict mode', () => {
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
+    global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = false;
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    function App() {
+      console.log('%d %f', Symbol('a'), Symbol('b'));
+      return <div />;
+    }
+
+    act(() =>
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>,
+      ),
+    );
+
+    expect(global.consoleLogMock).toHaveBeenCalledTimes(2);
+    expect(global.consoleLogMock.mock.calls[1]).toEqual([
+      '\x1b[2;38;2;124;124;124m%s\x1b[0m',
+      'NaN NaN',
+    ]);
+  });
+
   it('should not double log if hideConsoleLogsInStrictMode is enabled in Strict mode', () => {
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.appendComponentStack = false;
     global.__REACT_DEVTOOLS_GLOBAL_HOOK__.settings.hideConsoleLogsInStrictMode = true;
