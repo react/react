@@ -302,6 +302,47 @@ describe('Store', () => {
     `);
   });
 
+  // @reactVersion >= 16.0
+  it('should release host instances of a deleted subtree root', async () => {
+    const rendererInterface =
+      global.__REACT_DEVTOOLS_GLOBAL_HOOK__.rendererInterfaces.get(
+        getRendererID(),
+      );
+
+    let detailNode = null;
+    function Detail({id}) {
+      return (
+        <div
+          ref={node => {
+            if (node !== null) {
+              detailNode = node;
+            }
+          }}>
+          <span>{id}</span>
+        </div>
+      );
+    }
+    function App({id}) {
+      return <Detail key={id} id={id} />;
+    }
+
+    await act(() => render(<App id={1} />));
+    const firstDetailNode = detailNode;
+    expect(
+      rendererInterface.getElementIDForHostInstance(firstDetailNode),
+    ).not.toBe(null);
+
+    // Changing the key deletes the previous Detail subtree.
+    await act(() => render(<App id={2} />));
+    expect(detailNode).not.toBe(firstDetailNode);
+    expect(rendererInterface.getElementIDForHostInstance(firstDetailNode)).toBe(
+      null,
+    );
+    expect(
+      rendererInterface.getElementIDForHostInstance(firstDetailNode.firstChild),
+    ).toBe(null);
+  });
+
   it('should handle reorder of filtered elements', async () => {
     function IgnoreMePassthrough({children}) {
       return children;

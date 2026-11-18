@@ -5019,8 +5019,21 @@ export function attach(
   }
 
   function handleCommitFiberUnmount(fiber: any) {
-    // This Hook is no longer used. After having shipped DevTools everywhere it is
-    // safe to stop calling it from Fiber.
+    // Newer versions of React no longer call this Hook.
+    // React 16 and 17 call it for every Fiber of a deleted subtree right before
+    // detaching the deletion root, which nulls out its `child` pointer. By the
+    // time we process the commit, untrackFiber() can no longer reach the host
+    // children of the deletion root, so release them here instead. Otherwise
+    // publicInstanceToDevToolsInstanceMap retains the unmounted subtree.
+    if (
+      fiber.tag === HostComponent ||
+      fiber.tag === HostText ||
+      fiber.tag === HostSingleton
+    ) {
+      publicInstanceToDevToolsInstanceMap.delete(
+        getPublicInstance(fiber.stateNode),
+      );
+    }
   }
 
   function handlePostCommitFiberRoot(root: FiberRoot) {
