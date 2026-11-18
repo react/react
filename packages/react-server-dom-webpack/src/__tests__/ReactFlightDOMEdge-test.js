@@ -1691,6 +1691,52 @@ describe('ReactFlightDOMEdge', () => {
     expect(await iterator.next()).toEqual({value: undefined, done: true});
   });
 
+  it('ends the response when a stream item throws while it is written', async () => {
+    const item = {
+      get boom() {
+        throw new Error('boom');
+      },
+    };
+    const sources = [
+      new ReadableStream({
+        start(c) {
+          c.enqueue(item);
+          c.close();
+        },
+      }),
+      (async function* () {
+        yield item;
+      })(),
+    ];
+    for (let i = 0; i < sources.length; i++) {
+      const source = sources[i];
+      const errors = [];
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(
+          {source},
+          {},
+          {
+            onError(x) {
+              errors.push(x.message);
+            },
+          },
+        ),
+      );
+      const [s1, s2] = stream.tee();
+      const result = await ReactServerDOMClient.createFromReadableStream(s1, {
+        serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+      });
+      const next =
+        source instanceof ReadableStream
+          ? result.source.getReader().read()
+          : result.source[Symbol.asyncIterator]().next();
+      await expect(next).rejects.toThrow();
+      // The response finishes rather than waiting for the item's row.
+      await readResult(s2);
+      expect(errors).toEqual(['boom']);
+    }
+  });
+
   it('should ideally dedupe objects inside async iterables but does not yet', async () => {
     const obj = {
       this: {is: 'a large objected'},

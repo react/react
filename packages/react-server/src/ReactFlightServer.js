@@ -1351,7 +1351,6 @@ function serializeReadableStream(
       callOnAllReadyIfReady(request);
     } else {
       try {
-        request.pendingChunks++;
         streamTask.model = entry.value;
         if (isByteStream) {
           // Chunks of byte streams are always Uint8Array instances.
@@ -1360,6 +1359,9 @@ function serializeReadableStream(
         } else {
           tryStreamTask(request, streamTask);
         }
+        // The row is counted once it has been written. If writing it throws,
+        // there is no row and nothing to count.
+        request.pendingChunks++;
         enqueueFlush(request);
         reader.read().then(progress, error);
       } catch (x) {
@@ -1491,8 +1493,10 @@ function serializeAsyncIterable(
     } else {
       try {
         streamTask.model = entry.value;
-        request.pendingChunks++;
         tryStreamTask(request, streamTask);
+        // The row is counted once it has been written. If writing it throws,
+        // there is no row and nothing to count.
+        request.pendingChunks++;
         enqueueFlush(request);
         if (__DEV__) {
           callIteratorInDEV(iterator, progress, error);
