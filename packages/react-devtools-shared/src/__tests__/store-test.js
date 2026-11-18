@@ -343,6 +343,47 @@ describe('Store', () => {
     ).toBe(null);
   });
 
+  // @reactVersion >= 16.0
+  it('should release host instances deleted below a mounted instance', async () => {
+    const rendererInterface =
+      global.__REACT_DEVTOOLS_GLOBAL_HOOK__.rendererInterfaces.get(
+        getRendererID(),
+      );
+
+    let conditionalNode = null;
+    function Detail({show}) {
+      return (
+        <div>
+          {show ? (
+            <p
+              ref={node => {
+                if (node !== null) {
+                  conditionalNode = node;
+                }
+              }}>
+              <span>conditional</span>
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+
+    await act(() => render(<Detail show={true} />));
+    const removedNode = conditionalNode;
+    expect(rendererInterface.getElementIDForHostInstance(removedNode)).not.toBe(
+      null,
+    );
+
+    // Detail stays mounted. Only the filtered host subtree is deleted.
+    await act(() => render(<Detail show={false} />));
+    expect(rendererInterface.getElementIDForHostInstance(removedNode)).toBe(
+      null,
+    );
+    expect(
+      rendererInterface.getElementIDForHostInstance(removedNode.firstChild),
+    ).toBe(null);
+  });
+
   it('should handle reorder of filtered elements', async () => {
     function IgnoreMePassthrough({children}) {
       return children;
