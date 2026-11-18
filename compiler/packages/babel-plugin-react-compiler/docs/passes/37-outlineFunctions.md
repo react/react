@@ -8,12 +8,15 @@ This pass outlines pure function expressions that have no captured context into 
 
 A function with no captured context is completely self-contained - it only uses its parameters and globals. Such functions don't need to be recreated on each render and can be hoisted to module scope.
 
+Hoisting means the function is created exactly once, so *every* evaluation of the original expression returns the same object. That is only unobservable when the expression is evaluated at most once per render, which is why the pass only outlines functions declared in the body of the function being compiled.
+
 ## Input Invariants
 - The `enableFunctionOutlining` feature flag must be enabled
 - Functions must have `context.length === 0` (no captured variables)
 - Functions must be anonymous (no `id` property)
 - Functions must not be FBT macro operands (tracked by `fbtOperands` parameter)
-- Functions must not carry an opt-out directive (`'use no memo'` / `'use no forget'`); opted-out functions are also not recursed into, so their inner functions are never outlined
+- Functions must not carry an opt-out directive (`'use no memo'` / `'use no forget'`)
+- Functions must be declared in the body of the compiled function, in a block that is not part of a loop
 
 ## Output Guarantees
 - Pure function expressions are replaced with `LoadGlobal` of the outlined function
@@ -91,6 +94,30 @@ const a = () => 1;           // Outlined if no context
 const b = function() {};     // Outlined if no context
 ```
 
+### Functions Declared in a Nested Function
+The pass does not descend into nested function bodies, because those bodies can run any number of times. Outlining a function declared there would make every call return the same object:
+```javascript
+function Component() {
+  function makeHandler() {
+    return () => 1;   // Not outlined: shared across calls
+  }
+  const a = makeHandler();
+  const b = makeHandler();
+  a === b;            // Must be false
+}
+```
+
+### Functions Declared in a Loop
+A function declared inside a loop is evaluated once per iteration, so it is not outlined either:
+```javascript
+function Component() {
+  const handlers = [];
+  for (let i = 0; i < 2; i++) {
+    handlers.push(() => 1);   // Not outlined: shared across iterations
+  }
+}
+```
+
 ### Recursive Functions
 Self-referencing functions cannot be outlined (they would have themselves in context):
 ```javascript
@@ -98,7 +125,7 @@ const fib = (n) => n <= 1 ? n : fib(n-1) + fib(n-2);  // References self
 ```
 
 ### Opt-Out Directives
-Functions with an opt-out directive are skipped entirely — neither outlined nor recursed into:
+Functions with an opt-out directive are skipped entirely. Since the pass never looks inside nested function bodies, nothing declared inside an opted-out function is outlined either:
 ```javascript
 const helper = (x) => {
   'use no memo';

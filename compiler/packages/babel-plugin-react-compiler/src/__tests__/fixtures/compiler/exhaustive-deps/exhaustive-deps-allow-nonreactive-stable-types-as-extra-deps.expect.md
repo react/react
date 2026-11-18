@@ -94,7 +94,7 @@ function useFoo() {
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t0 = () => {
       dispatch();
-      startTransition(_temp3);
+      startTransition(() => {});
       addOptimistic();
       setState(null);
       dispatchAction();
@@ -119,7 +119,7 @@ function useFoo() {
   if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
     t2 = () => {
       dispatch();
-      startTransition(_temp4);
+      startTransition(() => {});
       addOptimistic();
       setState(null);
       dispatchAction();
@@ -131,8 +131,6 @@ function useFoo() {
   }
   return t2;
 }
-function _temp4() {}
-function _temp3() {}
 function _temp2() {}
 function _temp() {}
 
