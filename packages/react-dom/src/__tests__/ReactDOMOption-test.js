@@ -175,7 +175,7 @@ describe('ReactDOMOption', () => {
     const stub = <option dangerouslySetInnerHTML={{__html: 'foobar'}} />;
     const container = await renderIntoDocument(stub);
     assertConsoleErrorDev([
-      'Pass a `value` prop if you set dangerouslyInnerHTML so React knows which value should be selected.\n' +
+      'Pass a `value` prop if you set dangerouslySetInnerHTML so React knows which value should be selected.\n' +
         '    in option (at **)',
     ]);
 
