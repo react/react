@@ -581,8 +581,10 @@ fn collect_temporaries_sidemap(
                 InstructionValue::PropertyLoad {
                     object, property, ..
                 } => {
-                    if is_ref_type(object.identifier, identifiers, types)
-                        && *property == PropertyLiteral::String("current".to_string())
+                    // Track a loaded ref separately from its containing object.
+                    if is_ref_type(instr.lvalue.identifier, identifiers, types)
+                        || (is_ref_type(object.identifier, identifiers, types)
+                            && *property == PropertyLiteral::String("current".to_string()))
                     {
                         continue;
                     }
