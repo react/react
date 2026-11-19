@@ -45,7 +45,7 @@ function coerceFormActionProp(
 function getFormMethod(form: HTMLFormElement): string {
   // In HTML DOM, form controls can shadow `form.method` if named "method".
   // Fall back to reading the attribute or defaulting to "get".
-  const method = (form: any).method;
+  const method = (form as any).method;
   if (typeof method === 'string') {
     return method;
   }

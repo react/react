@@ -7017,6 +7017,7 @@ export function resetFormInstance(form: FormInstance): void {
   ReactBrowserEventEmitterSetEnabled(true);
   // In HTML DOM, form controls can shadow `form.reset` if named "reset".
   // Use HTMLFormElement.prototype.reset to ensure safe invocation.
+  // $FlowFixMe[method-unbinding]: safely invoke the prototype reset.
   HTMLFormElement.prototype.reset.call(form);
   ReactBrowserEventEmitterSetEnabled(false);
 }
