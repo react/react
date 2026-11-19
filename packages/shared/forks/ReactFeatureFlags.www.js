@@ -67,6 +67,7 @@ export const enableLegacyCache: boolean = true;
 
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
+export const enableFlightTee: boolean = false;
 export const enableFlightObjectReferences: boolean = false;
 export const enableFlightLedgers: boolean = false;
 
