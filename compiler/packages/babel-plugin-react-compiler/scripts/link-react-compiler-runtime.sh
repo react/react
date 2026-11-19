@@ -6,5 +6,8 @@
 
 set -eo pipefail
 
-yarn --silent workspace react-compiler-runtime link
-yarn --silent workspace babel-plugin-react-compiler link react-compiler-runtime
+# Link this workspace's react-compiler-runtime directly. A global `yarn link`
+# registration is shared by every checkout on the machine, so it can point at
+# another (or since-deleted) checkout and break the runtime import in fixtures.
+mkdir -p node_modules
+ln -sfn ../../react-compiler-runtime node_modules/react-compiler-runtime
