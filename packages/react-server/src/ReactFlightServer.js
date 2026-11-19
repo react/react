@@ -3028,40 +3028,99 @@ function resolveModel(
     return rendered;
   }
 
-  if (isArray(rendered)) {
-    const resolved: Array<ReactJSONValue> = [];
-    for (let i = 0; i < rendered.length; i++) {
-      resolved[i] = resolveModel(request, task, rendered, '' + i, rendered[i]);
-    }
-    return resolved;
-  }
+  // The resolved tree is copy-on-write: a container is copied only once one of
+  // its children resolves to a different value. Otherwise the original is
+  // returned and stringify serializes it directly. For data properties the
+  // output is the same as a full copy, because every value that needs encoding
+  // forces a copy. A property whose reads aren't stable (a getter that answers
+  // differently per read, a Proxy) is read again by stringify, and that second
+  // answer is what gets serialized.
 
-  // Use `{}` for fast properties; `__proto__` is handled below because simple
-  // assignment would hit Object.prototype's setter instead of creating a key.
-  const resolved: {[key: string]: ReactJSONValue} = {} as any;
-  for (const key in rendered) {
-    if (hasOwnProperty.call(rendered, key)) {
-      const resolvedValue = resolveModel(
+  if (isArray(rendered)) {
+    if (rendered[0] === REACT_ELEMENT_TYPE) {
+      // An element tuple always differs, because its tag slot serializes to
+      // '$'. Copy it directly instead of checking each child first.
+      const resolved: Array<ReactJSONValue> = new Array(rendered.length);
+      for (let i = 0; i < rendered.length; i++) {
+        resolved[i] = resolveModel(
+          request,
+          task,
+          rendered,
+          '' + i,
+          rendered[i],
+        );
+      }
+      return resolved;
+    }
+    for (let i = 0; i < rendered.length; i++) {
+      const child = rendered[i];
+      const resolvedChild = resolveModel(
         request,
         task,
         rendered,
-        key,
-        rendered[key],
+        '' + i,
+        child,
       );
-      if (key === __PROTO__) {
-        // Match JSON's ordinary data-property semantics for this legacy key.
-        Object.defineProperty(resolved, key, {
-          value: resolvedValue,
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-      } else {
-        resolved[key] = resolvedValue;
+      if (resolvedChild !== child) {
+        // Every earlier child resolved to itself. A hole can't be among them,
+        // since it reads as undefined, which resolves to '$undefined'.
+        const resolved: Array<ReactJSONValue> = new Array(rendered.length);
+        for (let j = 0; j < i; j++) {
+          resolved[j] = rendered[j] as any;
+        }
+        resolved[i] = resolvedChild;
+        for (let idx = i + 1; idx < rendered.length; idx++) {
+          resolved[idx] = resolveModel(
+            request,
+            task,
+            rendered,
+            '' + idx,
+            rendered[idx],
+          );
+        }
+        return resolved;
       }
     }
+    return rendered as any;
   }
-  return resolved;
+
+  // Object.keys gives the same keys as for-in filtered by hasOwnProperty. It's
+  // used instead because V8 deopts the for-in keyed loads when the loop body
+  // doesn't store every key.
+  const keys = Object.keys(rendered);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const child = rendered[key];
+    const resolvedChild = resolveModel(request, task, rendered, key, child);
+    if (resolvedChild !== child) {
+      // Use `{}` for fast properties; `__proto__` is handled below because
+      // simple assignment would hit Object.prototype's setter instead of
+      // creating a key.
+      const resolved: {[key: string]: ReactJSONValue} = {} as any;
+      for (let j = 0; j < keys.length; j++) {
+        const k = keys[j];
+        const resolvedValue =
+          j < i
+            ? (rendered[k] as any)
+            : j === i
+              ? resolvedChild
+              : resolveModel(request, task, rendered, k, rendered[k]);
+        if (k === __PROTO__) {
+          // Match JSON's ordinary data-property semantics for this legacy key.
+          Object.defineProperty(resolved, k, {
+            value: resolvedValue,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        } else {
+          resolved[k] = resolvedValue;
+        }
+      }
+      return resolved;
+    }
+  }
+  return rendered as any;
 }
 
 function writeToDedupeMap(
