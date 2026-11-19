@@ -842,7 +842,13 @@ export function processReply(
         proto !== ObjectPrototype &&
         (proto === null || getPrototypeOf(proto) !== null)
       ) {
-        if (temporaryReferences === undefined) {
+        if (temporaryReferences === undefined || proto === null) {
+          // Null-prototype objects are almost always plain data that the
+          // server will read (e.g. options objects from libraries), not
+          // opaque values to pass through by reference. A null-prototype
+          // object round-trips fine on its own, but the server reads it as
+          // a plain object and silently drops its data, so we reject it
+          // outright instead of letting it be dropped.
           throw new Error(
             'Only plain objects, and a few built-ins, can be passed to Server Functions. ' +
               'Classes or null prototypes are not supported.' +
