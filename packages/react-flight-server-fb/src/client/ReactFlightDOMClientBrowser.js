@@ -113,6 +113,7 @@ function createResponseFromOptions(options: void | Options) {
       : undefined,
     __DEV__ && options && options.endTime != null ? options.endTime : undefined,
     debugChannel,
+    undefined,
   );
 }
 
