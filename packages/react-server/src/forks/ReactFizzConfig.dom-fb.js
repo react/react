@@ -6,7 +6,7 @@
  *
  * @flow
  */
-import type {Request} from 'react-server/src/ReactFizzServer';
+import type {Request, RequestContext} from 'react-server/src/ReactFizzServer';
 
 export * from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
 
@@ -18,3 +18,5 @@ export const isWorkLoopExternallyDriven = true;
 
 export const supportsRequestStorage = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
+export const captureRequestContext: (request: Request) => RequestContext =
+  null as any;

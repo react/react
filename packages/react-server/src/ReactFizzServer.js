@@ -91,6 +91,7 @@ import {
   isWorkLoopExternallyDriven,
   supportsRequestStorage,
   requestStorage,
+  captureRequestContext,
   pushFormStateMarkerIsMatching,
   pushFormStateMarkerIsNotMatching,
   resetResumableState,
@@ -439,6 +440,9 @@ export opaque type Request = {
   renderLifetimeController: null | AbortController,
   // Form state that was the result of an MPA submission, if it was provided.
   formState: null | ReactFormState<any, any>,
+  // Runs a callback in the async context the request was created in, with the
+  // request's own store set. Null where request storage isn't supported.
+  requestContext: null | RequestContext,
   // DEV-only, warning dedupe
   didWarnForKey?: null | WeakSet<ComponentStackNode>,
 };
@@ -592,10 +596,20 @@ function RequestInstance(
   this.onFatalError = onFatalError === undefined ? noop : onFatalError;
   this.renderLifetimeController = null;
   this.formState = formState === undefined ? null : formState;
+  // $FlowFixMe[constant-condition]
+  this.requestContext = supportsRequestStorage
+    ? captureRequestContext(this)
+    : null;
   if (__DEV__) {
     this.didWarnForKey = null;
   }
 }
+
+export type RequestContext = <A, R>(
+  callback: (request: Request, arg: A) => R,
+  request: Request,
+  arg: A,
+) => R;
 
 export function createRequest(
   children: ReactNodeList,
@@ -850,10 +864,16 @@ function pingTask(request: Request, task: Task): void {
   } else {
     if (request.pingedTasks.length === 1) {
       request.flushScheduled = request.destination !== null;
+      // A ping comes from whoever resolved the thenable, which can be another
+      // request or a stream callback. Native promises resume in the context of
+      // the .then() call, but other thenables don't, so the retry runs in the
+      // request's own context instead of the caller's.
       if (request.trackedPostpones !== null || request.status === OPENING) {
-        scheduleMicrotask(() => performWork(request));
+        scheduleMicrotask(() =>
+          runInRequestContext(request, performWork, null),
+        );
       } else {
-        scheduleWork(() => performWork(request));
+        scheduleWork(() => runInRequestContext(request, performWork, null));
       }
     }
   }
@@ -6512,14 +6532,7 @@ export function startWork(request: Request): void {
   } else {
     request.flushScheduled = request.destination !== null;
     // When prerendering we use microtasks for pinging work
-    // $FlowFixMe[constant-condition]
-    if (supportsRequestStorage) {
-      scheduleMicrotask(() =>
-        requestStorage.run(request, performWork, request),
-      );
-    } else {
-      scheduleMicrotask(() => performWork(request));
-    }
+    scheduleMicrotask(() => runInRequestContext(request, performWork, null));
     scheduleWork(() => {
       if (request.status === OPENING) {
         request.status = OPEN;
@@ -6535,18 +6548,28 @@ export function startWork(request: Request): void {
         // During a prerender we don't want to be too aggressive in emitting early preloads
         // because we aren't responding to a live request and we can wait for the prerender to
         // postpone before we emit anything.
-        // $FlowFixMe[constant-condition]
-        if (supportsRequestStorage) {
-          requestStorage.run(
-            request,
-            enqueueEarlyPreloadsAfterInitialWork,
-            request,
-          );
-        } else {
-          enqueueEarlyPreloadsAfterInitialWork(request);
-        }
+        runInRequestContext(
+          request,
+          enqueueEarlyPreloadsAfterInitialWork,
+          null,
+        );
       }
     });
+  }
+}
+
+// Work Fizz schedules for itself runs in the async context the request was
+// created in, not the context of whatever triggered it (a ping, an abort).
+function runInRequestContext<T>(
+  request: Request,
+  callback: (request: Request, arg: T) => void,
+  arg: T,
+): void {
+  const requestContext = request.requestContext;
+  if (requestContext !== null) {
+    requestContext(callback, request, arg);
+  } else {
+    callback(request, arg);
   }
 }
 
@@ -6565,16 +6588,20 @@ function enqueueFlush(request: Request): void {
     request.destination !== null
   ) {
     request.flushScheduled = true;
-    scheduleWork(() => {
-      // We need to existence check destination again here because it might go away
-      // in between the enqueueFlush call and the work execution
-      const destination = request.destination;
-      if (destination) {
-        flushCompletedQueues(request, destination);
-      } else {
-        request.flushScheduled = false;
-      }
-    });
+    scheduleWork(() =>
+      runInRequestContext(request, performScheduledFlush, null),
+    );
+  }
+}
+
+function performScheduledFlush(request: Request): void {
+  // We need to existence check destination again here because it might go away
+  // in between the enqueueFlush call and the work execution
+  const destination = request.destination;
+  if (destination) {
+    flushCompletedQueues(request, destination);
+  } else {
+    request.flushScheduled = false;
   }
 }
 
@@ -6731,7 +6758,7 @@ export function abort(request: Request, reason: mixed): void {
   // Even though this looks async some renderers schedule work sync
   // So it is important that the finish step does not assume the stack
   // has unwinded yet
-  scheduleWork(() => finishAbort(request, abortableTasks));
+  scheduleWork(() => runInRequestContext(request, finishAbort, abortableTasks));
 }
 
 export function flushResources(request: Request): void {
