@@ -3524,6 +3524,77 @@ describe('FragmentRefs', () => {
         );
       });
     });
+
+    // The update is scheduled below the Fragment, so the Fragment itself has no
+    // props or lanes of its own and bails out: only its children are cloned.
+    // `updateFragment` never runs for it.
+    it('reads the committed children when the Fragment bails out', async () => {
+      const never = new Promise(() => {});
+      function Suspends() {
+        React.use(never);
+        return null;
+      }
+      const Inner = React.memo(function Inner({more}) {
+        return more ? (
+          <>
+            <div>
+              <Suspends />
+            </div>
+            <p id="kept">kept</p>
+          </>
+        ) : (
+          <p id="kept">kept</p>
+        );
+      });
+      const setters = {};
+      let fragmentRef;
+      function Content() {
+        const [, setDrawn] = React.useState(0);
+        const [more, setMore] = React.useState(false);
+        setters.setDrawn = setDrawn;
+        setters.setMore = setMore;
+        return <Inner more={more} />;
+      }
+      function App() {
+        return (
+          <main>
+            <Fragment ref={fragmentRef}>
+              <Content />
+            </Fragment>
+          </main>
+        );
+      }
+
+      for (let quietCommits = 0; quietCommits < 3; quietCommits++) {
+        fragmentRef = React.createRef();
+        const rootContainer = document.createElement('div');
+        document.body.appendChild(rootContainer);
+        const root = ReactDOMClient.createRoot(rootContainer);
+
+        await act(() => root.render(<App />));
+        for (let i = 0; i < quietCommits; i++) {
+          await act(() => setters.setDrawn(i + 1));
+        }
+        const kept = rootContainer.querySelector('#kept');
+
+        await act(() => {
+          React.startTransition(() => setters.setMore(true));
+        });
+        expect(rootContainer.querySelector('div')).toBe(null);
+
+        expectPosition(fragmentRef.current.compareDocumentPosition(kept), {
+          preceding: false,
+          following: false,
+          contains: false,
+          containedBy: true,
+          disconnected: false,
+          implementationSpecific: false,
+        });
+
+        await act(() => root.unmount());
+        rootContainer.remove();
+      }
+    });
   });
 
   describe('scrollIntoView', () => {

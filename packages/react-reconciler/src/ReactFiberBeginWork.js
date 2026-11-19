@@ -3999,6 +3999,16 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
     case HostPortal:
       pushHostContainer(workInProgress, workInProgress.stateNode.containerInfo);
       break;
+    case Fragment:
+      // A Fragment instance answers from the committed tree by walking from the
+      // fiber stored on it, which the mutation phase repoints. A Fragment that
+      // bails out is never visited there, so the instance keeps pointing at the
+      // fiber we are about to reuse as the work-in-progress one. Point it back
+      // at the committed fiber, same as `updateFragment` does when it renders.
+      if (current.stateNode !== null) {
+        updateFragmentInstanceFiber(current, current.stateNode);
+      }
+      break;
     case ContextProvider: {
       const newValue = workInProgress.memoizedProps.value;
       const context: ReactContext<any> = workInProgress.type;
