@@ -54,7 +54,7 @@ function Component({data}) {
 ```javascript
 import { c as _c } from "react/compiler-runtime"; // @enablePropagateDepsInHIR
 function Component(t0) {
-  const $ = _c(12);
+  const $ = _c(11);
   const { data } = t0;
   const geography = nullthrows(data.details);
   const section = geography.sections?.nodes[0];
@@ -83,8 +83,7 @@ function Component(t0) {
     $[1] !== geography?.id ||
     $[2] !== name ||
     $[3] !== section?.id ||
-    $[4] !== setIsSaving ||
-    $[5] !== triggerType
+    $[4] !== triggerType
   ) {
     t1 = () => {
       setIsSaving(true);
@@ -100,19 +99,18 @@ function Component(t0) {
     $[1] = geography?.id;
     $[2] = name;
     $[3] = section?.id;
-    $[4] = setIsSaving;
-    $[5] = triggerType;
-    $[6] = t1;
+    $[4] = triggerType;
+    $[5] = t1;
   } else {
-    t1 = $[6];
+    t1 = $[5];
   }
   const handleSubmit = t1;
   let t2;
   if (
-    $[7] !== conditions ||
-    $[8] !== geoCountry ||
-    $[9] !== handleSubmit ||
-    $[10] !== name
+    $[6] !== conditions ||
+    $[7] !== geoCountry ||
+    $[8] !== handleSubmit ||
+    $[9] !== name
   ) {
     t2 = (
       <div onClick={handleSubmit}>
@@ -121,13 +119,13 @@ function Component(t0) {
         {conditions}
       </div>
     );
-    $[7] = conditions;
-    $[8] = geoCountry;
-    $[9] = handleSubmit;
-    $[10] = name;
-    $[11] = t2;
+    $[6] = conditions;
+    $[7] = geoCountry;
+    $[8] = handleSubmit;
+    $[9] = name;
+    $[10] = t2;
   } else {
-    t2 = $[11];
+    t2 = $[10];
   }
   return t2;
 }

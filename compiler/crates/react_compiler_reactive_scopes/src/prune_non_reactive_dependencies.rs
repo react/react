@@ -12,7 +12,7 @@ use rustc_hash::FxHashSet;
 
 use react_compiler_hir::{
     EvaluationOrder, IdentifierId, InstructionValue, Place, PrunedReactiveScopeBlock,
-    ReactiveFunction, ReactiveInstruction, ReactiveScopeBlock, ReactiveValue,
+    ReactiveFunction, ReactiveInstruction, ReactiveScopeBlock, ReactiveStatement, ReactiveValue,
     environment::Environment, is_primitive_type, is_use_ref_type, object_shape,
     visitors as hir_visitors,
 };
@@ -60,11 +60,34 @@ impl<'a> ReactiveFunctionVisitor for CollectVisitor<'a> {
     fn visit_pruned_scope(&self, scope: &PrunedReactiveScopeBlock, state: &mut Self::State) {
         self.traverse_pruned_scope(scope, state);
 
+        // Stable values destructured in the scope, such as the setter of
+        // `const [state, setState] = useState()`, keep their identity even though
+        // the scope is not memoized. The type alone is not enough: a value such as
+        // `cond ? setState : fn` has the setter's type too.
+        let mut stable_destructures = FxHashSet::default();
+        for stmt in &scope.instructions {
+            if let ReactiveStatement::Instruction(ReactiveInstruction {
+                value: ReactiveValue::Instruction(InstructionValue::Destructure { lvalue, .. }),
+                ..
+            }) = stmt
+            {
+                for operand in hir_visitors::each_pattern_operand(&lvalue.pattern) {
+                    let ident = &self.env.identifiers[operand.identifier.0 as usize];
+                    if is_stable_type(&self.env.types[ident.type_.0 as usize]) {
+                        stable_destructures.insert(operand.identifier);
+                    }
+                }
+            }
+        }
+
         let scope_data = &self.env.scopes[scope.scope.0 as usize];
         for (_id, decl) in &scope_data.declarations {
             let identifier = &self.env.identifiers[decl.identifier.0 as usize];
             let ty = &self.env.types[identifier.type_.0 as usize];
-            if !is_primitive_type(ty) && !is_stable_ref_type(ty, state, identifier.id) {
+            if !is_primitive_type(ty)
+                && !is_stable_ref_type(ty, state, identifier.id)
+                && !stable_destructures.contains(_id)
+            {
                 state.insert(*_id);
             }
         }

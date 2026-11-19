@@ -12,9 +12,11 @@ import {
   PrunedReactiveScopeBlock,
   ReactiveFunction,
   isPrimitiveType,
+  isStableType,
   isUseRefType,
   Identifier,
 } from '../HIR/HIR';
+import {eachPatternOperand} from '../HIR/visitors';
 import {ReactiveFunctionVisitor, visitReactiveFunction} from './visitors';
 
 class Visitor extends ReactiveFunctionVisitor<Set<IdentifierId>> {
@@ -51,10 +53,33 @@ class Visitor extends ReactiveFunctionVisitor<Set<IdentifierId>> {
   ): void {
     this.traversePrunedScope(scopeBlock, state);
 
+    /*
+     * Stable values destructured in the scope, such as the setter of
+     * `const [state, setState] = useState()`, keep their identity even though
+     * the scope is not memoized. The type alone is not enough: a value such as
+     * `cond ? setState : fn` has the setter's type too.
+     */
+    const stableDestructures = new Set<IdentifierId>();
+    for (const stmt of scopeBlock.instructions) {
+      if (
+        stmt.kind === 'instruction' &&
+        stmt.instruction.value.kind === 'Destructure'
+      ) {
+        for (const place of eachPatternOperand(
+          stmt.instruction.value.lvalue.pattern,
+        )) {
+          if (isStableType(place.identifier)) {
+            stableDestructures.add(place.identifier.id);
+          }
+        }
+      }
+    }
+
     for (const [id, decl] of scopeBlock.scope.declarations) {
       if (
         !isPrimitiveType(decl.identifier) &&
-        !isStableRefType(decl.identifier, state)
+        !isStableRefType(decl.identifier, state) &&
+        !stableDestructures.has(id)
       ) {
         state.add(id);
       }
