@@ -501,16 +501,16 @@ function loadServerReference<A: Iterable<any>, T>(
     // Only one of our own chunks carries bound arguments. Anything else binds
     // nothing.
     if (boundChunk !== null) {
-      const boundArgs: Array<any> = isArray(args) ? args.slice(0) : [];
-      if (boundArgs.length > MAX_BOUND_ARGS) {
+      if (isArray(args) && args.length > MAX_BOUND_ARGS) {
         throw new Error(
           'Server Function has too many bound arguments. Received ' +
-            boundArgs.length +
+            args.length +
             ' but the limit is ' +
             MAX_BOUND_ARGS +
             '.',
         );
       }
+      const boundArgs: Array<any> = isArray(args) ? args.slice(0) : [];
       boundArgs.unshift(null); // this
       value = value.bind.apply(value, boundArgs);
     }
@@ -580,6 +580,7 @@ function loadServerReference<A: Iterable<any>, T>(
     EMPTY_REFERENCE_PATH,
   );
   handler.root = reference;
+  reference.inputLimit = MAX_BOUND_ARGS;
   if (preloading) {
     const moduleChunk = createModuleChunk(response, preloading);
     reference.moduleWait = waitForChunk(response, handler, moduleChunk);
@@ -998,6 +999,7 @@ type InitializationReference = {
   // and the wait for a module that `map` needs, if it is still loading.
   input: any,
   inputIndex: number,
+  inputLimit: number,
   moduleWait: null | InitializationReference,
 };
 type InitializationHandler = {
@@ -1608,6 +1610,11 @@ function findPendingInput(
     // other constructors only read the entries of an array.
     return null;
   }
+  const inputLimit = reference.inputLimit;
+  if (inputLimit !== 0 && input.length > inputLimit) {
+    // `map` rejects an input this long without reading it.
+    return null;
+  }
   // A Map reads the key and value of each entry.
   const hasEntryPairs = map === createMap;
   for (let i = reference.inputIndex; i < input.length; i++) {
@@ -2170,6 +2177,7 @@ function createInitializationReference<T>(
     listeners: null,
     input: null,
     inputIndex: 0,
+    inputLimit: 0,
     moduleWait: null,
   };
   if (handler.references === null) {
