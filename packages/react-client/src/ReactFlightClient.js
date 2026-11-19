@@ -106,6 +106,10 @@ import getPrototypeOf from 'shared/getPrototypeOf';
 import {injectInternals} from './ReactFlightClientDevToolsHook';
 
 import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
+import {unescapePathSegment} from 'shared/ReactFlightReferencePath';
+
+import type {WaitForestNode} from 'shared/ReactFlightWaitForest';
+import {findWaitRoot, linkWait, cutWait} from 'shared/ReactFlightWaitForest';
 
 import ReactVersion from 'shared/ReactVersion';
 
@@ -323,7 +327,10 @@ function reactPromiseThen<T>(
         rej(reason);
       };
     });
-    wrapperPromise.then(resolveCallback, rejectCallback);
+    wrapperPromise.then(
+      resolveCallback,
+      typeof rejectCallback === 'function' ? rejectCallback : ignoreReject,
+    );
   }
   // The status might have changed after initialization.
   switch (chunk.status) {
@@ -383,6 +390,24 @@ export type DebugChannel = {
   callback: DebugChannelCallback | null,
 };
 
+type QueuedReference = {
+  reference: InitializationReference,
+  value: any,
+  isConstructor: boolean,
+};
+
+// Null `chunk` means rejection, with the error in `value`.
+type ChunkListeners = {
+  listeners: Array<InitializationReference | (any => mixed)>,
+  value: any,
+  chunk: null | InitializedChunk<any>,
+};
+
+type QueuedCallbacks = {
+  callbacks: Array<(any) => mixed>,
+  value: any,
+};
+
 type Response = {
   _bundlerConfig: ServerConsumerModuleMap,
   _serverReferenceConfig: null | ServerManifest,
@@ -391,6 +416,15 @@ type Response = {
   _encodeFormAction: void | EncodeFormActionCallback,
   _nonce: ?string,
   _chunks: Map<number, SomeChunk<any>>,
+  _handlers: WeakMap<SomeChunk<any>, InitializationHandler>,
+  _queuedReferences: null | Array<QueuedReference>,
+  _continuingReferences: boolean,
+  _queuedChunkListeners: null | Array<ChunkListeners>,
+  _flushingChunkListeners: boolean,
+  _queuedGroupChecks: Array<BlockedGroup>,
+  _queuedCallbacks: Array<QueuedCallbacks>,
+  _workDepth: number,
+  _flushingGroupChecks: boolean,
   _stringDecoder: StringDecoder,
   _closed: boolean,
   _closedReason: mixed,
@@ -573,6 +607,19 @@ function createBlockedChunk<T>(response: Response): BlockedChunk<T> {
   return new ReactPromise(BLOCKED, null, null);
 }
 
+// Initializes once the module has loaded, or errors if the load fails.
+function createModuleChunk(
+  response: Response,
+  loading: Thenable<any>,
+): BlockedChunk<any> {
+  const chunk: BlockedChunk<any> = createBlockedChunk(response);
+  loading.then(
+    () => initializeBlockedChunk(response, chunk, null, null),
+    error => triggerErrorOnChunk(response, chunk, error),
+  );
+  return chunk;
+}
+
 function createErrorChunk<T>(
   response: Response,
   error: mixed,
@@ -679,24 +726,64 @@ function processChunkDebugInfo<T>(
   moveDebugInfoFromChunkToInnerValue(chunk, value);
 }
 
+function ignoreReject() {}
+
 function wakeChunk<T>(
   response: Response,
   listeners: Array<InitializationReference | (T => mixed)>,
   value: T,
-  chunk: InitializedChunk<T>,
+  chunk: null | InitializedChunk<T>,
 ): void {
-  for (let i = 0; i < listeners.length; i++) {
-    const listener = listeners[i];
-    if (typeof listener === 'function') {
-      listener(value);
+  if (response._flushingChunkListeners) {
+    const queued = response._queuedChunkListeners;
+    if (queued === null) {
+      response._queuedChunkListeners = [{listeners, value, chunk}];
     } else {
-      fulfillReference(response, listener, value, chunk);
+      queued.push({listeners, value, chunk});
     }
+    return;
   }
-
-  if (__DEV__) {
-    processChunkDebugInfo(response, chunk, value);
+  response._flushingChunkListeners = true;
+  response._workDepth++;
+  let next = 0;
+  try {
+    for (;;) {
+      let callbacks: null | Array<(any) => mixed> = null;
+      for (let i = 0; i < listeners.length; i++) {
+        const listener = listeners[i];
+        if (typeof listener === 'function') {
+          if (callbacks === null) {
+            callbacks = [listener];
+          } else {
+            callbacks.push(listener);
+          }
+        } else if (chunk === null) {
+          rejectReference(response, listener.handler, value);
+        } else {
+          releaseReference(response, listener, chunk);
+        }
+      }
+      if (callbacks !== null) {
+        response._queuedCallbacks.push({callbacks, value});
+      }
+      if (__DEV__ && chunk !== null) {
+        processChunkDebugInfo(response, chunk, value);
+      }
+      const queued = response._queuedChunkListeners;
+      if (queued === null || next === queued.length) {
+        break;
+      }
+      const notification = queued[next++];
+      listeners = notification.listeners;
+      value = notification.value;
+      chunk = notification.chunk;
+    }
+  } finally {
+    response._queuedChunkListeners = null;
+    response._flushingChunkListeners = false;
+    response._workDepth--;
   }
+  flushGroupChecks(response);
 }
 
 function rejectChunk(
@@ -704,41 +791,7 @@ function rejectChunk(
   listeners: Array<InitializationReference | (mixed => mixed)>,
   error: mixed,
 ): void {
-  for (let i = 0; i < listeners.length; i++) {
-    const listener = listeners[i];
-    if (typeof listener === 'function') {
-      listener(error);
-    } else {
-      rejectReference(response, listener.handler, error);
-    }
-  }
-}
-
-function resolveBlockedCycle<T>(
-  resolvedChunk: SomeChunk<T>,
-  reference: InitializationReference,
-): null | InitializationHandler {
-  const referencedChunk = reference.handler.chunk;
-  if (referencedChunk === null) {
-    return null;
-  }
-  if (referencedChunk === resolvedChunk) {
-    // We found the cycle. We can resolve the blocked cycle now.
-    return reference.handler;
-  }
-  const resolveListeners = referencedChunk.value;
-  if (resolveListeners !== null) {
-    for (let i = 0; i < resolveListeners.length; i++) {
-      const listener = resolveListeners[i];
-      if (typeof listener !== 'function') {
-        const foundHandler = resolveBlockedCycle(resolvedChunk, listener);
-        if (foundHandler !== null) {
-          return foundHandler;
-        }
-      }
-    }
-  }
-  return null;
+  wakeChunk(response, listeners, error, null);
 }
 
 function wakeChunkIfInitialized<T>(
@@ -750,68 +803,6 @@ function wakeChunkIfInitialized<T>(
   switch (chunk.status) {
     case INITIALIZED:
       wakeChunk(response, resolveListeners, chunk.value, chunk);
-      break;
-    case BLOCKED:
-      // It is possible that we're blocked on our own chunk if it's a cycle.
-      // Before adding back the listeners to the chunk, let's check if it would
-      // result in a cycle.
-      for (let i = 0; i < resolveListeners.length; i++) {
-        const listener = resolveListeners[i];
-        if (typeof listener !== 'function') {
-          const reference: InitializationReference = listener;
-          const cyclicHandler = resolveBlockedCycle(chunk, reference);
-          if (cyclicHandler !== null) {
-            // This reference points back to this chunk. We can resolve the cycle by
-            // using the value from that handler.
-            fulfillReference(response, reference, cyclicHandler.value, chunk);
-            resolveListeners.splice(i, 1);
-            i--;
-            if (rejectListeners !== null) {
-              const rejectionIdx = rejectListeners.indexOf(reference);
-              if (rejectionIdx !== -1) {
-                rejectListeners.splice(rejectionIdx, 1);
-              }
-            }
-            // The status might have changed after fulfilling the reference.
-            switch ((chunk as SomeChunk<T>).status) {
-              case INITIALIZED:
-                const initializedChunk: InitializedChunk<T> = chunk as any;
-                wakeChunk(
-                  response,
-                  resolveListeners,
-                  initializedChunk.value,
-                  initializedChunk,
-                );
-                return;
-              case ERRORED:
-                if (rejectListeners !== null) {
-                  rejectChunk(response, rejectListeners, chunk.reason);
-                }
-                return;
-            }
-          }
-        }
-      }
-    // Fallthrough
-    case PENDING:
-      if (chunk.value) {
-        for (let i = 0; i < resolveListeners.length; i++) {
-          chunk.value.push(resolveListeners[i]);
-        }
-      } else {
-        chunk.value = resolveListeners;
-      }
-
-      if (chunk.reason) {
-        if (rejectListeners) {
-          for (let i = 0; i < rejectListeners.length; i++) {
-            chunk.reason.push(rejectListeners[i]);
-          }
-        }
-      } else {
-        chunk.reason = rejectListeners;
-      }
-
       break;
     case ERRORED:
       if (rejectListeners) {
@@ -994,9 +985,9 @@ function resolveModelChunk<T>(
     // This is unfortunate that we're reading this eagerly if
     // we already have listeners attached since they might no
     // longer be rendered or might not be the highest pri.
-    initializeModelChunk(resolvedChunk);
-    // The status might have changed after initialization.
-    wakeChunkIfInitialized(response, chunk, resolveListeners, rejectListeners);
+    // The listeners stay on the chunk during the parse. A group check can
+    // initialize the chunk later, and has to find them there.
+    initializeModelChunk(resolvedChunk, resolveListeners, rejectListeners);
   }
 }
 
@@ -1034,9 +1025,23 @@ function resolveModuleChunk<T>(
   }
 }
 
+// Until a reference is fulfilled, its slot holds the reference object itself.
+// This tag tells it apart from a parsed value.
+const UNFULFILLED_REFERENCE_TYPE: symbol = Symbol('react.flight.reference');
+function isUnfulfilledReference(value: any): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    value.$$typeof === UNFULFILLED_REFERENCE_TYPE
+  );
+}
+
 type InitializationReference = {
+  $$typeof: symbol,
   handler: InitializationHandler,
-  parentObject: Object,
+  // The slot that the reference fills is `parentObject[key]`. `parentObject` is
+  // null if the reference only waits for a chunk.
+  parentObject: null | Object,
   key: string,
   map: (
     response: Response,
@@ -1045,30 +1050,114 @@ type InitializationReference = {
     key: string,
   ) => any,
   path: Array<string>,
+  // The chunk the reference waits for.
+  chunk: SomeChunk<any>,
+  // For a Set or a Map: the collection itself. It is created empty and put in
+  // the slot before its entries are fulfilled.
+  collection: null | Set<any> | Map<any, any>,
+  // Whether that chunk has been initialized.
+  released: boolean,
+  // Whether the slot holds its final value. Until then, `pathIndex` is where
+  // to continue in `path`, and `listeners` are the references whose paths go
+  // through this slot. In DEV, a debug entry is the exception: it counts as
+  // fulfilled before it is created. See constructReference.
+  fulfilled: boolean,
+  pathIndex: number,
+  listeners: null | Array<InitializationReference>,
+  // For a reference whose value is built by `map`, like a Map: the value that
+  // `map` reads, how far the search for an unfulfilled slot in it has got,
+  // and the wait for a module that `map` needs, if it is still loading.
+  input: any,
+  inputIndex: number,
+  inputNames: null | Array<string>,
+  moduleWait: null | InitializationReference,
   isDebug?: boolean, // DEV-only
 };
 type PendingInitializationHandler = {
   parent: null | InitializationHandler,
   chunk: null | BlockedChunk<any>,
   value: any,
+  // If the whole model is one reference, like `"$1"`, and it is not fulfilled
+  // yet, this is that reference.
+  root: null | InitializationReference,
   // The controller of a stream whose chunk is blocked on its debug info. Null
   // for every other model.
   reason: null | FlightStreamController,
+  // How many of `references` are not released yet.
   deps: number,
+  references: null | Array<InitializationReference>,
+  // The group this handler is in. Null until its first group check.
+  group: null | BlockedGroup,
   errored: false,
 };
 type ErroredInitializationHandler = {
   parent: null | InitializationHandler,
   chunk: null | BlockedChunk<any>,
   value: null,
+  root: null | InitializationReference,
   // The error the handler was rejected with.
   reason: mixed,
   deps: number,
+  references: null | Array<InitializationReference>,
+  group: null | BlockedGroup,
   errored: true,
+};
+// Handlers whose chunks wait on each other, so they have to be initialized
+// together. When two groups are merged, one of them takes all the handlers,
+// and the other one points to it through `merged`.
+type BlockedGroup = {
+  merged: null | BlockedGroup,
+  size: number,
+  handlers: Array<InitializationHandler>,
+  // The references of these handlers that a check has not looked at yet, and
+  // the one that the group is waiting for now.
+  unchecked: Array<InitializationReference>,
+  waitingFor: null | InitializationReference,
+  checkQueued: boolean,
+  // Used by the link-cut tree in ReactFlightWaitForest.
+  pathParent: null | WaitForestNode,
+  pathLeft: null | WaitForestNode,
+  pathRight: null | WaitForestNode,
 };
 type InitializationHandler =
   | PendingInitializationHandler
   | ErroredInitializationHandler;
+
+function createInitializationHandler(
+  parent: null | InitializationHandler,
+  deps: number,
+): PendingInitializationHandler {
+  const handler: PendingInitializationHandler = {
+    parent,
+    chunk: null,
+    value: null,
+    root: null,
+    reason: null,
+    deps,
+    references: null,
+    group: null,
+    errored: false,
+  };
+  return handler;
+}
+
+function createErroredInitializationHandler(
+  reason: mixed,
+): ErroredInitializationHandler {
+  const handler: ErroredInitializationHandler = {
+    parent: null,
+    chunk: null,
+    value: null,
+    root: null,
+    reason,
+    deps: 0,
+    references: null,
+    group: null,
+    errored: true,
+  };
+  return handler;
+}
+
 let initializingHandler: null | InitializationHandler = null;
 let initializingChunk: null | BlockedChunk<any> = null;
 let isInitializingDebugInfo: boolean = false;
@@ -1084,13 +1173,14 @@ function initializeDebugChunk(
     isInitializingDebugInfo = true;
     try {
       if (debugChunk.status === RESOLVED_MODEL) {
-        // Find the index of this debug info by walking the linked list.
-        let idx = debugInfo.length;
+        // The entry's index is its position in the chain: the older chunks
+        // come first, whether they have initialized yet or not. Debug info
+        // referenced by this chunk is added only once it completes, after
+        // these.
+        let idx = 0;
         let c = debugChunk._debugChunk;
         while (c !== null) {
-          if (c.status !== INITIALIZED) {
-            idx++;
-          }
+          idx++;
           c = c._debugChunk;
         }
         // Initializing the model for the first time.
@@ -1121,29 +1211,43 @@ function initializeDebugChunk(
           default:
             throw initializedChunk.reason;
         }
-      } else {
+      } else if (prevIsInitializingDebugInfo) {
+        // This chunk is a debug chunk itself. The entries of a chunk are
+        // added in the order they were sent, so each debug chunk waits for
+        // the one before it, and fails if that one failed.
         switch (debugChunk.status) {
-          case INITIALIZED: {
-            // Already done.
-            break;
-          }
           case BLOCKED:
           case PENDING:
           case PENDING_WEAK: {
-            // Signal to the caller that we need to wait.
-            waitForReference(
-              debugChunk,
-              {}, // noop, since we'll have already added an entry to debug info
-              'debug', // noop, but we need it to not be empty string since that indicates the root object
+            if (initializingHandler === null) {
+              initializingHandler = createInitializationHandler(null, 0);
+            }
+            fulfillReferenceIfParsed(
               response,
-              initializeDebugInfo,
-              [''], // path
-              true,
+              waitForChunk(response, initializingHandler, debugChunk),
             );
             break;
           }
-          default:
+          case ERRORED:
             throw debugChunk.reason;
+        }
+      } else {
+        // The debug chunks were initialized as they arrived, before this
+        // chunk had parsed, so the references that fill their entries belong
+        // to no handler. This chunk's handler takes them over, because the
+        // chunk is not complete until every entry is fulfilled.
+        let c: null | SomeChunk<any> = debugChunk;
+        while (c !== null) {
+          switch (c.status) {
+            case BLOCKED:
+            case PENDING:
+            case PENDING_WEAK:
+              adoptDebugReferences(c, debugInfo);
+              break;
+            case ERRORED:
+              throw c.reason;
+          }
+          c = c._debugChunk;
         }
       }
     } catch (error) {
@@ -1154,12 +1258,54 @@ function initializeDebugChunk(
   }
 }
 
+function adoptDebugReferences(
+  debugChunk: SomeChunk<any>,
+  debugInfo: Array<ReactDebugInfoEntry>,
+): void {
+  if (__DEV__) {
+    const listeners: null | Array<InitializationReference | (any => mixed)> =
+      debugChunk.value as any;
+    if (listeners === null) {
+      return;
+    }
+    for (let i = 0; i < listeners.length; i++) {
+      const listener = listeners[i];
+      if (
+        typeof listener === 'function' ||
+        listener.released ||
+        listener.parentObject !== debugInfo ||
+        listener.map !== initializeDebugInfo
+      ) {
+        continue;
+      }
+      const orphan = listener.handler;
+      if (orphan.chunk !== null) {
+        // Another chunk's handler already has this reference.
+        continue;
+      }
+      orphan.deps--;
+      const handler = addDependency();
+      listener.handler = handler;
+      if (handler.references === null) {
+        handler.references = [listener];
+      } else {
+        handler.references.push(listener);
+      }
+    }
+  }
+}
+
 // Moves a chunk to BLOCKED and makes it the chunk being initialized, before its
-// model is parsed or built. The caller saves `initializingHandler` and
-// `initializingChunk` before this and restores them once the chunk is complete.
+// model is parsed or built. The listeners that were waiting on the chunk stay
+// on it while the model is read. A group check can initialize the chunk later,
+// and has to find them there. The caller saves `initializingHandler` and
+// `initializingChunk` before this, and restores them with
+// `endChunkInitialization` once the chunk is complete.
 function beginChunkInitialization<T>(
   response: Response,
   chunk: ResolvedModelChunk<T> | PendingChunk<T> | PendingWeakChunk<T>,
+  resolveListeners: null | Array<InitializationReference | (T => mixed)>,
+  rejectListeners: null | Array<InitializationReference | (mixed => mixed)>,
 ): BlockedChunk<T> {
   initializingHandler = null;
 
@@ -1168,8 +1314,8 @@ function beginChunkInitialization<T>(
   // while parsing the model. Such as in a cyclic reference.
   const cyclicChunk: BlockedChunk<T> = chunk as any;
   cyclicChunk.status = BLOCKED;
-  cyclicChunk.value = null;
-  cyclicChunk.reason = null;
+  cyclicChunk.value = resolveListeners;
+  cyclicChunk.reason = rejectListeners;
 
   if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
     initializingChunk = cyclicChunk;
@@ -1182,6 +1328,7 @@ function beginChunkInitialization<T>(
     // TODO: The chunk might have transitioned to ERRORED now.
     // Should we return early if that happens?
   }
+  response._workDepth++;
   return cyclicChunk;
 }
 
@@ -1193,6 +1340,7 @@ function completeChunkInitialization<T>(
   cyclicChunk: BlockedChunk<T>,
   value: T,
 ): void {
+  const parsedChunk: SomeChunk<T> = cyclicChunk;
   const handler = initializingHandler;
   if (handler !== null) {
     if (handler.errored) {
@@ -1201,119 +1349,117 @@ function completeChunkInitialization<T>(
       // that nested parses queued on `cyclicChunk` during the parse. No value
       // will arrive for them. `initializeDebugChunk` can have errored
       // `cyclicChunk` before the parse. That error stays.
-      if ((cyclicChunk as any).status === BLOCKED) {
+      if (parsedChunk.status === BLOCKED) {
         triggerErrorOnChunk(response, cyclicChunk, handler.reason);
       }
       return;
     }
-    // Record on the handler which chunk it completes, and with what value,
-    // before the listeners below are examined. `resolveBlockedCycle` walks
-    // from a reference to its handler and on to that handler's chunk. A cycle
-    // that closes through `cyclicChunk` is only found once `handler.chunk` is
-    // `cyclicChunk`.
-    handler.value = value;
-    handler.chunk = cyclicChunk;
-  }
-
-  const listeners = cyclicChunk.value;
-  const rejectListeners = cyclicChunk.reason;
-  cyclicChunk.value = null;
-  cyclicChunk.reason = null;
-  if (listeners !== null) {
-    // These listeners were added to `cyclicChunk` while its model was
-    // parsing. They come from models that were parsed nested inside that
-    // parse and that pointed back at `cyclicChunk`. They fall in two groups.
-    //
-    // A reference whose handler is transitively waiting on `cyclicChunk` is a
-    // cycle. Neither side can complete before the other, so one of them has
-    // to accept the value as it is now. The reference receives the current
-    // object, and the outstanding references fill it in place.
-    //
-    // Every other listener waits. Its handler is not waiting on
-    // `cyclicChunk`, so it can receive the value once the model has resolved
-    // its own references, like any reference into a blocked chunk does.
-    // Handing it the value now would complete that handler with an object
-    // that still has references outstanding. Function listeners have no
-    // handler and always wait.
-    let cyclic: null | Array<InitializationReference> = null;
-    let deferred: null | Array<InitializationReference | (T => mixed)> = null;
-    for (let i = 0; i < listeners.length; i++) {
-      const listener = listeners[i];
-      if (
-        typeof listener !== 'function' &&
-        resolveBlockedCycle(cyclicChunk, listener) !== null
-      ) {
-        if (cyclic === null) {
-          cyclic = [];
-        }
-        cyclic.push(listener);
-        // A reference is queued for rejection as the same object that is
-        // queued for resolution. It is fulfilled below, so its rejection
-        // entry goes.
-        if (rejectListeners !== null) {
-          const rejectionIdx = rejectListeners.indexOf(listener);
-          if (rejectionIdx !== -1) {
-            rejectListeners.splice(rejectionIdx, 1);
-          }
-        }
-      } else {
-        if (deferred === null) {
-          deferred = [];
-        }
-        deferred.push(listener);
-      }
+    // The whole model can be one reference that is not fulfilled yet. Its
+    // value then arrives through that reference.
+    if (isUnfulfilledReference(value)) {
+      handler.value = null;
+      handler.root = value as any;
+    } else {
+      handler.value = value;
     }
-    // Put the deferred listeners back on `cyclicChunk` before any cyclic
-    // reference is fulfilled. Fulfilling one can complete `cyclicChunk`, and
-    // completion wakes what is queued on it at that moment.
-    if (deferred !== null) {
-      cyclicChunk.value = deferred;
-      cyclicChunk.reason = rejectListeners;
+    registerHandler(response, handler, cyclicChunk);
+    // Nested parses can have made references to this chunk while it was
+    // being parsed. Its value exists now, so they can be fulfilled.
+    const listeners = cyclicChunk.value;
+    if (listeners !== null) {
+      fulfillListenersFromModel(response, listeners, handler);
     }
-    if (cyclic !== null) {
-      for (let i = 0; i < cyclic.length; i++) {
-        fulfillReference(response, cyclic[i], value, cyclicChunk);
-      }
+    if (parsedChunk.status !== BLOCKED) {
+      // Fulfilling one of them failed and errored this chunk.
+      return;
     }
-  }
-
-  if ((cyclicChunk as any).status !== BLOCKED) {
-    // Fulfilling a cyclic reference completed `cyclicChunk`, or failed and
-    // errored it. A failure rejects the reference's handler. The rejection
-    // reaches `cyclicChunk`, directly or through the cycle, because
-    // `handler.chunk` is set.
-    return;
-  }
-  if (handler !== null && handler.deps > 0) {
-    // The model references chunks that have not resolved yet. `cyclicChunk`
-    // stays BLOCKED, with the deferred listeners queued on it, until the last
-    // of those resolves.
+    if (handler.deps > 0) {
+      // Some references are not released yet. The chunk stays BLOCKED until
+      // they are, or until a group check initializes it together with the
+      // chunks it waits for.
+      queueGroupCheck(response, handler);
+      return;
+    }
+    // No reference is left to wait for, so `value` is not an unfulfilled
+    // reference. That would count as one.
+    unregisterHandler(response, handler);
+  } else if (parsedChunk.status !== BLOCKED) {
+    // Debug initialization may have errored this chunk before the parse.
     return;
   }
   initializeBlockedChunk(response, cyclicChunk, value, null);
 }
 
-function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
+// Fails a chunk whose model threw while it was parsed or built, or while it
+// was completed. `erroredBeforeParse` is whether the chunk had already errored
+// when `beginChunkInitialization` returned.
+function failChunkInitialization<T>(
+  response: Response,
+  cyclicChunk: BlockedChunk<T>,
+  erroredBeforeParse: boolean,
+  error: mixed,
+): void {
+  const parsedChunk: SomeChunk<T> = cyclicChunk;
+  if (parsedChunk.status === BLOCKED) {
+    // The parse failed. Fail the handler, and then the chunk, which also
+    // rejects the references that were made to it during the parse.
+    const handler = initializingHandler;
+    if (handler !== null) {
+      rejectReference(response, handler, error);
+    }
+    if (parsedChunk.status === BLOCKED) {
+      triggerErrorOnChunk(response, cyclicChunk, error);
+    }
+  } else if (!erroredBeforeParse) {
+    // The chunk settled before this was thrown, so the error is not the
+    // model's. Let the caller have it.
+    throw error;
+  }
+}
+
+// Restores what `beginChunkInitialization` replaced, and runs the group checks
+// that the initialization queued.
+function endChunkInitialization(
+  response: Response,
+  prevHandler: null | InitializationHandler,
+  prevChunk: null | BlockedChunk<any>,
+): void {
+  initializingHandler = prevHandler;
+  if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
+    initializingChunk = prevChunk;
+  }
+  response._workDepth--;
+  flushGroupChecks(response);
+}
+
+function initializeModelChunk<T>(
+  chunk: ResolvedModelChunk<T>,
+  resolveListeners: null | Array<InitializationReference | (T => mixed)> = null,
+  rejectListeners: null | Array<
+    InitializationReference | (mixed => mixed),
+  > = null,
+): void {
   const prevHandler = initializingHandler;
   const prevChunk = initializingChunk;
 
   const resolvedModel = chunk.value;
   const response = chunk.reason[RESPONSE_SYMBOL];
 
-  const cyclicChunk = beginChunkInitialization(response, chunk);
+  const cyclicChunk = beginChunkInitialization(
+    response,
+    chunk,
+    resolveListeners,
+    rejectListeners,
+  );
+  const erroredBeforeParse = (cyclicChunk as SomeChunk<T>).status !== BLOCKED;
 
   try {
     const value: T = parseModel(response, resolvedModel);
     completeChunkInitialization(response, cyclicChunk, value);
   } catch (error) {
-    const erroredChunk: ErroredChunk<T> = chunk as any;
-    erroredChunk.status = ERRORED;
-    erroredChunk.reason = error;
+    failChunkInitialization(response, cyclicChunk, erroredBeforeParse, error);
   } finally {
-    initializingHandler = prevHandler;
-    if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
-      initializingChunk = prevChunk;
-    }
+    endChunkInitialization(response, prevHandler, prevChunk);
   }
 }
 
@@ -1321,6 +1467,7 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
 // of the client parsing it from JSON. See `beginRow`.
 export type RowInitialization = {
   chunk: BlockedChunk<any>,
+  erroredBeforeBuild: boolean,
   // What the chunk was before the row began, to restore if it aborts.
   prevStatus: typeof PENDING | typeof PENDING_WEAK,
   id: number,
@@ -1359,8 +1506,15 @@ export function beginRow(
   const rejectListeners = chunk.reason;
   const prevHandler = initializingHandler;
   const prevChunk = initializingChunk;
+  const cyclicChunk = beginChunkInitialization(
+    response,
+    chunk,
+    resolveListeners,
+    rejectListeners,
+  );
   return {
-    chunk: beginChunkInitialization(response, chunk),
+    chunk: cyclicChunk,
+    erroredBeforeBuild: (cyclicChunk as SomeChunk<any>).status !== BLOCKED,
     prevStatus,
     id,
     resolveListeners,
@@ -1398,28 +1552,9 @@ export function endRow(
     }
     completeChunkInitialization(response, chunk, value);
   } catch (error) {
-    if ((chunk as SomeChunk<any>).status === BLOCKED) {
-      // Also rejects the references that rows built inside this one queued
-      // on it. They can be reached without going through this row.
-      triggerErrorOnChunk(response, chunk, error);
-    } else {
-      const erroredChunk: ErroredChunk<any> = chunk as any;
-      erroredChunk.status = ERRORED;
-      erroredChunk.reason = error;
-    }
+    failChunkInitialization(response, chunk, row.erroredBeforeBuild, error);
   } finally {
-    initializingHandler = row.prevHandler;
-    if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
-      initializingChunk = row.prevChunk;
-    }
-  }
-  if (row.resolveListeners !== null) {
-    wakeChunkIfInitialized(
-      response,
-      chunk,
-      row.resolveListeners,
-      row.rejectListeners,
-    );
+    endChunkInitialization(response, row.prevHandler, row.prevChunk);
   }
   if (__DEV__) {
     // After the listeners, like the listener `resolveModelChunk` adds.
@@ -1427,46 +1562,35 @@ export function endRow(
   }
 }
 
-function concatListeners<L>(
-  first: null | Array<L>,
-  second: null | Array<L>,
-): null | Array<L> {
-  if (first === null) {
-    return second;
-  }
-  if (second === null) {
-    return first;
-  }
-  return first.concat(second);
-}
-
 // Abandons a row begun with `beginRow` whose build threw. The row goes back to
 // pending, so the row the server emits for it next, usually an error, resolves
-// it as it would on the wire. It keeps the listeners it had before, and the
-// references that rows built inside it queued on it, since those rows can be
-// reached without going through this one. If the response has already closed,
-// no row will come, so it settles the way closing settled every pending chunk.
+// it as it would on the wire. It keeps its listeners, including the references
+// that rows built inside it made to it, since those rows can be reached
+// without going through this one. References the build made are dropped with
+// the rest of the partial value: their handlers are failed, so nothing they
+// resolve to is written into it. If the response has already closed, no row
+// will come, so it settles the way closing settled every pending chunk.
 export function abortRow(
   weakResponse: WeakResponse,
   row: RowInitialization,
 ): void {
+  const response = unwrapWeakResponse(weakResponse);
   const chunk: SomeChunk<any> = row.chunk;
-  initializingHandler = row.prevHandler;
-  if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
-    initializingChunk = row.prevChunk;
+  let handler = initializingHandler;
+  while (handler !== null) {
+    rejectReference(response, handler, null);
+    handler = handler.parent;
   }
   if (chunk.status !== BLOCKED) {
     return;
   }
   const pendingChunk: PendingChunk<any> | PendingWeakChunk<any> = chunk as any;
   pendingChunk.status = row.prevStatus as any;
-  pendingChunk.value = concatListeners(row.resolveListeners, chunk.value);
-  pendingChunk.reason = concatListeners(row.rejectListeners, chunk.reason);
-  const response = unwrapWeakResponse(weakResponse);
   if (row.prevStatus === PENDING) {
     // `beginRow` released it. Retain the Response again while it waits.
     retainPendingChunk(response);
   }
+  endChunkInitialization(response, row.prevHandler, row.prevChunk);
   if (response._closed) {
     settleChunkOnClose(response, pendingChunk, row.id, response._closedReason);
   }
@@ -1690,7 +1814,10 @@ function initializeElement(
 
   // TODO: We should be freezing the element but currently, we might write into
   // _debugInfo later. We could move it into _store which remains mutable.
-  Object.freeze(element.props);
+  if (!isUnfulfilledReference(element.props)) {
+    // An element that failed can still have a reference in place of its props.
+    Object.freeze(element.props);
+  }
 }
 
 // Enters the scope of an element whose props are about to be parsed or built.
@@ -1702,14 +1829,7 @@ export function beginElement(): void {
     // We we already have an initializing handler and we're abound to enter
     // a new element, we need to shadow it because we're now in a new scope.
     // This is effectively the "begin" or "push" phase of Element parsing.
-    initializingHandler = {
-      parent: initializingHandler,
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 0,
-      errored: false,
-    };
+    initializingHandler = createInitializationHandler(initializingHandler, 0);
   }
 }
 
@@ -1848,7 +1968,10 @@ function createElement(
       const blockedChunk: BlockedChunk<React$Element<any>> =
         createBlockedChunk(response);
       handler.value = element;
-      handler.chunk = blockedChunk;
+      registerHandler(response, handler, blockedChunk);
+      // The element is initialized like a model: once its references are
+      // released, or together with a group.
+      queueGroupCheck(response, handler);
       const lazyNode = createLazyChunkWrapper(blockedChunk, validated);
       if (__DEV__) {
         // After we have initialized any blocked references, initialize stack etc.
@@ -1970,6 +2093,16 @@ function initializeBlockedChunk<T>(
   value: T,
   reason: InitializedChunk<T>['reason'],
 ): void {
+  const resolveListeners = markChunkInitialized(response, chunk, value, reason);
+  wakeInitializedChunk(response, chunk as any, resolveListeners);
+}
+
+function markChunkInitialized<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: InitializedChunk<T>['reason'],
+): null | Array<InitializationReference | (T => mixed)> {
   const resolveListeners = chunk.value;
   if (__DEV__) {
     // Only a blocked chunk receives debug info, so release the set here.
@@ -1979,10 +2112,33 @@ function initializeBlockedChunk<T>(
   initializedChunk.status = INITIALIZED;
   initializedChunk.value = value;
   initializedChunk.reason = reason;
+  return resolveListeners;
+}
+
+function wakeInitializedChunk<T>(
+  response: Response,
+  chunk: InitializedChunk<T>,
+  resolveListeners: null | Array<InitializationReference | (T => mixed)>,
+): void {
   if (resolveListeners !== null) {
-    wakeChunk(response, resolveListeners, value, initializedChunk);
+    wakeChunk(response, resolveListeners, chunk.value, chunk);
   } else if (__DEV__) {
-    processChunkDebugInfo(response, initializedChunk, value);
+    processChunkDebugInfo(response, chunk, chunk.value);
+  }
+}
+
+function fillCollection(
+  collection: Set<any> | Map<any, any>,
+  entries: Array<any>,
+): void {
+  if (collection instanceof Set) {
+    for (let i = 0; i < entries.length; i++) {
+      collection.add(entries[i]);
+    }
+  } else {
+    for (let i = 0; i < entries.length; i++) {
+      collection.set(entries[i][0], entries[i][1]);
+    }
   }
 }
 
@@ -2009,6 +2165,7 @@ function initializeChunkIfUnblocked(
   // `handler.reason` is the controller of a stream whose chunk was blocked on
   // its debug info, and null otherwise. It becomes the initialized chunk's
   // `reason` either way.
+  unregisterHandler(response, handler);
   initializeBlockedChunk(response, chunk, handler.value, handler.reason);
 }
 
@@ -2031,151 +2188,489 @@ function isElementFields(parentObject: Object): boolean {
   );
 }
 
+function releaseReference(
+  response: Response,
+  reference: InitializationReference,
+  chunk: InitializedChunk<any>,
+): void {
+  if (reference.released) {
+    return;
+  }
+  const handler = reference.handler;
+  if (__DEV__) {
+    const parentObject = reference.parentObject;
+    if (parentObject !== null && !reference.isDebug) {
+      if (
+        isElementFields(parentObject) &&
+        (reference.key === '4' || reference.key === '5')
+      ) {
+        // This reference is to a debug chunk, the owner or stack of an
+        // element, whose debug info is not transferred.
+      } else {
+        transferReferencedDebugInfo(handler.chunk, chunk);
+      }
+    }
+  }
+  // Nothing left to do if the handler's chunk has settled or the handler
+  // has failed.
+  const handlerChunk: null | SomeChunk<any> = handler.chunk;
+  if (
+    handler.errored ||
+    (handlerChunk !== null && handlerChunk.status !== BLOCKED)
+  ) {
+    reference.released = true;
+    return;
+  }
+  if (!reference.fulfilled) {
+    if (reference.parentObject === null) {
+      fulfillReferenceSlot(response, reference, chunk.value);
+    } else if (reference.pathIndex === 0) {
+      fulfillReference(response, reference, chunk.value, 1);
+    }
+  } else if (__DEV__) {
+    createDebugEntry(response, reference);
+  }
+  // `released` and `deps` change together, and only after the slot is
+  // fulfilled, because fulfilling it can run a group check.
+  reference.released = true;
+  handler.deps--;
+  if (handler.deps === 0) {
+    initializeChunkIfUnblocked(response, handler);
+  } else {
+    queueGroupCheckIfWaitingFor(response, reference);
+  }
+}
+
+function fulfillListenersFromModel(
+  response: Response,
+  listeners: Array<InitializationReference | (any => mixed)>,
+  handler: InitializationHandler,
+): void {
+  for (let i = 0; i < listeners.length; i++) {
+    const chunk: null | SomeChunk<any> = handler.chunk;
+    if (chunk === null || chunk.status !== BLOCKED) {
+      // Fulfilling a reference failed and errored the chunk, which rejected
+      // the rest of the listeners.
+      return;
+    }
+    const listener = listeners[i];
+    if (typeof listener === 'function') {
+      continue;
+    }
+    // A reference that was made after the model was parsed has already
+    // started on its path.
+    if (!listener.fulfilled && listener.pathIndex === 0) {
+      fulfillReferenceFromModel(response, listener, handler);
+    }
+  }
+}
+
+function fulfillReferenceIfParsed(
+  response: Response,
+  reference: InitializationReference,
+): void {
+  const chunk = reference.chunk;
+  switch (chunk.status) {
+    case INITIALIZED:
+      fulfillReference(response, reference, chunk.value, 1);
+      break;
+    case BLOCKED: {
+      const target = response._handlers.get(chunk);
+      if (target !== undefined) {
+        fulfillReferenceFromModel(response, reference, target);
+      }
+      break;
+    }
+  }
+}
+
+function fulfillReferenceFromModel(
+  response: Response,
+  reference: InitializationReference,
+  target: InitializationHandler,
+): void {
+  const value = target.value;
+  if (value === null) {
+    const root = getUnfulfilledRoot(target);
+    if (root !== null) {
+      // The whole model is one reference that is not fulfilled yet.
+      if (reference.parentObject === null) {
+        const waiters = reference.listeners;
+        if (waiters !== null) {
+          reference.listeners = null;
+          for (let i = 0; i < waiters.length; i++) {
+            addSlotListener(root, waiters[i]);
+          }
+        }
+        reference.fulfilled = true;
+        queueGroupCheckIfWaitingFor(response, reference);
+      } else {
+        reference.pathIndex = 1;
+        addSlotListener(root, reference);
+      }
+      return;
+    }
+    // Otherwise the model really is null.
+  }
+  if (reference.parentObject === null) {
+    fulfillReferenceSlot(response, reference, value);
+  } else {
+    fulfillReference(response, reference, value, 1);
+  }
+}
+
+function getUnfulfilledRoot(
+  handler: InitializationHandler,
+): null | InitializationReference {
+  const root = handler.root;
+  return root !== null && !root.fulfilled ? root : null;
+}
+
+function addSlotListener(
+  slot: InitializationReference,
+  reference: InitializationReference,
+): void {
+  if (slot.listeners === null) {
+    slot.listeners = [reference];
+  } else {
+    slot.listeners.push(reference);
+  }
+}
+
+// Follows the reference's path from `value`, and fulfills the reference with
+// what the path leads to. If a slot on the way is not fulfilled yet, the
+// reference waits for that slot and continues from there. A Lazy on the way
+// stands for a blocked chunk, and the handler waits for that chunk too.
 function fulfillReference(
   response: Response,
   reference: InitializationReference,
   value: any,
-  fulfilledChunk: SomeChunk<any>,
+  index: number,
 ): void {
-  const {handler, parentObject, key, map, path} = reference;
-
+  const handler = reference.handler;
+  const path = reference.path;
+  // `path[0]` is the chunk id. The property names follow.
+  const end = path.length < 1 ? 1 : path.length;
   try {
-    for (let i = 1; i < path.length; i++) {
+    for (let i = index; i <= end; i++) {
+      // A Lazy on the path was put there for an element whose props were
+      // blocked. The path leads into the element. At the end of the path, the
+      // Lazy itself is the value.
       while (
         typeof value === 'object' &&
         value !== null &&
         value.$$typeof === REACT_LAZY_TYPE
       ) {
-        // We never expect to see a Lazy node on this path because we encode those as
-        // separate models. This must mean that we have inserted an extra lazy node
-        // e.g. to replace a blocked element. We must instead look for it inside.
-        const referencedChunk: SomeChunk<any> = value._payload;
-        if (referencedChunk === handler.chunk) {
-          // This is a reference to the thing we're currently blocking. We can peak
-          // inside of it to get the value.
+        const lazyChunk: SomeChunk<any> = value._payload;
+        switch (lazyChunk.status) {
+          case RESOLVED_MODEL:
+            initializeModelChunk(lazyChunk);
+            break;
+          case RESOLVED_MODULE:
+            initializeModuleChunk(lazyChunk);
+            break;
+        }
+        if (lazyChunk.status === INITIALIZED) {
+          value = lazyChunk.value;
+          continue;
+        }
+        if (i === end) {
+          break;
+        }
+        const lazyHandler =
+          lazyChunk.status === BLOCKED
+            ? response._handlers.get(lazyChunk)
+            : undefined;
+        if (
+          lazyChunk.status !== BLOCKED &&
+          lazyChunk.status !== PENDING &&
+          lazyChunk.status !== PENDING_WEAK &&
+          lazyChunk.status !== HALTED
+        ) {
+          throw lazyChunk.reason;
+        }
+        if (lazyHandler === handler) {
+          // The Lazy stands for this handler's own element, so the path
+          // leads into the model that is being fulfilled.
           value = handler.value;
           continue;
-        } else {
-          switch (referencedChunk.status) {
-            case RESOLVED_MODEL:
-              initializeModelChunk(referencedChunk);
-              break;
-            case RESOLVED_MODULE:
-              initializeModuleChunk(referencedChunk);
-              break;
-          }
-          switch (referencedChunk.status) {
-            case INITIALIZED: {
-              value = referencedChunk.value;
-              continue;
-            }
-            case BLOCKED: {
-              // It is possible that we're blocked on our own chunk if it's a cycle.
-              // Before adding the listener to the inner chunk, let's check if it would
-              // result in a cycle.
-              const cyclicHandler = resolveBlockedCycle(
-                referencedChunk,
-                reference,
-              );
-              if (cyclicHandler !== null) {
-                // This reference points back to this chunk. We can resolve the cycle by
-                // using the value from that handler.
-                value = cyclicHandler.value;
-                continue;
-              }
-              // Fallthrough
-            }
-            case PENDING:
-            case PENDING_WEAK: {
-              // If we're not yet initialized we need to skip what we've already drilled
-              // through and then wait for the next value to become available.
-              path.splice(0, i - 1);
-              // Add "listener" to our new chunk dependency.
-              if (referencedChunk.value === null) {
-                referencedChunk.value = [reference];
-              } else {
-                referencedChunk.value.push(reference);
-              }
-              if (referencedChunk.reason === null) {
-                referencedChunk.reason = [reference];
-              } else {
-                referencedChunk.reason.push(reference);
-              }
-              return;
-            }
-            case HALTED: {
-              // Do nothing. We couldn't fulfill.
-              // TODO: Mark downstreams as halted too.
-              return;
-            }
-            default: {
-              rejectReference(
-                response,
-                reference.handler,
-                referencedChunk.reason,
-              );
-              return;
-            }
-          }
         }
+        const wait = waitForChunk(response, handler, lazyChunk as any);
+        if (lazyHandler === undefined) {
+          // The chunk is still being parsed, or has not arrived. Continue
+          // from here once it has been parsed.
+          reference.pathIndex = i;
+          addSlotListener(wait, reference);
+          return;
+        }
+        fulfillReferenceFromModel(response, wait, lazyHandler);
+        if (lazyHandler.value === null) {
+          const root = getUnfulfilledRoot(lazyHandler);
+          if (root !== null) {
+            reference.pathIndex = i;
+            addSlotListener(root, reference);
+            return;
+          }
+          // Otherwise the model really is null.
+        }
+        value = lazyHandler.value;
+      }
+      if (i === end) {
+        break;
       }
       const name = path[i];
       if (
         typeof value === 'object' &&
         value !== null &&
+        (getPrototypeOf(value) === ObjectPrototype ||
+          getPrototypeOf(value) === ArrayPrototype) &&
         hasOwnProperty.call(value, name)
       ) {
-        value = value[name];
+        const slot = value[name];
+        if (isUnfulfilledReference(slot)) {
+          reference.pathIndex = i + 1;
+          addSlotListener(slot, reference);
+          return;
+        }
+        value = slot;
       } else {
         throw new Error('Invalid reference.');
       }
     }
 
-    while (
-      typeof value === 'object' &&
-      value !== null &&
-      value.$$typeof === REACT_LAZY_TYPE
-    ) {
-      // If what we're referencing is a Lazy it must be because we inserted one as a virtual node
-      // while it was blocked by other data. If it's no longer blocked, we can unwrap it.
-      const referencedChunk: SomeChunk<any> = value._payload;
-      if (referencedChunk === handler.chunk) {
-        // This is a reference to the thing we're currently blocking. We can peak
-        // inside of it to get the value.
-        value = handler.value;
-        continue;
-      } else {
-        switch (referencedChunk.status) {
-          case RESOLVED_MODEL:
-            initializeModelChunk(referencedChunk);
-            break;
-          case RESOLVED_MODULE:
-            initializeModuleChunk(referencedChunk);
-            break;
+    if (reference.map !== createModel) {
+      reference.input = value;
+      constructReference(response, reference);
+      return;
+    }
+    fulfillReferenceSlot(response, reference, value);
+  } catch (error) {
+    rejectReference(response, handler, error);
+  }
+}
+
+function waitForChunk(
+  response: Response,
+  handler: InitializationHandler,
+  chunk:
+    | BlockedChunk<any>
+    | PendingChunk<any>
+    | PendingWeakChunk<any>
+    | HaltedChunk<any>,
+): InitializationReference {
+  const wait = createInitializationReference(
+    response,
+    handler,
+    chunk,
+    null,
+    '',
+    createModel,
+    EMPTY_REFERENCE_PATH,
+    false,
+  );
+  handler.deps++;
+  addReferenceListener(chunk, wait);
+  return wait;
+}
+
+function constructReference(
+  response: Response,
+  reference: InitializationReference,
+): void {
+  if (reference.fulfilled) {
+    return;
+  }
+  if (
+    __DEV__ &&
+    reference.map === initializeDebugInfo &&
+    reference.chunk.status !== INITIALIZED
+  ) {
+    // React and DevTools read a debug entry as soon as it is in the array,
+    // and creating it reads the whole entry. So it is created once the row
+    // it comes from is initialized. Until then the reference only counts as
+    // fulfilled, so that the two rows can be initialized together if they
+    // wait on each other.
+    reference.fulfilled = true;
+    queueGroupCheckIfWaitingFor(response, reference);
+    return;
+  }
+  if (!waitForInputSlots(reference, reference.input)) {
+    return;
+  }
+  fulfillReferenceSlot(response, reference, mapReference(response, reference));
+}
+
+// Creates a debug entry that constructReference left for later.
+function createDebugEntry(
+  response: Response,
+  reference: InitializationReference,
+): void {
+  if (__DEV__) {
+    if (reference.input !== null && reference.map === initializeDebugInfo) {
+      fulfillReferenceSlot(
+        response,
+        reference,
+        mapReference(response, reference),
+      );
+    }
+  }
+}
+
+function waitForInputSlots(
+  reference: InitializationReference,
+  input: any,
+): boolean {
+  if (
+    reference.map !== extractIterator &&
+    typeof input === 'object' &&
+    input !== null
+  ) {
+    // An iterator does not read its entries when it is created.
+    const pending = findPendingInput(reference, input);
+    if (pending !== null) {
+      reference.pathIndex = CONSTRUCT;
+      addSlotListener(pending, reference);
+      return false;
+    }
+  }
+  const moduleWait = reference.moduleWait;
+  if (moduleWait !== null && !moduleWait.fulfilled) {
+    // `map` also needs its module.
+    reference.pathIndex = CONSTRUCT;
+    addSlotListener(moduleWait, reference);
+    return false;
+  }
+  return true;
+}
+
+// The `pathIndex` of a reference that has finished its path and is waiting to
+// call `map`.
+const CONSTRUCT = -1;
+
+// Returns the first slot of `input` that is not fulfilled yet. A fulfilled
+// slot stays fulfilled, so the search continues from where the last one
+// stopped.
+function findPendingInput(
+  reference: InitializationReference,
+  input: any,
+): null | InitializationReference {
+  if (isArray(input)) {
+    // A Map reads the key and value of each entry, and FormData the name
+    // and value.
+    const hasEntryPairs =
+      reference.map === createMap || reference.map === createFormData;
+    for (let i = reference.inputIndex; i < input.length; i++) {
+      const slot = input[i];
+      if (isUnfulfilledReference(slot)) {
+        reference.inputIndex = i;
+        return slot;
+      }
+      if (hasEntryPairs && typeof slot === 'object' && slot !== null) {
+        const entryKey = slot[0];
+        if (isUnfulfilledReference(entryKey)) {
+          reference.inputIndex = i;
+          return entryKey;
         }
-        switch (referencedChunk.status) {
-          case INITIALIZED: {
-            value = referencedChunk.value;
-            continue;
-          }
+        const entryValue = slot[1];
+        if (isUnfulfilledReference(entryValue)) {
+          reference.inputIndex = i;
+          return entryValue;
         }
       }
-      break;
     }
+    reference.inputIndex = input.length;
+    return null;
+  }
+  if (getPrototypeOf(input) !== ObjectPrototype) {
+    return null;
+  }
+  let names = reference.inputNames;
+  if (names === null) {
+    const keys: Array<string> = Object.keys(input) as any;
+    names = reference.inputNames = keys;
+  }
+  for (let i = reference.inputIndex; i < names.length; i++) {
+    const slot = input[names[i]];
+    if (isUnfulfilledReference(slot)) {
+      reference.inputIndex = i;
+      return slot;
+    }
+  }
+  reference.inputIndex = names.length;
+  return null;
+}
 
-    const mappedValue = map(response, value, parentObject, key);
-    if (
-      key !== __PROTO__ &&
-      // $FlowFixMe[constant-condition]
-      (!usedWithSSR || parentObject !== ELEMENT_FIELDS)
-    ) {
-      parentObject[key] = mappedValue;
+function mapReference(
+  response: Response,
+  reference: InitializationReference,
+): any {
+  const input = reference.input;
+  reference.input = null;
+  const collection = reference.collection;
+  if (collection !== null) {
+    // Every entry is fulfilled now, so they can be added.
+    fillCollection(collection, input);
+    return collection;
+  }
+  // `map` is called outside of a parse here. If it starts something that the
+  // model has to wait for, like a module load, that has to count against this
+  // handler.
+  const handler = reference.handler;
+  const prevHandler = initializingHandler;
+  const prevChunk = initializingChunk;
+  initializingHandler = handler;
+  if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
+    initializingChunk = handler.chunk;
+  }
+  try {
+    return reference.map(
+      response,
+      input,
+      reference.parentObject as any,
+      reference.key,
+    );
+  } finally {
+    initializingHandler = prevHandler;
+    if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
+      initializingChunk = prevChunk;
+    }
+  }
+}
+
+// Assigns the value to the slot. The slot does not change after this.
+function fulfillReferenceSlot(
+  response: Response,
+  reference: InitializationReference,
+  value: any,
+): void {
+  const {handler, parentObject, key} = reference;
+  reference.fulfilled = true;
+  queueGroupCheckIfWaitingFor(response, reference);
+  if (key === 'then' && typeof value === 'function') {
+    // A function in a `then` slot would make the containing object a thenable.
+    // A reference that is fulfilled right away drops it in `createModel`. A
+    // slot that is filled later is written here, so drop it here too.
+    value = null;
+  }
+  if (parentObject !== null) {
+    // $FlowFixMe[constant-condition]
+    if (usedWithSSR && parentObject === ELEMENT_FIELDS) {
+      // There is no slot to write to. A reference that is fulfilled before
+      // `waitForReference` returns hands the value back through `input`,
+      // which only a reference built by `map` otherwise uses.
+      reference.input = value;
+    } else if (key !== __PROTO__) {
+      if (__DEV__ && value === REMOVED_PROPERTY) {
+        delete parentObject[key];
+      } else {
+        parentObject[key] = value;
+      }
     }
 
     // If this is the root object for a model reference, where `handler.value`
     // is a stale `null`, the resolved value can be used directly.
     if (key === '' && handler.value === null) {
-      handler.value = mappedValue;
+      handler.value = value;
     }
 
     // If the parent object is an unparsed React element tuple, or stands for
@@ -2190,39 +2685,360 @@ function fulfillReference(
       const element: any = handler.value;
       switch (key) {
         case '3':
-          if (__DEV__ && !reference.isDebug) {
-            transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-          }
-          element.props = mappedValue;
+          element.props = value;
           break;
         case '4':
-          // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
           if (__DEV__) {
-            element._owner = mappedValue;
+            element._owner = value;
           }
           break;
         case '5':
-          // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
           if (__DEV__) {
-            element._debugStack = mappedValue;
-          }
-          break;
-        default:
-          if (__DEV__ && !reference.isDebug) {
-            transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
+            element._debugStack = value;
           }
           break;
       }
-    } else if (__DEV__ && !reference.isDebug) {
-      transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
     }
-  } catch (error) {
-    rejectReference(response, reference.handler, error);
-    return;
   }
 
-  handler.deps--;
-  initializeChunkIfUnblocked(response, handler);
+  const waiters = reference.listeners;
+  if (waiters !== null) {
+    reference.listeners = null;
+    for (let i = 0; i < waiters.length; i++) {
+      const waiter = waiters[i];
+      continueReference(
+        response,
+        waiter,
+        value,
+        waiter.pathIndex === CONSTRUCT,
+      );
+    }
+  }
+}
+
+// Fulfilling one reference can let another one continue, which can let
+// another one continue, and so on. They are queued and continued in a loop,
+// so that a long chain does not overflow the stack.
+function continueReference(
+  response: Response,
+  reference: InitializationReference,
+  value: any,
+  isConstructor: boolean,
+): void {
+  if (response._continuingReferences) {
+    const queued = response._queuedReferences;
+    if (queued === null) {
+      response._queuedReferences = [{reference, value, isConstructor}];
+    } else {
+      queued.push({reference, value, isConstructor});
+    }
+    return;
+  }
+  response._continuingReferences = true;
+  let next = 0;
+  try {
+    for (;;) {
+      if (isConstructor) {
+        try {
+          constructReference(response, reference);
+        } catch (error) {
+          rejectReference(response, reference.handler, error);
+        }
+      } else {
+        fulfillReference(response, reference, value, reference.pathIndex);
+      }
+      const queued = response._queuedReferences;
+      if (queued === null || next === queued.length) {
+        break;
+      }
+      const queuedReference = queued[next++];
+      reference = queuedReference.reference;
+      value = queuedReference.value;
+      isConstructor = queuedReference.isConstructor;
+    }
+  } finally {
+    response._queuedReferences = null;
+    response._continuingReferences = false;
+  }
+}
+
+// Chunks that wait on each other cannot be initialized one at a time. They
+// are initialized together, once every reference in them is fulfilled and
+// every reference that leads out of the group has been released.
+//
+// A check goes through a group's references one at a time, and stops at the
+// first one that leads to a chunk that is not initialized. That is the
+// reference the group waits for. If that chunk is in another group, and
+// following the waits from that group leads back here, all those groups are
+// merged into one, and the check goes on with the references that are left.
+// A group with nothing left to wait for is initialized.
+//
+// A group waits on one reference at a time, so the waits form a forest. It
+// is kept as a link-cut tree, which tells whether another group's waits
+// lead back to the one being checked. Groups that do are merged instead of
+// linked, so the forest has no loops.
+function queueGroupCheck(
+  response: Response,
+  handler: InitializationHandler,
+): void {
+  const group = getBlockedGroup(handler);
+  if (!group.checkQueued) {
+    group.checkQueued = true;
+    response._queuedGroupChecks.push(group);
+  }
+}
+
+// A group stops at the first reference it has to wait for. When that
+// reference is fulfilled or released, the group looks at the rest.
+function queueGroupCheckIfWaitingFor(
+  response: Response,
+  reference: InitializationReference,
+): void {
+  const handler = reference.handler;
+  if (
+    handler.group !== null &&
+    getBlockedGroup(handler).waitingFor === reference
+  ) {
+    queueGroupCheck(response, handler);
+  }
+}
+
+function flushGroupChecks(response: Response): void {
+  if (response._flushingGroupChecks || response._flushingChunkListeners) {
+    // A wake is delivering listeners, and one of them started a parse. The
+    // chunks that the wake has settled have not told all of their listeners
+    // yet, so a check now could see a group whose member has failed without
+    // the others knowing. The wake runs the checks when it is done.
+    return;
+  }
+  response._flushingGroupChecks = true;
+  const queued = response._queuedGroupChecks;
+  let i = 0;
+  try {
+    // A check can queue more.
+    for (; i < queued.length; i++) {
+      checkBlockedGroup(response, queued[i]);
+    }
+  } finally {
+    // If a check throws, the ones after it stay queued.
+    queued.splice(0, i + 1);
+    response._flushingGroupChecks = false;
+  }
+  flushCallbacks(response);
+}
+
+function flushCallbacks(response: Response): void {
+  if (response._workDepth > 0) {
+    // Callbacks are user code. They are called when the outermost parse or
+    // wake returns, so that they never run in the middle of one.
+    return;
+  }
+  const queued = response._queuedCallbacks;
+  if (queued.length === 0) {
+    return;
+  }
+  // A callback can start a parse or a wake. The callbacks that this queues
+  // are called by this loop too.
+  response._workDepth++;
+  let thrown: null | {value: mixed} = null;
+  try {
+    for (let i = 0; i < queued.length; i++) {
+      const callbacks = queued[i].callbacks;
+      const value = queued[i].value;
+      for (let j = 0; j < callbacks.length; j++) {
+        try {
+          callbacks[j](value);
+        } catch (error) {
+          // The other callbacks are still called.
+          if (thrown === null) {
+            thrown = {value: error};
+          }
+        }
+      }
+    }
+  } finally {
+    queued.length = 0;
+    response._workDepth--;
+  }
+  if (thrown !== null) {
+    throw thrown.value;
+  }
+}
+
+// The group the handler is in. It starts out as the handler alone.
+function getBlockedGroup(handler: InitializationHandler): BlockedGroup {
+  let group: BlockedGroup;
+  if (handler.group === null) {
+    group = handler.group = {
+      merged: null,
+      size: 1,
+      handlers: [handler],
+      unchecked: handler.references === null ? [] : handler.references.slice(),
+      waitingFor: null,
+      checkQueued: false,
+      pathParent: null,
+      pathLeft: null,
+      pathRight: null,
+    };
+    return group;
+  }
+  group = handler.group;
+  while (group.merged !== null) {
+    group = group.merged;
+  }
+  handler.group = group;
+  return group;
+}
+
+function checkBlockedGroup(response: Response, queued: BlockedGroup): void {
+  queued.checkQueued = false;
+  let group = queued;
+  while (group.merged !== null) {
+    group = group.merged;
+  }
+  // Look again at the reference the group was waiting for, with the rest.
+  cutWait(group);
+  group.waitingFor = null;
+  const first = group.handlers[0];
+  if (
+    first.errored ||
+    first.chunk === null ||
+    (first.chunk as SomeChunk<any>).status !== BLOCKED
+  ) {
+    return;
+  }
+  let unchecked = group.unchecked;
+  while (unchecked.length > 0) {
+    const reference = unchecked[unchecked.length - 1];
+    if (reference.released) {
+      unchecked.pop();
+      continue;
+    }
+    if (!reference.fulfilled) {
+      // The slot is not fulfilled yet. The group is checked again when it is.
+      group.waitingFor = reference;
+      return;
+    }
+    const target = response._handlers.get(reference.chunk);
+    if (target === undefined) {
+      // The chunk is not waiting for anything that a group check can see.
+      group.waitingFor = reference;
+      return;
+    }
+    const other = getBlockedGroup(target);
+    if (other === group) {
+      unchecked.pop();
+      continue;
+    }
+    if (findWaitRoot(other) !== group) {
+      // The waits from `other` do not lead back here.
+      group.waitingFor = reference;
+      linkWait(group, other);
+      return;
+    }
+    // They do. These handlers all wait on each other and are one group now.
+    const chain: Array<BlockedGroup> = [];
+    let largest = group;
+    for (let current = other; current !== group; ) {
+      chain.push(current);
+      if (current.size > largest.size) {
+        largest = current;
+      }
+      const waitingFor = current.waitingFor;
+      const next =
+        waitingFor === null
+          ? undefined
+          : response._handlers.get(waitingFor.chunk);
+      if (next === undefined) {
+        // The waits don't lead back here after all.
+        group.waitingFor = reference;
+        return;
+      }
+      current = getBlockedGroup(next);
+    }
+    // The waits around the loop are cut before any member is linked to the
+    // merged group, so that the forest never holds a loop.
+    for (let i = 0; i < chain.length; i++) {
+      cutWait(chain[i]);
+    }
+    if (largest !== group) {
+      mergeBlockedGroups(largest, group);
+      linkWait(group, largest);
+    }
+    for (let i = 0; i < chain.length; i++) {
+      const member = chain[i];
+      if (member !== largest) {
+        mergeBlockedGroups(largest, member);
+        linkWait(member, largest);
+      }
+    }
+    largest.waitingFor = null;
+    group = largest;
+    unchecked = group.unchecked;
+  }
+  initializeBlockedGroup(response, group.handlers);
+}
+
+// The forest of waits is a link-cut tree in shared/ReactFlightWaitForest.
+// A group's parent is the group its wait leads into, or the group it merged
+// into.
+function mergeBlockedGroups(into: BlockedGroup, other: BlockedGroup): void {
+  other.merged = into;
+  into.size += other.size;
+  const unchecked = into.unchecked;
+  const otherUnchecked = other.unchecked;
+  for (let i = 0; i < otherUnchecked.length; i++) {
+    unchecked.push(otherUnchecked[i]);
+  }
+  other.unchecked = [];
+  const handlers = into.handlers;
+  const otherHandlers = other.handlers;
+  for (let i = 0; i < otherHandlers.length; i++) {
+    handlers.push(otherHandlers[i]);
+  }
+  other.handlers = [];
+}
+
+// Mark every chunk of the group before waking any listener, since a
+// listener can read one chunk through another.
+function initializeBlockedGroup(
+  response: Response,
+  handlers: Array<InitializationHandler>,
+): void {
+  if (__DEV__) {
+    // Every row of the group is complete now, so the debug entries that
+    // were waiting for one of them can be created, before any row is
+    // handed out.
+    for (let i = 0; i < handlers.length; i++) {
+      const references = handlers[i].references;
+      if (references !== null) {
+        for (let j = 0; j < references.length; j++) {
+          createDebugEntry(response, references[j]);
+        }
+      }
+    }
+  }
+  const initialized: Array<InitializedChunk<any>> = [];
+  const listeners = [];
+  for (let i = 0; i < handlers.length; i++) {
+    const handler = handlers[i];
+    const chunk = handler.chunk;
+    if (
+      handler.errored ||
+      chunk === null ||
+      (chunk as SomeChunk<any>).status !== BLOCKED
+    ) {
+      continue;
+    }
+    unregisterHandler(response, handler);
+    initialized.push(chunk as any);
+    listeners.push(
+      markChunkInitialized(response, chunk, handler.value, handler.reason),
+    );
+  }
+  for (let i = 0; i < initialized.length; i++) {
+    wakeInitializedChunk(response, initialized[i], listeners[i]);
+  }
 }
 
 function rejectReference(
@@ -2245,6 +3061,7 @@ function rejectReference(
   if (chunk === null || chunk.status !== BLOCKED) {
     return;
   }
+  unregisterHandler(response, handler);
 
   if (__DEV__) {
     if (
@@ -2277,7 +3094,11 @@ function rejectReference(
 }
 
 function waitForReference<T>(
-  referencedChunk: PendingChunk<T> | PendingWeakChunk<T> | BlockedChunk<T>,
+  referencedChunk:
+    | PendingChunk<T>
+    | PendingWeakChunk<T>
+    | BlockedChunk<T>
+    | HaltedChunk<T>,
   parentObject: Object,
   key: string,
   response: Response,
@@ -2305,46 +3126,147 @@ function waitForReference<T>(
     }
   }
 
+  const reference = createInitializationReference(
+    response,
+    addDependency(),
+    referencedChunk,
+    parentObject,
+    key,
+    map,
+    path,
+    isAwaitingDebugInfo,
+  );
+  addReferenceListener(referencedChunk, reference);
+
+  if (
+    path.length === 0 &&
+    ((map as any) === createSet || (map as any) === createMap)
+  ) {
+    // Create the collection before its entries exist, so that an entry that
+    // refers back to it gets this same object.
+    const collection: Set<any> | Map<any, any> =
+      (map as any) === createSet ? new Set() : new Map();
+    reference.collection = collection;
+    fulfillReferenceIfParsed(response, reference);
+    return collection as any;
+  }
+
+  fulfillReferenceIfParsed(response, reference);
+  if (key === __PROTO__) {
+    return null as any;
+  }
+  if (reference.fulfilled) {
+    // $FlowFixMe[constant-condition]
+    if (usedWithSSR && parentObject === ELEMENT_FIELDS) {
+      const value = reference.input;
+      reference.input = null;
+      return value;
+    }
+    return parentObject[key];
+  }
+  // The slot holds the reference until it is fulfilled.
+  return reference as any;
+}
+
+function registerHandler(
+  response: Response,
+  handler: InitializationHandler,
+  chunk: BlockedChunk<any>,
+): void {
+  handler.chunk = chunk;
+  response._handlers.set(chunk, handler);
+}
+
+function unregisterHandler(
+  response: Response,
+  handler: InitializationHandler,
+): void {
+  const chunk = handler.chunk;
+  if (chunk !== null) {
+    response._handlers.delete(chunk);
+  }
+  handler.references = null;
+}
+
+function addDependency(): InitializationHandler {
   let handler: InitializationHandler;
   if (initializingHandler) {
     handler = initializingHandler;
     handler.deps++;
   } else {
-    handler = initializingHandler = {
-      parent: null,
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
+    handler = initializingHandler = createInitializationHandler(null, 1);
   }
+  return handler;
+}
 
+function createInitializationReference<T>(
+  response: Response,
+  handler: InitializationHandler,
+  chunk: SomeChunk<any>,
+  parentObject: null | Object,
+  key: string,
+  map: (response: Response, model: any, parentObject: Object, key: string) => T,
+  path: Array<string>,
+  isAwaitingDebugInfo: boolean, // DEV-only
+): InitializationReference {
   const reference: InitializationReference = {
+    $$typeof: UNFULFILLED_REFERENCE_TYPE,
     handler,
     parentObject,
     key,
     map,
     path,
+    chunk,
+    collection: null,
+    released: false,
+    fulfilled: false,
+    pathIndex: 0,
+    listeners: null,
+    input: null,
+    inputIndex: 0,
+    inputNames: null,
+    moduleWait: null,
   };
   if (__DEV__) {
     reference.isDebug = isAwaitingDebugInfo;
   }
-
-  // Add "listener".
-  if (referencedChunk.value === null) {
-    referencedChunk.value = [reference];
+  if (handler.references === null) {
+    handler.references = [reference];
   } else {
-    referencedChunk.value.push(reference);
+    handler.references.push(reference);
   }
-  if (referencedChunk.reason === null) {
-    referencedChunk.reason = [reference];
-  } else {
-    referencedChunk.reason.push(reference);
+  if (handler.group !== null) {
+    // A group check is already going through the handler's references. Add
+    // this one to the ones it has not looked at yet.
+    getBlockedGroup(handler).unchecked.push(reference);
   }
+  return reference;
+}
 
-  // Return a place holder value for now.
-  return null as any;
+function addReferenceListener(
+  chunk:
+    | PendingChunk<any>
+    | PendingWeakChunk<any>
+    | BlockedChunk<any>
+    | HaltedChunk<any>,
+  reference: InitializationReference,
+): void {
+  reference.chunk = chunk;
+  if (chunk.status === HALTED) {
+    // A halted chunk never arrives, so this reference is never released.
+    // TODO: Mark downstreams as halted too.
+    return;
+  }
+  if (chunk.value === null) {
+    chunk.value = [reference];
+  } else {
+    chunk.value.push(reference);
+  }
+  if (chunk.reason === null) {
+    chunk.reason = [reference];
+  } else {
+    chunk.reason.push(reference);
+  }
 }
 
 function loadServerReference<A: Iterable<any>, T>(
@@ -2383,152 +3305,109 @@ function loadServerReference<A: Iterable<any>, T>(
     resolveServerReference<$FlowFixMe>(response._serverReferenceConfig, id);
 
   const bound = metaData.bound;
-  let promise: null | Thenable<any> = preloadModule(serverReference);
-  if (!promise) {
-    if (bound instanceof ReactPromise) {
-      promise = Promise.resolve(bound);
-    } else {
-      // We only await the bound arguments when they are one of our own chunks.
-      // Anything else could be a foreign thenable whose `then` we must not call.
-      const resolvedValue = requireModule(serverReference) as any;
-      registerBoundServerReference(
-        resolvedValue,
-        id,
-        bound,
-        response._encodeFormAction,
-      );
-      return resolvedValue;
-    }
-  } else if (bound instanceof ReactPromise) {
-    promise = Promise.all([promise, bound]);
-  }
+  // Bound arguments that are one of our own chunks are read when that chunk
+  // has initialized. Anything else could be a foreign thenable whose `then`
+  // we must not call.
+  const boundChunk: null | SomeChunk<any> =
+    bound instanceof ReactPromise ? (bound as any) : null;
 
-  let handler: InitializationHandler;
-  if (initializingHandler) {
-    handler = initializingHandler;
-    handler.deps++;
-  } else {
-    handler = initializingHandler = {
-      parent: null,
-      chunk: null,
-      value: null,
-      reason: null,
-      deps: 1,
-      errored: false,
-    };
-  }
-
-  function fulfill(): void {
+  function bindServerReference(args: any): any {
     let resolvedValue = requireModule(serverReference) as any;
-
     if (bound) {
-      // This promise is coming from us and should have initialized by now.
-      const promiseValue = (bound as any).value;
-      const boundArgs: Array<any> = isArray(promiseValue)
-        ? promiseValue.slice(0)
-        : [];
+      const boundArgs: Array<any> = isArray(args) ? args.slice(0) : [];
       boundArgs.unshift(null); // this
       resolvedValue = resolvedValue.bind.apply(resolvedValue, boundArgs);
     }
-
     registerBoundServerReference(
       resolvedValue,
       id,
       bound,
       response._encodeFormAction,
     );
-
-    if (
-      key !== __PROTO__ &&
-      // $FlowFixMe[constant-condition]
-      (!usedWithSSR || parentObject !== ELEMENT_FIELDS)
-    ) {
-      parentObject[key] = resolvedValue;
-    }
-
-    // If this is the root object for a model reference, where `handler.value`
-    // is a stale `null`, the resolved value can be used directly.
-    if (key === '' && handler.value === null) {
-      handler.value = resolvedValue;
-    }
-
-    // If the parent object is an unparsed React element tuple, or stands for
-    // the fields of an element built from its parts, we also need to update the
-    // props and owner of the parsed element object (i.e. handler.value).
-    if (
-      isElementFields(parentObject) &&
-      typeof handler.value === 'object' &&
-      handler.value !== null &&
-      handler.value.$$typeof === REACT_ELEMENT_TYPE
-    ) {
-      const element: any = handler.value;
-      switch (key) {
-        case '3':
-          element.props = resolvedValue;
-          break;
-        case '4':
-          if (__DEV__) {
-            element._owner = resolvedValue;
-          }
-          break;
-      }
-    }
-
-    handler.deps--;
-    initializeChunkIfUnblocked(response, handler);
+    return resolvedValue;
   }
 
-  function reject(error: mixed): void {
-    if (handler.errored) {
-      // We've already errored. We could instead build up an AggregateError
-      // but if there are multiple errors we just take the first one like
-      // Promise.all.
-      return;
-    }
-    const blockedValue = handler.value;
-    const erroredHandler: ErroredInitializationHandler = handler as any;
-    erroredHandler.errored = true;
-    erroredHandler.value = null;
-    erroredHandler.reason = error;
-    const chunk = handler.chunk;
-    if (chunk === null || chunk.status !== BLOCKED) {
-      return;
-    }
-
-    if (__DEV__) {
-      if (
-        typeof blockedValue === 'object' &&
-        blockedValue !== null &&
-        blockedValue.$$typeof === REACT_ELEMENT_TYPE
-      ) {
-        const element = blockedValue;
-        // Conceptually the error happened inside this Element but right before
-        // it was rendered. We don't have a client side component to render but
-        // we can add some DebugInfo to explain that this was conceptually a
-        // Server side error that errored inside this element. That way any stack
-        // traces will point to the nearest JSX that errored - e.g. during
-        // serialization.
-        const erroredComponent: ReactComponentInfo = {
-          name: getComponentNameFromType(element.type) || '',
-          owner: element._owner,
-        };
-        // $FlowFixMe[cannot-write]
-        erroredComponent.debugStack = element._debugStack;
-        if (supportsCreateTask) {
-          // $FlowFixMe[cannot-write]
-          erroredComponent.debugTask = element._debugTask;
-        }
-        chunk._debugInfo.push(erroredComponent);
-      }
-    }
-
-    triggerErrorOnChunk(response, chunk, error);
+  const preloading: null | Thenable<any> = preloadModule(serverReference);
+  if (!preloading && boundChunk === null) {
+    return bindServerReference(null);
   }
 
-  promise.then(fulfill, reject);
+  const handler = addDependency();
 
-  // Return a place holder value for now.
-  return null as any;
+  function bindBoundServerReference(_response: Response, args: any): any {
+    return bindServerReference(args);
+  }
+
+  if (boundChunk === null) {
+    // The module loads as a chunk, like a client module's, and the function's
+    // slot refers to it.
+    const moduleChunk = createModuleChunk(response, preloading as any);
+    const reference = createInitializationReference(
+      response,
+      handler,
+      moduleChunk,
+      parentObject,
+      key,
+      bindBoundServerReference,
+      EMPTY_REFERENCE_PATH,
+      false,
+    );
+    addReferenceListener(moduleChunk, reference);
+    // The slot holds the reference until the function is there.
+    return (key === __PROTO__ ? null : reference) as any;
+  }
+
+  // The bound arguments are waited for like any reference into their chunk,
+  // so the arguments chunk and the model holding the function can wait on
+  // each other like two models do.
+  const chunk: SomeChunk<any> = boundChunk;
+  const reference = createInitializationReference(
+    response,
+    handler,
+    chunk,
+    parentObject,
+    key,
+    bindBoundServerReference,
+    EMPTY_REFERENCE_PATH,
+    false,
+  );
+  if (preloading) {
+    const moduleChunk = createModuleChunk(response, preloading);
+    reference.moduleWait = waitForChunk(response, handler, moduleChunk);
+  }
+  // The server sends the bound arguments as a Promise. Start reading them in
+  // a microtask, as awaiting that Promise would, so that one bound function
+  // does not parse another one's arguments in the middle of its own parse.
+  // The reference above already exists, so a group check can see that the
+  // function waits for its arguments.
+  Promise.resolve().then(() => {
+    try {
+      if (chunk.status === RESOLVED_MODEL) {
+        initializeModelChunk(chunk);
+      }
+      switch (chunk.status) {
+        case INITIALIZED:
+          releaseReference(response, reference, chunk);
+          break;
+        case ERRORED:
+          rejectReference(response, handler, chunk.reason);
+          break;
+        case BLOCKED:
+        case PENDING:
+        case PENDING_WEAK:
+          addReferenceListener(chunk, reference);
+          fulfillReferenceIfParsed(response, reference);
+          break;
+        // A halted chunk never arrives, and neither does the function.
+      }
+    } catch (error) {
+      rejectReference(response, handler, error);
+    }
+    flushGroupChecks(response);
+  });
+
+  // The slot holds the reference until the function is there.
+  return (key === __PROTO__ ? null : reference) as any;
 }
 
 function loadServerObjectReference(
@@ -2575,13 +3454,13 @@ function transferReferencedDebugInfo(
   referencedChunk: SomeChunk<any>,
 ): void {
   if (__DEV__) {
-    // We add the debug info to the receiving chunk since the resolution of that
-    // promise is also blocked by the referenced debug info. By adding it to
-    // both we can track it even if the array/element/lazy is extracted, or if
-    // the root is rendered as is.
     if (receivingChunk !== null) {
-      const referencedDebugInfo = referencedChunk._debugInfo;
+      // We add the debug info to the receiving chunk since the resolution of that
+      // promise is also blocked by the referenced debug info. By adding it to
+      // both we can track it even if the array/element/lazy is extracted, or if
+      // the root is rendered as is.
       const receivingDebugInfo = receivingChunk._debugInfo;
+      const referencedDebugInfo = referencedChunk._debugInfo;
       // The receiving chunk takes each entry only once. A repeated entry
       // carries no information. An entry repeats in two ways:
       //
@@ -2595,7 +3474,9 @@ function transferReferencedDebugInfo(
       }
       for (let i = 0; i < referencedDebugInfo.length; ++i) {
         const debugInfoEntry = referencedDebugInfo[i];
-        if (debugInfoEntry.name != null) {
+        if (debugInfoEntry === undefined) {
+          // A reserved entry that has not been initialized yet.
+        } else if (debugInfoEntry.name != null) {
           debugInfoEntry as ReactComponentInfo;
           // We're not transferring Component info since we use Component info
           // in Debug info to fill in gaps between Fibers for the parent stack.
@@ -2608,9 +3489,23 @@ function transferReferencedDebugInfo(
   }
 }
 
-// Most references have no path, so they can all share the same empty array.
 // It's never mutated because only paths with entries get spliced in place.
 const EMPTY_REFERENCE_PATH: Array<string> = [];
+
+// The property names of a path, with the escaping the writer applies to a
+// name that contains a colon undone.
+function splitReferencePath(reference: string): Array<string> {
+  if (reference.indexOf('%') === -1) {
+    // Escaping only ever adds a percent sign, so with none present no segment
+    // was escaped and none needs unescaping.
+    return reference.split(':');
+  }
+  const path = reference.split(':');
+  for (let i = 1; i < path.length; i++) {
+    path[i] = unescapePathSegment(path[i]);
+  }
+  return path;
+}
 
 function getOutlinedModel<T>(
   response: Response,
@@ -2622,7 +3517,9 @@ function getOutlinedModel<T>(
   // parseInt stops at the ':' so we only need to split when there's a path.
   const id = parseInt(reference, 16);
   const path =
-    reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
+    reference.indexOf(':') === -1
+      ? EMPTY_REFERENCE_PATH
+      : splitReferencePath(reference);
   const chunk = getChunk(response, id);
   if (
     __DEV__ &&
@@ -2677,7 +3574,8 @@ function getOutlinedModel<T>(
             }
             case BLOCKED:
             case PENDING:
-            case PENDING_WEAK: {
+            case PENDING_WEAK:
+            case HALTED: {
               return waitForReference(
                 referencedChunk,
                 parentObject,
@@ -2687,25 +3585,6 @@ function getOutlinedModel<T>(
                 path.slice(i - 1),
                 isInitializingDebugInfo,
               );
-            }
-            case HALTED: {
-              // Add a dependency that will never resolve.
-              // TODO: Mark downstreams as halted too.
-              let handler: InitializationHandler;
-              if (initializingHandler) {
-                handler = initializingHandler;
-                handler.deps++;
-              } else {
-                handler = initializingHandler = {
-                  parent: null,
-                  chunk: null,
-                  value: null,
-                  reason: null,
-                  deps: 1,
-                  errored: false,
-                };
-              }
-              return null as any;
             }
             default: {
               // This is an error. Instead of erroring directly, we're going to encode this on
@@ -2717,14 +3596,9 @@ function getOutlinedModel<T>(
                 erroredHandler.value = null;
                 erroredHandler.reason = referencedChunk.reason;
               } else {
-                initializingHandler = {
-                  parent: null,
-                  chunk: null,
-                  value: null,
-                  reason: referencedChunk.reason,
-                  deps: 0,
-                  errored: true,
-                };
+                initializingHandler = createErroredInitializationHandler(
+                  referencedChunk.reason,
+                );
               }
               return null as any;
             }
@@ -2787,6 +3661,7 @@ function getOutlinedModel<T>(
     case PENDING:
     case PENDING_WEAK:
     case BLOCKED:
+    case HALTED:
       return waitForReference(
         chunk,
         parentObject,
@@ -2796,25 +3671,6 @@ function getOutlinedModel<T>(
         path,
         isInitializingDebugInfo,
       );
-    case HALTED: {
-      // Add a dependency that will never resolve.
-      // TODO: Mark downstreams as halted too.
-      let handler: InitializationHandler;
-      if (initializingHandler) {
-        handler = initializingHandler;
-        handler.deps++;
-      } else {
-        handler = initializingHandler = {
-          parent: null,
-          chunk: null,
-          value: null,
-          reason: null,
-          deps: 1,
-          errored: false,
-        };
-      }
-      return null as any;
-    }
     default:
       // This is an error. Instead of erroring directly, we're going to encode this on
       // an initialization handler so that we can catch it at the nearest Element.
@@ -2825,14 +3681,7 @@ function getOutlinedModel<T>(
         erroredHandler.value = null;
         erroredHandler.reason = chunk.reason;
       } else {
-        initializingHandler = {
-          parent: null,
-          chunk: null,
-          value: null,
-          reason: chunk.reason,
-          deps: 0,
-          errored: true,
-        };
+        initializingHandler = createErroredInitializationHandler(chunk.reason);
       }
       // Placeholder
       return null as any;
@@ -2865,15 +3714,18 @@ function createFormData(
   return formData;
 }
 
+// Debug constructor metadata occupies a property that must be removed after
+// decoding. An ordinary undefined value still occupies its property.
+const REMOVED_PROPERTY: symbol = __DEV__ ? Symbol() : (null as any);
+
 function applyConstructor(
   response: Response,
   model: Function,
   parentObject: Object,
   key: string,
-): void {
+): symbol {
   Object.setPrototypeOf(parentObject, model.prototype);
-  // Delete the property. It was just a placeholder.
-  return undefined;
+  return REMOVED_PROPERTY;
 }
 
 function defineLazyGetter<T>(
@@ -3313,13 +4165,19 @@ function parseModelTuple(
   if (tuple[0] === REACT_ELEMENT_TYPE) {
     // TODO: Consider having React just directly accept these arrays as elements.
     // Or even change the ReactElement type to be an array.
+    // An owner or stack that is not there yet is null until its slot is
+    // fulfilled. See fulfillReferenceSlot.
     return createElement(
       response,
       tuple[1],
       tuple[2],
       tuple[3],
-      __DEV__ ? (tuple as any)[4] : null,
-      __DEV__ ? (tuple as any)[5] : null,
+      __DEV__ && !isUnfulfilledReference((tuple as any)[4])
+        ? (tuple as any)[4]
+        : null,
+      __DEV__ && !isUnfulfilledReference((tuple as any)[5])
+        ? (tuple as any)[5]
+        : null,
       __DEV__ ? (tuple as any)[6] : 0,
     );
   }
@@ -3363,6 +4221,15 @@ function ResponseInstance(
   this._encodeFormAction = encodeFormAction;
   this._nonce = nonce;
   this._chunks = chunks;
+  this._handlers = new WeakMap();
+  this._queuedReferences = null;
+  this._continuingReferences = false;
+  this._queuedChunkListeners = null;
+  this._flushingChunkListeners = false;
+  this._queuedGroupChecks = [];
+  this._queuedCallbacks = [];
+  this._workDepth = 0;
+  this._flushingGroupChecks = false;
   // Preserve a leading U+FEFF instead of consuming it as an encoding signature.
   this._stringDecoder = createStringDecoder(true);
   this._closed = false;
@@ -3880,7 +4747,7 @@ function resolveStream<T: ReadableStream | $AsyncIterable<any, any, void>>(
             // Leave blocked until we can resolve all the debug info.
             initializingHandler.value = stream;
             initializingHandler.reason = controller;
-            initializingHandler.chunk = cyclicChunk;
+            registerHandler(response, initializingHandler, cyclicChunk);
             return;
           }
         }
@@ -3912,25 +4779,72 @@ function startReadableStream<T>(
 ): void {
   let controller: ReadableStreamController = null as any;
   let closed = false;
+  let canceled = false;
   const stream = new ReadableStream({
     type: type,
     start(c) {
       controller = c;
     },
+    cancel() {
+      // The consumer is done with the stream. Rows that are still arriving
+      // for it are dropped.
+      canceled = true;
+      closed = true;
+      previousBlockedChunk = null;
+    },
   });
   let previousBlockedChunk: SomeChunk<T> | null = null;
+  function enqueue(value: T): void {
+    if (!canceled) {
+      if (type === 'bytes') {
+        // Byte stream controllers transfer the backing buffer. It may still
+        // be shared with another transport chunk, decoded value, or tee reader.
+        const view: $ArrayBufferView = value as any;
+        controller.enqueue(
+          new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice(),
+        );
+      } else {
+        controller.enqueue(value);
+      }
+    }
+  }
+  function fail(error: mixed): void {
+    if (!canceled) {
+      // $FlowFixMe[incompatible-type]
+      controller.error(error);
+    }
+  }
+  function closeStream(): void {
+    if (canceled) {
+      return;
+    }
+    controller.close();
+    // Closing a byte stream leaves a BYOB read that is already waiting
+    // pending. Only responding to its request settles it.
+    // $FlowFixMe[prop-missing]
+    const byobRequest = type === 'bytes' ? controller.byobRequest : null;
+    if (byobRequest != null) {
+      byobRequest.respond(0);
+    }
+  }
   const flightController = {
     enqueueValue(value: T): void {
+      if (canceled) {
+        return;
+      }
       if (previousBlockedChunk === null) {
-        controller.enqueue(value);
+        enqueue(value);
       } else {
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         previousBlockedChunk.then(function () {
-          controller.enqueue(value);
+          enqueue(value);
         });
       }
     },
     enqueueModel(json: UninitializedModel): void {
+      if (canceled) {
+        return;
+      }
       if (previousBlockedChunk === null) {
         // If we're not blocked on any other chunks, we can try to eagerly initialize
         // this as a fast-path to avoid awaiting them.
@@ -3941,29 +4855,25 @@ function startReadableStream<T>(
         initializeModelChunk(chunk);
         const initializedChunk: SomeChunk<T> = chunk;
         if (initializedChunk.status === INITIALIZED) {
-          controller.enqueue(initializedChunk.value);
+          enqueue(initializedChunk.value);
         } else {
-          chunk.then(
-            v => controller.enqueue(v),
-            e => controller.error(e as any),
-          );
+          chunk.then(enqueue, fail);
           previousBlockedChunk = chunk;
         }
       } else {
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         const blockedChunk = previousBlockedChunk;
         const chunk: SomeChunk<T> = createPendingChunk(response);
-        chunk.then(
-          v => controller.enqueue(v),
-          e => controller.error(e as any),
-        );
-        previousBlockedChunk = chunk;
-        blockedChunk.then(function () {
+        chunk.then(v => {
           if (previousBlockedChunk === chunk) {
             // We were still the last chunk so we can now clear the queue and return
             // to synchronous emitting.
             previousBlockedChunk = null;
           }
+          enqueue(v);
+        }, fail);
+        previousBlockedChunk = chunk;
+        blockedChunk.then(function () {
           resolveModelChunk(response, chunk, json);
         });
       }
@@ -3974,12 +4884,12 @@ function startReadableStream<T>(
       }
       closed = true;
       if (previousBlockedChunk === null) {
-        controller.close();
+        closeStream();
       } else {
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.close());
+        blockedChunk.then(closeStream);
       }
     },
     error(error: mixed): void {
@@ -3994,7 +4904,7 @@ function startReadableStream<T>(
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.error(error as any));
+        blockedChunk.then(() => fail(error));
       }
     },
   };
@@ -4204,6 +5114,16 @@ function resolveErrorDev(
   response: Response,
   errorInfo: ReactErrorInfoDev,
 ): Error {
+  return createErrorDev(response, errorInfo, null);
+}
+
+// The cause and the errors are parsed into `details`, or into the Error itself
+// if `details` is null.
+function createErrorDev(
+  response: Response,
+  errorInfo: ReactErrorInfoDev,
+  details: null | {cause?: mixed, errors?: mixed},
+): Error {
   const name = errorInfo.name;
   const message = errorInfo.message;
   const stack = errorInfo.stack;
@@ -4218,33 +5138,9 @@ function resolveErrorDev(
   }
 
   let error;
-  const errorOptions =
-    // We don't serialize Error.cause in prod so we never need to deserialize
-    // $FlowFixMe[constant-condition]
-    __DEV__ && 'cause' in errorInfo
-      ? {
-          cause: reviveModel(
-            response,
-            // $FlowFixMe[incompatible-type] -- Flow thinks `cause` in `cause?: JSONValue` can be undefined after `in` check.
-            errorInfo.cause as JSONValue,
-            errorInfo,
-            'cause',
-          ),
-        }
-      : undefined;
   const isAggregateError =
     typeof AggregateError !== 'undefined' && 'errors' in errorInfo;
-  const revivedErrors =
-    // We don't serialize AggregateError.errors in prod so we never need to deserialize
-    __DEV__ && isAggregateError
-      ? reviveModel(
-          response,
-          // $FlowFixMe[incompatible-type]
-          errorInfo.errors as JSONValue,
-          errorInfo,
-          'errors',
-        )
-      : null;
+  // The cause and the errors are parsed into the Error below, once it exists.
   const callStack = buildFakeCallStack(
     response,
     stack,
@@ -4254,17 +5150,15 @@ function resolveErrorDev(
       ? // $FlowFixMe[incompatible-use]
         AggregateError.bind(
           null,
-          revivedErrors,
+          [],
           message ||
             'An error occurred in the Server Components render but no message was provided',
-          errorOptions,
         )
       : // $FlowFixMe[incompatible-use]
         Error.bind(
           null,
           message ||
             'An error occurred in the Server Components render but no message was provided',
-          errorOptions,
         ),
   );
 
@@ -4292,7 +5186,63 @@ function resolveErrorDev(
 
   (error as any).name = name;
   (error as any).environmentName = env;
+  // We don't serialize Error.cause or AggregateError.errors in prod so we
+  // never need to deserialize them there.
+  // $FlowFixMe[constant-condition]
+  if (__DEV__ && 'cause' in errorInfo) {
+    if (details === null) {
+      // Not enumerable, like the `cause` that the Error constructor sets.
+      Object.defineProperty(error, 'cause', {
+        configurable: true,
+        enumerable: false,
+        writable: true,
+        value: reviveModel(
+          response,
+          // $FlowFixMe[incompatible-type] -- Flow thinks `cause` in `cause?: JSONValue` can be undefined after `in` check.
+          errorInfo.cause as JSONValue,
+          error,
+          'cause',
+        ),
+      });
+    } else {
+      details.cause = reviveModel(
+        response,
+        // $FlowFixMe[incompatible-type] -- Flow thinks `cause` in `cause?: JSONValue` can be undefined after `in` check.
+        errorInfo.cause as JSONValue,
+        details,
+        'cause',
+      );
+    }
+  }
+  if (__DEV__ && isAggregateError) {
+    const target: any = details === null ? error : details;
+    target.errors = reviveModel(
+      response,
+      // $FlowFixMe[incompatible-type]
+      errorInfo.errors as JSONValue,
+      target,
+      'errors',
+    );
+  }
   return error;
+}
+
+function assignErrorDetails(
+  error: Error,
+  details: {cause?: mixed, errors?: mixed},
+): void {
+  if ('cause' in details) {
+    // Not enumerable, like the `cause` that the Error constructor sets.
+    Object.defineProperty(error, 'cause', {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: details.cause,
+    });
+  }
+  if ('errors' in details) {
+    (error as any).errors = details.errors;
+  }
 }
 
 function resolveErrorModel(
@@ -4306,7 +5256,31 @@ function resolveErrorModel(
   const errorInfo = JSON.parse(row);
   let error;
   if (__DEV__) {
-    error = resolveErrorDev(response, errorInfo);
+    // An Error row is handed out right away, before its cause and its errors
+    // have loaded. They are parsed on the side, like a model of their own, and
+    // assigned to the Error once nothing in them is missing.
+    const details: {cause?: mixed, errors?: mixed} = {};
+    const prevHandler = initializingHandler;
+    initializingHandler = null;
+    try {
+      error = createErrorDev(response, errorInfo, details);
+      const handler = initializingHandler;
+      if (handler === null) {
+        assignErrorDetails(error, details);
+      } else if (!handler.errored) {
+        const blockedChunk: BlockedChunk<typeof details> =
+          createBlockedChunk(response);
+        handler.value = details;
+        registerHandler(response, handler, blockedChunk);
+        queueGroupCheck(response, handler);
+        blockedChunk.then(assignErrorDetails.bind(null, error), () => {
+          // A cause that failed to load is left out.
+        });
+      }
+    } finally {
+      initializingHandler = prevHandler;
+    }
+    flushGroupChecks(response);
   } else {
     error = resolveErrorProd(response);
   }
@@ -4846,7 +5820,7 @@ function resolveDebugModel(
         // If it's still pending that suggests that it was referencing an object in the debug
         // channel, but no debug channel was wired up so it's missing. In this case we can just
         // drop the debug info instead of halting the whole stream.
-        parentChunk._debugChunk = null;
+        parentChunk._debugChunk = previousChunk;
       }
     }
   }
@@ -5892,18 +6866,9 @@ export function processBinaryChunk(
       const length = lastIdx - i;
       const lastChunk = new Uint8Array(chunk.buffer, offset, length);
 
-      // Check if this is a Uint8Array for a byte stream. We enqueue it
-      // immediately but need to determine if we can use zero-copy or must copy.
+      // A byte stream can receive this slice without waiting for a full row.
       if (rowTag === 98 /* "b" */) {
-        resolveBuffer(
-          response,
-          rowID,
-          // If we're at the end of the RSC chunk, no more parsing will access
-          // this buffer and we don't need to copy the chunk to allow detaching
-          // the buffer, otherwise we need to copy.
-          lastIdx === chunkLength ? lastChunk : lastChunk.slice(),
-          streamState,
-        );
+        resolveBuffer(response, rowID, lastChunk, streamState);
       } else {
         // Process all other row types.
         processFullBinaryRow(
@@ -5932,13 +6897,8 @@ export function processBinaryChunk(
       const length = chunk.byteLength - i;
       const remainingSlice = new Uint8Array(chunk.buffer, offset, length);
 
-      // For byte streams, we can enqueue the partial row immediately without
-      // copying since we're at the end of the RSC chunk and no more parsing
-      // will access this buffer.
+      // Byte streams can receive partial rows as soon as their bytes arrive.
       if (rowTag === 98 /* "b" */) {
-        // Update how many bytes we're still waiting for. We need to do this
-        // before enqueueing, as enqueue will detach the buffer and byteLength
-        // will become 0.
         rowLength -= remainingSlice.byteLength;
         resolveBuffer(response, rowID, remainingSlice, streamState);
       } else {
@@ -6153,10 +7113,10 @@ function reviveModel(
         delete (value as any)[k];
       } else {
         const walked = reviveModel(response, (value as any)[k], value, k);
-        if (walked !== undefined) {
-          (value as any)[k] = walked;
-        } else {
+        if (__DEV__ && walked === REMOVED_PROPERTY) {
           delete (value as any)[k];
+        } else {
+          (value as any)[k] = walked;
         }
       }
     }

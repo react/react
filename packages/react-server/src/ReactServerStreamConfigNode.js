@@ -303,6 +303,17 @@ export function typedArrayToBinaryChunk(
   return view;
 }
 
+// Whether writing the chunk that typedArrayToBinaryChunk returned for a typed
+// array takes the typed array's buffer. A chunk larger than VIEW_SIZE is
+// written to the destination as is. If it is still a view of the caller's
+// buffer, the caller can't use that buffer again.
+export function isTypedArrayConsumed(
+  content: $ArrayBufferView,
+  chunk: BinaryChunk,
+): boolean {
+  return chunk.byteLength > VIEW_SIZE && chunk.buffer === content.buffer;
+}
+
 export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {
   return typeof chunk === 'string'
     ? Buffer.byteLength(chunk, 'utf8')

@@ -66,6 +66,13 @@ export function typedArrayToBinaryChunk(
   throw new Error('Not implemented.');
 }
 
+export function isTypedArrayConsumed(
+  content: $ArrayBufferView,
+  chunk: BinaryChunk,
+): boolean {
+  return false;
+}
+
 export const byteLengthOfChunk:
   | null
   | ((chunk: Chunk | PrecomputedChunk) => number) = null;

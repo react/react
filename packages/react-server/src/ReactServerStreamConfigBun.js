@@ -88,6 +88,13 @@ export function typedArrayToBinaryChunk(
   return content;
 }
 
+export function isTypedArrayConsumed(
+  content: $ArrayBufferView,
+  chunk: BinaryChunk,
+): boolean {
+  return false;
+}
+
 export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {
   return Buffer.byteLength(chunk, 'utf8');
 }
