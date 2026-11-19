@@ -573,6 +573,86 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('preserves a browser bailout fallback when hydration suspends on a client promise', async () => {
+    let resolveFirstClientValue;
+    const firstClientValue = new Promise(resolve => {
+      resolveFirstClientValue = resolve;
+    });
+    let resolveSecondClientValue;
+    const secondClientValue = new Promise(resolve => {
+      resolveSecondClientValue = resolve;
+    });
+
+    function ClientSide() {
+      use(ReactDOM.browser());
+      const first = use(firstClientValue);
+      const second = use(secondClientValue);
+      return <span>{first + ' ' + second}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Loading</span>}>
+            <ClientSide />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+    expect(browserBailouts).toHaveLength(1);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Loading</span>
+      </div>,
+    );
+
+    const serverFallback = container.querySelector('span');
+    serverFallback.setAttribute('data-kept', 'yes');
+
+    ReactDOMClient.hydrateRoot(container, <App />);
+    await waitForAll([]);
+
+    expect(container.querySelector('span')).toBe(serverFallback);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span data-kept="yes">Loading</span>
+      </div>,
+    );
+
+    await act(() => {
+      resolveFirstClientValue('First');
+    });
+    await waitForAll([]);
+    expect(container.querySelector('span')).toBe(serverFallback);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span data-kept="yes">Loading</span>
+      </div>,
+    );
+
+    await act(() => {
+      resolveSecondClientValue('Second');
+    });
+    await waitForAll([]);
+    jest.advanceTimersByTime(300);
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>First Second</span>
+      </div>,
+    );
+  });
+
   it('supports omitted and direct string browser reasons', async () => {
     const directReason = 'Only render this content in a browser';
     const withoutReason = ReactDOM.browser();

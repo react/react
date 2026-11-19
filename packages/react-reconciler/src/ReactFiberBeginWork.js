@@ -78,6 +78,7 @@ import {
   ScopeComponent,
   OffscreenComponent,
   LegacyHiddenComponent,
+  DehydratedFragment,
   CacheComponent,
   TracingMarkerComponent,
   Throw,
@@ -2614,6 +2615,13 @@ function updateSuspenseComponent(
         renderLanes,
       );
       workInProgress.memoizedState = SUSPENDED_MARKER;
+      if (
+        primaryChildFragment.sibling !== null &&
+        primaryChildFragment.sibling.tag === DehydratedFragment
+      ) {
+        // Dehydrated fragments aren't normal units of work.
+        return null;
+      }
       return bailoutOffscreenComponent(current.child, primaryChildFragment);
     } else {
       if (
@@ -2783,6 +2791,24 @@ function updateSuspensePrimaryChildren(
   return primaryChildFragment;
 }
 
+function removeChildDeletion(workInProgress: Fiber, childToRemove: Fiber) {
+  const deletions = workInProgress.deletions;
+  if (deletions === null) {
+    return;
+  }
+
+  for (let i = deletions.length - 1; i >= 0; i--) {
+    if (deletions[i] === childToRemove) {
+      deletions.splice(i, 1);
+    }
+  }
+
+  if (deletions.length === 0) {
+    workInProgress.deletions = null;
+    workInProgress.flags &= ~ChildDeletion;
+  }
+}
+
 function updateSuspenseFallbackChildren(
   current: Fiber,
   workInProgress: Fiber,
@@ -2846,6 +2872,14 @@ function updateSuspenseFallbackChildren(
     // the current tree; see previous branch.)
     primaryChildFragment.subtreeFlags =
       currentPrimaryChildFragment.subtreeFlags & StaticMask;
+  }
+  if (
+    currentFallbackChildFragment !== null &&
+    currentFallbackChildFragment.tag === DehydratedFragment
+  ) {
+    // Keep an already-painted server fallback when the primary tree suspends
+    // again during a client retry.
+    removeChildDeletion(workInProgress, currentFallbackChildFragment);
   }
   let fallbackChildFragment;
   if (currentFallbackChildFragment !== null) {
@@ -3188,6 +3222,45 @@ function updateDehydratedSuspenseComponent(
       // Suspended but we should no longer be in dehydrated mode.
       // Therefore we now have to render the fallback.
       pushFallbackTreeSuspenseHandler(workInProgress);
+
+      const dehydratedFragment: Fiber | null = current.child;
+      if (
+        dehydratedFragment !== null &&
+        dehydratedFragment.tag === DehydratedFragment &&
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST
+      ) {
+        // The server rendered a recoverable fallback (for example after
+        // `browser()` was used). Keep it in place while the client primary
+        // tree waits for a client-only promise.
+        removeChildDeletion(workInProgress, dehydratedFragment);
+
+        const primaryChildProps: OffscreenProps = {
+          mode: 'hidden',
+          children: nextProps.children,
+        };
+        const primaryChildFragment = mountWorkInProgressOffscreenFiber(
+          primaryChildProps,
+          workInProgress.mode,
+          renderLanes,
+        );
+        primaryChildFragment.memoizedState =
+          mountSuspenseOffscreenState(renderLanes);
+        primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
+          current,
+          didPrimaryChildrenDefer,
+          renderLanes,
+        );
+        primaryChildFragment.return = workInProgress;
+        dehydratedFragment.return = workInProgress;
+        primaryChildFragment.sibling = dehydratedFragment;
+        workInProgress.child = primaryChildFragment;
+        workInProgress.memoizedState = SUSPENDED_MARKER;
+        // Initialize Offscreen state without traversing the dehydrated fragment.
+        bailoutOffscreenComponent(null, primaryChildFragment);
+        return null;
+      }
 
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
