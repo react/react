@@ -38,6 +38,7 @@ export const disableTextareaChildren: boolean = false;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
 export const enableFlightObjectReferences: boolean = false;
+export const enableFlightLedgers: boolean = false;
 export const enableCPUSuspense: boolean = true;
 export const enableCreateEventHandleAPI: boolean = false;
 export const enableMoveBefore: boolean = true;
