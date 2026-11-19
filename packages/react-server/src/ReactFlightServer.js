@@ -3608,6 +3608,17 @@ function resolveModel(
     jsonValue,
   );
 
+  if (enableFlightTee && rowTee !== null && rowTeeDispatcher !== null) {
+    return resolveRenderedForTee(
+      request,
+      task,
+      value,
+      rendered,
+      rowTee,
+      rowTeeDispatcher,
+    );
+  }
+
   if (rendered === null || typeof rendered !== 'object') {
     return rendered;
   }
@@ -3646,6 +3657,317 @@ function resolveModel(
     }
   }
   return resolved;
+}
+
+// ---- The value path of a tee ----
+//
+// While a model row is built for a tee, `resolveModel` returns the row's wire
+// value as usual, and also leaves the value the tee's reader gets for the same
+// node in `teeValue`. The reader's value has to be what parsing the bytes
+// would give.
+//
+// Neither output shares an object or array with the server. The reader gets a
+// copy of each one, made from the walk's single read of each of its
+// properties, and the wire value is that same copy until one of its children
+// needs a different wire value than reader value, such as an element or a
+// string that encodes a value. So everything SSR or the bytes see was read
+// once and checked by `renderModel`, which is where taint is checked: a getter
+// is read once, and what the bytes don't carry (a symbol key, a non-enumerable
+// property, the `input` of a regex match) never reaches SSR. Like parsing, the
+// reader's copy leaves out `undefined` properties and own `__proto__` keys,
+// and is a plain object or array even for an array subclass or an object from
+// another realm. Strings that encode a value are decoded with the client's
+// decoder, and elements are created by the client's element code.
+//
+// A `$` string can't be decoded where it's returned, because decoding needs
+// the parent it goes in. The child leaves NEEDS_DECODE, and the parent decodes
+// the string into its copy.
+
+// The tee of the row being built and its dispatcher, or null outside of one.
+let rowTee: null | FlightTee = null;
+let rowTeeDispatcher: null | FlightTeeDispatcher = null;
+let teeValue: mixed = null;
+const NEEDS_DECODE = {};
+
+function resolveRenderedForTee(
+  request: Request,
+  task: Task,
+  value: ReactClientValue,
+  rendered: ReactJSONValue,
+  tee: FlightTee,
+  teeDispatcher: FlightTeeDispatcher,
+): ReactJSONValue {
+  if (typeof rendered === 'string') {
+    if (rendered.length > 0 && rendered[0] === '$') {
+      if (typeof value === 'number' || value === undefined) {
+        // NaN, Infinity, -0 and undefined decode to themselves.
+        teeValue = value;
+      } else if (
+        typeof value === 'string' &&
+        rendered.length > 1 &&
+        rendered[1] === '$'
+      ) {
+        // An escaped string. Other encodings of a string, like an error for a
+        // tainted one, are decoded.
+        teeValue = value;
+      } else {
+        teeValue = NEEDS_DECODE;
+      }
+    } else {
+      teeValue = rendered;
+    }
+    return rendered;
+  }
+  if (rendered === null || typeof rendered !== 'object') {
+    teeValue = rendered;
+    return rendered;
+  }
+  if (isArray(rendered)) {
+    // Read the first item once, as the walk without a tee does, since it can
+    // be a getter on the user's array.
+    const first = rendered[0];
+    if (first === REACT_ELEMENT_TYPE) {
+      return resolveElementForTee(request, task, rendered, tee, teeDispatcher);
+    }
+    return copyArrayForTee(request, task, rendered, first, tee, teeDispatcher);
+  }
+  return copyObjectForTee(request, task, rendered, tee, teeDispatcher);
+}
+
+function resolveElementForTee(
+  request: Request,
+  task: Task,
+  rendered: $ReadOnlyArray<ReactClientValue>,
+  tee: FlightTee,
+  teeDispatcher: FlightTeeDispatcher,
+): ReactJSONValue {
+  // Same as the client's '$' at key '0'.
+  teeDispatcher.e(tee);
+  const length = rendered.length;
+  const resolved: Array<ReactJSONValue> = new Array(length);
+  resolved[0] = resolveModel(request, task, rendered, '0', rendered[0]);
+  let type: mixed = null;
+  let key: mixed = null;
+  let props: mixed = null;
+  let owner: mixed = null;
+  let stack: mixed = null;
+  let validated: mixed = 0;
+  for (let i = 1; i < length; i++) {
+    const slot = '' + i;
+    const resolvedChild = resolveModel(
+      request,
+      task,
+      rendered,
+      slot,
+      rendered[i],
+    );
+    resolved[i] = resolvedChild;
+    let child = teeValue;
+    if (child === NEEDS_DECODE) {
+      child = teeDispatcher.d(
+        tee,
+        tee._elementFields,
+        slot,
+        resolvedChild as any,
+      );
+    }
+    switch (i) {
+      case 1:
+        type = child;
+        break;
+      case 2:
+        key = child;
+        break;
+      case 3:
+        props = child;
+        break;
+      case 4:
+        owner = child;
+        break;
+      case 5:
+        stack = child;
+        break;
+      case 6:
+        validated = child;
+        break;
+    }
+  }
+  teeValue = teeDispatcher.m(
+    tee,
+    type,
+    key,
+    props,
+    owner,
+    stack,
+    validated as any,
+  );
+  return resolved;
+}
+
+function copyArrayForTee(
+  request: Request,
+  task: Task,
+  rendered: $ReadOnlyArray<ReactClientValue>,
+  first: ReactClientValue,
+  tee: FlightTee,
+  teeDispatcher: FlightTeeDispatcher,
+): ReactJSONValue {
+  const length = rendered.length;
+  const copy: Array<any> = new Array(length);
+  // The wire value is the copy until an item's wire value differs from the
+  // reader's.
+  let resolved: null | Array<ReactJSONValue> = null;
+  for (let i = 0; i < length; i++) {
+    const resolvedChild = resolveModel(
+      request,
+      task,
+      rendered,
+      '' + i,
+      i === 0 ? first : rendered[i],
+    );
+    let teeChild = teeValue;
+    if (teeChild === NEEDS_DECODE) {
+      teeChild = teeDispatcher.d(tee, copy, '' + i, resolvedChild as any);
+    }
+    copy[i] = teeChild;
+    if (resolved !== null) {
+      resolved[i] = resolvedChild;
+    } else if (resolvedChild !== teeChild) {
+      resolved = new Array(length);
+      for (let j = 0; j < i; j++) {
+        resolved[j] = copy[j];
+      }
+      resolved[i] = resolvedChild;
+    }
+  }
+  teeValue = copy;
+  return resolved === null ? copy : resolved;
+}
+
+function copyObjectForTee(
+  request: Request,
+  task: Task,
+  rendered: {+[key: string]: ReactClientValue},
+  tee: FlightTee,
+  teeDispatcher: FlightTeeDispatcher,
+): ReactJSONValue {
+  // Only the enumerable string keys the wire carries, each read once.
+  const keys = Object.keys(rendered);
+  // Use `{}` for fast properties.
+  const copy: {[key: string]: mixed} = {} as any;
+  // The wire value is the copy until a property's wire value differs from the
+  // reader's. Until then every key is in the copy.
+  let resolved: null | {[key: string]: ReactJSONValue} = null;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    let resolvedChild;
+    let teeChild;
+    if (key === __PROTO__) {
+      // The client drops own `__proto__` keys without reading what's under
+      // them, so only the wire walks it. The wire keeps the key, so it needs
+      // its own copy from here on.
+      const prevRowTee = rowTee;
+      rowTee = null;
+      try {
+        resolvedChild = resolveModel(
+          request,
+          task,
+          rendered,
+          key,
+          rendered[key],
+        );
+      } finally {
+        rowTee = prevRowTee;
+      }
+      teeChild = NEEDS_DECODE;
+    } else {
+      resolvedChild = resolveModel(request, task, rendered, key, rendered[key]);
+      teeChild = teeValue;
+      if (teeChild === NEEDS_DECODE) {
+        teeChild = teeDispatcher.d(tee, copy, key, resolvedChild as any);
+      }
+      // The client deletes keys whose value is undefined.
+      if (teeChild !== undefined) {
+        copy[key] = teeChild;
+      }
+    }
+    if (resolved === null) {
+      if (resolvedChild === teeChild) {
+        continue;
+      }
+      resolved = {} as any;
+      for (let j = 0; j < i; j++) {
+        const k = keys[j];
+        resolved[k] = copy[k] as any;
+      }
+    }
+    setOwnKey(resolved, key, resolvedChild);
+  }
+  teeValue = copy;
+  return resolved === null ? (copy as any) : resolved;
+}
+
+// Sets a key on a copy, including an own `__proto__` key, which simple
+// assignment would turn into a prototype instead.
+function setOwnKey(
+  object: {[key: string]: ReactJSONValue},
+  key: string,
+  value: ReactJSONValue,
+): void {
+  if (key === __PROTO__) {
+    // Match JSON's ordinary data-property semantics for this legacy key.
+    Object.defineProperty(object, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  } else {
+    object[key] = value;
+  }
+}
+
+// Emits a model row that the tee builds by value. `value` is what the row's
+// task rendered.
+function emitModelRowForTee(
+  request: Request,
+  task: Task,
+  value: ReactClientValue,
+  tee: FlightTee,
+  teeDispatcher: FlightTeeDispatcher,
+): void {
+  const row = teeDispatcher.b(tee, task.id);
+  if (row === null) {
+    emitModelRowForWire(request, task, value);
+    return;
+  }
+  const prevRowTee = rowTee;
+  const prevRowTeeDispatcher = rowTeeDispatcher;
+  const prevTeeValue = teeValue;
+  rowTee = tee;
+  rowTeeDispatcher = teeDispatcher;
+  let json: string;
+  let teeRowValue;
+  try {
+    const root = {'': value};
+    const resolved = resolveModel(request, task, root, '', value);
+    teeRowValue = teeValue;
+    if (teeRowValue === NEEDS_DECODE) {
+      teeRowValue = teeDispatcher.d(tee, {'': resolved}, '', resolved as any);
+    }
+    // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
+    json = stringify(resolved);
+  } catch (x) {
+    teeDispatcher.a(tee, row);
+    throw x;
+  } finally {
+    rowTee = prevRowTee;
+    rowTeeDispatcher = prevRowTeeDispatcher;
+    // Don't hold on to the last value the walk set.
+    teeValue = prevTeeValue;
+  }
+  teeDispatcher.f(tee, row, teeRowValue);
+  pushModelChunk(request, task.id, json);
 }
 
 function writeToDedupeMap(
@@ -5853,7 +6175,15 @@ function emitSymbolChunk(request: Request, id: number, name: string): void {
 }
 
 function emitModelChunk(request: Request, id: number, json: string): void {
-  queueRegularRow(request, id.toString(16) + ':' + json + '\n');
+  teeWireRow(request, pushModelChunk(request, id, json));
+}
+
+// Queues a model row without handing it to the tee, for a row the tee already
+// has by value. Returns the row.
+function pushModelChunk(request: Request, id: number, json: string): string {
+  const row = id.toString(16) + ':' + json + '\n';
+  request.completedRegularChunks.push(stringToChunk(row));
+  return row;
 }
 
 function emitDebugHaltChunk(request: Request, id: number): void {
@@ -7202,6 +7532,9 @@ function emitChunk(
   request: Request,
   task: Task,
   value: ReactClientValue,
+  // Whether a tee can build this row by value. A stream's entries share
+  // the stream's row, so they're parsed.
+  byValue: boolean,
 ): void {
   const id = task.id;
   // For certain types we have special types, we typically outlined them but
@@ -7288,6 +7621,31 @@ function emitChunk(
   }
   if (value instanceof DataView) {
     emitTypedArrayChunk(request, id, 'V', value, false);
+    return;
+  }
+  const tee = request.tee;
+  const teeDispatcher = request.teeDispatcher;
+  if (enableFlightTee && tee !== null && teeDispatcher !== null && byValue) {
+    emitModelRowForTee(request, task, value, tee, teeDispatcher);
+    return;
+  }
+  emitModelRowForWire(request, task, value);
+}
+
+function emitModelRowForWire(
+  request: Request,
+  task: Task,
+  value: ReactClientValue,
+): void {
+  if (enableFlightTee && rowTee !== null) {
+    // A row parsed from the wire inside a row built by value.
+    const prevRowTee = rowTee;
+    rowTee = null;
+    try {
+      emitModelRowForWire(request, task, value);
+    } finally {
+      rowTee = prevRowTee;
+    }
     return;
   }
   // For anything else we need to try to serialize it using JSON.
@@ -7420,7 +7778,7 @@ function retryTaskWithRequest(request: Request, task: Task): void {
 
       // Object might contain unresolved values like additional elements.
       // This is simulating what the JSON loop would do if this was part of it.
-      emitChunk(request, task, resolvedModel);
+      emitChunk(request, task, resolvedModel, true);
     } else {
       // If the value is a string, it means it's a terminal value and we already escaped it.
       // We don't need to escape it again so it's not passed through resolveModel.
@@ -7495,7 +7853,7 @@ function tryStreamTaskWithRequest(request: Request, task: Task): void {
   }
   const parentSerializedSize = serializedSize;
   try {
-    emitChunk(request, task, task.model);
+    emitChunk(request, task, task.model, false);
   } finally {
     serializedSize = parentSerializedSize;
     if (__DEV__) {
