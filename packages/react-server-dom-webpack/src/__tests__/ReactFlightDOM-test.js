@@ -266,6 +266,84 @@ describe('ReactFlightDOM', () => {
     });
   });
 
+  // @gate enableServerErrorBoundary
+  it('preserves a server error boundary through Flight, SSR, and hydration', async () => {
+    const error = new Error('Server component failure');
+    const flightErrors = [];
+    const ServerErrorBoundary = FlightReact.unstable_ServerErrorBoundary;
+    function FailingServerComponent() {
+      throw error;
+    }
+    function ServerApp() {
+      return (
+        <main>
+          <header>Layout</header>
+          <ServerErrorBoundary fallback={<p>Unavailable</p>}>
+            <FailingServerComponent />
+          </ServerErrorBoundary>
+          <footer>Footer</footer>
+        </main>
+      );
+    }
+
+    const {writable: flightWritable, readable: flightReadable} =
+      getTestStream();
+    await serverAct(() => {
+      ReactServerDOMServer.renderToPipeableStream(<ServerApp />, webpackMap, {
+        onError(caught) {
+          flightErrors.push(caught);
+          return 'server-component-digest';
+        },
+      }).pipe(flightWritable);
+    });
+    expect(flightErrors).toEqual([error]);
+
+    const response =
+      ReactServerDOMClient.createFromReadableStream(flightReadable);
+    function ClientApp() {
+      return use(response);
+    }
+    const fizzErrors = [];
+    const shellErrors = [];
+    const {writable: fizzWritable, readable: fizzReadable} = getTestStream();
+    await serverAct(() => {
+      ReactDOMFizzServer.renderToPipeableStream(<ClientApp />, {
+        onError(caught) {
+          fizzErrors.push(caught);
+          return caught.digest;
+        },
+        onShellError(caught) {
+          shellErrors.push(caught);
+        },
+      }).pipe(fizzWritable);
+    });
+    expect(fizzErrors).toHaveLength(1);
+    expect(fizzErrors[0].digest).toBe('server-component-digest');
+    expect(shellErrors).toEqual([]);
+
+    const container = document.createElement('div');
+    await readInto(container, fizzReadable);
+    expect(container.textContent).toBe('LayoutUnavailableFooter');
+    expect(container.querySelector('template').dataset.dgst).toBe(
+      'server-component-digest',
+    );
+    const header = container.querySelector('header');
+
+    const caughtErrors = [];
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <ClientApp />, {
+        onRecoverableError() {},
+        onCaughtError(caught) {
+          caughtErrors.push(caught);
+        },
+      });
+    });
+    expect(caughtErrors).toHaveLength(1);
+    expect(caughtErrors[0].digest).toBe('server-component-digest');
+    expect(container.textContent).toBe('LayoutUnavailableFooter');
+    expect(container.querySelector('header')).toBe(header);
+  });
+
   it('should resolve the root', async () => {
     // Model
     function Text({children}) {
