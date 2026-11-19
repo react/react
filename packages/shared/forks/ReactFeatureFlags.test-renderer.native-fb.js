@@ -21,6 +21,7 @@ export const disableSchedulerTimeoutInWorkLoop = false;
 export const disableTextareaChildren = false;
 export const enableAsyncIterableChildren = false;
 export const enableFlightWeakThenables = false;
+export const enableFlightTee = false;
 export const enableFlightObjectReferences = false;
 export const enableFlightLedgers = false;
 export const enableCPUSuspense = true;
