@@ -60,8 +60,10 @@ fn eliminate_redundant_phi_impl(
             // Find any redundant phis: rewrite operands, identify redundant phis, remove them.
             // Matches TS behavior: each phi's operands are rewritten before checking redundancy,
             // so that rewrites from earlier phis in the same block are visible to later phis.
-            let block = ir.blocks.get_mut(&block_id).unwrap();
-            block.phis.retain_mut(|phi| {
+            // The phis are moved out of the block while they are visited, so that
+            // `stored_temporary` can read their predecessor blocks.
+            let mut phis = std::mem::take(&mut ir.blocks.get_mut(&block_id).unwrap().phis);
+            phis.retain_mut(|phi| {
                 // Remap phis in case operands are from eliminated phis
                 for (_, operand) in phi.operands.iter_mut() {
                     rewrite_place(operand, rewrites);
@@ -84,12 +86,18 @@ fn eliminate_redundant_phi_impl(
                 }
                 if is_redundant {
                     let same = same.expect("Expected phis to be non-empty");
-                    rewrites.insert(phi.place.identifier, same);
+                    let stored = if phi.operands.len() == 1 {
+                        stored_temporary(ir, &func.instructions, env, phi)
+                    } else {
+                        None
+                    };
+                    rewrites.insert(phi.place.identifier, stored.unwrap_or(same));
                     false // remove this phi
                 } else {
                     true // keep this phi
                 }
             });
+            ir.blocks.get_mut(&block_id).unwrap().phis = phis;
 
             // Rewrite instructions
             let instruction_ids: Vec<InstructionId> =
@@ -152,5 +160,37 @@ fn eliminate_redundant_phi_impl(
         if !(rewrites.len() > size && has_back_edge) {
             break;
         }
+    }
+}
+
+// =============================================================================
+// Helper: stored_temporary
+// =============================================================================
+
+/// A conditional's branches each store their value into one result temporary,
+/// which the join's phi reads. Once only one branch reaches the join, that
+/// temporary is a copy of the branch's value, itself a temporary: read the
+/// value instead, so dead code elimination drops the copy rather than leaving
+/// it to be emitted as a variable.
+fn stored_temporary(
+    ir: &HIR,
+    instructions: &[Instruction],
+    env: &Environment,
+    phi: &Phi,
+) -> Option<IdentifierId> {
+    let (pred, operand) = phi.operands.iter().next()?;
+    let last = ir.blocks.get(pred)?.instructions.last()?;
+    match &instructions[last.0 as usize].value {
+        InstructionValue::StoreLocal { lvalue, value, .. }
+            if lvalue.kind == InstructionKind::Const
+                && lvalue.place.identifier == operand.identifier
+                && env.identifiers[operand.identifier.0 as usize]
+                    .name
+                    .is_none()
+                && env.identifiers[value.identifier.0 as usize].name.is_none() =>
+        {
+            Some(value.identifier)
+        }
+        _ => None,
     }
 }
