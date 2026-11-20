@@ -835,4 +835,449 @@ describe('ReactDOMFizzShellHydration', () => {
       'Something went wrong: boomreadyresolved',
     );
   });
+
+  // The following tests characterize a loop in hydration mismatch recovery.
+  // When the forced client render after a hydration mismatch suspends and
+  // cannot commit, the dehydrated state persists on the current tree while
+  // the ForceClientRender marker is discarded with the work-in-progress tree,
+  // so the next ping re-attempts hydration and re-encounters the same
+  // mismatch.
+
+  function logRecoverableError(error) {
+    // The full message contains a DEV-only diff, so log a stable marker.
+    if (error.message.startsWith('Hydration failed because')) {
+      Scheduler.log('onRecoverableError: Hydration failed');
+    } else {
+      Scheduler.log('onRecoverableError: ' + error.message.split('\n')[0]);
+    }
+  }
+
+  it('re-encounters a shell hydration mismatch after a ping if the recovery render suspended', async () => {
+    let isClient = false;
+
+    let resolve;
+    const clientPromise = new Promise(res => {
+      resolve = res;
+    });
+
+    // A sibling before the mismatching host element. Renders in every pass
+    // that reaches it: both hydration attempts and client renders. It is not
+    // an ancestor of the mismatching element, so the component stack
+    // collection that re-invokes function components never touches it.
+    function Marker() {
+      Scheduler.log('Marker');
+      return null;
+    }
+
+    function SuspendingChild() {
+      Scheduler.log('SuspendingChild');
+      if (isClient) {
+        React.use(clientPromise);
+      }
+      return 'data';
+    }
+
+    function App() {
+      return (
+        <div>
+          <Marker />
+          {isClient ? <b>client</b> : <span>server</span>}
+          <SuspendingChild />
+        </div>
+      );
+    }
+
+    // Server render
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    assertLog(['Marker', 'SuspendingChild']);
+    expect(container.textContent).toBe('serverdata');
+
+    isClient = true;
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError: logRecoverableError,
+      });
+    });
+    // The hydration attempt reaches the mismatch and throws, then the forced
+    // client render suspends.
+    assertLog(['Marker', 'Marker', 'SuspendingChild']);
+    // Nothing committed; the SSR HTML is still in place.
+    expect(container.textContent).toBe('serverdata');
+
+    // Resolve the promise. The root is still dehydrated and the
+    // ForceClientRender marker was discarded with the work-in-progress tree,
+    // so the retry attempts hydration again and hits the mismatch again.
+    await clientAct(async () => {
+      resolve('Client');
+    });
+    assertLog([
+      'Marker',
+      'Marker',
+      'SuspendingChild',
+      'onRecoverableError: Hydration failed',
+    ]);
+    expect(container.textContent).toBe('clientdata');
+  });
+
+  it('re-encounters a shell hydration mismatch on every retry when the recovery suspends on uncached promises', async () => {
+    let isClient = false;
+    let suspendsRemaining = 0;
+
+    function Marker() {
+      Scheduler.log('Marker');
+      return null;
+    }
+
+    function SuspendingChild() {
+      Scheduler.log('SuspendingChild');
+      if (isClient && suspendsRemaining > 0) {
+        suspendsRemaining--;
+        // Legacy-style thrown thenable (no `use` instrumentation, so the
+        // shellSuspendCounter uncached-promise guard does not apply).
+        // Pings on a microtask.
+        const thenable = {
+          then(resolvePromise) {
+            Promise.resolve().then(() => resolvePromise());
+          },
+        };
+        throw thenable;
+      }
+      return 'data';
+    }
+
+    function App() {
+      return (
+        <div>
+          <Marker />
+          {isClient ? <b>client</b> : <span>server</span>}
+          <SuspendingChild />
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    assertLog(['Marker', 'SuspendingChild']);
+    expect(container.textContent).toBe('serverdata');
+
+    isClient = true;
+    // Artificially bounded so the test terminates. Without the bound this
+    // loop never ends: each ping re-attempts hydration and re-encounters the
+    // mismatch.
+    suspendsRemaining = 3;
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError: logRecoverableError,
+      });
+    });
+
+    // Each cycle: hydration attempt (Marker, throw) then client render
+    // (Marker, SuspendingChild, suspend). After 3 suspends the 4th client
+    // render completes. If hydration were only attempted once, Marker would
+    // appear twice in total instead of once per cycle.
+    assertLog([
+      // cycle 1: hydrate -> mismatch -> client render -> suspend
+      'Marker',
+      'Marker',
+      'SuspendingChild',
+      // cycle 2 (after ping): hydrate again -> mismatch again -> suspend
+      'Marker',
+      'Marker',
+      'SuspendingChild',
+      // cycle 3
+      'Marker',
+      'Marker',
+      'SuspendingChild',
+      // cycle 4
+      'Marker',
+      'Marker',
+      'SuspendingChild',
+      'onRecoverableError: Hydration failed',
+    ]);
+    expect(container.textContent).toBe('clientdata');
+  });
+
+  it('does not loop a boundary hydration mismatch once the fallback commits', async () => {
+    let isClient = false;
+
+    let resolve;
+    const clientPromise = new Promise(res => {
+      resolve = res;
+    });
+
+    function Marker() {
+      Scheduler.log('Marker');
+      return null;
+    }
+
+    function SuspendingChild() {
+      Scheduler.log('SuspendingChild');
+      if (isClient) {
+        React.use(clientPromise);
+      }
+      return 'data';
+    }
+
+    function App() {
+      return (
+        <React.Suspense fallback={<div>loading</div>}>
+          <Marker />
+          {isClient ? <b>client</b> : <span>server</span>}
+          <SuspendingChild />
+        </React.Suspense>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    assertLog(['Marker', 'SuspendingChild']);
+    expect(container.textContent).toBe('serverdata');
+
+    isClient = true;
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError: logRecoverableError,
+      });
+    });
+    // The boundary hydration attempt hits the mismatch, the forced client
+    // render suspends, and the fallback is shown.
+    assertLog([
+      'Marker',
+      'Marker',
+      'SuspendingChild',
+      'onRecoverableError: Hydration failed',
+    ]);
+    // The fallback committed, so the boundary is no longer dehydrated.
+    expect(container.textContent).toBe('loading');
+
+    await clientAct(async () => {
+      resolve('Client');
+    });
+    // The retry renders the boundary's content without hydrating again:
+    // no additional mismatch.
+    assertLog(['Marker', 'SuspendingChild']);
+    expect(container.textContent).toBe('clientdata');
+  });
+
+  it('re-encounters a shell hydration mismatch after a ping when hydrating inside a transition', async () => {
+    let isClient = false;
+
+    let resolve;
+    const clientPromise = new Promise(res => {
+      resolve = res;
+    });
+
+    function Marker() {
+      Scheduler.log('Marker');
+      return null;
+    }
+
+    function SuspendingChild() {
+      Scheduler.log('SuspendingChild');
+      if (isClient) {
+        React.use(clientPromise);
+      }
+      return 'data';
+    }
+
+    function App() {
+      return (
+        <div>
+          <Marker />
+          {isClient ? <b>client</b> : <span>server</span>}
+          <SuspendingChild />
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    assertLog(['Marker', 'SuspendingChild']);
+
+    isClient = true;
+
+    await clientAct(async () => {
+      startTransition(() => {
+        ReactDOMClient.hydrateRoot(container, <App />, {
+          onRecoverableError: logRecoverableError,
+        });
+      });
+    });
+    assertLog(['Marker', 'Marker', 'SuspendingChild']);
+    expect(container.textContent).toBe('serverdata');
+
+    await clientAct(async () => {
+      resolve('Client');
+    });
+    assertLog([
+      'Marker',
+      'Marker',
+      'SuspendingChild',
+      'onRecoverableError: Hydration failed',
+    ]);
+    expect(container.textContent).toBe('clientdata');
+  });
+
+  it('re-encounters a boundary hydration mismatch while the fallback cannot commit', async () => {
+    let isClient = false;
+
+    let resolveContent;
+    let resolveFallback;
+    const contentPromise = new Promise(res => {
+      resolveContent = res;
+    });
+    const fallbackPromise = new Promise(res => {
+      resolveFallback = res;
+    });
+
+    function Marker() {
+      Scheduler.log('Marker');
+      return null;
+    }
+
+    function Content() {
+      Scheduler.log('Content');
+      if (isClient) {
+        React.use(contentPromise);
+      }
+      return 'content-data';
+    }
+
+    function Fallback() {
+      Scheduler.log('Fallback');
+      if (isClient) {
+        React.use(fallbackPromise);
+      }
+      return 'loading';
+    }
+
+    function App() {
+      return (
+        <React.Suspense fallback={<Fallback />}>
+          <Marker />
+          {isClient ? <b>client</b> : <span>server</span>}
+          <Content />
+        </React.Suspense>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    assertLog(['Marker', 'Content']);
+    expect(container.textContent).toBe('servercontent-data');
+
+    isClient = true;
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError: logRecoverableError,
+      });
+    });
+    // The boundary hydration attempt renders Marker and throws. The forced
+    // client render renders Marker + Content, which suspends. The fallback
+    // pass renders Fallback, which also suspends, so nothing commits and the
+    // boundary stays dehydrated.
+    assertLog(['Marker', 'Marker', 'Content', 'Fallback']);
+    expect(container.textContent).toBe('servercontent-data');
+
+    // Resolve the fallback first. Because nothing committed, the boundary is
+    // still dehydrated, so the retry re-attempts hydration and hits the
+    // mismatch again (the first 'Marker' below) before client rendering.
+    await clientAct(async () => {
+      resolveFallback();
+    });
+    assertLog([
+      'Marker',
+      'Marker',
+      'Content',
+      'Fallback',
+      'onRecoverableError: Hydration failed',
+    ]);
+    expect(container.textContent).toBe('loading');
+
+    await clientAct(async () => {
+      resolveContent();
+    });
+    assertLog(['Marker', 'Content']);
+    expect(container.textContent).toBe('clientcontent-data');
+  });
+
+  it('loops shell hydration mismatches with uncached use() until the shell suspend counter trips', async () => {
+    let isClient = false;
+    let suspendCount = 0;
+    const uncaughtErrors = [];
+    const recoverableErrors = [];
+
+    function SuspendingChild() {
+      if (isClient) {
+        suspendCount++;
+        // Uncached: a brand new thenable on every render. Pings on a
+        // microtask, so the loop is driven by pings.
+        React.use({
+          then(resolvePromise) {
+            Promise.resolve().then(() => resolvePromise());
+          },
+        });
+      }
+      return 'data';
+    }
+
+    function App() {
+      return (
+        <div>
+          {isClient ? <b>client</b> : <span>server</span>}
+          <SuspendingChild />
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    expect(container.textContent).toBe('serverdata');
+
+    isClient = true;
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error.message.split('\n')[0]);
+        },
+        onUncaughtError(error) {
+          uncaughtErrors.push(error.message.split('\n')[0]);
+        },
+      });
+    });
+
+    // Each loop cycle suspends once during the forced client render. The
+    // loop runs until shellSuspendCounter exceeds 100, i.e. hydration was
+    // re-attempted more than a hundred times.
+    expect(suspendCount).toBeGreaterThan(100);
+    // The guard converts the loop into a fatal error that unmounts the root.
+    expect(uncaughtErrors).toEqual([
+      'An unknown Component is an async Client Component. Only Server ' +
+        'Components can be async at the moment. This error is often caused ' +
+        "by accidentally adding `'use client'` to a module that was " +
+        'originally written for the server.',
+    ]);
+    // The mismatch errors are never delivered: every render that queued them
+    // was discarded before committing.
+    expect(recoverableErrors).toEqual([]);
+    expect(container.textContent).toBe('');
+  });
 });
