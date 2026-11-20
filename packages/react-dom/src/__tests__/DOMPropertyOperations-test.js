@@ -276,6 +276,34 @@ describe('DOMPropertyOperations', () => {
       expect(oncustomevent).toHaveBeenCalledTimes(1);
     });
 
+    it('custom element custom events are attached during hydration', async () => {
+      const oncustomevent = jest.fn();
+      const oncustomeventcapture = jest.fn();
+      function Test() {
+        return (
+          <my-custom-element
+            oncustomevent={oncustomevent}
+            oncustomeventCapture={oncustomeventcapture}
+          />
+        );
+      }
+      const container = document.createElement('div');
+      container.innerHTML = '<my-custom-element></my-custom-element>';
+      document.body.appendChild(container);
+      try {
+        const element = container.querySelector('my-custom-element');
+        await act(() => {
+          ReactDOMClient.hydrateRoot(container, <Test />);
+        });
+        expect(container.querySelector('my-custom-element')).toBe(element);
+        element.dispatchEvent(new Event('customevent'));
+        expect(oncustomevent).toHaveBeenCalledTimes(1);
+        expect(oncustomeventcapture).toHaveBeenCalledTimes(1);
+      } finally {
+        document.body.removeChild(container);
+      }
+    });
+
     it('custom element custom events uppercase', async () => {
       const oncustomevent = jest.fn();
       function Test() {
