@@ -274,6 +274,7 @@ export function performReactRefresh(): RefreshUpdate | null {
       }
       if (!failedRoots.has(root)) {
         // No longer failed.
+        return;
       }
       if (rootElements === null) {
         return;
@@ -301,6 +302,7 @@ export function performReactRefresh(): RefreshUpdate | null {
       }
       if (!mountedRoots.has(root)) {
         // No longer mounted.
+        return;
       }
       try {
         helpers.scheduleRefresh(root, update);
