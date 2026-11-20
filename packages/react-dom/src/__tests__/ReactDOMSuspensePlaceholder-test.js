@@ -342,4 +342,80 @@ describe('ReactDOMSuspensePlaceholder', () => {
 
     expect(log).toEqual(['cDM', 'cDU']);
   });
+
+  // https://github.com/react/react/issues/37762
+  it('does not commit a throttled retry after a passive effect of another root flushSyncs the same root', async () => {
+    const {
+      waitForAll,
+      waitForPaint,
+      assertConsoleErrorDev,
+    } = require('internal-test-utils');
+    function createLazyText(text) {
+      let resolve;
+      const LazyText = React.lazy(
+        () =>
+          new Promise(r => {
+            resolve = () => r({default: () => <Text text={text} />});
+          }),
+      );
+      return [LazyText, () => resolve()];
+    }
+    const [LazyA, resolveA] = createLazyText('A');
+    // B stays suspended, so the retry below is throttled regardless of
+    // alwaysThrottleRetries.
+    const [LazyB] = createLazyText('B');
+
+    const containerB = document.createElement('div');
+    document.body.appendChild(containerB);
+    const rootA = ReactDOMClient.createRoot(container);
+    const rootB = ReactDOMClient.createRoot(containerB);
+    function Writer() {
+      React.useEffect(() => {
+        ReactDOM.flushSync(() => rootA.render(<Text text="Value: 1" />));
+      }, []);
+      return <Text text="Writer" />;
+    }
+
+    rootA.render(
+      <>
+        <Text text="Value: 0" />
+        <Suspense fallback={<Text text="Loading..." />}>
+          <LazyA />
+          <Suspense fallback={<Text text="Loading more..." />}>
+            <LazyB />
+          </Suspense>
+        </Suspense>
+      </>,
+    );
+    // B is pre-warmed after the fallback commits.
+    await waitForAll(['Value: 0', 'Loading...', 'Loading more...']);
+    expect(container.textContent).toBe('Value: 0Loading...');
+
+    // The retry finishes, but because the fallback appeared recently its
+    // commit is throttled.
+    resolveA();
+    await waitForAll(['A', 'Loading more...']);
+    expect(container.textContent).toBe('Value: 0Loading...');
+
+    // rootB commits. Its passive effect is still pending.
+    rootB.render(<Writer />);
+    await waitForPaint(['Writer']);
+    expect(containerB.textContent).toBe('Writer');
+
+    // The throttled commit fires. Before committing, it flushes rootB's
+    // passive effect, which renders rootA synchronously. That render starts
+    // over from rootA's current tree, so the throttled commit is stale.
+    jest.runAllTimers();
+    assertConsoleErrorDev([
+      'flushSync was called from inside a lifecycle method. ' +
+        'React cannot flush when React is already rendering. ' +
+        'Consider moving this call to a scheduler task or micro task.\n' +
+        '    in Writer (at **)',
+    ]);
+    assertLog(['Value: 1']);
+    await waitForAll([]);
+    expect(container.textContent).toBe('Value: 1');
+
+    document.body.removeChild(containerB);
+  });
 });
