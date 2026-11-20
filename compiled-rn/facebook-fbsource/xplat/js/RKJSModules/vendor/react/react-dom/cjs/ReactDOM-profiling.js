@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<c2581d3eeb68d682b6a96d6471b84ed2>>
+ * @generated SignedSource<<a840518538e612f5940efe1afb54e7ff>>
  */
 
 "use strict";
@@ -88,10 +88,16 @@ exports.createPortal = function (children, container) {
     throw Error(formatProdErrorMessage(299));
   return createPortal$1(children, container, null, key);
 };
-exports.flushSync = function () {
-  throw Error(
-    "Expected this build of React to not support legacy mode but it does. This is a bug in React."
-  );
+exports.flushSync = function (fn) {
+  var previousTransition = ReactSharedInternals.T,
+    previousUpdatePriority = Internals.p;
+  try {
+    if (((ReactSharedInternals.T = null), (Internals.p = 2), fn)) return fn();
+  } finally {
+    (ReactSharedInternals.T = previousTransition),
+      (Internals.p = previousUpdatePriority),
+      Internals.d.f();
+  }
 };
 exports.preconnect = function (href, options) {
   "string" === typeof href &&
@@ -222,4 +228,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-e04279e7-20261119";
+exports.version = "19.3.0-native-fb-7b22099e-20261120";
