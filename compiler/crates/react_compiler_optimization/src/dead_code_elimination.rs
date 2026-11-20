@@ -18,8 +18,10 @@ use react_compiler_hir::object_shape::HookKind;
 use react_compiler_hir::visitors;
 use react_compiler_hir::{
     ArrayPatternElement, BlockId, BlockKind, HirFunction, IdentifierId, InstructionKind,
-    InstructionValue, ObjectPropertyOrSpread, Pattern,
+    InstructionValue, ObjectPropertyOrSpread, Pattern, Terminal,
 };
+
+use crate::prune_maybe_throws::value_may_throw;
 
 /// Implements dead-code elimination, eliminating instructions whose values are unused.
 ///
@@ -28,11 +30,11 @@ use react_compiler_hir::{
 /// Corresponds to TS `deadCodeElimination(fn: HIRFunction): void`.
 pub fn dead_code_elimination(func: &mut HirFunction, env: &Environment) {
     // Phase 1: Find/mark all referenced identifiers
-    let state = find_referenced_identifiers(func, env);
+    let state = find_referenced_identifiers(func, env, true);
 
     // Phase 2: Prune / sweep unreferenced identifiers and instructions
     // Collect instructions to rewrite (two-phase: collect then apply to avoid borrow conflicts)
-    let mut instructions_to_rewrite: Vec<react_compiler_hir::InstructionId> = Vec::new();
+    let mut instructions_to_rewrite: Vec<(react_compiler_hir::InstructionId, bool)> = Vec::new();
 
     for (_block_id, block) in &mut func.body.blocks {
         // Remove unused phi nodes
@@ -51,14 +53,23 @@ pub fn dead_code_elimination(func: &mut HirFunction, env: &Environment) {
         for i in 0..retained_count {
             let is_block_value = block.kind != BlockKind::Block && i == retained_count - 1;
             if !is_block_value {
-                instructions_to_rewrite.push(block.instructions[i]);
+                let instr_id = block.instructions[i];
+                let preserve_caught_value =
+                    matches!(
+                        block.terminal,
+                        Terminal::MaybeThrow {
+                            handler: Some(_),
+                            ..
+                        }
+                    ) && value_may_throw(&func.instructions[instr_id.0 as usize].value);
+                instructions_to_rewrite.push((instr_id, preserve_caught_value));
             }
         }
     }
 
     // Apply rewrites
-    for instr_id in instructions_to_rewrite {
-        rewrite_instruction(func, instr_id, &state, env);
+    for (instr_id, preserve_caught_value) in instructions_to_rewrite {
+        rewrite_instruction(func, instr_id, preserve_caught_value, &state, env);
     }
 
     // Remove unused context variables
@@ -124,7 +135,11 @@ fn is_id_used(state: &State, identifier_id: IdentifierId) -> bool {
 }
 
 /// Phase 1: Find all referenced identifiers via fixed-point iteration.
-fn find_referenced_identifiers(func: &HirFunction, env: &Environment) -> State {
+fn find_referenced_identifiers(
+    func: &HirFunction,
+    env: &Environment,
+    preserve_caught_throws: bool,
+) -> State {
     let has_loop = has_back_edge(func);
     // Collect block ids in reverse order (postorder - successors before predecessors)
     let reversed_block_ids: Vec<BlockId> = func.body.blocks.keys().rev().copied().collect();
@@ -158,6 +173,20 @@ fn find_referenced_identifiers(func: &HirFunction, env: &Environment) -> State {
                         reference(&mut state, &env.identifiers, place.identifier);
                     }
                 } else if is_id_or_name_used(&state, &env.identifiers, instr.lvalue.identifier)
+                    || (preserve_caught_throws
+                        && matches!(
+                            block.terminal,
+                            Terminal::MaybeThrow {
+                                handler: Some(_),
+                                ..
+                            }
+                        )
+                        && value_may_throw(&instr.value)
+                        && !matches!(
+                            &instr.value,
+                            InstructionValue::StoreLocal { lvalue, .. }
+                                if !is_id_used(&state, lvalue.place.identifier)
+                        ))
                     || !pruneable_value(&instr.value, &state, env)
                 {
                     reference(&mut state, &env.identifiers, instr.lvalue.identifier);
@@ -167,6 +196,15 @@ fn find_referenced_identifiers(func: &HirFunction, env: &Environment) -> State {
                         // only if the SSA'd lval is also referenced
                         if lvalue.kind == InstructionKind::Reassign
                             || is_id_used(&state, lvalue.place.identifier)
+                            || (preserve_caught_throws
+                                && matches!(
+                                    block.terminal,
+                                    Terminal::MaybeThrow {
+                                        handler: Some(_),
+                                        ..
+                                    }
+                                )
+                                && value_may_throw(&instr.value))
                         {
                             reference(&mut state, &env.identifiers, value.identifier);
                         }
@@ -196,17 +234,57 @@ fn find_referenced_identifiers(func: &HirFunction, env: &Environment) -> State {
     state
 }
 
+pub fn find_semantic_only_caught_instructions(
+    func: &HirFunction,
+    env: &Environment,
+) -> Option<FxHashSet<react_compiler_hir::InstructionId>> {
+    let mut candidates = Vec::new();
+    for block in func.body.blocks.values() {
+        if !matches!(
+            block.terminal,
+            Terminal::MaybeThrow {
+                handler: Some(_),
+                ..
+            }
+        ) {
+            continue;
+        }
+        for &instr_id in &block.instructions {
+            if value_may_throw(&func.instructions[instr_id.0 as usize].value) {
+                candidates.push(instr_id);
+            }
+        }
+    }
+    if candidates.is_empty() {
+        return None;
+    }
+
+    let state = find_referenced_identifiers(func, env, false);
+    let semantic_only = candidates
+        .into_iter()
+        .filter(|instr_id| {
+            !is_id_or_name_used(
+                &state,
+                &env.identifiers,
+                func.instructions[instr_id.0 as usize].lvalue.identifier,
+            )
+        })
+        .collect();
+    Some(semantic_only)
+}
+
 /// Rewrite a retained instruction (destructuring cleanup, StoreLocal -> DeclareLocal).
 fn rewrite_instruction(
     func: &mut HirFunction,
     instr_id: react_compiler_hir::InstructionId,
+    preserve_caught_value: bool,
     state: &State,
     env: &Environment,
 ) {
     let instr = &mut func.instructions[instr_id.0 as usize];
 
     match &mut instr.value {
-        InstructionValue::Destructure { lvalue, .. } => {
+        InstructionValue::Destructure { lvalue, .. } if !preserve_caught_value => {
             match &mut lvalue.pattern {
                 Pattern::Array(arr) => {
                     // For arrays, replace unused items with holes, truncate trailing holes
@@ -269,6 +347,10 @@ fn rewrite_instruction(
             if lvalue.kind != InstructionKind::Reassign
                 && !is_id_used(state, lvalue.place.identifier)
             {
+                if preserve_caught_value {
+                    lvalue.kind = InstructionKind::Let;
+                    return;
+                }
                 // This is a const/let declaration where the variable is accessed later,
                 // but where the value is always overwritten before being read.
                 // Rewrite to DeclareLocal so the initializer value can be DCE'd.
