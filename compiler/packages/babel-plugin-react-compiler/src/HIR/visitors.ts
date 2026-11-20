@@ -229,6 +229,7 @@ export function* eachInstructionValueOperand(
     }
     case 'TaggedTemplateExpression': {
       yield instrValue.tag;
+      yield* instrValue.subexprs;
       break;
     }
     case 'TypeCastExpression': {
@@ -602,6 +603,7 @@ export function mapInstructionValueOperands(
     }
     case 'TaggedTemplateExpression': {
       instrValue.tag = fn(instrValue.tag);
+      instrValue.subexprs = instrValue.subexprs.map(fn);
       break;
     }
     case 'TypeCastExpression': {
