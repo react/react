@@ -159,6 +159,11 @@ const attributes = [
     overrideStringValue: 'off',
     read: getAttribute('autocorrect'),
   },
+  {
+    name: 'autoFocus',
+    tagName: 'input',
+    read: getAttribute('autofocus'),
+  },
   {name: 'autoPlay', tagName: 'video', read: getProperty('autoplay')},
   {
     name: 'autoReverse',
