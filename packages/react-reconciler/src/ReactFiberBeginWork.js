@@ -57,6 +57,7 @@ import {
   FunctionComponent,
   ClassComponent,
   HostRoot,
+  DehydratedFragment,
   HostComponent,
   HostHoistable,
   HostSingleton,
@@ -2849,10 +2850,22 @@ function updateSuspenseFallbackChildren(
   }
   let fallbackChildFragment;
   if (currentFallbackChildFragment !== null) {
-    fallbackChildFragment = createWorkInProgress(
-      currentFallbackChildFragment,
-      fallbackChildren,
-    );
+    if (currentFallbackChildFragment.tag === DehydratedFragment) {
+      // The fallback is a dehydrated fragment that we preserved from the
+      // server render (see
+      // mountSuspenseFallbackPreservingDehydratedFragment). It already
+      // displays the fallback in the DOM, so keep it mounted as-is instead
+      // of replacing it with a freshly rendered fallback.
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        currentFallbackChildFragment.pendingProps,
+      );
+    } else {
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        fallbackChildren,
+      );
+    }
   } else {
     fallbackChildFragment = createFiberFromFragment(
       fallbackChildren,
@@ -2938,6 +2951,61 @@ function mountSuspenseFallbackAfterRetryWithoutHydrating(
     // deletion. We need to reconcile to delete the current child.
     reconcileChildFibers(workInProgress, current.child, null, renderLanes);
   }
+
+  return fallbackChildFragment;
+}
+
+function mountSuspenseFallbackPreservingDehydratedFragment(
+  current: Fiber,
+  workInProgress: Fiber,
+  primaryChildren: $FlowFixMe,
+  renderLanes: Lanes,
+) {
+  // The server rendered a permanent fallback for this boundary (e.g. the
+  // primary content bailed out with `browser()`), and the client render
+  // suspended again before producing any content. The dehydrated fragment
+  // already displays exactly the fallback we would render, so instead of
+  // deleting it and mounting an identical fallback — which restarts CSS
+  // animations and drops any DOM state the fallback accumulated — we keep
+  // the dehydrated fragment mounted as the fallback branch while the
+  // primary tree retries. It is deleted later, when the primary content
+  // replaces it, through the normal Suspense fallback deletion path.
+  const fiberMode = workInProgress.mode;
+  const primaryChildProps: OffscreenProps = {
+    mode: 'visible',
+    children: primaryChildren,
+  };
+  const primaryChildFragment = mountWorkInProgressOffscreenFiber(
+    primaryChildProps,
+    fiberMode,
+    NoLanes,
+  );
+  const currentFragment: Fiber = current.child as any;
+  const fallbackChildFragment = createWorkInProgress(
+    currentFragment,
+    currentFragment.pendingProps,
+  );
+
+  // The first pass of this render (retrying without hydrating) may have
+  // already queued the dehydrated fragment for deletion. We're keeping it
+  // mounted as the fallback, so cancel that deletion.
+  const deletions = workInProgress.deletions;
+  if (deletions !== null) {
+    const nextDeletions = deletions.filter(
+      deletion => deletion !== currentFragment,
+    );
+    if (nextDeletions.length === 0) {
+      workInProgress.deletions = null;
+      workInProgress.flags &= ~ChildDeletion;
+    } else if (nextDeletions.length !== deletions.length) {
+      workInProgress.deletions = nextDeletions;
+    }
+  }
+
+  primaryChildFragment.return = workInProgress;
+  fallbackChildFragment.return = workInProgress;
+  primaryChildFragment.sibling = fallbackChildFragment;
+  workInProgress.child = primaryChildFragment;
 
   return fallbackChildFragment;
 }
@@ -3191,13 +3259,32 @@ function updateDehydratedSuspenseComponent(
 
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
-      mountSuspenseFallbackAfterRetryWithoutHydrating(
-        current,
-        workInProgress,
-        nextPrimaryChildren,
-        nextFallbackChildren,
-        renderLanes,
-      );
+      if (
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST
+      ) {
+        // The server intentionally left this boundary in a permanent
+        // fallback state so that it renders on the client instead (e.g.
+        // `browser()`). The fallback it sent is the same fallback we would
+        // render now, so keep the dehydrated fragment mounted as the
+        // fallback rather than deleting it and remounting an identical
+        // one, which would restart CSS animations and lose DOM state.
+        mountSuspenseFallbackPreservingDehydratedFragment(
+          current,
+          workInProgress,
+          nextPrimaryChildren,
+          renderLanes,
+        );
+      } else {
+        mountSuspenseFallbackAfterRetryWithoutHydrating(
+          current,
+          workInProgress,
+          nextPrimaryChildren,
+          nextFallbackChildren,
+          renderLanes,
+        );
+      }
       const primaryChildFragment: Fiber = workInProgress.child as any;
       primaryChildFragment.memoizedState =
         mountSuspenseOffscreenState(renderLanes);
@@ -4316,6 +4403,16 @@ function beginWork(
   workInProgress.lanes = NoLanes;
 
   switch (workInProgress.tag) {
+    case DehydratedFragment: {
+      // A dehydrated fragment is normally never rendered: its parent
+      // Suspense boundary bails out before the work loop descends into it.
+      // The exception is a fragment that was preserved as the fallback of a
+      // boundary that suspended again while client rendering (see
+      // mountSuspenseFallbackPreservingDehydratedFragment). It has no
+      // children to render and the DOM it represents is already in place,
+      // so bail out.
+      return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
+    }
     case LazyComponent: {
       const elementType = workInProgress.elementType;
       return mountLazyComponent(
