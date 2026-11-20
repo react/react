@@ -3081,9 +3081,7 @@ body {
     );
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can delay commit until css resources error', async () => {
-    // TODO: This test fails and crashes jest. need to figure out why before unskipping.
+  it('can delay commit until css resources error', async () => {
     const root = ReactDOMClient.createRoot(container);
     expect(getMeaningfulChildren(container)).toBe(undefined);
     React.startTransition(() => {
@@ -3118,7 +3116,7 @@ body {
     errorStylesheets(['bar']);
 
     loadStylesheets(['foo']);
-    assertLog(['load stylesheet: foo', 'error stylesheet: bar']);
+    assertLog(['error stylesheet: bar', 'load stylesheet: foo']);
 
     // We expect that the commit finishes synchronously after the stylesheet loads.
     expect(getMeaningfulChildren(container)).toEqual(<div>hello</div>);
