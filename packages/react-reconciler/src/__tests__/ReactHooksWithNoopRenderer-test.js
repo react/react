@@ -4421,4 +4421,66 @@ describe('ReactHooksWithNoopRenderer', () => {
 
     assertLog(['Render: 0']);
   });
+
+  it('does not commit a deferred update during an urgent render after an interruption', async () => {
+    let setValue;
+
+    function Child({flag}) {
+      const [value, updateValue] = useState(flag);
+      const [previousFlag, setPreviousFlag] = useState(flag);
+      setValue = updateValue;
+      if (flag !== previousFlag) {
+        setPreviousFlag(flag);
+        updateValue(flag);
+      }
+      return <Text text={`value: ${value}`} />;
+    }
+
+    function App({flag, label}) {
+      return (
+        <>
+          <Child flag={flag} />
+          <Text text={label} />
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => root.render(<App flag={false} label="initial" />));
+    assertLog(['value: false', 'initial']);
+
+    await act(async () => {
+      React.startTransition(() => {
+        root.render(<App flag={true} label="transition" />);
+      });
+      await waitFor(['value: true']);
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="value: false" />
+          <span prop="initial" />
+        </>,
+      );
+
+      // This matches the speculative state, but not the committed state.
+      React.startTransition(() => setValue(true));
+      ReactNoop.flushSync(() => {
+        root.render(<App flag={false} label="urgent" />);
+      });
+      const urgentLog = Scheduler.unstable_clearLog();
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span prop="value: false" />
+          <span prop="urgent" />
+        </>,
+      );
+      expect(urgentLog).toEqual(['value: false', 'urgent']);
+    });
+    assertLog(['value: true']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span prop="value: true" />
+        <span prop="urgent" />
+      </>,
+    );
+  });
 });

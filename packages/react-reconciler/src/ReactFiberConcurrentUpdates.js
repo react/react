@@ -24,7 +24,13 @@ import {
   throwIfInfiniteUpdateLoopDetected,
   getWorkInProgressRoot,
 } from './ReactFiberWorkLoop';
-import {NoLane, NoLanes, mergeLanes, markHiddenUpdate} from './ReactFiberLane';
+import {
+  NoLane,
+  NoLanes,
+  mergeLanes,
+  markHiddenUpdate,
+  isTransitionLane,
+} from './ReactFiberLane';
 import {NoFlags, Placement, Hydrating} from './ReactFiberFlags';
 import {HostRoot, OffscreenComponent} from './ReactWorkTags';
 import {OffscreenVisible} from './ReactFiberOffscreenComponent';
@@ -133,7 +139,9 @@ export function enqueueConcurrentHookUpdateAndEagerlyBailout<S, A>(
   // only reason we queue it is in case there's a subsequent higher priority
   // update that causes it to be rebased.
   const lane = NoLane;
-  update.lane = NoLane;
+  if (!isTransitionLane(update.lane)) {
+    update.lane = NoLane;
+  }
   const concurrentQueue: ConcurrentQueue = queue as any;
   const concurrentUpdate: ConcurrentUpdate = update as any;
   enqueueUpdate(fiber, concurrentQueue, concurrentUpdate, lane);
