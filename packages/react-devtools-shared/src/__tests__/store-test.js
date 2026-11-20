@@ -11,6 +11,16 @@ import semver from 'semver';
 
 import {getVersionedRenderImplementation} from './utils';
 import {ReactVersion} from '../../../../ReactVersions';
+import {
+  SUSPENSE_TREE_OPERATION_ADD,
+  SUSPENSE_TREE_OPERATION_REMOVE,
+  TREE_OPERATION_ADD,
+  TREE_OPERATION_REMOVE,
+} from 'react-devtools-shared/src/constants';
+import {
+  ElementTypeFunction,
+  ElementTypeRoot,
+} from 'react-devtools-shared/src/frontend/types';
 
 const ReactVersionTestingAgainst = process.env.REACT_VERSION || ReactVersion;
 
@@ -198,6 +208,107 @@ describe('Store', () => {
     parent.children.splice(firstChildIndex, 0, firstChildID);
     store.removeListener('error', errorListener);
   });
+  
+it('ignores add operations for elements whose parent was removed earlier in the same bridge update, including transitive descendants', () => {
+    store.onBridgeOperations([
+      1, // renderer ID
+      1, // root ID
+      7, // string table size
+      6, 80, 97, 114, 101, 110, 116, // "Parent"
+      TREE_OPERATION_ADD,
+      1,
+      ElementTypeRoot,
+      0, 0, 0, 0,
+      TREE_OPERATION_ADD,
+      2,
+      ElementTypeFunction,
+      1, 0, 1, 0, 0, // parent=1 (root), displayName="Parent"
+    ]);
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Parent>
+    `);
+
+    const errorListener = jest.fn();
+    store.addListener('error', errorListener);
+
+    expect(() =>
+      store.onBridgeOperations([
+        1, // renderer ID
+        1, // root ID
+        0, // string table size
+        TREE_OPERATION_REMOVE,
+        1,
+        2, // remove node 2
+        TREE_OPERATION_ADD,
+        3,
+        ElementTypeFunction,
+        2, 0, 0, 0, 0, // add node 3 as a child of the just-removed node 2
+        TREE_OPERATION_ADD,
+        4,
+        ElementTypeFunction,
+        3, 0, 0, 0, 0, // add node 4 as a child of node 3, which was itself orphaned above
+      ]),
+    ).not.toThrow();
+
+    expect(errorListener).not.toHaveBeenCalled();
+    expect(store).toMatchInlineSnapshot(`[root]`);
+    expect(store.containsElement(3)).toBe(false);
+    expect(store.containsElement(4)).toBe(false);
+
+    store.removeListener('error', errorListener);
+  });
+
+  it('ignores suspense-add operations for suspense nodes whose parent was removed earlier in the same bridge update', () => {
+    store.onBridgeOperations([
+      1, // renderer ID
+      1, // root ID
+      0, // string table size
+      TREE_OPERATION_ADD,
+      1,
+      ElementTypeRoot,
+      0, 0, 0, 0,
+      SUSPENSE_TREE_OPERATION_ADD,
+      1, // id
+      0, // parentID (root)
+      0, // nameStringID
+      0, // isSuspended
+      -1, // numRects
+      SUSPENSE_TREE_OPERATION_ADD,
+      2, // id
+      1, // parentID
+      0, // nameStringID
+      0, // isSuspended
+      -1, // numRects
+    ]);
+
+    const errorListener = jest.fn();
+    store.addListener('error', errorListener);
+
+    expect(() =>
+      store.onBridgeOperations([
+        1, // renderer ID
+        1, // root ID
+        0, // string table size
+        SUSPENSE_TREE_OPERATION_REMOVE,
+        1,
+        2, // remove suspense node 2
+        SUSPENSE_TREE_OPERATION_ADD,
+        3, // id
+        2, // parentID: the just-removed suspense node 2
+        0, // nameStringID
+        0, // isSuspended
+        -1, // numRects
+      ]),
+    ).not.toThrow();
+
+    expect(errorListener).not.toHaveBeenCalled();
+
+    store.removeListener('error', errorListener);
+  });
+
+
 
   // @reactVersion >= 18.0
   it('receives operations queued while the frontend transport reconnects', () => {
