@@ -2401,4 +2401,110 @@ describe('ReactDOMForm', () => {
 
     assertLog(['[unrelated form] pending: false, state: 1']);
   });
+
+  it('runs the form action when onSubmit unmounts the submitter with flushSync', async () => {
+    const inputRef = React.createRef();
+    const buttonRef = React.createRef();
+    let submittedEntries = null;
+    let resolveAction;
+
+    function App() {
+      const [submitted, setSubmitted] = useState(false);
+
+      async function action(formData) {
+        submittedEntries = Array.from(formData.entries());
+        await new Promise(resolve => {
+          resolveAction = resolve;
+        });
+      }
+
+      return (
+        <form
+          onSubmit={() => {
+            ReactDOM.flushSync(() => {
+              setSubmitted(true);
+            });
+          }}
+          action={action}>
+          <input ref={inputRef} name="message" defaultValue="Initial" />
+          {submitted ? (
+            <span>Submitting</span>
+          ) : (
+            <button ref={buttonRef} name="intent" value="save">
+              Save
+            </button>
+          )}
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    inputRef.current.value = 'Updated';
+    await submit(buttonRef.current);
+
+    expect(submittedEntries).toEqual([['message', 'Updated']]);
+    expect(inputRef.current.value).toBe('Updated');
+
+    await act(async () => {
+      resolveAction();
+    });
+    expect(inputRef.current.value).toBe('Initial');
+  });
+
+  it('updates useFormStatus when preventDefault-ed onSubmit unmounts the submitter with flushSync', async () => {
+    const inputRef = React.createRef();
+    const buttonRef = React.createRef();
+    let resolveTransition;
+
+    function Status() {
+      const {pending, data} = useFormStatus();
+      Scheduler.log(pending ? Array.from(data.entries()) : 'idle');
+      return null;
+    }
+
+    function App() {
+      const [submitted, setSubmitted] = useState(false);
+
+      function onSubmit(event) {
+        event.preventDefault();
+        ReactDOM.flushSync(() => {
+          setSubmitted(true);
+        });
+        startTransition(async () => {
+          await new Promise(resolve => {
+            resolveTransition = resolve;
+          });
+        });
+      }
+
+      return (
+        <form onSubmit={onSubmit}>
+          <input ref={inputRef} name="message" defaultValue="Initial" />
+          {submitted ? (
+            <span>Submitting</span>
+          ) : (
+            <button ref={buttonRef} name="intent" value="save">
+              Save
+            </button>
+          )}
+          <Status />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+    assertLog(['idle']);
+
+    inputRef.current.value = 'Updated';
+    await submit(buttonRef.current);
+    assertLog(['idle', [['message', 'Updated']]]);
+
+    await act(async () => {
+      resolveTransition();
+    });
+    assertLog(['idle']);
+  });
 });
