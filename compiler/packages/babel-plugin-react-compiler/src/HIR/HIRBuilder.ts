@@ -84,6 +84,44 @@ function newBlock(id: BlockId, kind: BlockKind): WipBlock {
   return {id, kind, instructions: []};
 }
 
+/*
+ * Renames a binding in the input AST so that it matches the (possibly
+ * uniquified) name we assigned it in HIR.
+ *
+ * `Binding`'s scope `rename()` visits declarations and assignment expressions,
+ * but it never visits the left-hand side of a `for..of` / `for..in` statement.
+ * A binding that is destructured there therefore keeps its original name, so a
+ * function that bails out after the rename is emitted assigning to a name that
+ * is no longer declared.
+ */
+function renameBabelBinding(
+  binding: Binding,
+  originalName: string,
+  newName: string,
+): void {
+  binding.scope.rename(originalName, newName);
+  for (const violation of binding.constantViolations) {
+    if (!violation.isForXStatement()) {
+      continue;
+    }
+    const left = violation.node.left;
+    if (left.type !== 'ObjectPattern' && left.type !== 'ArrayPattern') {
+      continue;
+    }
+    const identifiers = t.getBindingIdentifiers(left, /* duplicates */ true)[
+      originalName
+    ];
+    if (identifiers === undefined) {
+      continue;
+    }
+    for (const identifier of Array.isArray(identifiers)
+      ? identifiers
+      : [identifiers]) {
+      identifier.name = newName;
+    }
+  }
+}
+
 export type Bindings = Map<
   string,
   {node: t.Identifier; identifier: Identifier}
@@ -290,7 +328,11 @@ export default class HIRBuilder {
 
     const resolvedBinding = this.resolveBinding(babelBinding.identifier);
     if (resolvedBinding.name && resolvedBinding.name.value !== originalName) {
-      babelBinding.scope.rename(originalName, resolvedBinding.name.value);
+      renameBabelBinding(
+        babelBinding,
+        originalName,
+        resolvedBinding.name.value,
+      );
     }
     return {
       kind: 'Identifier',
