@@ -735,70 +735,55 @@ pub trait ReactiveFunctionTransform {
         Ok(Transformed::Keep)
     }
 
+    fn transform_statement(
+        &mut self,
+        statement: &mut ReactiveStatement,
+        state: &mut Self::State,
+    ) -> Result<Transformed<ReactiveStatement>, CompilerError> {
+        match statement {
+            ReactiveStatement::Instruction(instruction) => {
+                self.transform_instruction(instruction, state)
+            }
+            ReactiveStatement::Scope(scope) => self.transform_scope(scope, state),
+            ReactiveStatement::PrunedScope(scope) => self.transform_pruned_scope(scope, state),
+            ReactiveStatement::Terminal(terminal) => self.transform_terminal(terminal, state),
+        }
+    }
+
     fn traverse_block(
         &mut self,
         block: &mut ReactiveBlock,
         state: &mut Self::State,
     ) -> Result<(), CompilerError> {
-        let mut next_block: Option<Vec<ReactiveStatement>> = None;
-        let len = block.len();
-        for i in 0..len {
-            // Take the statement out temporarily
-            let mut stmt = std::mem::replace(
-                &mut block[i],
-                // Placeholder — will be overwritten or discarded
-                ReactiveStatement::Instruction(ReactiveInstruction {
-                    id: EvaluationOrder(0),
-                    lvalue: None,
-                    value: ReactiveValue::Instruction(
-                        react_compiler_hir::InstructionValue::Debugger { loc: None },
-                    ),
-                    effects: None,
-                    loc: None,
-                }),
-            );
-            let transformed = match &mut stmt {
-                ReactiveStatement::Instruction(instr) => {
-                    self.transform_instruction(instr, state)?
-                }
-                ReactiveStatement::Scope(scope) => self.transform_scope(scope, state)?,
-                ReactiveStatement::PrunedScope(scope) => {
-                    self.transform_pruned_scope(scope, state)?
-                }
-                ReactiveStatement::Terminal(terminal) => {
-                    self.transform_terminal(terminal, state)?
-                }
+        let mut index = 0;
+        let first_change = loop {
+            let Some(statement) = block.get_mut(index) else {
+                return Ok(());
             };
-            match transformed {
-                Transformed::Keep => {
-                    if let Some(ref mut nb) = next_block {
-                        nb.push(stmt);
-                    } else {
-                        // Put it back
-                        block[i] = stmt;
-                    }
-                }
-                Transformed::Remove => {
-                    if next_block.is_none() {
-                        next_block = Some(block[..i].to_vec());
-                    }
-                }
+            match self.transform_statement(statement, state)? {
+                Transformed::Keep => index += 1,
                 Transformed::Replace(replacement) => {
-                    if next_block.is_none() {
-                        next_block = Some(block[..i].to_vec());
-                    }
-                    next_block.as_mut().unwrap().push(replacement);
+                    block[index] = replacement;
+                    index += 1;
                 }
-                Transformed::ReplaceMany(replacements) => {
-                    if next_block.is_none() {
-                        next_block = Some(block[..i].to_vec());
-                    }
-                    next_block.as_mut().unwrap().extend(replacements);
-                }
+                change => break change,
             }
+        };
+
+        let mut tail = block.split_off(index).into_iter();
+        tail.next();
+        match first_change {
+            Transformed::Remove => {}
+            Transformed::ReplaceMany(replacements) => block.extend(replacements),
+            Transformed::Keep | Transformed::Replace(_) => unreachable!(),
         }
-        if let Some(nb) = next_block {
-            *block = nb;
+        for mut statement in tail {
+            match self.transform_statement(&mut statement, state)? {
+                Transformed::Keep => block.push(statement),
+                Transformed::Remove => {}
+                Transformed::Replace(replacement) => block.push(replacement),
+                Transformed::ReplaceMany(replacements) => block.extend(replacements),
+            }
         }
         Ok(())
     }
