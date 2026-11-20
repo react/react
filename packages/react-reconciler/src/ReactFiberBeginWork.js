@@ -178,6 +178,7 @@ import {
   isPrimaryRenderer,
   getResource,
   createHoistableInstance,
+  updateFragmentInstanceFiber,
   HostTransitionContext,
 } from './ReactFiberConfig';
 import type {ActivityInstance, SuspenseInstance} from './ReactFiberConfig';
@@ -1366,6 +1367,16 @@ function updateFragment(
 ) {
   const nextChildren = workInProgress.pendingProps;
   markRef(current, workInProgress);
+  if (current !== null && current.stateNode !== null) {
+    // A Fragment with a ref exposes a FragmentInstance that answers from the
+    // committed tree by walking from this fiber. The mutation phase repoints
+    // that fiber, but it skips a Fragment that was cloned without anything
+    // below it mutating. Then the instance still points at this fiber, which we
+    // are about to reuse as the work-in-progress and reconcile the rendered
+    // children onto, so reads would see a render that may never commit. Point
+    // it back at the committed fiber before that happens.
+    updateFragmentInstanceFiber(current, current.stateNode);
+  }
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   return workInProgress.child;
 }
@@ -3987,6 +3998,16 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
     }
     case HostPortal:
       pushHostContainer(workInProgress, workInProgress.stateNode.containerInfo);
+      break;
+    case Fragment:
+      // A Fragment instance answers from the committed tree by walking from the
+      // fiber stored on it, which the mutation phase repoints. A Fragment that
+      // bails out is never visited there, so the instance keeps pointing at the
+      // fiber we are about to reuse as the work-in-progress one. Point it back
+      // at the committed fiber, same as `updateFragment` does when it renders.
+      if (current.stateNode !== null) {
+        updateFragmentInstanceFiber(current, current.stateNode);
+      }
       break;
     case ContextProvider: {
       const newValue = workInProgress.memoizedProps.value;
