@@ -66,52 +66,138 @@ export function createLedgerCell(type: Ledger<empty>): LedgerCell {
   }
 }
 
-// Ledger rows form a graph alongside the model. The client decodes them
-// without initializing model chunks and computes each total from the graph.
+// Only Set Ledgers hold a mutable value. Copy it before exposing it to a
+// consumer so mutations cannot change the cached reduction. Scalars can be shared.
+export function cloneLedgerCellValue(
+  cell: LedgerCell,
+): boolean | number | null | Set<mixed> {
+  return cell.kind === SET_LEDGER ? new Set(cell.state) : cell.state;
+}
+
+// Units retain writes where they occurred. Each total traverses the graph to
+// determine which units belong to its capture, then retains that reduction.
+// Ledger rows describe this work without requiring the model to be initialized.
 
 export type UnitRecord = {
   children: null | Array<UnitRecord>,
   capturedLedgers: null | Array<Ledger<empty>>,
   cells: null | Map<Ledger<empty>, LedgerCell>,
   // Reused units may be declared later, or have no ledger records at all.
-  references: null | Array<number>,
+  references: null | Array<UnitRecord>,
+  isQueued: boolean,
+  nextDirty: null | UnitRecord,
 };
 
 // The decoded unit graph of one response.
 export type LedgerGraph = {
-  units: Map<number, UnitRecord>,
+  // The client extends these records with its chunks; reduction only reads the map.
+  // eslint-disable-next-line no-undef
+  +totals: $ReadOnlyMap<number, LedgerTotalRecord>,
+  isTracking: boolean,
+  dirtyUnits: null | UnitRecord,
+  // A closed graph can never change again.
+  closed: boolean,
   ...
 };
 
-// Points at its response's unit graph.
+// Each capture owns its reduction. Forwarding and the final client read share
+// that computation; destinations only track what they have emitted.
 export type LedgerTotalRecord = {
   type: Ledger<empty>,
-  roots: Array<UnitRecord>,
-  graph: LedgerGraph,
+  // The decoder appends new capture occurrences here for the next traversal.
+  pendingCaptureUnits: Array<UnitRecord>,
+  // Cleared once the closed graph has been fully reduced for this total.
+  graph: null | LedgerGraph,
+  cell: null | LedgerCell,
+  // Retained between updates for membership checks and traversal of new work.
+  visitedUnits: null | WeakSet<UnitRecord>,
   ...
 };
 
-// Compute one captured ledger's total from the unit graph. The server records
-// writes where they happen; the client determines which capture receives them.
-export function reduceLedgerCell(total: LedgerTotalRecord): LedgerCell {
-  const type = total.type;
-  // Use a fresh accumulator so the result doesn't alias cells shared by
-  // other captures.
-  const acc = createLedgerCell(type);
-  const units = total.graph.units;
-  // Start at this total's capture occurrences. The traversal appends other
-  // units to the worklist, so use a copy of the roots.
-  const queue = total.roots.slice();
+// A total decoded from another response: the total symbol as $$typeof, and
+// the record a server serializing it into its own response forwards from.
+export type DecodedLedgerTotal = {
+  $$typeof: symbol,
+  total: LedgerTotalRecord,
+  ...
+};
 
-  // Reuse can form cycles or reach the same work along several paths. Expand
-  // each unit only once per total.
-  const visited: Set<UnitRecord> = new Set();
+// Forwarding and the final client read share this computation. A poll advances
+// all started totals before consuming the dirty queue, so destinations can read
+// the cached results independently without keeping their own change histories.
+export function readLedgerTotal(total: LedgerTotalRecord): LedgerCell {
+  const graph = total.graph;
+  if (graph !== null) {
+    const dirty = graph.dirtyUnits;
+    if (dirty !== null) {
+      graph.totals.forEach(record => {
+        updateLedgerTotal(record, dirty);
+      });
+      let unit: null | UnitRecord = dirty;
+      while (unit !== null) {
+        const next = unit.nextDirty;
+        unit.isQueued = false;
+        unit.nextDirty = null;
+        unit = next;
+      }
+      graph.dirtyUnits = null;
+    }
+  }
+  let cell = total.cell;
+  if (cell === null) {
+    // Other totals may have consumed earlier dirty queues. This total's first
+    // traversal reads current cells, which still account for those writes.
+    total.cell = cell = createLedgerCell(total.type);
+    total.visitedUnits = new WeakSet();
+    updateLedgerTotal(total, null);
+  }
+  if (graph !== null) {
+    if (graph.closed) {
+      // The reduction is complete. Keep its cell for later forwarding.
+      total.graph = null;
+      total.visitedUnits = null;
+    } else if (!graph.isTracking) {
+      // The first read accounts for earlier writes. Only subsequent changes
+      // need to be queued, so ordinary client decoding doesn't track them.
+      graph.isTracking = true;
+    }
+  }
+  return cell;
+}
+
+function updateLedgerTotal(
+  total: LedgerTotalRecord,
+  dirty: null | UnitRecord,
+): void {
+  const acc = total.cell;
+  const visitedUnits = total.visitedUnits;
+  if (acc === null || visitedUnits === null) {
+    return;
+  }
+  const type = total.type;
+  const queue: Array<UnitRecord> = [];
+  // First select dirty units already visited by this total. Do this before
+  // adding new capture units, so a unit in both lists is queued only once.
+  let changed: null | UnitRecord = dirty;
+  while (changed !== null) {
+    if (visitedUnits.has(changed)) {
+      queue.push(changed);
+    }
+    changed = changed.nextDirty;
+  }
+  const pendingCaptureUnits = total.pendingCaptureUnits;
+  for (let i = 0; i < pendingCaptureUnits.length; i++) {
+    const unit = pendingCaptureUnits[i];
+    if (!visitedUnits.has(unit)) {
+      visitedUnits.add(unit);
+      queue.push(unit);
+    }
+  }
+  // Newly reached units may contain writes from before the previous poll.
+  // Recombining a dirty unit's whole cell is also safe: the Ledger operations
+  // tolerate repeated contributions, so we don't need individual write deltas.
   for (let i = 0; i < queue.length; i++) {
     const unit = queue[i];
-    if (visited.has(unit)) {
-      continue;
-    }
-    visited.add(unit);
     const cells = unit.cells;
     const cell = cells === null ? undefined : cells.get(type);
     if (cell !== undefined) {
@@ -157,8 +243,9 @@ export function reduceLedgerCell(total: LedgerTotalRecord): LedgerCell {
     const references = unit.references;
     if (references !== null) {
       for (let j = 0; j < references.length; j++) {
-        const target = units.get(references[j]);
-        if (target !== undefined) {
+        const target = references[j];
+        if (!visitedUnits.has(target)) {
+          visitedUnits.add(target);
           queue.push(target);
         }
       }
@@ -175,11 +262,15 @@ export function reduceLedgerCell(total: LedgerTotalRecord): LedgerCell {
         if (capturedLedgers !== null && capturedLedgers.indexOf(type) !== -1) {
           continue;
         }
-        queue.push(child);
+        if (!visitedUnits.has(child)) {
+          visitedUnits.add(child);
+          queue.push(child);
+        }
       }
     }
   }
-  return acc;
+  // The visited set remembers these units; later declarations add occurrences.
+  pendingCaptureUnits.length = 0;
 }
 
 // Set entries use the same scalar encoding as model values.
