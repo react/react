@@ -26,18 +26,11 @@ function injectProxy() {
 
     listenToMessagesFromBackend();
     connectPort();
-    sayHelloToBackendManager();
 
     // The backend waits to install the global hook until notified by the content script.
-    // In the event of a page reload, the content script might be loaded before the backend manager is injected.
-    // Because of this we need to poll the backend manager until it has been initialized.
-    backendManagerHelloIntervalID = setInterval(() => {
-      if (backendInitialized) {
-        stopPollingForBackendManager();
-      } else {
-        sayHelloToBackendManager();
-      }
-    }, 500);
+    // If the backend manager is already injected, this hello reaches it. Otherwise, the
+    // backend manager announces itself once it's injected and we say hello again then.
+    sayHelloToBackendManager();
   }
 }
 
@@ -65,28 +58,17 @@ window.addEventListener('pagehide', function ({target}) {
   }
 
   isTransportActive = false;
-  backendInitialized = false;
   isBridgeConnected = false;
   pendingMessages.length = 0;
-  stopPollingForBackendManager();
 
   delete window.__REACT_DEVTOOLS_PROXY_INJECTED__;
 });
 
 let port: ExtensionRuntimePort | null = null;
 let isTransportActive: boolean = true;
-let backendInitialized: boolean = false;
 let isBridgeConnected: boolean = false;
 let isListeningToMessagesFromBackend: boolean = false;
 const pendingMessages: Array<mixed> = [];
-let backendManagerHelloIntervalID: IntervalID | null = null;
-
-function stopPollingForBackendManager() {
-  if (backendManagerHelloIntervalID !== null) {
-    clearInterval(backendManagerHelloIntervalID);
-    backendManagerHelloIntervalID = null;
-  }
-}
 
 function listenToMessagesFromBackend() {
   if (!isListeningToMessagesFromBackend) {
@@ -177,8 +159,6 @@ function handleMessageFromPage(event: any) {
   switch (event.data.source) {
     // This is a message from a bridge (initialized by a devtools backend)
     case 'react-devtools-bridge': {
-      backendInitialized = true;
-
       pendingMessages.push(event.data.payload);
       flushPendingMessages();
       break;
