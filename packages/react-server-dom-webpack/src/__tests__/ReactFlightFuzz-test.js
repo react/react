@@ -44,10 +44,7 @@ const {
   compareTemporaryReferences,
 } = require('./fuzz/FlightFuzzTemporaryReferences');
 
-// TODO: Remove the CI check once the remaining fixes have landed. Until then,
-// a random seed can generate cases that still fail, and the scheduled CI job
-// passes a random seed. So in CI we always use the default one.
-const SEED = (!process.env.CI && process.env.FUZZ_TEST_SEED) || 'default';
+const SEED = process.env.FUZZ_TEST_SEED || 'default';
 const caseCount = +(process.env.FLIGHT_FUZZ_CASES ?? 4);
 const shrinkBudget = +(process.env.FLIGHT_FUZZ_SHRINK ?? 0);
 if (!Number.isSafeInteger(caseCount) || caseCount < 1) {
