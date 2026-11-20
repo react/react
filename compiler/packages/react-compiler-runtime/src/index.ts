@@ -91,9 +91,19 @@ enum GuardKind {
   PopExpectHook = 3,
 }
 
+function getCurrent() {
+  return 'H' in ReactSecretInternals
+    ? ReactSecretInternals.H
+    : ReactSecretInternals.ReactCurrentDispatcher.current;
+}
+
 function setCurrent(newDispatcher: any) {
-  ReactSecretInternals.ReactCurrentDispatcher.current = newDispatcher;
-  return ReactSecretInternals.ReactCurrentDispatcher.current;
+  if ('H' in ReactSecretInternals) {
+    ReactSecretInternals.H = newDispatcher;
+  } else {
+    ReactSecretInternals.ReactCurrentDispatcher.current = newDispatcher;
+  }
+  return newDispatcher;
 }
 
 const guardFrames: Array<unknown> = [];
@@ -134,7 +144,7 @@ const guardFrames: Array<unknown> = [];
  * ```
  */
 export function $dispatcherGuard(kind: GuardKind) {
-  const curr = ReactSecretInternals.ReactCurrentDispatcher.current;
+  const curr = getCurrent();
   if (kind === GuardKind.PushGuardContext) {
     // Push before checking invariant or errors
     guardFrames.push(curr);
