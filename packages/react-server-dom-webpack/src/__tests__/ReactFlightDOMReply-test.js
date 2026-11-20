@@ -411,6 +411,47 @@ describe('ReactFlightDOMReply', () => {
     expect(response.children).toBe(children);
   });
 
+  it('can pass JSX under an escaped property name using temporary references', async () => {
+    function Component() {
+      return <div />;
+    }
+
+    const children = <Component />;
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+    const body = await ReactServerDOMClient.encodeReply(
+      {'%3A:children': children},
+      {
+        temporaryReferences,
+      },
+    );
+
+    const temporaryReferencesServer =
+      ReactServerDOMServer.createTemporaryReferenceSet();
+    const serverPayload = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+      {temporaryReferences: temporaryReferencesServer},
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {children: serverPayload['%3A:children']},
+        null,
+        {temporaryReferences: temporaryReferencesServer},
+      ),
+    );
+    const response = await ReactServerDOMClient.createFromReadableStream(
+      stream,
+      {
+        temporaryReferences,
+      },
+    );
+
+    // This should've been the same reference that we already saw.
+    expect(response.children).toBe(children);
+  });
+
   it('can pass JSX as root model through a round trip using temporary references', async () => {
     const jsx = <div />;
 

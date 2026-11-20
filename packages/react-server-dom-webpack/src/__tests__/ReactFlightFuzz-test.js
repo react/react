@@ -2146,9 +2146,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
     });
   }
   describe('other graphs', () => {
-    // This hangs until colons in reference paths are escaped.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip.each([':', '%3A:', ':%25:'])(
+    it.each([':', '%3A:', ':%25:'])(
       'a cycle through the property name %j',
       key =>
         runGraph({
@@ -2348,17 +2346,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
           it(formatCaseName('graph', seed, readTiming, scheduleIndex), () =>
             runGraph({
               ...generateGraph(seed, {
-                without:
-                  host === 'reply'
-                    ? [
-                        ...unsupportedReplyOperations,
-                        // These produce cases that fail for now.
-                        'colon',
-                      ]
-                    : [
-                        // These produce cases that fail for now.
-                        'colon',
-                      ],
+                without: host === 'reply' ? unsupportedReplyOperations : [],
               }),
               seed,
               readTiming,
@@ -2638,11 +2626,7 @@ describe('ReactFlightFuzz (reply-temporary)', () => {
       it('graph seed=' + seed, () =>
         runGraph(
           generateGraph(seed, {
-            without: [
-              ...REPLY_TEMPORARY_WITHOUT,
-              // These produce cases that fail for now.
-              'colon',
-            ],
+            without: REPLY_TEMPORARY_WITHOUT,
             extra: REPLY_TEMPORARY_EXTRA,
           }),
           seed,

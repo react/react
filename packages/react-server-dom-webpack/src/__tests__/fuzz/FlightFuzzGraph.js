@@ -264,11 +264,7 @@ function generateGraph(seed, {without = [], extra = []} = {}) {
         '🙂' + i,
         'constructor' + i,
       ];
-      const key = pickFrom(
-        without.includes('colon')
-          ? keys.filter(name => !name.includes(':'))
-          : keys,
-      );
+      const key = pickFrom(keys);
       node.object[key] = item;
     } else {
       node[getNodeType(node)].push(item);

@@ -51,6 +51,7 @@ import {
   usedWithSSR,
   checkEvalAvailabilityOnceDev,
 } from './ReactFlightClientConfig';
+import {escapePathSegment} from 'shared/ReactFlightReferencePath';
 
 type ReactJSONValue =
   | string
@@ -536,13 +537,12 @@ export function processReply(
       }
       switch ((value as any).$$typeof) {
         case REACT_ELEMENT_TYPE: {
-          if (temporaryReferences !== undefined && key.indexOf(':') === -1) {
-            // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
+          if (temporaryReferences !== undefined) {
             const parentReference = writtenObjects.get(parent);
             if (parentReference !== undefined) {
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
-              const reference = parentReference + ':' + key;
+              const reference = parentReference + ':' + escapePathSegment(key);
               // Store this object so that the server can refer to it later in responses.
               writeTemporaryReference(temporaryReferences, reference, value);
               return serializeTemporaryReferenceMarker();
@@ -687,13 +687,12 @@ export function processReply(
           // just refer to that by its existing ID.
           return existingReference;
         }
-      } else if (key.indexOf(':') === -1) {
-        // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
+      } else {
         const parentReference = writtenObjects.get(parent);
         if (parentReference !== undefined) {
           // If the parent has a reference, we can refer to this object indirectly
           // through the property name inside that parent.
-          const reference = parentReference + ':' + key;
+          const reference = parentReference + ':' + escapePathSegment(key);
           writtenObjects.set(value, reference);
           if (temporaryReferences !== undefined) {
             // Store this object so that the server can refer to it later in responses.
@@ -951,13 +950,12 @@ export function processReply(
         writtenObjects.set(value, serverReferenceId);
         return serverReferenceId;
       }
-      if (temporaryReferences !== undefined && key.indexOf(':') === -1) {
-        // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
+      if (temporaryReferences !== undefined) {
         const parentReference = writtenObjects.get(parent);
         if (parentReference !== undefined) {
           // If the parent has a reference, we can refer to this object indirectly
           // through the property name inside that parent.
-          const reference = parentReference + ':' + key;
+          const reference = parentReference + ':' + escapePathSegment(key);
           // Store this object so that the server can refer to it later in responses.
           writeTemporaryReference(temporaryReferences, reference, value);
           return serializeTemporaryReferenceMarker();
@@ -970,13 +968,12 @@ export function processReply(
     }
 
     if (typeof value === 'symbol') {
-      if (temporaryReferences !== undefined && key.indexOf(':') === -1) {
-        // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
+      if (temporaryReferences !== undefined) {
         const parentReference = writtenObjects.get(parent);
         if (parentReference !== undefined) {
           // If the parent has a reference, we can refer to this object indirectly
           // through the property name inside that parent.
-          const reference = parentReference + ':' + key;
+          const reference = parentReference + ':' + escapePathSegment(key);
           // Store this object so that the server can refer to it later in responses.
           writeTemporaryReference(temporaryReferences, reference, value);
           return serializeTemporaryReferenceMarker();
