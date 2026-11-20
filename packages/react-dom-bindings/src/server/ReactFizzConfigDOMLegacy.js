@@ -41,7 +41,7 @@ import type {FormStatus} from '../shared/ReactDOMFormActions';
 
 import {NotPending} from '../shared/ReactDOMFormActions';
 
-export const isPrimaryRenderer = false;
+export const isPrimaryRenderer: boolean = false;
 
 export type RenderState = {
   // Keep this in sync with ReactFizzConfigDOM
