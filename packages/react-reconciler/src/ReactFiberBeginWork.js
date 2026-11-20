@@ -83,6 +83,7 @@ import {
   Throw,
   ViewTransitionComponent,
   ActivityComponent,
+  DehydratedFragment,
 } from './ReactWorkTags';
 import {
   NoFlags,
@@ -3188,6 +3189,70 @@ function updateDehydratedSuspenseComponent(
       // Suspended but we should no longer be in dehydrated mode.
       // Therefore we now have to render the fallback.
       pushFallbackTreeSuspenseHandler(workInProgress);
+
+      // If the server bailed out and left a permanent fallback behind (that's
+      // what use(browser()) does), then the DOM inside the dehydrated fragment
+      // already *is* the fallback we are about to render. The retry on the
+      // client can suspend for an unrelated reason - a promise created in the
+      // browser, say from localStorage or IndexedDB. Deleting the server's
+      // nodes only to mount an identical copy is pure churn: CSS animations
+      // restart and any DOM state the fallback accumulated is thrown away.
+      //
+      // So keep the server's fallback mounted and park a hidden primary tree
+      // next to it for the retry to continue in. This is the same idea as
+      // #24236, but that one threw the commit away, which is what broke late
+      // mutations on WWW and got it reverted in #24434. Rewiring the tree
+      // instead keeps the commit intact.
+      const dehydratedChild: Fiber | null = current.child;
+      if (
+        dehydratedChild !== null &&
+        dehydratedChild.tag === DehydratedFragment &&
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST
+      ) {
+        const dehydrated: Fiber = dehydratedChild;
+        const primaryChildFragment = mountWorkInProgressOffscreenFiber(
+          {mode: 'hidden', children: nextProps.children},
+          workInProgress.mode,
+          NoLanes,
+        );
+        primaryChildFragment.memoizedState =
+          mountSuspenseOffscreenState(renderLanes);
+        primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
+          current,
+          didPrimaryChildrenDefer,
+          renderLanes,
+        );
+        // The dehydrated fragment becomes the fallback child, so it is no
+        // longer something the first pass wanted to delete.
+        primaryChildFragment.return = workInProgress;
+        primaryChildFragment.sibling = dehydrated;
+        dehydrated.return = workInProgress;
+        workInProgress.child = primaryChildFragment;
+        workInProgress.memoizedState = SUSPENDED_MARKER;
+        // If the first pass already queued the dehydrated fragment for
+        // deletion, take it back out - it is staying after all.
+        const deletions = workInProgress.deletions;
+        if (deletions !== null) {
+          for (let i = deletions.length - 1; i >= 0; i--) {
+            if (deletions[i] === dehydrated) {
+              deletions.splice(i, 1);
+            }
+          }
+          if (deletions.length === 0) {
+            workInProgress.deletions = null;
+            workInProgress.flags &= ~ChildDeletion;
+          }
+        }
+        // Note: bailoutOffscreenComponent would hand back the dehydrated
+        // fragment as the next unit of work. There is nothing to render
+        // inside it - it is server HTML that has to stay as-is - so stop
+        // here instead. We still call it to initialize the offscreen
+        // instance the commit expects.
+        bailoutOffscreenComponent(null, primaryChildFragment);
+        return null;
+      }
 
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
