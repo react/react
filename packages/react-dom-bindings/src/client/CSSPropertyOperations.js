@@ -11,6 +11,7 @@ import hyphenateStyleName from '../shared/hyphenateStyleName';
 import warnValidStyle from '../shared/warnValidStyle';
 import isUnitlessNumber from '../shared/isUnitlessNumber';
 import {checkCSSPropertyStringCoercion} from 'shared/CheckStringCoercion';
+import hasOwnProperty from 'shared/hasOwnProperty';
 import {trackHostMutation} from 'react-reconciler/src/ReactFiberMutationTracking';
 
 /**
@@ -28,7 +29,7 @@ export function createDangerousStringForStyles(styles) {
     let serialized = '';
     let delimiter = '';
     for (const styleName in styles) {
-      if (!styles.hasOwnProperty(styleName)) {
+      if (!hasOwnProperty.call(styles, styleName)) {
         continue;
       }
       const value = styles[styleName];
@@ -133,8 +134,8 @@ export function setValueForStyles(node, styles, prevStyles) {
 
     for (const styleName in prevStyles) {
       if (
-        prevStyles.hasOwnProperty(styleName) &&
-        (styles == null || !styles.hasOwnProperty(styleName))
+        hasOwnProperty.call(prevStyles, styleName) &&
+        (styles == null || !hasOwnProperty.call(styles, styleName))
       ) {
         // Clear style
         const isCustomProperty = styleName.indexOf('--') === 0;
@@ -150,14 +151,17 @@ export function setValueForStyles(node, styles, prevStyles) {
     }
     for (const styleName in styles) {
       const value = styles[styleName];
-      if (styles.hasOwnProperty(styleName) && prevStyles[styleName] !== value) {
+      if (
+        hasOwnProperty.call(styles, styleName) &&
+        prevStyles[styleName] !== value
+      ) {
         setValueForStyle(style, styleName, value);
         trackHostMutation();
       }
     }
   } else {
     for (const styleName in styles) {
-      if (styles.hasOwnProperty(styleName)) {
+      if (hasOwnProperty.call(styles, styleName)) {
         const value = styles[styleName];
         setValueForStyle(style, styleName, value);
       }
@@ -212,7 +216,10 @@ function validateShorthandPropertyCollisionInDev(prevStyles, nextStyles) {
     const expandedUpdates = {};
     if (prevStyles) {
       for (const key in prevStyles) {
-        if (prevStyles.hasOwnProperty(key) && !nextStyles.hasOwnProperty(key)) {
+        if (
+          hasOwnProperty.call(prevStyles, key) &&
+          !hasOwnProperty.call(nextStyles, key)
+        ) {
           const longhands = shorthandToLonghand[key] || [key];
           for (let i = 0; i < longhands.length; i++) {
             expandedUpdates[longhands[i]] = key;
@@ -222,7 +229,7 @@ function validateShorthandPropertyCollisionInDev(prevStyles, nextStyles) {
     }
     for (const key in nextStyles) {
       if (
-        nextStyles.hasOwnProperty(key) &&
+        hasOwnProperty.call(nextStyles, key) &&
         (!prevStyles || prevStyles[key] !== nextStyles[key])
       ) {
         const longhands = shorthandToLonghand[key] || [key];
