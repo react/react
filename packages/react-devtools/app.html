@@ -163,7 +163,7 @@
       const localIp = ip.address();
 
       // Effective values for display URLs: client overrides take precedence over server values.
-      const effectiveHost = clientHost != null ? clientHost : host;
+      const effectiveHost = clientHost != null ? clientHost : host != null ? host : 'localhost';
       const effectivePort = clientPort != null ? clientPort : port;
       const effectiveUseHttps = clientUseHttps != null ? clientUseHttps : useHttps;
       const effectiveProtocol = effectiveUseHttps ? 'https' : 'http';
