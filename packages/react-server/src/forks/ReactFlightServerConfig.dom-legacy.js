@@ -26,7 +26,7 @@ export const supportsRequestStorage = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;
-export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =
+export const componentStorage: AsyncLocalStorage<WeakRef<ReactComponentInfo> | void> =
   null as any;
 
 export function createHints(): any {
