@@ -597,5 +597,10 @@
   "609": "Cannot access %s on the client. You cannot read a Server Reference to an object on the client. You can only pass it back to the server.",
   "610": "Cannot assign to a Server Reference to an object on the client.",
   "611": "Expected a Server Reference to an object to resolve to an object.",
-  "612": "Cannot transport a detached buffer. This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`."
+  "612": "Cannot transport a detached buffer. This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.",
+  "613": "A Flight tee can only be read once. Read any later copies from the stream.",
+  "614": "The tee was created by a different version of React than the one rendering. The Flight Client and Server must be the same version.",
+  "615": "The tee is already being written to by another render. A tee can only be passed to one render.",
+  "616": "createTee is not supported in this build of React.",
+  "617": "The tee has not been passed to a render. Pass it as the `tee` option of a Flight render before reading it."
 }
