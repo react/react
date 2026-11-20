@@ -6432,6 +6432,10 @@ function flushCompletedQueues(
     const partialBoundaries = request.partialBoundaries;
     for (i = 0; i < partialBoundaries.length; i++) {
       const boundary = partialBoundaries[i];
+      if (boundary.status === CLIENT_RENDERED) {
+        // This boundary errored or was aborted after its segments were queued.
+        continue;
+      }
       if (!flushPartialBoundary(request, destination, boundary)) {
         request.destination = null;
         i++;

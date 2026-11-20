@@ -345,6 +345,90 @@ describe('ReactDOMFizzServerNode', () => {
     expect(allReadyCalls).toBe(1);
   });
 
+  it('finishes streaming when a queued partial boundary errors during backpressure', async () => {
+    let resolveContent;
+    const content = new Promise(resolve => {
+      resolveContent = resolve;
+    });
+    let resolveError;
+    const errorReady = new Promise(resolve => {
+      resolveError = resolve;
+    });
+
+    function LargeContent() {
+      React.use(content);
+      return <div>{'x'.repeat(20000)}</div>;
+    }
+
+    function ErrorAfterSuspending() {
+      React.use(errorReady);
+      throw theError;
+    }
+
+    function PartialContent() {
+      React.use(content);
+      return (
+        <section>
+          Partial content
+          <ErrorAfterSuspending />
+        </section>
+      );
+    }
+
+    let releaseWrite;
+    let result = '';
+    const writable = new Stream.Writable({
+      highWaterMark: 1,
+      write(chunk, encoding, callback) {
+        result += chunk.toString();
+        if (releaseWrite === undefined) {
+          releaseWrite = callback;
+        } else {
+          callback();
+        }
+      },
+    });
+    const completed = new Promise(resolve => {
+      writable.on('finish', () => resolve(null));
+      writable.on('error', resolve);
+    });
+
+    const errors = [];
+    await act(() => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
+        <div>
+          <Suspense fallback="Loading large content">
+            <LargeContent />
+          </Suspense>
+          <Suspense fallback="Loading partial content">
+            <PartialContent />
+          </Suspense>
+        </div>,
+        {
+          bootstrapScriptContent: 'INIT();',
+          onError(error) {
+            errors.push(error);
+            return 'test-digest';
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    // The large boundary flushes first, leaving the second boundary queued.
+    await act(() => resolveContent());
+    await act(() => resolveError());
+    expect(errors).toEqual([theError]);
+
+    await act(() => releaseWrite());
+    expect(await completed).toBe(null);
+    expect(errors).toEqual([theError]);
+    expect(result).toContain('Loading partial content');
+    expect(result).toContain('test-digest');
+    expect(result).not.toContain('Partial content');
+    expect(result).toContain('INIT();');
+  });
+
   it('should not attempt to render the fallback if the main content completes first', async () => {
     const {writable, output, completed} = getTestWritable();
 
