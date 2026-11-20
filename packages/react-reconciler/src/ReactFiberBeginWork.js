@@ -78,6 +78,7 @@ import {
   ScopeComponent,
   OffscreenComponent,
   LegacyHiddenComponent,
+  DehydratedFragment,
   CacheComponent,
   TracingMarkerComponent,
   Throw,
@@ -2614,6 +2615,13 @@ function updateSuspenseComponent(
         renderLanes,
       );
       workInProgress.memoizedState = SUSPENDED_MARKER;
+      const fallbackChild = primaryChildFragment.sibling;
+      if (fallbackChild !== null && fallbackChild.tag === DehydratedFragment) {
+        // A preserved SSR fallback (see updateDehydratedSuspenseComponent).
+        // Its DOM is already live and it must not be begun; complete the
+        // boundary directly.
+        return null;
+      }
       return bailoutOffscreenComponent(current.child, primaryChildFragment);
     } else {
       if (
@@ -2849,10 +2857,33 @@ function updateSuspenseFallbackChildren(
   }
   let fallbackChildFragment;
   if (currentFallbackChildFragment !== null) {
-    fallbackChildFragment = createWorkInProgress(
-      currentFallbackChildFragment,
-      fallbackChildren,
-    );
+    if (currentFallbackChildFragment.tag === DehydratedFragment) {
+      // A preserved SSR fallback (kept in place by the hydration preserve path
+      // in updateDehydratedSuspenseComponent). Its DOM is already live and it
+      // must not be begun, so reattach the existing fiber instead of cloning it
+      // into a position React would try to render.
+      fallbackChildFragment = currentFallbackChildFragment;
+
+      // The primary pass queued this fragment for deletion. It stays mounted,
+      // so undo that.
+      const deletions = workInProgress.deletions;
+      if (deletions !== null) {
+        for (let i = deletions.length - 1; i >= 0; i--) {
+          if (deletions[i] === currentFallbackChildFragment) {
+            deletions.splice(i, 1);
+          }
+        }
+        if (deletions.length === 0) {
+          workInProgress.deletions = null;
+          workInProgress.flags &= ~ChildDeletion;
+        }
+      }
+    } else {
+      fallbackChildFragment = createWorkInProgress(
+        currentFallbackChildFragment,
+        fallbackChildren,
+      );
+    }
   } else {
     fallbackChildFragment = createFiberFromFragment(
       fallbackChildren,
@@ -3191,6 +3222,74 @@ function updateDehydratedSuspenseComponent(
 
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
+
+      const dehydratedFragment: Fiber | null = current.child as any;
+      if (
+        dehydratedFragment !== null &&
+        dehydratedFragment.tag === DehydratedFragment &&
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST
+      ) {
+        // The server shipped a recoverable fallback (e.g. the component
+        // requested a browser-only dependency and Fizz bailed out on this
+        // boundary). Hydrating it normally tears down the already-painted
+        // fallback DOM and mounts an identical client-rendered fallback, which
+        // restarts CSS-driven animations. Instead preserve the dehydrated
+        // fallback fiber: keep it mounted (undo the retry pass's deletion) and
+        // render the primary children into a hidden offscreen fragment so they
+        // can still resolve later.
+
+        // The primary render pass queued the dehydrated fragment for deletion.
+        // It stays mounted, so undo that.
+        const deletions = workInProgress.deletions;
+        if (deletions !== null) {
+          for (let i = deletions.length - 1; i >= 0; i--) {
+            if (deletions[i] === dehydratedFragment) {
+              deletions.splice(i, 1);
+            }
+          }
+          if (deletions.length === 0) {
+            workInProgress.deletions = null;
+            workInProgress.flags &= ~ChildDeletion;
+          }
+        }
+
+        const primaryChildProps: OffscreenProps = {
+          mode: 'hidden',
+          children: nextPrimaryChildren,
+        };
+        const primaryChildFragment = mountWorkInProgressOffscreenFiber(
+          primaryChildProps,
+          workInProgress.mode,
+          renderLanes,
+        );
+        primaryChildFragment.memoizedState = mountSuspenseOffscreenState(
+          renderLanes,
+        );
+        primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
+          current,
+          didPrimaryChildrenDefer,
+          renderLanes,
+        );
+        primaryChildFragment.return = workInProgress;
+        dehydratedFragment.return = workInProgress;
+        primaryChildFragment.sibling = dehydratedFragment;
+        workInProgress.child = primaryChildFragment;
+        // The normal path returns bailoutOffscreenComponent, which creates the
+        // OffscreenInstance. Since the preserved fallback must not be begun, do
+        // it explicitly here so the commit phase can read _visibility.
+        const primaryChildInstance: OffscreenInstance = {
+          _visibility: OffscreenVisible,
+          _pendingMarkers: null,
+          _retryCache: null,
+          _transitions: null,
+        };
+        primaryChildFragment.stateNode = primaryChildInstance;
+        workInProgress.memoizedState = SUSPENDED_MARKER;
+        return null;
+      }
+
       mountSuspenseFallbackAfterRetryWithoutHydrating(
         current,
         workInProgress,
