@@ -1401,9 +1401,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // Waits for stream items to get rows of their own; it hangs until then.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('streamed array containing itself', () =>
+    it('streamed array containing itself', () =>
       runGraph({
         nodes: {
           item: {array: ['item']},
@@ -1503,9 +1501,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'array', other: 'array'},
       }));
 
-    // Waits for stream items to get rows of their own; it hangs until then.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('async iterator with cyclic items and a return value', () =>
+    it('async iterator with cyclic items and a return value', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -2115,6 +2111,36 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         }),
     );
 
+    it('a failed stream item behind an item that waits for another stream', () =>
+      runGraph({
+        nodes: {
+          failing: {module: 'export-1', fail: 'load'},
+          shared: {array: []},
+          holder: {object: {shared: 'shared'}},
+          first: {array: ['holder']},
+          map: {map: [['failing', 'failing']]},
+          second: {array: ['map']},
+          waiting: {stream: ['first', 'second']},
+          twice: {object: {}},
+          inner: {array: ['twice']},
+          // The item refers to itself through `twice`, so it gets its own row
+          // and `first` refers into it.
+          owner: {array: ['shared', 'inner', 'twice', 'action']},
+          action: {bound: []},
+          source: {stream: ['owner']},
+        },
+        roots: {entry: 'source', other: 'waiting'},
+        events: [
+          'source item 0',
+          'close source',
+          'waiting item 0',
+          'waiting item 1',
+          'close waiting',
+          'reject failing',
+          'load action',
+        ],
+      }));
+
     it('module failing to load after eof', () =>
       runGraph({
         nodes: {
@@ -2254,9 +2280,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                 without: [
                   // These produce cases that fail for now.
                   'link',
-                  'stream',
-                  'canceled stream',
-                  'iterable',
                   'error',
                   'undefined',
                   'colon',
