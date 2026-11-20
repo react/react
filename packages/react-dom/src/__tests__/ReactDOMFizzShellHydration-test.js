@@ -835,4 +835,84 @@ describe('ReactDOMFizzShellHydration', () => {
       'Something went wrong: boomreadyresolved',
     );
   });
+
+  it('recovers from a concurrent error when the retry is only interrupted for selective hydration', async () => {
+    class ErrorBoundary extends React.Component {
+      state = {error: null};
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+      render() {
+        return this.state.error
+          ? 'Something went wrong: ' + this.state.error.message
+          : this.props.children;
+      }
+    }
+
+    let setTheme;
+    function Row({items, index}) {
+      // Torn read: the index arrives in an urgent update, the list in a
+      // transition. Rendering the urgent update alone throws.
+      if (index >= items.length) {
+        throw new Error('index ' + index + ' of ' + items.length);
+      }
+      return items[index];
+    }
+    function List() {
+      const [items, setItems] = React.useState(['a']);
+      const [index, setIndex] = React.useState(0);
+      React.useEffect(() => {
+        startTransition(() => {
+          setItems(['a', 'b', 'c']);
+          // Updates a Suspense boundary that has not hydrated yet.
+          setTheme('dark');
+        });
+        setIndex(2);
+      }, []);
+      return (
+        <ErrorBoundary>
+          <Row items={items} index={index} />
+        </ErrorBoundary>
+      );
+    }
+    function Theme({theme}) {
+      return <span>{'theme:' + theme}</span>;
+    }
+    function Sidebar() {
+      const [theme, set] = React.useState('light');
+      setTheme = set;
+      return (
+        <React.Suspense fallback="Loading...">
+          <Theme theme={theme} />
+        </React.Suspense>
+      );
+    }
+    function App() {
+      return (
+        <>
+          <List />
+          {'|'}
+          <Sidebar />
+        </>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    assertLog([]);
+
+    const errors = await hydrateRootAndCollectErrors(<App />);
+
+    // The synchronous retry renders both updates together and succeeds. It
+    // is interrupted for selective hydration along the way, which must not
+    // turn error recovery off.
+    expect(errors).toEqual([
+      expect.stringContaining(
+        'recoverable: There was an error during concurrent rendering but React was able to recover',
+      ),
+    ]);
+    expect(container.textContent).toBe('c|theme:dark');
+  });
 });
