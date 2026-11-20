@@ -865,7 +865,12 @@ function lowerStatement(
         });
         let test: Place | null = null;
         if (hasNode(testExpr)) {
-          test = lowerReorderableExpression(builder, testExpr);
+          /*
+           * Case tests are lowered before the switch terminal, so they are
+           * evaluated eagerly and in reverse order rather than lazily in source
+           * order. Calls could observe that, so they are not allowed here.
+           */
+          test = lowerReorderableExpression(builder, testExpr, false);
         }
         cases.push({
           test,
@@ -3099,8 +3104,9 @@ function lowerOptionalCallExpression(
 function lowerReorderableExpression(
   builder: HIRBuilder,
   expr: NodePath<t.Expression>,
+  allowCalls: boolean,
 ): Place {
-  if (!isReorderableExpression(builder, expr, true)) {
+  if (!isReorderableExpression(builder, expr, true, allowCalls)) {
     builder.recordError(
       new CompilerErrorDetail({
         reason: `(BuildHIR::node.lowerReorderableExpression) Expression type \`${expr.type}\` cannot be safely reordered`,
@@ -3117,6 +3123,7 @@ function isReorderableExpression(
   builder: HIRBuilder,
   expr: NodePath<t.Expression>,
   allowLocalIdentifiers: boolean,
+  allowCalls: boolean,
 ): boolean {
   switch (expr.node.type) {
     case 'Identifier': {
@@ -3132,7 +3139,12 @@ function isReorderableExpression(
       const innerExpr = (expr as NodePath<t.TSInstantiationExpression>).get(
         'expression',
       ) as NodePath<t.Expression>;
-      return isReorderableExpression(builder, innerExpr, allowLocalIdentifiers);
+      return isReorderableExpression(
+        builder,
+        innerExpr,
+        allowLocalIdentifiers,
+        allowCalls,
+      );
     }
     case 'RegExpLiteral':
     case 'StringLiteral':
@@ -3152,6 +3164,7 @@ function isReorderableExpression(
             builder,
             unary.get('argument'),
             allowLocalIdentifiers,
+            allowCalls,
           );
         }
         default: {
@@ -3166,6 +3179,7 @@ function isReorderableExpression(
         builder,
         (expr as NodePath<t.TypeCastExpression>).get('expression'),
         allowLocalIdentifiers,
+        allowCalls,
       );
     }
     case 'LogicalExpression': {
@@ -3175,11 +3189,13 @@ function isReorderableExpression(
           builder,
           logical.get('left'),
           allowLocalIdentifiers,
+          allowCalls,
         ) &&
         isReorderableExpression(
           builder,
           logical.get('right'),
           allowLocalIdentifiers,
+          allowCalls,
         )
       );
     }
@@ -3190,16 +3206,19 @@ function isReorderableExpression(
           builder,
           conditional.get('test'),
           allowLocalIdentifiers,
+          allowCalls,
         ) &&
         isReorderableExpression(
           builder,
           conditional.get('consequent'),
           allowLocalIdentifiers,
+          allowCalls,
         ) &&
         isReorderableExpression(
           builder,
           conditional.get('alternate'),
           allowLocalIdentifiers,
+          allowCalls,
         )
       );
     }
@@ -3209,7 +3228,12 @@ function isReorderableExpression(
         .every(
           element =>
             element.isExpression() &&
-            isReorderableExpression(builder, element, allowLocalIdentifiers),
+            isReorderableExpression(
+              builder,
+              element,
+              allowLocalIdentifiers,
+              allowCalls,
+            ),
         );
     }
     case 'ObjectExpression': {
@@ -3222,7 +3246,12 @@ function isReorderableExpression(
           const value = property.get('value');
           return (
             value.isExpression() &&
-            isReorderableExpression(builder, value, allowLocalIdentifiers)
+            isReorderableExpression(
+              builder,
+              value,
+              allowLocalIdentifiers,
+              allowCalls,
+            )
           );
         });
     }
@@ -3260,6 +3289,7 @@ function isReorderableExpression(
           builder,
           body,
           /* disallow local identifiers in the body */ false,
+          allowCalls,
         );
       }
     }
@@ -3267,14 +3297,25 @@ function isReorderableExpression(
       const call = expr as NodePath<t.CallExpression>;
       const callee = call.get('callee');
       return (
+        allowCalls &&
         callee.isExpression() &&
-        isReorderableExpression(builder, callee, allowLocalIdentifiers) &&
+        isReorderableExpression(
+          builder,
+          callee,
+          allowLocalIdentifiers,
+          allowCalls,
+        ) &&
         call
           .get('arguments')
           .every(
             arg =>
               arg.isExpression() &&
-              isReorderableExpression(builder, arg, allowLocalIdentifiers),
+              isReorderableExpression(
+                builder,
+                arg,
+                allowLocalIdentifiers,
+                allowCalls,
+              ),
           )
       );
     }
@@ -3282,14 +3323,25 @@ function isReorderableExpression(
       const newExpr = expr as NodePath<t.NewExpression>;
       const callee = newExpr.get('callee');
       return (
+        allowCalls &&
         callee.isExpression() &&
-        isReorderableExpression(builder, callee, allowLocalIdentifiers) &&
+        isReorderableExpression(
+          builder,
+          callee,
+          allowLocalIdentifiers,
+          allowCalls,
+        ) &&
         newExpr
           .get('arguments')
           .every(
             arg =>
               arg.isExpression() &&
-              isReorderableExpression(builder, arg, allowLocalIdentifiers),
+              isReorderableExpression(
+                builder,
+                arg,
+                allowLocalIdentifiers,
+                allowCalls,
+              ),
           )
       );
     }
@@ -4373,6 +4425,7 @@ function lowerAssignmentAt(
         const defaultValue = lowerReorderableExpression(
           builder,
           lvalue.get('right'),
+          true,
         );
         lowerValueToTemporary(builder, {
           kind: 'StoreLocal',
