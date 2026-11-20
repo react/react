@@ -837,6 +837,14 @@ function commitLayoutEffectOnFiber(
     case ViewTransitionComponent: {
       if (enableViewTransition) {
         if (__DEV__) {
+          if (
+            current !== null &&
+            current.memoizedProps.name !== finishedWork.memoizedProps.name
+          ) {
+            // The name changed. Stop tracking the previous name so that another
+            // boundary can take it over without a false duplicate warning.
+            untrackNamedViewTransition(current);
+          }
           if (flags & ViewTransitionNamedStatic) {
             trackNamedViewTransition(finishedWork);
           }
