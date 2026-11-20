@@ -731,6 +731,23 @@ const TYPED_GLOBALS: Array<[string, BuiltInType]> = [
       true,
     ),
   ],
+  [
+    'FinalizationRegistry',
+    addFunction(
+      DEFAULT_SHAPES,
+      [],
+      {
+        // The cleanup callback runs after the target is collected, not during construction.
+        positionalParams: [Effect.Freeze],
+        restParam: null,
+        returnType: {kind: 'Poly'},
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Mutable,
+      },
+      null,
+      true,
+    ),
+  ],
   // TODO: rest of Global objects
 ];
 
