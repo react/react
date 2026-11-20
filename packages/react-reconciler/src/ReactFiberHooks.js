@@ -2945,6 +2945,16 @@ function mountMemo<T>(
   nextCreate: () => T,
   deps: Array<mixed> | void | null,
 ): T {
+  if (__DEV__) {
+    if (typeof nextCreate !== 'function') {
+      console.error(
+        'Expected useMemo() first argument to be a function that computes ' +
+          'a value. Instead received: %s.',
+        // $FlowFixMe[invalid-compare]
+        nextCreate !== null ? typeof nextCreate : 'null',
+      );
+    }
+  }
   const hook = mountWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
   const nextValue = nextCreate();
@@ -2964,6 +2974,16 @@ function updateMemo<T>(
   nextCreate: () => T,
   deps: Array<mixed> | void | null,
 ): T {
+  if (__DEV__) {
+    if (typeof nextCreate !== 'function') {
+      console.error(
+        'Expected useMemo() first argument to be a function that computes ' +
+          'a value. Instead received: %s.',
+        // $FlowFixMe[invalid-compare]
+        nextCreate !== null ? typeof nextCreate : 'null',
+      );
+    }
+  }
   const hook = updateWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
   const prevState = hook.memoizedState;
