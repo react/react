@@ -83,6 +83,8 @@ export class ProgramContext {
   knownReferencedNames: Set<string> = new Set();
   // generated imports
   imports: Map<string, Map<string, NonLocalImportSpecifier>> = new Map();
+  // hoisted program-level constants
+  constants: Map<string, {uid: string; init: t.Expression}> = new Map();
 
   constructor({
     program,
@@ -191,6 +193,16 @@ export class ProgramContext {
 
   addNewReference(name: string): void {
     this.knownReferencedNames.add(name);
+  }
+
+  addProgramConstant(name: string, init: () => t.Expression): string {
+    const existing = this.constants.get(name);
+    if (existing !== undefined) {
+      return existing.uid;
+    }
+    const uid = this.newUid(name);
+    this.constants.set(name, {uid, init: init()});
+    return uid;
   }
 
   assertGlobalBinding(
@@ -312,6 +324,13 @@ export function addImportsToProgram(
         );
       }
     }
+  }
+  for (const [, {uid, init}] of programContext.constants) {
+    stmts.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(t.identifier(uid), init),
+      ]),
+    );
   }
   path.unshiftContainer('body', stmts);
 }
