@@ -88,23 +88,40 @@ function getRustCompile(): (
  * markers (__SURROGATE_XXXX__) and restore them via restoreJsonSurrogates on output.
  *
  * Important: we must NOT replace escaped surrogate sequences like \\uD83D\\uDE80
- * that appear in extra.raw fields (literal source text). Those have a double
- * backslash in the JSON (the first \ escapes the second), so we use a negative
- * lookbehind to skip them.
+ * that appear in extra.raw fields (literal source text). Consume JSON escapes
+ * together so escaped backslashes do not hide lone surrogates.
  */
 function sanitizeJsonSurrogates(json: string): string {
   // Encode lone surrogates as recoverable markers instead of replacing with
   // \uFFFD. This preserves the original surrogate values through the Rust
   // round-trip. restoreJsonSurrogates reverses this on the output side.
-  return json
-    .replace(
-      /(?<!\\)\\u([dD][89aAbB][0-9a-fA-F]{2})(?!\\u[dD][c-fC-F][0-9a-fA-F]{2})/g,
-      (_, hex) => `__SURROGATE_${hex.toUpperCase()}__`,
-    )
-    .replace(
-      /(?<!\\u[dD][89aAbB][0-9a-fA-F]{2})(?<!\\)\\u([dD][c-fC-F][0-9a-fA-F]{2})/g,
-      (_, hex) => `__SURROGATE_${hex.toUpperCase()}__`,
-    );
+  let result = '';
+  let start = 0;
+  let index = 0;
+  while ((index = json.indexOf('\\', index)) !== -1) {
+    if (json[index + 1] !== 'u') {
+      index += 2;
+      continue;
+    }
+
+    const hex = json.slice(index + 2, index + 6);
+    const unit = parseInt(hex, 16);
+    if (
+      unit >= 0xd800 &&
+      unit <= 0xdbff &&
+      /^\\u[dD][c-fC-F][0-9a-fA-F]{2}$/.test(json.slice(index + 6, index + 12))
+    ) {
+      // Leave valid surrogate pairs for serde_json to decode.
+      index += 12;
+      continue;
+    }
+    if (unit >= 0xd800 && unit <= 0xdfff) {
+      result += json.slice(start, index) + `__SURROGATE_${hex.toUpperCase()}__`;
+      start = index + 6;
+    }
+    index += 6;
+  }
+  return result + json.slice(start);
 }
 
 function restoreJsonSurrogates(json: string): string {
