@@ -931,6 +931,24 @@ const tests = {
       `,
     },
     {
+      // Valid because it's a constant expression that evaluates to a
+      // primitive, which is just as stable as a literal.
+      code: normalizeIndent`
+        function MyComponent() {
+          const local1 = 2 / 3;
+          const local2 = -1;
+          const local3 = +1;
+          const local4 = '42' + '42';
+          useEffect(() => {
+            console.log(local1);
+            console.log(local2);
+            console.log(local3);
+            console.log(local4);
+          }, []);
+        }
+      `,
+    },
+    {
       // It's not a mistake to specify constant values though.
       code: normalizeIndent`
         function MyComponent() {
@@ -7890,6 +7908,69 @@ const tests = {
                   React.useEffect(() => {
                     onStuff();
                   }, []);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // Not a constant: the initializer depends on a prop, so the value can
+      // change between renders and must be listed as a dependency.
+      code: normalizeIndent`
+        function MyComponent({value}) {
+          const local = value / 3;
+          useEffect(() => {
+            console.log(local);
+          }, []);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has a missing dependency: 'local'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [local]',
+              output: normalizeIndent`
+                function MyComponent({value}) {
+                  const local = value / 3;
+                  useEffect(() => {
+                    console.log(local);
+                  }, [local]);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // Not a constant: a unary expression is only stable when its operand is.
+      code: normalizeIndent`
+        function MyComponent({value}) {
+          const local = -value;
+          useEffect(() => {
+            console.log(local);
+          }, []);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has a missing dependency: 'local'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [local]',
+              output: normalizeIndent`
+                function MyComponent({value}) {
+                  const local = -value;
+                  useEffect(() => {
+                    console.log(local);
+                  }, [local]);
                 }
               `,
             },
