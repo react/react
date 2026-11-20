@@ -405,7 +405,7 @@ export default function (babel, opts = {}) {
           name = callee.property.name;
           break;
       }
-      if (name === null || !/^use[A-Z]/.test(name)) {
+      if (name === null || !/^use[A-Z0-9]/.test(name)) {
         return;
       }
       const fnScope = path.scope.getFunctionParent();
