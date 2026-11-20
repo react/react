@@ -386,6 +386,64 @@ describe('ReactDOM', () => {
     }
   });
 
+  it('preserves autoFocus only on controls inside a dialog', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = ReactDOMClient.createRoot(container);
+
+    try {
+      await act(() => {
+        root.render(
+          <>
+            <input id="outside" autoFocus={true} />
+            <dialog>
+              <div>
+                <input id="inside" autoFocus={true} />
+              </div>
+            </dialog>
+          </>,
+        );
+      });
+
+      const outsideInput = container.querySelector('#outside');
+      const insideInput = container.querySelector('#inside');
+      expect(outsideInput.hasAttribute('autofocus')).toBe(false);
+      expect(insideInput.hasAttribute('autofocus')).toBe(true);
+
+      await act(() => {
+        root.render(
+          <>
+            <input id="outside" autoFocus={false} />
+            <dialog>
+              <div>
+                <input id="inside" autoFocus={false} />
+              </div>
+            </dialog>
+          </>,
+        );
+      });
+      expect(outsideInput.hasAttribute('autofocus')).toBe(false);
+      expect(insideInput.hasAttribute('autofocus')).toBe(false);
+
+      await act(() => {
+        root.render(
+          <>
+            <input id="outside" autoFocus={true} />
+            <dialog>
+              <div>
+                <input id="inside" autoFocus={true} />
+              </div>
+            </dialog>
+          </>,
+        );
+      });
+      expect(outsideInput.hasAttribute('autofocus')).toBe(false);
+      expect(insideInput.hasAttribute('autofocus')).toBe(true);
+    } finally {
+      document.body.removeChild(container);
+    }
+  });
+
   it("shouldn't fire duplicate event handler while handling other nested dispatch", async () => {
     const actual = [];
 
