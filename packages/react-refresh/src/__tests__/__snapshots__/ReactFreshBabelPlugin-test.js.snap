@@ -228,6 +228,49 @@ var _c;
 $RefreshReg$(_c, "App");
 `;
 
+exports[`ReactFreshBabelPlugin includes custom hooks into the signatures of HOC calls when commonjs target is used 1`] = `
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.B = exports.A = void 0;
+var _react = require("react");
+var _hooks = require("./hooks");
+var _s = $RefreshSig$(),
+  _s2 = $RefreshSig$();
+const A = _s((0, _react.memo)(_c = _s(function A() {
+  _s();
+  const bar = (0, _hooks.useFancyState)();
+  return <h1>{bar}</h1>;
+}, "useFancyState{bar}", false, function () {
+  return [_hooks.useFancyState];
+})), "useFancyState{bar}", false, function () {
+  return [_hooks.useFancyState];
+});
+exports.A = A;
+_c2 = A;
+const B = _s2((0, _react.memo)(_c4 = _s2((0, _react.forwardRef)(_c3 = _s2((props, ref) => {
+  _s2();
+  const bar = (0, _hooks.useFancyState)();
+  return <h1 ref={ref}>{bar}</h1>;
+}, "useFancyState{bar}", false, function () {
+  return [_hooks.useFancyState];
+})), "useFancyState{bar}", false, function () {
+  return [_hooks.useFancyState];
+})), "useFancyState{bar}", false, function () {
+  return [_hooks.useFancyState];
+});
+exports.B = B;
+_c5 = B;
+var _c, _c2, _c3, _c4, _c5;
+$RefreshReg$(_c, "A$memo");
+$RefreshReg$(_c2, "A");
+$RefreshReg$(_c3, "B$memo$forwardRef");
+$RefreshReg$(_c4, "B$memo");
+$RefreshReg$(_c5, "B");
+`;
+
 exports[`ReactFreshBabelPlugin includes custom hooks into the signatures when commonjs target is used 1`] = `
 "use strict";
 
