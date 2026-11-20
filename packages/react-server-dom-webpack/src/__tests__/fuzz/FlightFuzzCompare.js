@@ -75,12 +75,38 @@ function assertKind(condition, kind, received) {
   );
 }
 
+// Uses Array.prototype.every so large byte arrays don't trip the test
+// transform's loop-iteration guard.
 function arraysEqual(received, expected) {
   return (
     Array.isArray(received) &&
     Array.isArray(expected) &&
     received.length === expected.length &&
     received.every((value, i) => Object.is(value, expected[i]))
+  );
+}
+
+function getBytes(value) {
+  return value instanceof ArrayBuffer
+    ? Array.from(new Uint8Array(value))
+    : Array.from(
+        new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+      );
+}
+
+async function assertBlobContents(expectedValue, received) {
+  const receivedBytes = Array.from(
+    new Uint8Array(await received.arrayBuffer()),
+  );
+  const expectedBytes = Array.from(
+    new Uint8Array(await expectedValue.arrayBuffer()),
+  );
+  assert(
+    arraysEqual(receivedBytes, expectedBytes),
+    'expected Blob bytes ' +
+      describeValue(expectedBytes) +
+      ' but received ' +
+      describeValue(receivedBytes),
   );
 }
 
@@ -96,7 +122,8 @@ function assertSingleSource(expectedByReceived, expectedValue, received) {
 // Compares the contents of one source value with one received value, without
 // looking into nested values. Returns the nested pairs to compare next. The
 // caller tracks identity and stops at cycles. Values with fixture metadata
-// are only checked for their kind here; their results are observed separately.
+// (Promises, streams, elements, Server Functions) are only checked for their
+// kind here; their results are observed separately.
 function compareValue(fixture, {expectedValue, received, path}) {
   if (!isObject(expectedValue)) {
     assertSame(received, expectedValue);
@@ -112,6 +139,29 @@ function compareValue(fixture, {expectedValue, received, path}) {
     switch (metadata.type) {
       case 'function':
         assertKind(typeof received === 'function', 'a function', received);
+        return [];
+      case 'iterator':
+        assertKind(
+          typeof received.next === 'function',
+          'an iterator',
+          received,
+        );
+        return [];
+      case 'iterable':
+        assertKind(
+          typeof received[Symbol.asyncIterator] === 'function',
+          'an async iterable',
+          received,
+        );
+        return [];
+      case 'stream':
+      case 'bytes':
+      case 'canceled':
+        assertKind(
+          typeof received.getReader === 'function',
+          'a readable stream',
+          received,
+        );
         return [];
       case 'promise':
         assertKind(typeof received.then === 'function', 'a thenable', received);
@@ -157,6 +207,51 @@ function compareValue(fixture, {expectedValue, received, path}) {
     assertKind(received instanceof Date, 'a Date', received);
     assertSame(received.getTime(), expectedValue.getTime());
     return [];
+  }
+  if (
+    expectedValue instanceof ArrayBuffer ||
+    ArrayBuffer.isView(expectedValue)
+  ) {
+    assertSame(
+      Object.prototype.toString.call(received),
+      Object.prototype.toString.call(expectedValue),
+    );
+    // The writer may detach the source buffer, so compare with saved bytes.
+    const expectedBytes = fixture.bytes.get(expectedValue);
+    const receivedBytes = getBytes(received);
+    assert(
+      arraysEqual(receivedBytes, expectedBytes),
+      'expected bytes ' +
+        describeValue(expectedBytes) +
+        ' but received ' +
+        describeValue(receivedBytes),
+    );
+    return [];
+  }
+  if (expectedValue instanceof Blob) {
+    // The caller reads the contents, which is asynchronous.
+    assertKind(received instanceof Blob, 'a Blob', received);
+    assertSame(received.type, expectedValue.type);
+    assertSame(received.size, expectedValue.size);
+    if (expectedValue instanceof File) {
+      assertKind(received instanceof File, 'a File', received);
+      assertSame(received.name, expectedValue.name);
+    }
+    return [];
+  }
+  if (expectedValue instanceof FormData) {
+    assertKind(received instanceof FormData, 'FormData', received);
+    const entries = Array.from(received.entries());
+    const expectedEntries = Array.from(expectedValue.entries());
+    assertSame(entries.length, expectedEntries.length);
+    return expectedEntries.map(([key, value], i) => {
+      assertSame(entries[i][0], key);
+      return {
+        expectedValue: value,
+        received: entries[i][1],
+        path: path + '.form' + i,
+      };
+    });
   }
   const isArray = Array.isArray(expectedValue);
   if (isArray) {
@@ -232,6 +327,7 @@ function throwAtPath(error, path) {
 module.exports = {
   isObject,
   assertSingleSource,
+  assertBlobContents,
   compareValue,
   throwAtPath,
 };
