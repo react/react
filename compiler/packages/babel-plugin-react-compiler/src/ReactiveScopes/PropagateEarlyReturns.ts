@@ -191,6 +191,7 @@ class Transform extends ReactiveFunctionTransform<State> {
                 kind: 'PropertyLoad',
                 object: {...symbolTemp},
                 property: makePropertyLiteral('for'),
+                computed: false,
                 loc,
               },
             },

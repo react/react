@@ -90,6 +90,7 @@ type ReactiveScopeDependency = {
 ```typescript
 type DependencyPathEntry = {
   property: PropertyLiteral;  // Property name
+  computed: boolean;          // Whether codegen should use bracket notation
   optional: boolean;          // Is this `?.` access?
 }
 ```

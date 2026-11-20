@@ -1009,6 +1009,7 @@ export type InstructionValue =
       kind: 'PropertyStore';
       object: Place;
       property: PropertyLiteral;
+      computed: boolean;
       value: Place;
       loc: SourceLocation;
     }
@@ -1208,6 +1209,7 @@ export type PropertyLoad = {
   kind: 'PropertyLoad';
   object: Place;
   property: PropertyLiteral;
+  computed: boolean;
   loc: SourceLocation;
 };
 
@@ -1657,6 +1659,7 @@ export function makePropertyLiteral(value: string | number): PropertyLiteral {
 }
 export type DependencyPathEntry = {
   property: PropertyLiteral;
+  computed: boolean;
   optional: boolean;
   loc: SourceLocation;
 };
