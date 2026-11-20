@@ -129,6 +129,17 @@ async function runTestCommand(opts: TestOptions): Promise<void> {
   } else {
     // Non-watch mode. For simplicity we re-use the same watchSrc() function.
     // After the first build completes run tests and exit
+    //
+    // watchSrc() can invoke its onComplete callback synchronously: tsc's
+    // afterProgramCreate fires before createWatchProgram returns. On the
+    // type-check-failure path that callback runs before the watch returned by
+    // watchSrc() is assigned to `tsWatch`, so it must not read `tsWatch`
+    // directly (that binding is still in its temporal dead zone). Route the
+    // close() through `tsWatchRef`, which is initialized before watchSrc() is
+    // called and pointed at the watch right after it returns.
+    let tsWatchRef:
+      | ts.WatchOfConfigFile<ts.SemanticDiagnosticsBuilderProgram>
+      | undefined;
     const tsWatch: ts.WatchOfConfigFile<ts.SemanticDiagnosticsBuilderProgram> =
       watchSrc(
         () => {},
@@ -174,11 +185,12 @@ async function runTestCommand(opts: TestOptions): Promise<void> {
               console.warn('Failed to build compiler with tsup:', e);
             }
           }
-          tsWatch?.close();
+          tsWatchRef?.close();
           await worker.end();
           process.exit(isSuccess ? 0 : 1);
         },
       );
+    tsWatchRef = tsWatch;
   }
 }
 
