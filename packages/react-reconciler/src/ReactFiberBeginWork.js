@@ -3649,6 +3649,7 @@ function updateViewTransition(
         ? ViewTransitionNamedMount | ViewTransitionNamedStatic
         : ViewTransitionNamedStatic;
   } else {
+    workInProgress.flags &= ~ViewTransitionNamedStatic;
     // The server may have used useId to auto-assign a generated name for this boundary.
     // We push a materialization to ensure child ids line up with the server.
     if (getIsHydrating()) {
