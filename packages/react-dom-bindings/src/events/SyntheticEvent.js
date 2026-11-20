@@ -515,6 +515,8 @@ const PointerEventInterface: EventInterfaceType = {
   tiltX: 0,
   tiltY: 0,
   twist: 0,
+  altitudeAngle: 0,
+  azimuthAngle: 0,
   pointerType: 0,
   isPrimary: 0,
 };
