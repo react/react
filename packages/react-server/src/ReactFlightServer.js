@@ -4649,8 +4649,10 @@ function serializeErrorValue(request: Request, error: Error): string {
     const errorInfo: ReactErrorInfoDev = {name, message, stack, env};
     if ('cause' in error) {
       const cause: ReactClientValue = error.cause as any;
-      const causeId = outlineModel(request, cause);
-      errorInfo.cause = serializeByValueID(causeId);
+      // The cause is written inside an array, so that it is written like any
+      // other value. If it was written before, the array refers to it.
+      const causeId = outlineModel(request, [cause]);
+      errorInfo.cause = serializeByValueID(causeId) + ':0';
     }
     if (
       typeof AggregateError !== 'undefined' &&
@@ -4699,8 +4701,9 @@ function serializeDebugErrorValue(
     if ('cause' in error) {
       counter.objectLimit--;
       const cause: ReactClientValue = error.cause as any;
-      const causeId = outlineDebugModel(request, counter, cause);
-      errorInfo.cause = serializeByValueID(causeId);
+      // See serializeErrorValue.
+      const causeId = outlineDebugModel(request, counter, [cause]);
+      errorInfo.cause = serializeByValueID(causeId) + ':0';
     }
     if (
       typeof AggregateError !== 'undefined' &&
@@ -5494,6 +5497,10 @@ function renderDebugModel(
     if (existingEntry !== undefined && existingEntry.id >= 0) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
+      // Remember the reference we actually emit. Referring through the debug
+      // parent instead would make later uses wait for that parent's other
+      // dependencies, even when this value is already available.
+      writtenDebugObjects.set(value, existingEntry.reference);
       return existingEntry.reference;
     }
 
