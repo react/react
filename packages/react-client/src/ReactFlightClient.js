@@ -4439,25 +4439,63 @@ function startReadableStream<T>(
 ): void {
   let controller: ReadableStreamController = null as any;
   let closed = false;
+  let canceled = false;
   const stream = new ReadableStream({
     type: type,
     start(c) {
       controller = c;
     },
+    cancel() {
+      // The consumer is done with the stream. Rows that are still arriving
+      // for it are dropped.
+      canceled = true;
+      closed = true;
+      previousBlockedChunk = null;
+    },
   });
   let previousBlockedChunk: SomeChunk<T> | null = null;
+  function enqueue(value: T): void {
+    if (!canceled) {
+      controller.enqueue(value);
+    }
+  }
+  function fail(error: mixed): void {
+    if (!canceled) {
+      // $FlowFixMe[incompatible-type]
+      controller.error(error);
+    }
+  }
+  function closeStream(): void {
+    if (canceled) {
+      return;
+    }
+    controller.close();
+    // Closing a byte stream leaves a BYOB read that is already waiting
+    // pending. Only responding to its request settles it.
+    // $FlowFixMe[prop-missing]
+    const byobRequest = type === 'bytes' ? controller.byobRequest : null;
+    if (byobRequest != null) {
+      byobRequest.respond(0);
+    }
+  }
   const flightController = {
     enqueueValue(value: T): void {
+      if (canceled) {
+        return;
+      }
       if (previousBlockedChunk === null) {
-        controller.enqueue(value);
+        enqueue(value);
       } else {
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         previousBlockedChunk.then(function () {
-          controller.enqueue(value);
+          enqueue(value);
         });
       }
     },
     enqueueModel(json: UninitializedModel): void {
+      if (canceled) {
+        return;
+      }
       if (previousBlockedChunk === null) {
         // If we're not blocked on any other chunks, we can try to eagerly initialize
         // this as a fast-path to avoid awaiting them.
@@ -4468,29 +4506,25 @@ function startReadableStream<T>(
         initializeModelChunk(chunk);
         const initializedChunk: SomeChunk<T> = chunk;
         if (initializedChunk.status === INITIALIZED) {
-          controller.enqueue(initializedChunk.value);
+          enqueue(initializedChunk.value);
         } else {
-          chunk.then(
-            v => controller.enqueue(v),
-            e => controller.error(e as any),
-          );
+          chunk.then(enqueue, fail);
           previousBlockedChunk = chunk;
         }
       } else {
         // We're still waiting on a previous chunk so we can't enqueue quite yet.
         const blockedChunk = previousBlockedChunk;
         const chunk: SomeChunk<T> = createPendingChunk(response);
-        chunk.then(
-          v => controller.enqueue(v),
-          e => controller.error(e as any),
-        );
-        previousBlockedChunk = chunk;
-        blockedChunk.then(function () {
+        chunk.then(v => {
           if (previousBlockedChunk === chunk) {
             // We were still the last chunk so we can now clear the queue and return
             // to synchronous emitting.
             previousBlockedChunk = null;
           }
+          enqueue(v);
+        }, fail);
+        previousBlockedChunk = chunk;
+        blockedChunk.then(function () {
           resolveModelChunk(response, chunk, json);
         });
       }
@@ -4501,12 +4535,12 @@ function startReadableStream<T>(
       }
       closed = true;
       if (previousBlockedChunk === null) {
-        controller.close();
+        closeStream();
       } else {
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.close());
+        blockedChunk.then(closeStream);
       }
     },
     error(error: mixed): void {
@@ -4521,7 +4555,7 @@ function startReadableStream<T>(
         const blockedChunk = previousBlockedChunk;
         // We shouldn't get any more enqueues after this so we can set it back to null.
         previousBlockedChunk = null;
-        blockedChunk.then(() => controller.error(error as any));
+        blockedChunk.then(() => fail(error));
       }
     },
   };

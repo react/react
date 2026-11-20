@@ -1467,6 +1467,94 @@ describe('ReactFlightDOMEdge', () => {
     expect(await reader.read()).toEqual({value: undefined, done: true});
   });
 
+  it('waits for a queued stream item to initialize before closing', async () => {
+    let resolveFirst;
+    let resolveSecond;
+    const first = await clientExports(
+      new Promise(resolve => (resolveFirst = resolve)),
+    );
+    const second = await clientExports(
+      new Promise(resolve => (resolveSecond = resolve)),
+    );
+    let controller;
+    const source = new ReadableStream({
+      start(c) {
+        controller = c;
+        c.enqueue(new Set([first]));
+        c.enqueue(new Set([second]));
+      },
+    });
+
+    // Deliver both items while their imports are still pending.
+    const result = await serverAct(() =>
+      ReactServerDOMClient.createFromReadableStream(
+        ReactServerDOMServer.renderToReadableStream(source, webpackMap),
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      ),
+    );
+    const reader = result.getReader();
+    const firstRead = reader.read();
+    await serverAct(() => resolveFirst('first'));
+    expect(await firstRead).toEqual({value: new Set(['first']), done: false});
+
+    // The second item has started initializing, but its import still blocks
+    // delivery. Closing the source must wait for that item to finish.
+    const received = [];
+    const secondRead = reader.read();
+    secondRead.then(value => received.push(value));
+    await serverAct(() => controller.close());
+    expect(received).toEqual([]);
+
+    await serverAct(() => resolveSecond('second'));
+    expect(await secondRead).toEqual({value: new Set(['second']), done: false});
+    expect(await reader.read()).toEqual({value: undefined, done: true});
+  });
+
+  it('drops stream items that arrive after the consumer canceled the stream', async () => {
+    let controller;
+    const source = new ReadableStream({
+      start(c) {
+        controller = c;
+        c.enqueue('first');
+      },
+    });
+    let resolveLater;
+    const later = new Promise(resolve => (resolveLater = resolve));
+
+    const result = await serverAct(() =>
+      ReactServerDOMClient.createFromReadableStream(
+        ReactServerDOMServer.renderToReadableStream(
+          {stream: source, later},
+          webpackMap,
+        ),
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      ),
+    );
+    const reader = result.stream.getReader();
+    expect(await reader.read()).toEqual({value: 'first', done: false});
+    await reader.cancel('not interested');
+
+    // The server does not know about the cancellation and keeps producing.
+    await serverAct(() => {
+      controller.enqueue('second');
+      controller.close();
+    });
+
+    // The rest of the response is unaffected.
+    await serverAct(() => resolveLater('later'));
+    expect(await result.later).toBe('later');
+  });
+
   it('can pass an async import a AsyncIterable while allowing peaking at future values', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
@@ -2031,6 +2119,33 @@ describe('ReactFlightDOMEdge', () => {
     // The streamed buffers might be in different chunks and in Uint8Array form but
     // the concatenated bytes should be the same.
     expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
+  });
+
+  it('ends a BYOB read that is waiting when the byte stream closes', async () => {
+    let close;
+    const source = new ReadableStream({
+      type: 'bytes',
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        close = () => controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(source, {}),
+    );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const reader = result.getReader({mode: 'byob'});
+    const first = await reader.read(new Uint8Array(3));
+    expect(Array.from(first.value)).toEqual([1, 2, 3]);
+
+    const waiting = reader.read(new Uint8Array(3));
+    await serverAct(() => close());
+    expect((await waiting).done).toBe(true);
   });
 
   // @gate !__DEV__ || enableComponentPerformanceTrack
