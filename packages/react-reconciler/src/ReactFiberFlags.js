@@ -7,7 +7,10 @@
  * @flow
  */
 
-import {enableCreateEventHandleAPI} from 'shared/ReactFeatureFlags';
+import {
+  enableCreateEventHandleAPI,
+  enableViewTransitionForPersistenceMode,
+} from 'shared/ReactFeatureFlags';
 
 export type Flags = number;
 
@@ -108,7 +111,13 @@ export const BeforeMutationMask: number =
 // For View Transition support we use the snapshot phase to scan the tree for potentially
 // affected ViewTransition components.
 export const BeforeAndAfterMutationTransitionMask: number =
-  Snapshot | Update | Placement | ChildDeletion | Visibility | ContentReset;
+  Snapshot |
+  Update |
+  Placement |
+  ChildDeletion |
+  Visibility |
+  ContentReset |
+  (enableViewTransitionForPersistenceMode ? Cloned : 0);
 
 export const MutationMask =
   Placement |
