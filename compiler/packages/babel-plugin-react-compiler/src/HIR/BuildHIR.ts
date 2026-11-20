@@ -265,6 +265,27 @@ export function lower(
   };
 }
 
+/**
+ * Whether the binding is declared by a type-only declaration (Flow or
+ * TypeScript). Such bindings have no runtime value, so they can only ever be
+ * referenced from type positions — which are erased and never need hoisting.
+ *
+ * This matters because Babel reports Flow type references as referenced
+ * identifiers: a function-local `type` alias that is used in an annotation
+ * before its declaration would otherwise be hoisted as if it were a value,
+ * bailing out with "Unsupported declaration type for hoisting". Mirrors the
+ * exclusion list in the Rust port (`build_hir.rs`).
+ */
+function isTypeOnlyDeclaration(bindingPath: NodePath<t.Node>): boolean {
+  return (
+    bindingPath.isTypeAlias() ||
+    bindingPath.isOpaqueType() ||
+    bindingPath.isInterfaceDeclaration() ||
+    bindingPath.isTSTypeAliasDeclaration() ||
+    bindingPath.isTSInterfaceDeclaration()
+  );
+}
+
 // Helper to lower a statement
 function lowerStatement(
   builder: HIRBuilder,
@@ -386,8 +407,11 @@ function lowerStatement(
       const hoistableIdentifiers: Set<t.Identifier> = new Set();
 
       for (const [, binding] of Object.entries(stmt.scope.bindings)) {
-        // refs to params are always valid / never need to be hoisted
-        if (binding.kind !== 'param') {
+        /**
+         * Refs to params are always valid / never need to be hoisted. Neither
+         * do type-only declarations, which have no runtime binding at all.
+         */
+        if (binding.kind !== 'param' && !isTypeOnlyDeclaration(binding.path)) {
           hoistableIdentifiers.add(binding.identifier);
         }
       }
