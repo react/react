@@ -40,6 +40,26 @@ pub struct EvaluationOrder(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DeclarationId(pub u32);
 
+macro_rules! impl_idx {
+    ($($id:ty),+ $(,)?) => {
+        $(
+            impl oxc_index::Idx for $id {
+                const MAX: usize = u32::MAX as usize;
+
+                unsafe fn from_usize_unchecked(index: usize) -> Self {
+                    Self(index as u32)
+                }
+
+                fn index(self) -> usize {
+                    self.0 as usize
+                }
+            }
+        )+
+    };
+}
+
+impl_idx!(BlockId, IdentifierId, DeclarationId);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ScopeId(pub u32);
 
