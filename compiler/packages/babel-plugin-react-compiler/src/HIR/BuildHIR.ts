@@ -2094,6 +2094,20 @@ function lowerExpression(
       if (operator === '=') {
         const left = expr.get('left');
         if (left.isLVal()) {
+          if (left.isMemberExpression()) {
+            /*
+             * Assignment to a member expression evaluates the target reference
+             * (object, then computed key) before the right-hand side. Lowering
+             * the right-hand side first would let it be folded against the
+             * pre-update key, so `a[i++] = i` must read `i` after `i++`.
+             */
+            return lowerMemberAssignment(
+              builder,
+              getSourceLocation(left.node),
+              left as NodePath<t.MemberExpression>,
+              () => lowerExpressionToTemporary(builder, expr.get('right')),
+            );
+          }
           return lowerAssignment(
             builder,
             getSourceLocation(left.node),
@@ -3841,6 +3855,77 @@ type AssignmentSource = {
   valueLoc: SourceLocation;
 };
 
+/*
+ * Lowers `object.property = <value>` and `object[property] = <value>`.
+ *
+ * The value is lowered lazily, after the object and the computed property, so
+ * that callers can match the evaluation order of the original expression. A
+ * plain assignment evaluates the target reference first, while a declaration or
+ * a destructuring assignment already has a lowered value.
+ */
+function lowerMemberAssignment(
+  builder: HIRBuilder,
+  loc: SourceLocation,
+  lvalue: NodePath<t.MemberExpression>,
+  lowerValue: () => Place,
+): InstructionValue {
+  const property = lvalue.get('property');
+  const object = lowerExpressionToTemporary(builder, lvalue.get('object'));
+  if (!lvalue.node.computed || property.isNumericLiteral()) {
+    let temporary;
+    if (property.isIdentifier()) {
+      temporary = lowerValueToTemporary(builder, {
+        kind: 'PropertyStore',
+        object,
+        property: makePropertyLiteral(property.node.name),
+        value: lowerValue(),
+        loc,
+      });
+    } else if (property.isNumericLiteral()) {
+      temporary = lowerValueToTemporary(builder, {
+        kind: 'PropertyStore',
+        object,
+        property: makePropertyLiteral(property.node.value),
+        value: lowerValue(),
+        loc,
+      });
+    } else {
+      builder.recordError(
+        new CompilerErrorDetail({
+          reason: `(BuildHIR::lowerAssignment) Handle ${property.type} properties in MemberExpression`,
+          category: ErrorCategory.Todo,
+          loc: property.node.loc ?? null,
+          suggestions: null,
+        }),
+      );
+      return {kind: 'UnsupportedNode', node: lvalue.node, loc};
+    }
+    return {kind: 'LoadLocal', place: temporary, loc: temporary.loc};
+  } else {
+    if (!property.isExpression()) {
+      builder.recordError(
+        new CompilerErrorDetail({
+          reason:
+            '(BuildHIR::lowerAssignment) Expected private name to appear as a non-computed property',
+          category: ErrorCategory.Todo,
+          loc: property.node.loc ?? null,
+          suggestions: null,
+        }),
+      );
+      return {kind: 'UnsupportedNode', node: lvalue.node, loc};
+    }
+    const propertyPlace = lowerExpressionToTemporary(builder, property);
+    const temporary = lowerValueToTemporary(builder, {
+      kind: 'ComputedStore',
+      object,
+      property: propertyPlace,
+      value: lowerValue(),
+      loc,
+    });
+    return {kind: 'LoadLocal', place: temporary, loc: temporary.loc};
+  }
+}
+
 function lowerAssignment(
   builder: HIRBuilder,
   loc: SourceLocation,
@@ -3969,61 +4054,7 @@ function lowerAssignmentAt(
         loc: lvaluePath.node.loc ?? GeneratedSource,
       });
       const lvalue = lvaluePath as NodePath<t.MemberExpression>;
-      const property = lvalue.get('property');
-      const object = lowerExpressionToTemporary(builder, lvalue.get('object'));
-      if (!lvalue.node.computed || lvalue.get('property').isNumericLiteral()) {
-        let temporary;
-        if (property.isIdentifier()) {
-          temporary = lowerValueToTemporary(builder, {
-            kind: 'PropertyStore',
-            object,
-            property: makePropertyLiteral(property.node.name),
-            value,
-            loc,
-          });
-        } else if (property.isNumericLiteral()) {
-          temporary = lowerValueToTemporary(builder, {
-            kind: 'PropertyStore',
-            object,
-            property: makePropertyLiteral(property.node.value),
-            value,
-            loc,
-          });
-        } else {
-          builder.recordError(
-            new CompilerErrorDetail({
-              reason: `(BuildHIR::lowerAssignment) Handle ${property.type} properties in MemberExpression`,
-              category: ErrorCategory.Todo,
-              loc: property.node.loc ?? null,
-              suggestions: null,
-            }),
-          );
-          return {kind: 'UnsupportedNode', node: lvalueNode, loc};
-        }
-        return {kind: 'LoadLocal', place: temporary, loc: temporary.loc};
-      } else {
-        if (!property.isExpression()) {
-          builder.recordError(
-            new CompilerErrorDetail({
-              reason:
-                '(BuildHIR::lowerAssignment) Expected private name to appear as a non-computed property',
-              category: ErrorCategory.Todo,
-              loc: property.node.loc ?? null,
-              suggestions: null,
-            }),
-          );
-          return {kind: 'UnsupportedNode', node: lvalueNode, loc};
-        }
-        const propertyPlace = lowerExpressionToTemporary(builder, property);
-        const temporary = lowerValueToTemporary(builder, {
-          kind: 'ComputedStore',
-          object,
-          property: propertyPlace,
-          value,
-          loc,
-        });
-        return {kind: 'LoadLocal', place: temporary, loc: temporary.loc};
-      }
+      return lowerMemberAssignment(builder, loc, lvalue, () => value);
     }
     case 'ArrayPattern': {
       const lvalue = lvaluePath as NodePath<t.ArrayPattern>;
