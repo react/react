@@ -6337,10 +6337,24 @@ export function mountHoistable(
   instance: Instance,
 ): void {
   const ownerDocument = getDocumentFromRoot(hoistableRoot);
-  (ownerDocument.head as any).insertBefore(
-    instance,
-    type === 'title' ? ownerDocument.querySelector('head > title') : null,
-  );
+  if (type !== 'title') {
+    (ownerDocument.head as any).insertBefore(instance, null);
+    return;
+  }
+  const existingTitle = ownerDocument.querySelector('head > title');
+  if (
+    existingTitle !== null &&
+    !isOwnedInstance(existingTitle) &&
+    !existingTitle.hasAttribute('itemprop')
+  ) {
+    // A title in the head that React does not own was most likely rendered
+    // by the server inside a Suspense boundary that was deleted before it
+    // hydrated. The same title would be adopted by hydrateHoistable, so take
+    // its place rather than leaving two titles in the document.
+    (ownerDocument.head as any).replaceChild(instance, existingTitle);
+    return;
+  }
+  (ownerDocument.head as any).insertBefore(instance, existingTitle);
 }
 
 export function unmountHoistable(instance: Instance): void {
