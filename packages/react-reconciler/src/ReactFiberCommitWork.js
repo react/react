@@ -58,6 +58,7 @@ import {
   enableComponentPerformanceTrack,
   enableViewTransition,
   enableDefaultTransitionIndicator,
+  enableHostSiblingCache,
 } from 'shared/ReactFeatureFlags';
 import {
   FunctionComponent,
@@ -243,6 +244,7 @@ import {
   commitShowHideHostInstance,
   commitShowHideHostTextInstance,
   commitHostPlacement,
+  resetHostSiblingCache,
   commitHostRootContainerChildren,
   commitHostPortalContainerChildren,
   commitHostHydratedContainer,
@@ -1991,7 +1993,17 @@ export function commitMutationEffects(
 
   resetComponentEffectTimers();
 
+  if (enableHostSiblingCache) {
+    // A previous commit may have thrown before its last placement.
+    resetHostSiblingCache();
+  }
+
   commitMutationEffectsOnFiber(finishedWork, root, committedLanes);
+
+  if (enableHostSiblingCache) {
+    // Don't hold on to a fiber whose placement never ran.
+    resetHostSiblingCache();
+  }
 
   inProgressLanes = null;
   inProgressRoot = null;
