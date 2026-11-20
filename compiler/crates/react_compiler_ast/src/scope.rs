@@ -57,6 +57,13 @@ pub struct BindingData {
     /// references, as positions can collide for synthetic nodes at position 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declaration_node_id: Option<u32>,
+    /// The first read reference in Babel traversal order, excluding assignments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_reference_node_id: Option<u32>,
+    /// The first constant violation in Babel traversal order. This identifies
+    /// the full assignment, update, or loop node rather than its target identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_constant_violation_node_id: Option<u32>,
     /// For import bindings: the source module and import details.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub import: Option<ImportBindingData>,
