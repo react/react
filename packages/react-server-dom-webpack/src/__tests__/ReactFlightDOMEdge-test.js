@@ -2290,6 +2290,114 @@ describe('ReactFlightDOMEdge', () => {
     ).toEqual(expectedBytes);
   });
 
+  it('can reuse an iterator in later stream items', async () => {
+    const iterator = ['first', 'second'].values();
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue({iterator});
+        controller.enqueue({iterator});
+        controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(source, {}),
+    );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+    const reader = result.getReader();
+    const first = await reader.read();
+    const second = await reader.read();
+    expect(first.done).toBe(false);
+    expect(second.done).toBe(false);
+    // Both items have the same iterator, and it has its items once.
+    expect(second.value.iterator).toBe(first.value.iterator);
+    expect(Array.from(first.value.iterator)).toEqual(['first', 'second']);
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it('can pass a stream a second time after a stream item held it', async () => {
+    const inner = new ReadableStream({
+      start(c) {
+        c.enqueue('a');
+        c.enqueue('b');
+        c.close();
+      },
+    });
+    const outer = new ReadableStream({
+      start(c) {
+        c.enqueue([inner]);
+        c.enqueue({again: inner});
+        c.close();
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(outer, {}),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    const second = (await reader.read()).value;
+    expect(second.again).toBe(first[0]);
+    expect((await reader.read()).done).toBe(true);
+
+    const innerReader = first[0].getReader();
+    expect((await innerReader.read()).value).toBe('a');
+    expect((await innerReader.read()).value).toBe('b');
+    expect((await innerReader.read()).done).toBe(true);
+  });
+
+  it('can return the same stream from two keyed server components', async () => {
+    const shared = new ReadableStream({
+      start(c) {
+        c.enqueue('a');
+        c.enqueue('b');
+        c.close();
+      },
+    });
+    function Comp() {
+      return shared;
+    }
+    // The components are keyed, so the stream is not registered by the task that
+    // renders them and the second occurrence has to reuse the emitted row.
+    const model = {
+      a: [ReactServer.createElement(Comp, {key: 'k1'})],
+      b: [ReactServer.createElement(Comp, {key: 'k2'})],
+    };
+
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        model,
+        {},
+        {
+          onError(x) {
+            errors.push(x.message);
+          },
+        },
+      ),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+    });
+
+    expect(result.a[0]).toBe(result.b[0]);
+    const reader = result.a[0].getReader();
+    expect((await reader.read()).value).toBe('a');
+    expect((await reader.read()).value).toBe('b');
+    expect((await reader.read()).done).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
   it('keeps a typed array intact when its transport also carries a byte stream', async () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const s = new ReadableStream({
@@ -2335,6 +2443,99 @@ describe('ReactFlightDOMEdge', () => {
       }
       expect(received).toEqual([65, 66, 67]);
       expect(Array.from(result.bytes)).toEqual([1, 2, 3, 4]);
+    }
+  });
+
+  it('can pass a large typed array from two places', async () => {
+    const bytes = Uint8Array.from({length: 5000}, (_, i) => i % 251);
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue({bytes});
+        c.enqueue({again: bytes});
+        c.close();
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(s, {}),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    const second = (await reader.read()).value;
+    // Both places get the same row.
+    expect(second.again).toBe(first.bytes);
+    expect(first.bytes[4999]).toBe(4999 % 251);
+    expect((await reader.read()).done).toBe(true);
+    if (
+      __DEV__ &&
+      !Object.prototype.hasOwnProperty.call(ArrayBuffer.prototype, 'detached')
+    ) {
+      // A Node below 22 cannot tell a transferred buffer apart, so the writer
+      // copies the array and says so once.
+      assertConsoleErrorDev(
+        [
+          'React copied a partial view into a fresh buffer as a safety precaution ' +
+            'because the environment does not implement ArrayBuffer.prototype.detached. ' +
+            'This negatively impacts performance. ' +
+            'Please upgrade to a modern Edge runtime.',
+        ],
+        {withoutStack: true},
+      );
+    }
+  });
+
+  it('can pass a large ArrayBuffer from two places', async () => {
+    const bytes = Uint8Array.from({length: 5000}, (_, i) => i % 251).buffer;
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue({bytes});
+        c.enqueue({again: bytes});
+        c.close();
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(s, {}),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    const second = (await reader.read()).value;
+    // Both places get the same row.
+    expect(second.again).toBe(first.bytes);
+    expect(first.bytes).toBeInstanceOf(ArrayBuffer);
+    expect(new Uint8Array(first.bytes)[4999]).toBe(4999 % 251);
+    expect((await reader.read()).done).toBe(true);
+    if (
+      __DEV__ &&
+      !Object.prototype.hasOwnProperty.call(ArrayBuffer.prototype, 'detached')
+    ) {
+      // A Node below 22 cannot tell a transferred buffer apart, so the writer
+      // copies the array and says so once.
+      assertConsoleErrorDev(
+        [
+          'React copied a partial view into a fresh buffer as a safety precaution ' +
+            'because the environment does not implement ArrayBuffer.prototype.detached. ' +
+            'This negatively impacts performance. ' +
+            'Please upgrade to a modern Edge runtime.',
+        ],
+        {withoutStack: true},
+      );
     }
   });
 

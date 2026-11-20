@@ -1405,7 +1405,11 @@ function serializeReadableStream(
     request.cacheController.signal.addEventListener('abort', abortStream);
     reader.read().then(progress, error);
   }
-  return serializeByValueID(streamTask.id);
+  const reference = serializeByValueID(streamTask.id);
+  // The stream is read once, so any other place that holds it gets the row
+  // it was already written to.
+  writeToDedupeMap(request, stream, streamTask.id, reference);
+  return reference;
 }
 
 function serializeAsyncIterable(
@@ -1548,7 +1552,11 @@ function serializeAsyncIterable(
       iterator.next().then(progress, error);
     }
   }
-  return serializeByValueID(streamTask.id);
+  const reference = serializeByValueID(streamTask.id);
+  // The iterator is read once, so any other place that holds the iterable
+  // gets the row it was already written to.
+  writeToDedupeMap(request, iterable, streamTask.id, reference);
+  return reference;
 }
 
 export function emitHint<Code: HintCode>(
@@ -3521,19 +3529,31 @@ function serializeIterator(
   request: Request,
   iterator: Iterator<ReactClientValue>,
 ): string {
-  const id = outlineModel(request, Array.from(iterator));
-  return '$i' + id.toString(16);
+  const itemsId = outlineModel(request, Array.from(iterator));
+  // The marker makes a new iterator wherever it is read. Write it to a row of
+  // its own, so that every place that has this iterator gets the same one.
+  request.pendingChunks++;
+  const id = request.nextChunkId++;
+  emitModelChunk(request, id, stringify('$i' + itemsId.toString(16)));
+  const reference = serializeByValueID(id);
+  writeToDedupeMap(request, iterator, id, reference);
+  return reference;
 }
 
 function serializeTypedArray(
   request: Request,
   tag: string,
   typedArray: $ArrayBufferView,
+  source: Reference,
 ): string {
   request.pendingChunks++;
   const bufferId = request.nextChunkId++;
   emitTypedArrayChunk(request, bufferId, tag, typedArray, false);
-  return serializeByValueID(bufferId);
+  const reference = serializeByValueID(bufferId);
+  // Every other place that has this value refers to this row. Writing a large
+  // typed array takes its buffer, so its bytes can't be written a second time.
+  writeToDedupeMap(request, source, bufferId, reference);
+  return reference;
 }
 
 function serializeDebugTypedArray(
@@ -4175,55 +4195,55 @@ function renderModelDestructive(
       return serializeErrorValue(request, value);
     }
     if (value instanceof ArrayBuffer) {
-      return serializeTypedArray(request, 'A', new Uint8Array(value));
+      return serializeTypedArray(request, 'A', new Uint8Array(value), value);
     }
     if (value instanceof Int8Array) {
       // char
-      return serializeTypedArray(request, 'O', value);
+      return serializeTypedArray(request, 'O', value, value);
     }
     if (value instanceof Uint8Array) {
       // unsigned char
-      return serializeTypedArray(request, 'o', value);
+      return serializeTypedArray(request, 'o', value, value);
     }
     if (value instanceof Uint8ClampedArray) {
       // unsigned clamped char
-      return serializeTypedArray(request, 'U', value);
+      return serializeTypedArray(request, 'U', value, value);
     }
     if (value instanceof Int16Array) {
       // sort
-      return serializeTypedArray(request, 'S', value);
+      return serializeTypedArray(request, 'S', value, value);
     }
     if (value instanceof Uint16Array) {
       // unsigned short
-      return serializeTypedArray(request, 's', value);
+      return serializeTypedArray(request, 's', value, value);
     }
     if (value instanceof Int32Array) {
       // long
-      return serializeTypedArray(request, 'L', value);
+      return serializeTypedArray(request, 'L', value, value);
     }
     if (value instanceof Uint32Array) {
       // unsigned long
-      return serializeTypedArray(request, 'l', value);
+      return serializeTypedArray(request, 'l', value, value);
     }
     if (value instanceof Float32Array) {
       // float
-      return serializeTypedArray(request, 'G', value);
+      return serializeTypedArray(request, 'G', value, value);
     }
     if (value instanceof Float64Array) {
       // double
-      return serializeTypedArray(request, 'g', value);
+      return serializeTypedArray(request, 'g', value, value);
     }
     if (value instanceof BigInt64Array) {
       // number
-      return serializeTypedArray(request, 'M', value);
+      return serializeTypedArray(request, 'M', value, value);
     }
     if (value instanceof BigUint64Array) {
       // unsigned number
       // We use "m" instead of "n" since JSON can start with "null"
-      return serializeTypedArray(request, 'm', value);
+      return serializeTypedArray(request, 'm', value, value);
     }
     if (value instanceof DataView) {
-      return serializeTypedArray(request, 'V', value);
+      return serializeTypedArray(request, 'V', value, value);
     }
     // TODO: Blob is not available in old Node. Remove the typeof check later.
     if (typeof Blob === 'function' && value instanceof Blob) {

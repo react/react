@@ -110,6 +110,18 @@ async function assertBlobContents(expectedValue, received) {
   );
 }
 
+// A value that can only be read once must arrive as one object, wherever it
+// is used. A second copy would have nothing left to read.
+function assertSingleCopy(receivedByExpected, expectedValue, received) {
+  const previous = receivedByExpected.get(expectedValue);
+  if (previous !== undefined && previous !== received) {
+    throw new Error(
+      'A value that can only be read once arrived as two objects',
+    );
+  }
+  receivedByExpected.set(expectedValue, received);
+}
+
 // One received object must never stand for two different source objects.
 function assertSingleSource(expectedByReceived, expectedValue, received) {
   const previous = expectedByReceived.get(received);
@@ -326,6 +338,7 @@ function throwAtPath(error, path) {
 
 module.exports = {
   isObject,
+  assertSingleCopy,
   assertSingleSource,
   assertBlobContents,
   compareValue,

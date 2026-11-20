@@ -1128,9 +1128,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'object', other: 'object'},
       }));
 
-    // Edge fails this until a typed array written twice reuses its row.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a large binary value written in two places', () =>
+    it('a large binary value written in two places', () =>
       runGraph({
         nodes: {
           binary: {special: 'large binary'},
@@ -1393,7 +1391,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         events: ['resolve later to object', 'fail stream', 'load ready'],
       }));
 
-    // @gate FIXME
     it('an iterator reused in later stream items', () =>
       runGraph({
         nodes: {
@@ -2229,15 +2226,12 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         ],
       }));
 
-    // @gate FIXME
     it('a shared stream first returned through element context with key null', () =>
       checkSharedInElementContext('stream', null));
 
-    // @gate FIXME
     it('a shared stream first returned through element context with key keyed', () =>
       checkSharedInElementContext('stream', 'keyed'));
 
-    // @gate FIXME
     it('a shared iterable first returned through element context with key null', () =>
       checkSharedInElementContext('iterable', null));
   });
