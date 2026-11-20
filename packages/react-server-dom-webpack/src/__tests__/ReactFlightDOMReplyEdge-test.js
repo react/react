@@ -45,6 +45,32 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(decoded).toEqual({some: 'object'});
   });
 
+  it('can reuse an iterator in later stream items', async () => {
+    const iterator = ['first', 'second'].values();
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue({iterator});
+        controller.enqueue({iterator});
+        controller.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const reader = result.getReader();
+    const first = await reader.read();
+    const second = await reader.read();
+    expect(first.done).toBe(false);
+    expect(second.done).toBe(false);
+    // Either occurrence can be a copy, but each iterator must have all its items.
+    new Set([first.value.iterator, second.value.iterator]).forEach(received => {
+      expect(Array.from(received)).toEqual(['first', 'second']);
+    });
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('should be able to serialize any kind of typed array', async () => {
     const buffer = new Uint8Array([
       123, 4, 10, 5, 100, 255, 244, 45, 56, 67, 43, 124, 67, 89, 100, 20,
@@ -241,6 +267,75 @@ describe('ReactFlightDOMReplyEdge', () => {
     // The streamed buffers might be in different chunks and in Uint8Array form but
     // the concatenated bytes should be the same.
     expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
+  });
+
+  // Writing this cycle also requires the reader to fill the Map before delivery.
+  // eslint-disable-next-line jest/no-disabled-tests
+  it.skip('can pass a stream item that contains itself', async () => {
+    const item = ['first'];
+    item.push(item);
+    item.push({back: item});
+    const map = new Map();
+    map.set('self', map);
+    const inner = {};
+    inner.self = inner;
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.enqueue(map);
+        c.enqueue({inner});
+        c.enqueue({again: item});
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    expect(first[0]).toBe('first');
+    expect(first[1]).toBe(first);
+    expect(first[2].back).toBe(first);
+    const second = (await reader.read()).value;
+    expect(second.get('self')).toBe(second);
+    const third = (await reader.read()).value;
+    expect(third.inner.self).toBe(third.inner);
+    const fourth = (await reader.read()).value;
+    expect(fourth.again).toBe(first);
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it('can refer to a stream inside an iterable item from a later Promise', async () => {
+    const inner = new ReadableStream({
+      start(c) {
+        c.enqueue('inner');
+        c.close();
+      },
+    });
+    const holder = {inner};
+    let resolveLater;
+    const later = new Promise(resolve => (resolveLater = resolve));
+    async function* items() {
+      yield {holder};
+      // The writer asks for another item only after serializing this one.
+      // The Promise must refer to the stream through the item already sent.
+      resolveLater(holder);
+    }
+    const body = await ReactServerDOMClient.encodeReply({s: items(), later});
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    const item = (await result.s.next()).value;
+    const laterValue = await result.later;
+    expect(laterValue).toBe(item.holder);
+    const read = await laterValue.inner.getReader().read();
+    expect(read.value).toBe('inner');
   });
 
   it('should cancel the transported ReadableStream when we are cancelled', async () => {
@@ -531,5 +626,31 @@ describe('ReactFlightDOMReplyEdge', () => {
       // eslint-disable-next-line no-eval
       globalThis.eval = previousEval;
     }
+  });
+
+  it('dedupes an object that is in several items of a stream', async () => {
+    const shared = {name: 'shared', nested: {deep: true}};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue({shared});
+        c.enqueue({shared});
+        c.enqueue({shared});
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    const second = (await reader.read()).value;
+    const third = (await reader.read()).value;
+    // The object is written twice. The first time it is inside its item. The
+    // second time it gets a part of its own, and later items refer to it.
+    expect(first.shared).toEqual(shared);
+    expect(second.shared).toEqual(shared);
+    expect(third.shared).toBe(second.shared);
   });
 });

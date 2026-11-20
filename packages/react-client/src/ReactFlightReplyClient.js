@@ -342,9 +342,7 @@ export function processReply(
         }
       } else {
         try {
-          // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
-          const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-          data.append(streamPrefix, partJSON);
+          data.append(streamPrefix, serializeStreamItem(entry.value));
           reader.read().then(progress, reject);
         } catch (x) {
           reject(x);
@@ -354,6 +352,27 @@ export function processReply(
     reader.read().then(progress, reject);
 
     return '$R' + streamId.toString(16);
+  }
+
+  function serializeStreamItem(value: ReactServerValue): string {
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      !writtenObjects.has(value)
+    ) {
+      // An item is written inside its stream's part, where nothing can refer
+      // to it. So an item that is an object is written as a part of its own,
+      // and the stream's part refers to it. A reply is kept whole until all of
+      // it is written, so this does not keep the item around for longer.
+      const id = nextPartId++;
+      const partJSON = serializeModel(value, id);
+      // $FlowFixMe[incompatible-type] We know it's not null because a stream is being written.
+      const data: FormData = formData;
+      data.append(formFieldPrefix + id, partJSON);
+      return JSON.stringify(serializeByValueID(id));
+    }
+    // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
+    return JSON.stringify(value, resolveToJSON);
   }
 
   function serializeReadableStream(stream: ReadableStream): string {
@@ -406,9 +425,7 @@ export function processReply(
           // Unlike streams, the last value may not be undefined. If it's not
           // we outline it and encode a reference to it in the closing instruction.
           try {
-            // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
-            const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-            data.append(streamPrefix, 'C' + partJSON); // Close signal
+            data.append(streamPrefix, 'C' + serializeStreamItem(entry.value)); // Close signal
           } catch (x) {
             reject(x);
             return;
@@ -420,9 +437,7 @@ export function processReply(
         }
       } else {
         try {
-          // $FlowFixMe[incompatible-type]: While plain JSON can return undefined we never do here.
-          const partJSON: string = JSON.stringify(entry.value, resolveToJSON);
-          data.append(streamPrefix, partJSON);
+          data.append(streamPrefix, serializeStreamItem(entry.value));
           iterator.next().then(progress, reject);
         } catch (x) {
           reject(x);
