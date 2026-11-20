@@ -39,7 +39,6 @@ describe('ViewTransitionReactServer', () => {
     jest.restoreAllMocks();
   });
 
-  // @gate enableViewTransition
   it('can be rendered in React Server', async () => {
     function App() {
       return ReactServer.createElement(

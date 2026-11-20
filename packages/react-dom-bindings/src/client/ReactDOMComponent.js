@@ -71,7 +71,6 @@ import {
   enableHydrationChangeEvent,
   enableScrollEndPolyfill,
   enableSrcObject,
-  enableViewTransition,
   enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
 import {
@@ -3323,12 +3322,10 @@ export function diffHydratedProperties(
         case 'vt-share':
         case 'vt-parent-enter':
         case 'vt-parent-exit':
-          if (enableViewTransition) {
-            // View Transition annotations are expected from the Server Runtime.
-            // However, if they're also specified on the client and don't match
-            // that's an error.
-            break;
-          }
+          // View Transition annotations are expected from the Server Runtime.
+          // However, if they're also specified on the client and don't match
+          // that's an error.
+          break;
         // Fallthrough
         default:
           // Intentionally use the original name.
