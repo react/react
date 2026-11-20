@@ -848,6 +848,108 @@ describe('ReactDOMFizzStaticBrowser', () => {
     expect(errors).toEqual(['resume abort']);
   });
 
+  [false, true].forEach(synchronousAbort => {
+    it(
+      `preserves postponed holes when aborting a resumed replay above a slot (${
+        synchronousAbort ? 'synchronously' : 'asynchronously'
+      })`,
+      async () => {
+        const never = new Promise(() => {});
+        let stage = 0;
+        let secondController;
+
+        function Wrapper({children}) {
+          if (stage === 1) {
+            if (synchronousAbort) {
+              secondController.abort('second abort');
+            }
+            React.use(never);
+          }
+          return <section>{children}</section>;
+        }
+
+        function Wait() {
+          if (stage < 2) {
+            React.use(never);
+          }
+          return 'Hello';
+        }
+
+        function App() {
+          return (
+            <main>
+              <Suspense fallback={<p>Loading</p>}>
+                <Wrapper>
+                  <Wait />
+                </Wrapper>
+              </Suspense>
+            </main>
+          );
+        }
+
+        const firstController = new AbortController();
+        let pendingResult;
+        await serverAct(() => {
+          pendingResult = ReactDOMFizzStatic.prerender(<App />, {
+            signal: firstController.signal,
+            onError() {},
+          });
+        });
+        await serverAct(() => firstController.abort('first abort'));
+        const first = await pendingResult;
+
+        expect(first.postponed).not.toBe(null);
+        await readIntoContainer(first.prelude);
+        expect(getVisibleChildren(container)).toEqual(
+          <main>
+            <p>Loading</p>
+          </main>,
+        );
+
+        stage = 1;
+        secondController = new AbortController();
+        await serverAct(() => {
+          pendingResult = ReactDOMFizzStatic.resumeAndPrerender(
+            <App />,
+            JSON.parse(JSON.stringify(first.postponed)),
+            {
+              signal: secondController.signal,
+              onError() {},
+            },
+          );
+        });
+        if (!synchronousAbort) {
+          await serverAct(() => secondController.abort('second abort'));
+        }
+        const second = await pendingResult;
+
+        // The aborted replay must remain resumable instead of becoming $RX
+        // client-rendered output.
+        expect(second.postponed).not.toBe(null);
+        await readIntoContainer(second.prelude);
+        expect(getVisibleChildren(container)).toEqual(
+          <main>
+            <p>Loading</p>
+          </main>,
+        );
+
+        stage = 2;
+        const resumed = await serverAct(() =>
+          ReactDOMFizzServer.resume(
+            <App />,
+            JSON.parse(JSON.stringify(second.postponed)),
+          ),
+        );
+        await readIntoContainer(resumed);
+        expect(getVisibleChildren(container)).toEqual(
+          <main>
+            <section>Hello</section>
+          </main>,
+        );
+      },
+    );
+  });
+
   it('can abort and suspend while replaying a prerendered tree', async () => {
     const promise = new Promise(() => {});
     let prerendering = true;
