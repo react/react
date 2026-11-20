@@ -42,6 +42,45 @@ describe('ReactDOMFizzServerEdge', () => {
     }
   }
 
+  it('retries pinged work in the async context the request was created in', async () => {
+    const storage = new AsyncLocalStorage();
+
+    // Unlike a native promise, a custom thenable calls its listeners in the
+    // context of whoever resolves it.
+    const listeners = [];
+    const thenable = {
+      then(resolve) {
+        listeners.push(resolve);
+      },
+    };
+
+    function Component() {
+      React.use(thenable);
+      return <span>{storage.getStore()}</span>;
+    }
+
+    const streamPromise = storage.run('request', () =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <div>
+          <Suspense fallback="Loading">
+            <Component />
+          </Suspense>
+        </div>,
+      ),
+    );
+    const stream = await streamPromise;
+    expect(listeners.length).toBeGreaterThan(0);
+    storage.run('other', () => {
+      thenable.status = 'fulfilled';
+      thenable.value = undefined;
+      listeners.forEach(listener => listener());
+    });
+
+    const result = await readResult(stream);
+    expect(result).toContain('<span>request</span>');
+    expect(result).not.toContain('other');
+  });
+
   // https://github.com/react/react/issues/27540
   it('does not try to write to the stream after it has been closed', async () => {
     async function preloadLate() {
