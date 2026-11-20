@@ -6,7 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-
+const name=""
 [dependencies]
 rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
