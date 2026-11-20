@@ -212,7 +212,8 @@ fn merge_macro_arguments(
                 InstructionValue::CallExpression { callee, .. }
                 | InstructionValue::MethodCall {
                     property: callee, ..
-                } => {
+                }
+                | InstructionValue::TaggedTemplateExpression { tag: callee, .. } => {
                     let scope_id = match env.identifiers[lvalue_id.0 as usize].scope {
                         Some(s) => s,
                         None => continue,
