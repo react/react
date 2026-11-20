@@ -15,7 +15,7 @@ const {
 
 async function createFixture(
   graph,
-  {React, ReactServer, WebpackMock, observeProps},
+  {React, ReactServer, WebpackMock, observeProps, createServerReference},
 ) {
   checkReachability(graph);
   const {nodes} = graph;
@@ -83,7 +83,36 @@ async function createFixture(
           '<span title="' + node.host + '"></span>',
         );
         break;
+      case 'opaqueElement':
+        // A plain client element. With a temporary reference set it is sent as
+        // an opaque marker and comes back as the original object.
+        values[name] = React.createElement('div', {'data-fuzz': name});
+        valueMetadata.set(values[name], {type: 'opaque'});
+        break;
+      case 'opaqueFunction': {
+        const fn = () => {};
+        Object.defineProperty(fn, 'name', {value: 'opaque_' + name});
+        values[name] = fn;
+        valueMetadata.set(fn, {type: 'opaque'});
+        break;
+      }
+      case 'opaqueSymbol':
+        values[name] = Symbol('opaque_' + name);
+        valueMetadata.set(values[name], {type: 'opaque'});
+        break;
       case 'module': {
+        if (createServerReference !== undefined) {
+          // Replies cannot carry client references. Use a Server Function
+          // whose module loads when the corresponding event is released.
+          values[name] = createServerFunction(() => node.module, {
+            label: name,
+            loadError:
+              node.fail === undefined
+                ? undefined
+                : new Error('module ' + name + ' failed to ' + node.fail),
+          });
+          break;
+        }
         const load = createResolvablePromise();
         const evaluate = node.async === true ? createResolvablePromise() : null;
         const loadError =
@@ -181,6 +210,14 @@ async function createFixture(
       case 'iterator':
         values[name] = createIterator(node.iterator.map(buildValue));
         break;
+      case 'syncThenable': {
+        // A thenable that settles synchronously during serialization.
+        const target = buildValue(node.syncThenable);
+        const thenable = {then: resolve => resolve(target)};
+        values[name] = thenable;
+        valueMetadata.set(thenable, {type: 'thenable', value: target});
+        break;
+      }
       case 'error':
         values[name] = createAggregateError(
           node.error,
@@ -402,23 +439,31 @@ async function createFixture(
 
   function createServerFunction(
     implementation,
-    {bound = [], label, loaded = false} = {},
+    {bound = [], label, loadError, loaded = false} = {},
   ) {
     const ready = loaded ? null : createResolvablePromise();
     const exported = WebpackMock.serverExports(
       {fn: implementation},
       ready === null ? undefined : ready.promise,
     );
-    const fn = bound.length ? exported.fn.bind(null, ...bound) : exported.fn;
+    const reference =
+      createServerReference === undefined
+        ? exported.fn
+        : createServerReference(exported.fn.$$id, () => {
+            throw new Error('The fuzz does not call back into the server.');
+          });
+    const fn = bound.length ? reference.bind(null, ...bound) : reference;
     const result = implementation(...bound);
     valueMetadata.set(fn, {type: 'function', bound, args: [], result});
     if (ready === null) {
       return fn;
     }
     const event = createEvent(
-      'load ' + (label || 'server function'),
-      () => ready.resolve(),
-      {isClient: true},
+      (loadError !== undefined ? 'reject ' : 'load ') +
+        (label || 'server function'),
+      () =>
+        loadError !== undefined ? ready.reject(loadError) : ready.resolve(),
+      {isClient: true, error: loadError},
     );
     events.push(event);
     requiredEvents.set(fn, [event]);

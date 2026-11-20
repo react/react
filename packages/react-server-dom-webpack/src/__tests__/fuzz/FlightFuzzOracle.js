@@ -38,11 +38,12 @@ const {
 
 function createOracle(
   fixture = {valueMetadata: new Map(), requiredEvents: new Map()},
-  {render} = {},
+  {render, isReply = false} = {},
 ) {
   const state = {
     fixture,
     render,
+    isReply,
     expectedByReceived: new WeakMap(),
     receivedByExpected: new WeakMap(),
     receivedValues: [],
@@ -151,14 +152,16 @@ function traverse(state, root, observe, visited = new Set()) {
       assertSingleSource(state.expectedByReceived, expectedValue, received);
       const metadata = fixture.valueMetadata.get(expectedValue);
       if (
-        ArrayBuffer.isView(expectedValue) ||
-        expectedValue instanceof ArrayBuffer ||
-        (metadata !== undefined &&
-          (metadata.type === 'iterator' ||
-            metadata.type === 'stream' ||
-            metadata.type === 'canceled' ||
-            metadata.type === 'bytes' ||
-            metadata.type === 'iterable'))
+        // A reply does not keep these values in one place.
+        !state.isReply &&
+        (ArrayBuffer.isView(expectedValue) ||
+          expectedValue instanceof ArrayBuffer ||
+          (metadata !== undefined &&
+            (metadata.type === 'iterator' ||
+              metadata.type === 'stream' ||
+              metadata.type === 'canceled' ||
+              metadata.type === 'bytes' ||
+              metadata.type === 'iterable')))
       ) {
         assertSingleCopy(state.receivedByExpected, expectedValue, received);
       }

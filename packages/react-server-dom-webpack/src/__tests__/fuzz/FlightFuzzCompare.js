@@ -338,6 +338,7 @@ function throwAtPath(error, path) {
 
 module.exports = {
   isObject,
+  describeValue,
   assertSingleCopy,
   assertSingleSource,
   assertBlobContents,
