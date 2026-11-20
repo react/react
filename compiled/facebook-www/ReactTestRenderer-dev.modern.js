@@ -18970,6 +18970,7 @@ __DEV__ &&
         cacheSignal: function () {
           return readContext(CacheContext).controller.signal;
         },
+        units: null,
         getOwner: function () {
           return current;
         }
@@ -19286,10 +19287,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-modern-e04279e7-20261119",
+        version: "19.3.0-www-modern-043ce595-20261120",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-modern-e04279e7-20261119"
+        reconcilerVersion: "19.3.0-www-modern-043ce595-20261120"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -19425,5 +19426,5 @@ __DEV__ &&
     exports.unstable_batchedUpdates = function (fn, a) {
       return fn(a);
     };
-    exports.version = "19.3.0-www-modern-e04279e7-20261119";
+    exports.version = "19.3.0-www-modern-043ce595-20261120";
   })();

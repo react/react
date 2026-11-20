@@ -22591,6 +22591,7 @@ __DEV__ &&
         cacheSignal: function () {
           return readContext(CacheContext).controller.signal;
         },
+        units: null,
         getOwner: function () {
           return current;
         }
@@ -23249,7 +23250,7 @@ __DEV__ &&
         version: rendererVersion,
         rendererPackageName: rendererPackageName,
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-modern-e04279e7-20261119"
+        reconcilerVersion: "19.3.0-www-modern-043ce595-20261120"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

@@ -3545,7 +3545,8 @@ var HooksDispatcher = {
     },
     cacheSignal: function () {
       throw Error("Not implemented.");
-    }
+    },
+    units: null
   },
   prefix,
   suffix;

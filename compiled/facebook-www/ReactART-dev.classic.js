@@ -20360,6 +20360,7 @@ __DEV__ &&
         cacheSignal: function () {
           return readContext(CacheContext).controller.signal;
         },
+        units: null,
         getOwner: function () {
           return current;
         }
@@ -20697,10 +20698,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-e04279e7-20261119",
+        version: "19.3.0-www-classic-043ce595-20261120",
         rendererPackageName: "react-art",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-e04279e7-20261119"
+        reconcilerVersion: "19.3.0-www-classic-043ce595-20261120"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -20735,7 +20736,7 @@ __DEV__ &&
     exports.Shape = Shape;
     exports.Surface = Surface;
     exports.Text = Text;
-    exports.version = "19.3.0-www-classic-e04279e7-20261119";
+    exports.version = "19.3.0-www-classic-043ce595-20261120";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

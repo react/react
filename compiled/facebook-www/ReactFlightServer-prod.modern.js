@@ -349,7 +349,8 @@ var DefaultAsyncDispatcher = {
     cacheSignal: function () {
       var request = currentRequest ? currentRequest : null;
       return request ? request.cacheController.signal : null;
-    }
+    },
+    units: null
   },
   ReactSharedInternalsServer =
     React.__SERVER_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
@@ -518,6 +519,7 @@ function RequestInstance(
   this.identifierPrefix = identifierPrefix || "";
   this.identifierCount = 1;
   this.taintCleanupQueue = [];
+  this.rootUnit = this.ledgers = null;
   this.onError = void 0 === onError ? defaultErrorHandler : onError;
   this.onAllReady = onAllReady;
   this.onFatalError = onFatalError;
@@ -1004,7 +1006,8 @@ function createTaskWithID(
     ping: function () {
       return pingTask(request, task);
     },
-    thenableState: null
+    thenableState: null,
+    unit: null
   };
   abortSet.add(task);
   return task;
@@ -1916,9 +1919,9 @@ function flushCompletedChunks(request) {
           destination.write(currentView.subarray(0, writtenBytes)),
         (currentView = null),
         (writtenBytes = 0),
-        (destinationHasCapacity = !0);
+        (destinationHasCapacity = !0),
+        "function" === typeof destination.flush && destination.flush();
     }
-    "function" === typeof destination.flush && destination.flush();
   }
   0 === request.pendingChunks &&
     (12 > request.status &&

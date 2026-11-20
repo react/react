@@ -780,6 +780,7 @@ __DEV__ &&
       this.identifierPrefix = identifierPrefix || "";
       this.identifierCount = 1;
       this.taintCleanupQueue = [];
+      this.rootUnit = this.ledgers = null;
       this.onError = void 0 === onError ? defaultErrorHandler : onError;
       this.onAllReady = onAllReady;
       this.onFatalError = onFatalError;
@@ -1537,7 +1538,7 @@ __DEV__ &&
         task.debugStack,
         task.debugTask
       );
-      retryTask(request, task);
+      retryTaskImpl(request, task);
       return task.status === COMPLETED
         ? serializeByValueID(task.id)
         : serializeLazyID(task.id);
@@ -1744,6 +1745,7 @@ __DEV__ &&
           return pingTask(request, task);
         },
         thenableState: null,
+        unit: null,
         timed: !1
       };
       task.time = lastTimestamp;
@@ -1937,7 +1939,7 @@ __DEV__ &&
         null,
         null
       );
-      retryTask(request, value);
+      retryTaskImpl(request, value);
       return value.id;
     }
     function serializeServerReference(request, serverReference) {
@@ -3433,7 +3435,7 @@ __DEV__ &&
       request.abortableTasks.delete(task);
       callOnAllReadyIfReady(request);
     }
-    function retryTask(request, task) {
+    function retryTaskImpl(request, task) {
       task.status === PENDING$1 &&
         runWithRequest(request, retryTaskWithRequest, task);
     }
@@ -3526,7 +3528,7 @@ __DEV__ &&
         var pingedTasks = request.pingedTasks;
         request.pingedTasks = [];
         for (var i = 0; i < pingedTasks.length; i++)
-          retryTask(request, pingedTasks[i]);
+          retryTaskImpl(request, pingedTasks[i]);
         flushCompletedChunks(request);
       } catch (error) {
         logRecoverableError(request, error, null), fatalError(request, error);
@@ -3693,9 +3695,10 @@ __DEV__ &&
             }
           errorChunks.splice(0, debugChunks);
         } finally {
-          (request.flushScheduled = !1), completeWriting(debugDestination);
+          (request.flushScheduled = !1),
+            completeWriting(debugDestination),
+            flushBuffered(debugDestination);
         }
-        flushBuffered(debugDestination);
       }
       0 === request.pendingChunks &&
         (request.status < ABORTING &&
@@ -5456,7 +5459,8 @@ __DEV__ &&
         cacheSignal: function () {
           var request = currentRequest ? currentRequest : null;
           return request ? request.cacheController.signal : null;
-        }
+        },
+        units: null
       };
     DefaultAsyncDispatcher.getOwner = resolveOwner;
     var ReactSharedInternalsServer =

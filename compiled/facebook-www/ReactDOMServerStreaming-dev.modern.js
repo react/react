@@ -10141,6 +10141,7 @@ __DEV__ &&
         cacheSignal: function () {
           throw Error("Not implemented.");
         },
+        units: null,
         getOwner: function () {
           return null === currentTaskInDEV
             ? null

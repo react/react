@@ -14055,7 +14055,8 @@ module.exports = function ($$$config) {
       },
       cacheSignal: function () {
         return readContext(CacheContext).controller.signal;
-      }
+      },
+      units: null
     },
     COMPONENT_TYPE = 0,
     HAS_PSEUDO_CLASS_TYPE = 1,
@@ -14477,7 +14478,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-e04279e7-20261119"
+      reconcilerVersion: "19.3.0-www-modern-043ce595-20261120"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);
