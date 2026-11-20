@@ -3027,6 +3027,15 @@ function updateDehydratedSuspenseComponent(
           componentStack === undefined ? null : componentStack,
         );
         queueHydrationError(capturedValue);
+      } else if (!didReceiveUpdate) {
+        // If the client attempt suspends, we may hydrate the fallback. Discover
+        // changed context while the dehydrated fragment is still present, so
+        // its childLanes record whether the server fallback can still match.
+        lazilyPropagateParentContextChanges(
+          current,
+          workInProgress,
+          renderLanes,
+        );
       }
       return retrySuspenseComponentWithoutHydrating(
         current,
@@ -3163,8 +3172,35 @@ function updateDehydratedSuspenseComponent(
     if (workInProgress.flags & ForceClientRender) {
       // Something errored during hydration. Try again without hydrating.
       // The error should've already been logged in throwException.
-      pushPrimaryTreeSuspenseHandler(workInProgress);
       workInProgress.flags &= ~ForceClientRender;
+      if (
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        // $FlowFixMe[invalid-compare]
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST
+      ) {
+        pushFallbackTreeSuspenseHandler(workInProgress);
+        const nextPrimaryChildren = nextProps.children;
+        const nextFallbackChildren = nextProps.fallback;
+        mountSuspenseFallbackAfterRetryWithoutHydrating(
+          current,
+          workInProgress,
+          nextPrimaryChildren,
+          nextFallbackChildren,
+          renderLanes,
+        );
+        const primaryChildFragment: Fiber = workInProgress.child as any;
+        primaryChildFragment.memoizedState =
+          mountSuspenseOffscreenState(renderLanes);
+        primaryChildFragment.childLanes = getRemainingWorkInPrimaryTree(
+          current,
+          didPrimaryChildrenDefer,
+          renderLanes,
+        );
+        workInProgress.memoizedState = SUSPENDED_MARKER;
+        return bailoutOffscreenComponent(null, primaryChildFragment);
+      }
+      pushPrimaryTreeSuspenseHandler(workInProgress);
       return retrySuspenseComponentWithoutHydrating(
         current,
         workInProgress,
@@ -3187,17 +3223,56 @@ function updateDehydratedSuspenseComponent(
     } else {
       // Suspended but we should no longer be in dehydrated mode.
       // Therefore we now have to render the fallback.
-      pushFallbackTreeSuspenseHandler(workInProgress);
-
+      const forceClientRender =
+        (workInProgress.flags & ForceClientRender) !== NoFlags;
       const nextPrimaryChildren = nextProps.children;
       const nextFallbackChildren = nextProps.fallback;
-      mountSuspenseFallbackAfterRetryWithoutHydrating(
-        current,
-        workInProgress,
-        nextPrimaryChildren,
-        nextFallbackChildren,
-        renderLanes,
-      );
+      if (
+        !forceClientRender &&
+        current.memoizedProps === nextProps &&
+        !hasLegacyContextChanged() &&
+        !includesSomeLane(renderLanes, current.childLanes) &&
+        isSuspenseInstanceFallback(suspenseInstance) &&
+        // $FlowFixMe[invalid-compare]
+        getSuspenseInstanceFallbackErrorDetails(suspenseInstance).digest ===
+          REACT_RECOVERABLE_DIGEST
+      ) {
+        // Intentional client rendering may suspend too. Hydrate the server's
+        // fallback so it keeps its DOM, while becoming interactive and updatable.
+        // Until hydration finishes, this boundary also contains suspensions and
+        // hydration errors in the fallback, just like other dehydrated content.
+        pushPrimaryTreeSuspenseHandler(workInProgress);
+        reenterHydrationStateFromDehydratedSuspenseInstance(
+          workInProgress,
+          suspenseInstance,
+          suspenseState.treeContext,
+        );
+        // The abandoned client attempt queued the dehydrated fragment for
+        // deletion. Its DOM now belongs to the fallback we are hydrating.
+        workInProgress.deletions = null;
+        workInProgress.flags &= ~ChildDeletion;
+        const fallbackChildFragment = mountSuspenseFallbackChildren(
+          workInProgress,
+          nextPrimaryChildren,
+          nextFallbackChildren,
+          renderLanes,
+        );
+        fallbackChildFragment.flags |= Hydrating | PlacementDEV;
+        // Keep the instance until completeWork pops the hydration cursor.
+        workInProgress.memoizedState = suspenseState;
+      } else {
+        // Changed inputs require a client fallback: hydration does not patch
+        // mismatched attributes and would leave the server fallback stale.
+        pushFallbackTreeSuspenseHandler(workInProgress);
+        mountSuspenseFallbackAfterRetryWithoutHydrating(
+          current,
+          workInProgress,
+          nextPrimaryChildren,
+          nextFallbackChildren,
+          renderLanes,
+        );
+        workInProgress.memoizedState = SUSPENDED_MARKER;
+      }
       const primaryChildFragment: Fiber = workInProgress.child as any;
       primaryChildFragment.memoizedState =
         mountSuspenseOffscreenState(renderLanes);
@@ -3206,7 +3281,6 @@ function updateDehydratedSuspenseComponent(
         didPrimaryChildrenDefer,
         renderLanes,
       );
-      workInProgress.memoizedState = SUSPENDED_MARKER;
       return bailoutOffscreenComponent(null, primaryChildFragment);
     }
   }
