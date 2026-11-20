@@ -516,6 +516,14 @@ describe('ReactDOMTextarea', () => {
     await act(() => {
       root.render(<textarea defaultValue="gorilla" />);
     });
+    assertConsoleErrorDev([
+      'A component is changing a controlled textarea to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
+        'Decide between using a controlled or uncontrolled textarea ' +
+        'element for the lifetime of the component. More info: https://react.dev/link/controlled-components\n' +
+        '    in textarea (at **)',
+    ]);
 
     expect(node.value).toEqual('kitten');
   });
@@ -540,6 +548,14 @@ describe('ReactDOMTextarea', () => {
     await act(() => {
       root.render(<textarea defaultValue="gorilla" />);
     });
+    assertConsoleErrorDev([
+      'A component is changing a controlled textarea to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
+        'Decide between using a controlled or uncontrolled textarea ' +
+        'element for the lifetime of the component. More info: https://react.dev/link/controlled-components\n' +
+        '    in textarea (at **)',
+    ]);
 
     expect(node.value).toEqual('puppies');
   });
@@ -1130,5 +1146,128 @@ describe('ReactDOMTextarea', () => {
         'Otherwise, set either `onChange` or `readOnly`.\n' +
         '    in textarea (at **)',
     ]);
+  });
+
+  it('should warn if controlled textarea switches to uncontrolled (value is undefined)', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<textarea value="controlled" onChange={emptyFunction} />);
+    });
+    await act(() => {
+      root.render(<textarea />);
+    });
+    assertConsoleErrorDev([
+      'A component is changing a controlled textarea to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
+        'Decide between using a controlled or uncontrolled textarea ' +
+        'element for the lifetime of the component. More info: https://react.dev/link/controlled-components\n' +
+        '    in textarea (at **)',
+    ]);
+  });
+
+  it('should warn if controlled textarea switches to uncontrolled (value is null)', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<textarea value="controlled" onChange={emptyFunction} />);
+    });
+    await act(() => {
+      root.render(<textarea value={null} />);
+    });
+    assertConsoleErrorDev([
+      '`value` prop on `textarea` should not be null. ' +
+        'Consider using an empty string to clear the component or `undefined` for uncontrolled components.\n' +
+        '    in textarea (at **)',
+      'A component is changing a controlled textarea to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
+        'Decide between using a controlled or uncontrolled textarea ' +
+        'element for the lifetime of the component. More info: https://react.dev/link/controlled-components\n' +
+        '    in textarea (at **)',
+    ]);
+  });
+
+  it('should warn if controlled textarea switches to uncontrolled with defaultValue', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<textarea value="controlled" onChange={emptyFunction} />);
+    });
+    await act(() => {
+      root.render(<textarea defaultValue="uncontrolled" />);
+    });
+    assertConsoleErrorDev([
+      'A component is changing a controlled textarea to be uncontrolled. ' +
+        'This is likely caused by the value changing from a defined to ' +
+        'undefined, which should not happen. ' +
+        'Decide between using a controlled or uncontrolled textarea ' +
+        'element for the lifetime of the component. More info: https://react.dev/link/controlled-components\n' +
+        '    in textarea (at **)',
+    ]);
+  });
+
+  it('should warn if uncontrolled textarea (value is undefined) switches to controlled', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<textarea />);
+    });
+    await act(() => {
+      root.render(<textarea value="controlled" onChange={emptyFunction} />);
+    });
+    assertConsoleErrorDev([
+      'A component is changing an uncontrolled textarea to be controlled. ' +
+        'This is likely caused by the value changing from undefined to ' +
+        'a defined value, which should not happen. ' +
+        'Decide between using a controlled or uncontrolled textarea ' +
+        'element for the lifetime of the component. More info: https://react.dev/link/controlled-components\n' +
+        '    in textarea (at **)',
+    ]);
+  });
+
+  it('should warn if uncontrolled textarea (value is null) switches to controlled', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<textarea value={null} />);
+    });
+    assertConsoleErrorDev([
+      '`value` prop on `textarea` should not be null. ' +
+        'Consider using an empty string to clear the component or `undefined` for uncontrolled components.\n' +
+        '    in textarea (at **)',
+    ]);
+    await act(() => {
+      root.render(<textarea value="controlled" onChange={emptyFunction} />);
+    });
+    assertConsoleErrorDev([
+      'A component is changing an uncontrolled textarea to be controlled. ' +
+        'This is likely caused by the value changing from undefined to ' +
+        'a defined value, which should not happen. ' +
+        'Decide between using a controlled or uncontrolled textarea ' +
+        'element for the lifetime of the component. More info: https://react.dev/link/controlled-components\n' +
+        '    in textarea (at **)',
+    ]);
+  });
+
+  it('should not warn if textarea stays controlled or uncontrolled', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<textarea value="a" onChange={emptyFunction} />);
+    });
+    await act(() => {
+      root.render(<textarea value="b" onChange={emptyFunction} />);
+    });
+
+    const container2 = document.createElement('div');
+    const root2 = ReactDOMClient.createRoot(container2);
+    await act(() => {
+      root2.render(<textarea defaultValue="a" />);
+    });
+    await act(() => {
+      root2.render(<textarea defaultValue="b" />);
+    });
   });
 });
