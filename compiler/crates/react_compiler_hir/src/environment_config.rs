@@ -133,6 +133,8 @@ pub struct EnvironmentConfig {
     #[serde(default)]
     pub validate_static_components: bool,
     #[serde(default)]
+    pub enable_lint_fast_path: bool,
+    #[serde(default)]
     pub validate_no_capitalized_calls: Option<Vec<String>>,
     #[serde(default)]
     #[serde(alias = "restrictedImports")]
@@ -204,6 +206,7 @@ impl Default for EnvironmentConfig {
             validate_no_derived_computations_in_effects_exp: false,
             validate_no_jsx_in_try_statements: false,
             validate_static_components: false,
+            enable_lint_fast_path: false,
             validate_no_capitalized_calls: None,
             validate_blocklisted_imports: None,
             validate_source_locations: false,
