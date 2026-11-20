@@ -10,7 +10,7 @@
 import LRU from 'lru-cache';
 import SourceMapConsumer from 'react-devtools-shared/src/hooks/SourceMapConsumer';
 
-import type {ReactFunctionLocation} from 'shared/ReactTypes';
+import type {ReactFunctionLocation, ReactStackTrace} from 'shared/ReactTypes';
 import type {FetchFileWithCaching} from 'react-devtools-shared/src/devtools/views/Components/FetchFileWithCachingContext';
 import type {SourceMapConsumerType} from 'react-devtools-shared/src/hooks/SourceMapConsumer';
 import type {LRUCache} from 'react-devtools-shared/src/frontend/types';
@@ -46,6 +46,19 @@ export function symbolicateSourceWithCache(
   symbolicationCache.set(key, promise);
 
   return promise;
+}
+
+// Views read a stack's frames with `use()` one after another, so each frame
+// would only start loading once the previous one has resolved. Start them all
+// up front instead.
+export function preloadSymbolicatedStack(
+  fetchFileWithCaching: FetchFileWithCaching,
+  stack: ReactStackTrace,
+): void {
+  for (let i = 0; i < stack.length; i++) {
+    const [, url, line, column] = stack[i];
+    void symbolicateSourceWithCache(fetchFileWithCaching, url, line, column);
+  }
 }
 
 // Decodes data:[<media-type>][;base64],<data>

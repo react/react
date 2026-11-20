@@ -47,12 +47,14 @@ function createFetchFileWithCaching(files: {[url: string]: string}) {
 }
 
 describe('symbolicateSource', () => {
+  let preloadSymbolicatedStack;
   let symbolicateSource;
   let symbolicateSourceWithCache;
 
   beforeEach(() => {
     jest.resetModules();
     ({
+      preloadSymbolicatedStack,
       symbolicateSource,
       symbolicateSourceWithCache,
     } = require('react-devtools-shared/src/symbolicateSource'));
@@ -180,6 +182,21 @@ describe('symbolicateSource', () => {
     expect(fetchFileWithCaching.mock.calls).toEqual([
       ['http://localhost:3000/assets/index.js'],
       ['http://localhost:3000/assets/index.js.map'],
+    ]);
+  });
+
+  it('should start loading every file of a preloaded stack at once', () => {
+    const fetchFileWithCaching = createFetchFileWithCaching({});
+
+    preloadSymbolicatedStack(fetchFileWithCaching, [
+      ['a', 'http://localhost:3000/a.js', 1, 1, 0, 0, false],
+      ['b', 'http://localhost:3000/b.js', 1, 1, 0, 0, false],
+      ['c', 'http://localhost:3000/a.js', 2, 5, 0, 0, false],
+    ]);
+
+    expect(fetchFileWithCaching.mock.calls).toEqual([
+      ['http://localhost:3000/a.js'],
+      ['http://localhost:3000/b.js'],
     ]);
   });
 });
