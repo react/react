@@ -623,7 +623,9 @@ export function listenToFormSubmissionsForReplaying() {
     }
     const form = event.target;
     const submitter = event['submitter'];
-    let action = form.action;
+    // Named form controls shadow form properties, including action and
+    // getAttribute, so read the attribute through the prototype.
+    let action = Element.prototype.getAttribute.call(form, 'action');
     let formDataSubmitter = submitter;
     if (submitter) {
       const submitterAction = submitter.getAttribute('formAction');
