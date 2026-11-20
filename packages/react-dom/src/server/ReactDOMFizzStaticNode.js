@@ -28,6 +28,7 @@ import {
   abort,
   attachAbortSignal,
   getPostponedState,
+  getFinalizedPostponedState,
 } from 'react-server/src/ReactFizzServer';
 
 import {
@@ -65,9 +66,14 @@ type Options = {
   maxHeadersLength?: number,
 };
 
-type StaticResult = {
+type StaticResultNode = {
   postponed: null | PostponedState,
   prelude: Readable,
+};
+
+type StaticResultWeb = {
+  postponed: null | PostponedState,
+  prelude: ReadableStream,
 };
 
 function createFakeWritableFromReadableStreamController(
@@ -118,7 +124,7 @@ function createFakeWritableFromReadable(readable: any): Writable {
 function prerenderToNodeStream(
   children: ReactNodeList,
   options?: Options,
-): Promise<StaticResult> {
+): Promise<StaticResultNode> {
   return new Promise((resolve, reject) => {
     const onFatalError = reject;
 
@@ -130,10 +136,18 @@ function prerenderToNodeStream(
       });
       const writable = createFakeWritableFromReadable(readable);
 
-      const result: StaticResult = {
-        postponed: getPostponedState(request),
+      const result: StaticResultNode = {
+        postponed: null,
         prelude: readable,
       };
+
+      const postponed = getPostponedState(request);
+      if (postponed !== null) {
+        Object.defineProperty(result, 'postponed', {
+          get: getFinalizedPostponedState.bind(null, request, postponed),
+        });
+      }
+
       resolve(result);
     }
     const resumableState = createResumableState(
@@ -175,10 +189,7 @@ function prerender(
   options?: Omit<Options, 'onHeaders'> & {
     onHeaders?: (headers: Headers) => void,
   },
-): Promise<{
-  postponed: null | PostponedState,
-  prelude: ReadableStream,
-}> {
+): Promise<StaticResultWeb> {
   return new Promise((resolve, reject) => {
     const onFatalError = reject;
 
@@ -199,15 +210,22 @@ function prerender(
             abort(request, reason);
           },
         },
-        // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
         // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
-      const result = {
-        postponed: getPostponedState(request),
+      const result: StaticResultWeb = {
+        postponed: null,
         prelude: stream,
       };
+
+      const postponed = getPostponedState(request);
+      if (postponed !== null) {
+        Object.defineProperty(result, 'postponed', {
+          get: getFinalizedPostponedState.bind(null, request, postponed),
+        });
+      }
+
       resolve(result);
     }
 
@@ -263,7 +281,7 @@ function resumeAndPrerenderToNodeStream(
   children: ReactNodeList,
   postponedState: PostponedState,
   options?: Omit<ResumeOptions, 'nonce'>,
-): Promise<StaticResult> {
+): Promise<StaticResultNode> {
   return new Promise((resolve, reject) => {
     const onFatalError = reject;
 
@@ -275,10 +293,18 @@ function resumeAndPrerenderToNodeStream(
       });
       const writable = createFakeWritableFromReadable(readable);
 
-      const result = {
-        postponed: getPostponedState(request),
+      const result: StaticResultNode = {
+        postponed: null,
         prelude: readable,
       };
+
+      const postponed = getPostponedState(request);
+      if (postponed !== null) {
+        Object.defineProperty(result, 'postponed', {
+          get: getFinalizedPostponedState.bind(null, request, postponed),
+        });
+      }
+
       resolve(result);
     }
     const request = resumeAndPrerenderRequest(
@@ -303,10 +329,7 @@ function resumeAndPrerender(
   children: ReactNodeList,
   postponedState: PostponedState,
   options?: Omit<ResumeOptions, 'nonce'>,
-): Promise<{
-  postponed: null | PostponedState,
-  prelude: ReadableStream,
-}> {
+): Promise<StaticResultWeb> {
   return new Promise((resolve, reject) => {
     const onFatalError = reject;
 
@@ -327,15 +350,22 @@ function resumeAndPrerender(
             abort(request, reason);
           },
         },
-        // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
-        // $FlowFixMe[incompatible-type]
+        // $FlowFixMe[incompatible-type] size() methods are not allowed on byte streams.
         {highWaterMark: 0},
       );
 
-      const result = {
-        postponed: getPostponedState(request),
+      const result: StaticResultWeb = {
+        postponed: null,
         prelude: stream,
       };
+
+      const postponed = getPostponedState(request);
+      if (postponed !== null) {
+        Object.defineProperty(result, 'postponed', {
+          get: getFinalizedPostponedState.bind(null, request, postponed),
+        });
+      }
+
       resolve(result);
     }
 
