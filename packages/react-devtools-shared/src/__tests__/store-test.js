@@ -302,6 +302,20 @@ describe('Store', () => {
     `);
   });
 
+  // @reactVersion >= 18.0
+  it('should preserve lone surrogates in display names and keys', async () => {
+    const Component = () => null;
+    const displayName = 'Component\ud800A\udfff';
+    const key = '\udfffB\ud800';
+    Component.displayName = displayName;
+
+    await act(() => render(<Component key={key} />));
+
+    const element = store.getElementAtIndex(0);
+    expect(element.displayName).toBe(displayName);
+    expect(element.key).toBe(key);
+  });
+
   it('should handle reorder of filtered elements', async () => {
     function IgnoreMePassthrough({children}) {
       return children;
