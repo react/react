@@ -33,7 +33,8 @@ import {printPlace} from '../HIR/PrintHIR';
  * to the handler.
  *
  * For now the analysis is very conservative, and only affects blocks with primitives or
- * array/object literals. Even a variable reference could throw bc of the TDZ.
+ * array/object literals. Array spreads may throw while iterating. Even a variable
+ * reference could throw bc of the TDZ.
  */
 export function pruneMaybeThrows(fn: HIRFunction): void {
   const terminalMapping = pruneMaybeThrowsImpl(fn);
@@ -96,9 +97,11 @@ function pruneMaybeThrowsImpl(fn: HIRFunction): Map<BlockId, BlockId> | null {
 function instructionMayThrow(instr: Instruction): boolean {
   switch (instr.value.kind) {
     case 'Primitive':
-    case 'ArrayExpression':
     case 'ObjectExpression': {
       return false;
+    }
+    case 'ArrayExpression': {
+      return instr.value.elements.some(element => element.kind === 'Spread');
     }
     default: {
       return true;
