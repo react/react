@@ -20,41 +20,78 @@ use crate::type_config::{
 pub fn default_module_type_provider(module_name: &str) -> Option<TypeConfig> {
     match module_name {
         "react-hook-form" => Some(TypeConfig::Object(ObjectTypeConfig {
-            properties: Some(IndexMap::from_iter([(
-                "useForm".to_string(),
-                TypeConfig::Hook(HookTypeConfig {
-                    return_type: Box::new(TypeConfig::Object(ObjectTypeConfig {
-                        properties: Some(IndexMap::from_iter([(
-                            "watch".to_string(),
-                            TypeConfig::Function(FunctionTypeConfig {
-                                positional_params: Vec::new(),
-                                rest_param: Some(Effect::Read),
-                                callee_effect: Effect::Read,
-                                return_type: Box::new(TypeConfig::TypeReference(
-                                    TypeReferenceConfig {
-                                        name: BuiltInTypeRef::Any,
-                                    },
-                                )),
-                                return_value_kind: ValueKind::Mutable,
-                                no_alias: None,
-                                mutable_only_if_operands_are_mutable: None,
-                                impure: None,
-                                canonical_name: None,
-                                aliasing: None,
-                                known_incompatible: Some(
-                                    "React Hook Form's `useForm()` API returns a `watch()` function which cannot be memoized safely.".to_string(),
-                                ),
-                            }),
-                        )])),
-                    })),
-                    positional_params: None,
-                    rest_param: None,
-                    return_value_kind: None,
-                    no_alias: None,
-                    aliasing: None,
-                    known_incompatible: None,
-                }),
-            )])),
+            properties: Some(IndexMap::from_iter([
+                (
+                    "useForm".to_string(),
+                    TypeConfig::Hook(HookTypeConfig {
+                        return_type: Box::new(TypeConfig::Object(ObjectTypeConfig {
+                            properties: Some(IndexMap::from_iter([(
+                                "watch".to_string(),
+                                TypeConfig::Function(FunctionTypeConfig {
+                                    positional_params: Vec::new(),
+                                    rest_param: Some(Effect::Read),
+                                    callee_effect: Effect::Read,
+                                    return_type: Box::new(TypeConfig::TypeReference(
+                                        TypeReferenceConfig {
+                                            name: BuiltInTypeRef::Any,
+                                        },
+                                    )),
+                                    return_value_kind: ValueKind::Mutable,
+                                    no_alias: None,
+                                    mutable_only_if_operands_are_mutable: None,
+                                    impure: None,
+                                    canonical_name: None,
+                                    aliasing: None,
+                                    known_incompatible: Some(
+                                        "React Hook Form's `useForm()` API returns a `watch()` function which cannot be memoized safely.".to_string(),
+                                    ),
+                                }),
+                            )])),
+                        })),
+                        positional_params: None,
+                        rest_param: None,
+                        return_value_kind: None,
+                        no_alias: None,
+                        aliasing: None,
+                        known_incompatible: None,
+                    }),
+                ),
+                (
+                    "useFormContext".to_string(),
+                    TypeConfig::Hook(HookTypeConfig {
+                        return_type: Box::new(TypeConfig::Object(ObjectTypeConfig {
+                            properties: Some(IndexMap::from_iter([(
+                                "watch".to_string(),
+                                TypeConfig::Function(FunctionTypeConfig {
+                                    positional_params: Vec::new(),
+                                    rest_param: Some(Effect::Read),
+                                    callee_effect: Effect::Read,
+                                    return_type: Box::new(TypeConfig::TypeReference(
+                                        TypeReferenceConfig {
+                                            name: BuiltInTypeRef::Any,
+                                        },
+                                    )),
+                                    return_value_kind: ValueKind::Mutable,
+                                    no_alias: None,
+                                    mutable_only_if_operands_are_mutable: None,
+                                    impure: None,
+                                    canonical_name: None,
+                                    aliasing: None,
+                                    known_incompatible: Some(
+                                        "React Hook Form's `useFormContext()` API returns a `watch()` function which cannot be memoized safely.".to_string(),
+                                    ),
+                                }),
+                            )])),
+                        })),
+                        positional_params: None,
+                        rest_param: None,
+                        return_value_kind: None,
+                        no_alias: None,
+                        aliasing: None,
+                        known_incompatible: None,
+                    }),
+                ),
+            ])),
         })),
 
         "@tanstack/react-table" => Some(TypeConfig::Object(ObjectTypeConfig {
