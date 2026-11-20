@@ -92,11 +92,14 @@ export class ReactiveScopeDependencyTreeHIR {
       };
       roots.set(identifier, rootNode);
     } else {
-      CompilerError.invariant(reactive === rootNode.reactive, {
-        reason: '[DeriveMinimalDependenciesHIR] Conflicting reactive root flag',
-        description: `Identifier ${printIdentifier(identifier)}`,
-        loc: GeneratedSource,
-      });
+      if (reactive !== rootNode.reactive) {
+        CompilerError.invariant(false, {
+          reason:
+            '[DeriveMinimalDependenciesHIR] Conflicting reactive root flag',
+          description: `Identifier ${printIdentifier(identifier)}`,
+          loc: GeneratedSource,
+        });
+      }
     }
     return rootNode;
   }
