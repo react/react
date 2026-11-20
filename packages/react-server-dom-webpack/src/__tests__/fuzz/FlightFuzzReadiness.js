@@ -21,12 +21,24 @@ const {isObject} = require('./FlightFuzzCompare');
 
 // Values whose contents arrive as a separate result. A containing value need
 // not wait for them.
-const separateResultTypes = ['promise'];
+const separateResultTypes = ['promise', 'element'];
 
 function getValueDependencies(fixture, value) {
   const metadata = fixture.valueMetadata.get(value);
   if (metadata !== undefined) {
-    return [];
+    switch (metadata.type) {
+      case 'error':
+        return __DEV__
+          ? [
+              value.cause,
+              value instanceof AggregateError ? value.errors : undefined,
+            ]
+          : [];
+      case 'function':
+        return metadata.bound;
+      default:
+        return [];
+    }
   }
   if (value instanceof Set) {
     return Array.from(value);
@@ -64,6 +76,10 @@ function getRequiredEvents(fixture, value) {
   return Array.from(events);
 }
 
+function isOutlined(fixture, value) {
+  return value instanceof Set || value instanceof Map;
+}
+
 function getReleasedErrors(events) {
   return Array.from(events)
     .filter(
@@ -96,6 +112,10 @@ function isRootProduced(fixture) {
   );
 }
 
+function isElementProduced(metadata) {
+  return metadata.renderEvent === undefined || metadata.renderEvent.released;
+}
+
 // Splits the source values into the parts that the server writes separately.
 // The code calls such a part a model. The root is one, and so is the value of
 // each Promise that has resolved.
@@ -106,10 +126,15 @@ function collectModels(fixture) {
   const modelsByRootValue = new Map();
   const modelsByValue = new Map();
   const separateValues = new Set();
+  const boundArgumentModels = new Map();
+  const outlinedModels = new Map();
+  const visitedElements = new Set();
+  const propsModels = new Map();
 
-  function collectModel(rootValues) {
+  function collectModel(rootValues, parent = null, events = [], result = true) {
     const model = {
-      events: new Set(),
+      parents: parent === null ? [] : [parent],
+      events: new Set(events),
       referencedModels: new Set(),
     };
     const todo = rootValues.slice();
@@ -120,11 +145,41 @@ function collectModels(fixture) {
         continue;
       }
       seen.add(value);
-      if (rootValues.includes(value)) {
+      if (result && rootValues.includes(value)) {
         modelsByRootValue.set(value, model);
       }
       modelsByValue.set(value, (modelsByValue.get(value) || []).concat(model));
       const metadata = fixture.valueMetadata.get(value);
+      if (metadata !== undefined && metadata.type === 'element') {
+        if (metadata.renderEvent !== undefined) {
+          separateValues.add(value);
+        } else if (!visitedElements.has(value)) {
+          // An error in the props belongs to the element. The model that
+          // contains the element can still be delivered, because it can hold
+          // a lazy element.
+          visitedElements.add(value);
+          propsModels.set(
+            value,
+            collectModel(
+              [value.props],
+              model,
+              fixture.requiredEvents.get(value) || [],
+            ),
+          );
+        } else {
+          // The element is in more than one model. Any of them may have been
+          // the one that wrote its props.
+          const propsModel = propsModels.get(value);
+          if (
+            propsModel !== undefined &&
+            propsModel !== model &&
+            !propsModel.parents.includes(model)
+          ) {
+            propsModel.parents.push(model);
+          }
+        }
+        continue;
+      }
       if (
         metadata !== undefined &&
         separateResultTypes.includes(metadata.type)
@@ -135,6 +190,19 @@ function collectModels(fixture) {
       (fixture.requiredEvents.get(value) || []).forEach(event =>
         model.events.add(event),
       );
+      if (metadata !== undefined && metadata.type === 'function') {
+        // Bound arguments are written as a separate model, even when the
+        // function is in the root.
+        separateValues.add(value);
+        continue;
+      }
+      if (isOutlined(fixture, value)) {
+        // The entries of a Set or a Map are written as a row of their own.
+        // The model that holds the value waits for that row, but a failure
+        // next to the value does not settle it.
+        separateValues.add(value);
+        continue;
+      }
       todo.push(...getValueDependencies(fixture, value));
     }
     return model;
@@ -149,24 +217,79 @@ function collectModels(fixture) {
   ]);
   // A result that the source has not produced yet has not written anything.
   separateValues.forEach(value => {
+    if (isOutlined(fixture, value)) {
+      // Its entries are not results of their own.
+      outlinedModels.set(
+        value,
+        collectModel(getValueDependencies(fixture, value), null, [], false),
+      );
+      return;
+    }
     const metadata = fixture.valueMetadata.get(value);
-    if (metadata.type === 'promise') {
+    if (metadata.type === 'element') {
+      if (isElementProduced(metadata)) {
+        collectModel([metadata.renderedElement]);
+      }
+    } else if (metadata.type === 'function') {
+      boundArgumentModels.set(value, collectModel(metadata.bound));
+    } else if (metadata.type === 'promise') {
       if (metadata.state === 'fulfilled') {
         collectModel([metadata.value]);
       }
     }
   });
+  boundArgumentModels.forEach((argumentModel, fn) => {
+    modelsByValue
+      .get(fn)
+      .forEach(model => model.referencedModels.add(argumentModel));
+  });
+  // The row of a Set or a Map is written while a model that holds the value
+  // is written. Any of them may have been the one.
+  const holders = new Map();
+  outlinedModels.forEach((outlinedModel, value) => {
+    holders.set(outlinedModel, modelsByValue.get(value));
+    modelsByValue
+      .get(value)
+      .forEach(model => model.referencedModels.add(outlinedModel));
+  });
+  // An element's props are a model of their own, inside a model that
+  // contains the element. This finds the models a model is written inside
+  // of, including itself.
+  const ownersByModel = new Map();
+  const getOwners = model => {
+    let owners = ownersByModel.get(model);
+    if (owners === undefined) {
+      owners = [model];
+      const seen = new Set(owners);
+      const add = owner => {
+        if (!seen.has(owner)) {
+          seen.add(owner);
+          owners.push(owner);
+        }
+      };
+      for (let i = 0; i < owners.length; i++) {
+        owners[i].parents.forEach(add);
+        (holders.get(owners[i]) || []).forEach(add);
+      }
+      ownersByModel.set(model, owners);
+    }
+    return owners;
+  };
   modelsByValue.forEach(models => {
     // The root is written first, so an object that is in the root is written
     // there. Otherwise any model that contains the object may have written it,
     // and the others refer to it.
-    const rootModels = models.filter(model => model === rootModel);
+    const rootModels = models.filter(model =>
+      getOwners(model).includes(rootModel),
+    );
     models.forEach(model => {
       const possibleSources =
         rootModels.length > 0
           ? rootModels
           : models.filter(other => other !== model);
-      possibleSources.forEach(source => model.referencedModels.add(source));
+      possibleSources.forEach(source => {
+        getOwners(source).forEach(owner => model.referencedModels.add(owner));
+      });
     });
   });
   return modelsByRootValue;
@@ -185,16 +308,15 @@ function createModelLookup(fixture) {
     if (model === undefined) {
       return [];
     }
-    const models = [];
-    const seen = new Set();
-    const todo = [model];
-    while (todo.length > 0) {
-      const current = todo.pop();
-      if (!seen.has(current)) {
-        seen.add(current);
-        models.push(current);
-        current.referencedModels.forEach(next => todo.push(next));
-      }
+    const models = [model];
+    const seen = new Set(models);
+    for (let i = 0; i < models.length; i++) {
+      models[i].referencedModels.forEach(next => {
+        if (!seen.has(next)) {
+          seen.add(next);
+          models.push(next);
+        }
+      });
     }
     return models;
   };
@@ -230,11 +352,22 @@ function getRootExpectation(fixture, value, findModels) {
 }
 
 function getPromiseExpectation(fixture, metadata, findModels) {
+  const valueMetadata = fixture.valueMetadata.get(metadata.value);
   const events = getRequiredEvents(fixture, metadata.value);
-  const produced = metadata.state === 'fulfilled';
+  const isElement =
+    valueMetadata !== undefined && valueMetadata.type === 'element';
+  if (isElement && valueMetadata.renderEvent !== undefined) {
+    // A Promise resolving to a Server Component waits for its output.
+    events.push(valueMetadata.renderEvent);
+  }
+  const produced =
+    metadata.state === 'fulfilled' &&
+    (!isElement || isElementProduced(valueMetadata));
   let errors;
   if (metadata.state === 'rejected') {
     errors = [fixture.valueMetadata.get(metadata.reason)];
+  } else if (isElement && valueMetadata.failure !== undefined) {
+    errors = [fixture.valueMetadata.get(valueMetadata.failure)];
   } else {
     errors = getReleasedErrors(events);
   }
@@ -248,9 +381,38 @@ function getPromiseExpectation(fixture, metadata, findModels) {
   );
 }
 
+function getRenderExpectation(fixture, element, findModels) {
+  const metadata = fixture.valueMetadata.get(element);
+  const output = metadata.renderedElement;
+  const events = (fixture.requiredEvents.get(element) || []).concat(
+    getRequiredEvents(fixture, element.props),
+    output === undefined ? [] : getRequiredEvents(fixture, output.props),
+  );
+  const produced = isElementProduced(metadata);
+  return getResultExpectation(
+    metadata.html,
+    produced && canSettle(events),
+    metadata.failure === undefined
+      ? getReleasedErrors(events)
+      : [fixture.valueMetadata.get(metadata.failure)],
+    produced
+      ? findModels(element).concat(
+          findModels(element.props),
+          output === undefined
+            ? []
+            : findModels(output).concat(findModels(output.props)),
+        )
+      : [],
+  );
+}
+
 module.exports = {
   separateResultTypes,
+  getRequiredEvents,
+  getReleasedErrors,
+  areAllEventsReleased,
   createModelLookup,
   getRootExpectation,
   getPromiseExpectation,
+  getRenderExpectation,
 };

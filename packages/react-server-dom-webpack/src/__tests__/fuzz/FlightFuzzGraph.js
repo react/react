@@ -20,13 +20,19 @@ const nodeTypes = [
   'value',
   'date',
   'special',
+  'host',
   'module',
   'error',
   'array',
   'object',
   'set',
   'map',
+  'bound',
+  'element',
+  'props',
+  'fragment',
   'promise',
+  'component',
 ];
 
 function getNodeType(node) {
@@ -41,27 +47,43 @@ function getReferencedNodes(node) {
   switch (getNodeType(node)) {
     case 'array':
     case 'set':
+    case 'bound':
       return node[getNodeType(node)];
     case 'object':
       return Object.values(node.object);
     case 'map':
       return node.map.flat();
+    case 'fragment':
+      return node.fragment;
+    case 'element':
+      return [].concat(node.element);
+    case 'props':
     case 'promise':
+    case 'component':
       return [node[getNodeType(node)]];
+    case 'error':
+      return (node.cause === undefined ? [] : [node.cause]).concat(
+        node.errors === undefined ? [] : node.errors,
+      );
     default:
       return [];
   }
 }
 
-function getReachableNodes(graph) {
+function getReachableNodes(
+  graph,
+  {roots = Object.values(graph.roots), includeErrorProperties = true} = {},
+) {
   const reached = new Set();
-  const todo = Object.values(graph.roots);
+  const todo = roots.slice();
   while (todo.length > 0) {
     const name = todo.pop();
     const node = graph.nodes[name];
     if (!reached.has(name) && node !== undefined) {
       reached.add(name);
-      todo.push(...getReferencedNodes(node));
+      if (includeErrorProperties || getNodeType(node) !== 'error') {
+        todo.push(...getReferencedNodes(node));
+      }
     }
   }
   return reached;
@@ -94,6 +116,14 @@ const graphOperations = [
   'map key',
   'promise',
   'rejected promise',
+  'element',
+  'props',
+  'component',
+  'failing component',
+  'bound function',
+  'error',
+  'aggregate error',
+  'fragment',
   'failing module',
   'after eof',
   'root promise',
@@ -135,6 +165,7 @@ function generateGraph(seed, {without = []} = {}) {
   // Different nodes can represent the same Map key (for example, 0 and -0).
   // Compare their values so adding a key doesn't overwrite an existing entry.
   const keyValues = new Map();
+  const propsKeys = new Map();
   const getMapKeyValue = name => {
     if (!keyValues.has(name)) {
       const node = nodes[name];
@@ -145,6 +176,12 @@ function generateGraph(seed, {without = []} = {}) {
           break;
         case 'special':
           value = specialValueFactories[node.special]();
+          break;
+        case 'props':
+          if (!propsKeys.has(node.props)) {
+            propsKeys.set(node.props, {});
+          }
+          value = propsKeys.get(node.props);
           break;
       }
       keyValues.set(name, value);
@@ -202,6 +239,9 @@ function generateGraph(seed, {without = []} = {}) {
   );
   add({special: pickFrom(specials)});
   add({special: pickFrom(specials)});
+  if (!without.includes('host')) {
+    add({host: 'atom'});
+  }
   const moduleCount = 2 + pick(2);
   for (let i = 0; i < moduleCount; i++) {
     const node = {module: 'export-' + i};
@@ -272,6 +312,61 @@ function generateGraph(seed, {without = []} = {}) {
         add({promise: addError(), reject: true});
         break;
       }
+      case 'element': {
+        add({
+          element:
+            pick(2) === 0
+              ? pickFrom(referenceTargets)
+              : [pickFrom(referenceTargets), pickFrom(referenceTargets)],
+        });
+        break;
+      }
+      case 'props': {
+        const elements = names.filter(name => 'element' in nodes[name]);
+        if (elements.length === 0) {
+          add({props: add({element: pickFrom(referenceTargets)})});
+        } else {
+          add({props: pickFrom(elements)});
+        }
+        break;
+      }
+      case 'component': {
+        add({component: pickFrom(referenceTargets)});
+        break;
+      }
+      case 'failing component': {
+        add({component: addError(), throw: true});
+        break;
+      }
+      case 'bound function': {
+        add({
+          bound:
+            pick(3) === 0
+              ? []
+              : [pickFrom(referenceTargets), pickFrom(referenceTargets)],
+        });
+        break;
+      }
+      case 'error': {
+        nodes[addError()].cause = pickFrom(referenceTargets);
+        break;
+      }
+      case 'aggregate error': {
+        // Use existing values: AggregateError copies the array in its constructor.
+        const aggregated = [
+          pickFrom(referenceTargets),
+          pickFrom(referenceTargets),
+        ];
+        nodes[addError()].errors = aggregated;
+        break;
+      }
+      case 'fragment': {
+        const hosts = names.filter(name => 'host' in nodes[name]);
+        if (hosts.length > 0) {
+          add({fragment: [pickFrom(hosts), pickFrom(hosts)]});
+        }
+        break;
+      }
       case 'failing module': {
         const modules = names.filter(
           name => 'module' in nodes[name] && nodes[name].fail === undefined,
@@ -302,8 +397,12 @@ function generateGraph(seed, {without = []} = {}) {
   }
   const roots = {entry: pickFrom(containers), other: pickFrom(containers)};
   // Make every generated node reachable so the writer sees all expected errors.
+  // Error causes don't count here because production doesn't serialize them.
   for (;;) {
-    const reached = getReachableNodes({nodes, roots});
+    const reached = getReachableNodes(
+      {nodes, roots},
+      {includeErrorProperties: false},
+    );
     const missing = referenceTargets.filter(name => !reached.has(name));
     if (missing.length === 0) {
       break;
@@ -319,22 +418,33 @@ function generateGraph(seed, {without = []} = {}) {
 // Generates a large graph that waits for only a few events.
 function generateScaleGraph(seed) {
   const pick = createRandom(seed + '/scale');
-  const shape = 'wide';
-  const size = 2 ** (5 + pick(4));
+  const shape = ['bound', 'wide'][pick(2)];
+  const size = 2 ** (5 + pick(shape === 'bound' ? 7 : 4));
   const nodes = {
     tail: {module: 'loaded'},
     value: {value: 'done'},
   };
-  nodes.shared = {object: {tail: 'tail', value: 'value'}};
-  const items = [];
-  for (let i = 0; i < size; i++) {
-    const name = 'item' + i;
-    nodes[name] =
-      pick(2) === 0 ? {set: ['shared']} : {map: [['value', 'shared']]};
-    items.push(name);
+  let entry;
+  if (shape === 'bound') {
+    let previous = 'tail';
+    for (let i = 0; i < size; i++) {
+      const name = 'bound' + i;
+      nodes[name] = {bound: [previous], loaded: true};
+      previous = name;
+    }
+    entry = previous;
+  } else {
+    nodes.shared = {object: {tail: 'tail', value: 'value'}};
+    const items = [];
+    for (let i = 0; i < size; i++) {
+      const name = 'item' + i;
+      nodes[name] =
+        pick(2) === 0 ? {set: ['shared']} : {map: [['value', 'shared']]};
+      items.push(name);
+    }
+    nodes.items = {array: items};
+    entry = 'items';
   }
-  nodes.items = {array: items};
-  const entry = 'items';
   return {
     shape,
     size,
@@ -378,15 +488,17 @@ function* generateReductionCandidates(graph) {
     const type = getNodeType(node);
     // Try removing large pieces first, so that it does not take one run for
     // every removed item.
-    const list = type === 'object' ? Object.keys(node.object) : node[type];
-    if (Array.isArray(list)) {
+    const listKey = type === 'error' ? 'errors' : type;
+    const list =
+      listKey === 'object' ? Object.keys(node.object) : node[listKey];
+    if (Array.isArray(list) && listKey !== 'element') {
       for (let width = list.length; width > 0; width = Math.floor(width / 2)) {
         for (let start = 0; start < list.length; start += width) {
           const kept = list.slice(0, start).concat(list.slice(start + width));
           yield replace({
             ...node,
-            [type]:
-              type === 'object'
+            [listKey]:
+              listKey === 'object'
                 ? Object.fromEntries(
                     kept.map(field => [field, node.object[field]]),
                   )
@@ -395,7 +507,7 @@ function* generateReductionCandidates(graph) {
         }
       }
     }
-    const options = ['async', 'fail', 'reject'];
+    const options = ['cause', 'async', 'fail', 'reject', 'throw', 'loaded'];
     for (let j = 0; j < options.length; j++) {
       const key = options[j];
       if (key in node) {
