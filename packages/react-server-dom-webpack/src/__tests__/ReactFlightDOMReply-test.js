@@ -84,11 +84,10 @@ describe('ReactFlightDOMReply', () => {
     expect(object.array.length).toBe(3);
     expect(object.array[0]).toBe(undefined);
     expect(object.array[1]).toBe(null);
-    expect(object.array[3]).toBe(undefined);
+    expect(object.array[2]).toBe(undefined);
     expect(object.prop).toBe(undefined);
-    // These should really be true but our deserialization doesn't currently deal with it.
-    expect('3' in object.array).toBe(false);
-    expect('prop' in object).toBe(false);
+    expect('2' in object.array).toBe(true);
+    expect('prop' in object).toBe(true);
   });
 
   it('can pass an iterable as a reply', async () => {
