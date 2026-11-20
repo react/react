@@ -830,6 +830,20 @@ describe('ReactDOMComponent', () => {
       expect(node.getAttribute('bar')).toBe('buzz');
     });
 
+    it('should support a custom hasOwnProperty prop', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<some-custom-element hasOwnProperty="first" />);
+      });
+      expect(container.firstChild.hasOwnProperty).toBe('first');
+
+      await act(() => {
+        root.render(<some-custom-element hasOwnProperty="second" />);
+      });
+      expect(container.firstChild.hasOwnProperty).toBe('second');
+    });
+
     it('should not apply React-specific aliases to custom elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
