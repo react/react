@@ -11,20 +11,28 @@ describe('fetchFileWithCaching', () => {
   let chrome;
   let fetchFileWithCaching;
 
-  function createChrome({harEntries = []}: {harEntries?: Array<Object>}) {
+  type Options = {
+    harEntries?: Array<Object>,
+    resources?: Array<Object>,
+  };
+
+  function createChrome({harEntries = [], resources = []}: Options) {
     return {
       runtime: {
         onMessage: {addListener: jest.fn(), removeListener: jest.fn()},
         sendMessage: jest.fn(),
       },
       devtools: {
-        inspectedWindow: {tabId: 1, getResources: jest.fn(cb => cb([]))},
+        inspectedWindow: {
+          tabId: 1,
+          getResources: jest.fn(cb => cb(resources)),
+        },
         network: {getHAR: jest.fn(cb => cb({entries: harEntries}))},
       },
     };
   }
 
-  function setUp(options: {harEntries?: Array<Object>}) {
+  function setUp(options: Options) {
     jest.resetModules();
     chrome = createChrome(options);
     global.chrome = chrome;
@@ -34,6 +42,48 @@ describe('fetchFileWithCaching', () => {
 
   afterEach(() => {
     delete global.chrome;
+    global.__IS_CHROME__ = false;
+  });
+
+  it('should read scripts from the page resources', async () => {
+    global.__IS_CHROME__ = true;
+    setUp({
+      resources: [
+        {
+          url: 'http://localhost:3000/main.js',
+          type: 'script',
+          getContent: cb => cb('// main.js'),
+        },
+      ],
+    });
+
+    expect(await fetchFileWithCaching('http://localhost:3000/main.js')).toBe(
+      '// main.js',
+    );
+    expect(chrome.devtools.network.getHAR).not.toHaveBeenCalled();
+  });
+
+  it('should not read source-mapped originals from the page resources', async () => {
+    global.__IS_CHROME__ = true;
+    setUp({
+      resources: [
+        {
+          url: 'http://localhost:3000/src/App.tsx',
+          type: 'sm-script',
+          getContent: cb => cb('export default function App() {}'),
+        },
+      ],
+      harEntries: [
+        {
+          request: {url: 'http://localhost:3000/src/App.tsx'},
+          getContent: cb => cb('// compiled App.tsx'),
+        },
+      ],
+    });
+
+    expect(
+      await fetchFileWithCaching('http://localhost:3000/src/App.tsx'),
+    ).toBe('// compiled App.tsx');
   });
 
   it('should not fetch from the page when the file is in the HAR', async () => {
