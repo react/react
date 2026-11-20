@@ -1898,7 +1898,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'component', other: 'data'},
       }));
 
-    // @gate FIXME || !__DEV__
     it('suspended server component element used twice', () =>
       runGraph({
         nodes: {
@@ -2267,8 +2266,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                   'canceled stream',
                   'iterable',
                   'iterator',
-                  'component',
-                  'failing component',
                   'error',
                   'undefined',
                   'colon',
