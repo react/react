@@ -123,8 +123,8 @@ export function createProfilerTools(
   ): void {
     const {ReactTypeOfWork, getDisplayNameForFiber} = internals;
     const displayName = getDisplayNameForFiber(fiber);
+    const prevFiber = fiber.alternate;
     if (displayName != null) {
-      const prevFiber = fiber.alternate;
       if (
         prevFiber == null ||
         didFiberRender(ReactTypeOfWork, prevFiber, fiber)
@@ -150,7 +150,11 @@ export function createProfilerTools(
         });
       }
     }
-    // Recurse into children regardless of whether this node rendered.
+    // Recurse into children regardless of whether this node rendered, unless
+    // the subtree bailed out: its fibers are left over from an earlier commit.
+    if (prevFiber != null && prevFiber.child === fiber.child) {
+      return;
+    }
     let child = fiber.child;
     while (child !== null) {
       collectDurations(internals, child, durations);
