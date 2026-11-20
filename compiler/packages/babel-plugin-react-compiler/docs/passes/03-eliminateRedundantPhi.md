@@ -48,6 +48,7 @@ The loop termination condition `rewrites.size > size && hasBackEdge` ensures:
 - **Cascading eliminations**: When one phi's output is used in another phi's operands, the algorithm rewrites operands before checking redundancy, enabling transitive elimination in a single pass (for non-loop cases).
 - **Nested functions**: FunctionExpression and ObjectMethod values contain nested HIR that may have their own phis. The algorithm recursively processes these with a shared rewrite table, ensuring context captures are also rewritten.
 - **Empty phi check**: The algorithm includes an invariant check that phi operands are never empty (which would be invalid HIR).
+- **Single-branch conditionals**: `BuildHIR` lowers `?:`, `&&` and `||` by storing each branch's value into one result temporary (`StoreLocal Const t = value`) that the join's phi reads. When a pass leaves only one branch reaching the join, the phi has a single operand whose predecessor ends with that store. If both the result temporary and the stored value are unnamed temporaries, the phi is rewritten to the stored value rather than to the result temporary, so the now-unread store is removed by dead code elimination instead of surviving as a variable declaration. Only that predecessor's last instruction is inspected.
 
 ## TODOs
 (None found in the source code)
