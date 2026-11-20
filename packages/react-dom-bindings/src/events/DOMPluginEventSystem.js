@@ -428,6 +428,10 @@ export function listenToNativeEventForNonManagedEventTarget(
 }
 
 const listeningMarker = '_reactListening' + Math.random().toString(36).slice(2);
+// Tracked separately from listeningMarker because the document can also be a
+// root container, and the two listeners must not be deduplicated against each other.
+const selectionChangeListeningMarker =
+  '_reactSelectionChangeListening' + Math.random().toString(36).slice(2);
 
 export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
   if (!(rootContainerElement as any)[listeningMarker]) {
@@ -450,8 +454,8 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
     if (ownerDocument !== null) {
       // The selectionchange event also needs deduplication
       // but it is attached to the document.
-      if (!(ownerDocument as any)[listeningMarker]) {
-        (ownerDocument as any)[listeningMarker] = true;
+      if (!(ownerDocument as any)[selectionChangeListeningMarker]) {
+        (ownerDocument as any)[selectionChangeListeningMarker] = true;
         listenToNativeEvent('selectionchange', false, ownerDocument);
       }
     }
