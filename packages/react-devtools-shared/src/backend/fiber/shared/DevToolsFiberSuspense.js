@@ -37,6 +37,23 @@ export function getAwaitInSuspendedByFromIO(
   return null;
 }
 
+export function isRSCStreamIO(ioInfo: ReactIOInfo): boolean {
+  return ioInfo.name === 'RSC stream' || ioInfo.name === 'rsc stream';
+}
+
+export function isLaterStreamEntry(
+  newIO: ReactIOInfo,
+  existingIO: ReactIOInfo,
+): boolean {
+  return (
+    newIO !== existingIO &&
+    ((newIO.byteSize !== undefined &&
+      existingIO.byteSize !== undefined &&
+      newIO.byteSize > existingIO.byteSize) ||
+      newIO.end > existingIO.end)
+  );
+}
+
 export function getVirtualEndTime(ioInfo: ReactIOInfo): number {
   if (ioInfo.env != null) {
     // Sort client side content first so that scripts and streams don't
