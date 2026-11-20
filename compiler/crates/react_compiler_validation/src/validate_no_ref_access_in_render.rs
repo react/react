@@ -10,8 +10,9 @@ use react_compiler_hir::visitors::{
     each_pattern_operand, each_terminal_operand,
 };
 use react_compiler_hir::{
-    AliasingEffect, BlockId, HirFunction, Identifier, IdentifierId, InstructionValue, Place,
-    PrimitiveValue, PropertyLiteral, Terminal, Type, UnaryOperator,
+    AliasingEffect, BlockId, HirFunction, Identifier, IdentifierId, InstructionValue,
+    ObjectPropertyKey, ObjectPropertyOrSpread, Place, PrimitiveValue, PropertyLiteral, Terminal,
+    Type, UnaryOperator,
 };
 
 const ERROR_DESCRIPTION: &str = "React refs are values that are not needed for rendering. \
@@ -37,6 +38,10 @@ fn next_ref_id() -> RefId {
 /// RefValue compares loc but ignores ref_id. This is critical for fixpoint
 /// convergence — join creates fresh ref_ids, and comparing them would
 /// prevent the environment from stabilizing.
+/// Per-property ref-access types of an object with statically known keys.
+/// Corresponds to the `properties` map on TS `Structure`.
+type RefAccessProperties = FxHashMap<String, RefAccessType>;
+
 #[derive(Debug, Clone)]
 enum RefAccessType {
     None,
@@ -54,6 +59,9 @@ enum RefAccessType {
     Structure {
         value: Option<Box<RefAccessRefType>>,
         fn_type: Option<RefFnType>,
+        /// Ref-access type of each *statically known* property, so that a
+        /// ref-taint on one property does not bleed into sibling properties.
+        properties: Option<Box<RefAccessProperties>>,
     },
 }
 
@@ -71,12 +79,14 @@ impl PartialEq for RefAccessType {
                 RefAccessType::Structure {
                     value: a_val,
                     fn_type: a_fn,
+                    properties: a_props,
                 },
                 RefAccessType::Structure {
                     value: b_val,
                     fn_type: b_fn,
+                    properties: b_props,
                 },
-            ) => a_val == b_val && a_fn == b_fn,
+            ) => a_val == b_val && a_fn == b_fn && a_props == b_props,
             _ => false,
         }
     }
@@ -99,6 +109,7 @@ enum RefAccessRefType {
     Structure {
         value: Option<Box<RefAccessRefType>>,
         fn_type: Option<RefFnType>,
+        properties: Option<Box<RefAccessProperties>>,
     },
 }
 
@@ -114,12 +125,14 @@ impl PartialEq for RefAccessRefType {
                 RefAccessRefType::Structure {
                     value: a_val,
                     fn_type: a_fn,
+                    properties: a_props,
                 },
                 RefAccessRefType::Structure {
                     value: b_val,
                     fn_type: b_fn,
+                    properties: b_props,
                 },
-            ) => a_val == b_val && a_fn == b_fn,
+            ) => a_val == b_val && a_fn == b_fn && a_props == b_props,
             _ => false,
         }
     }
@@ -140,9 +153,14 @@ impl RefAccessType {
                 loc: *loc,
                 ref_id: *ref_id,
             }),
-            RefAccessType::Structure { value, fn_type } => Some(RefAccessRefType::Structure {
+            RefAccessType::Structure {
+                value,
+                fn_type,
+                properties,
+            } => Some(RefAccessRefType::Structure {
                 value: value.clone(),
                 fn_type: fn_type.clone(),
+                properties: properties.clone(),
             }),
             _ => None,
         }
@@ -156,9 +174,14 @@ impl RefAccessType {
                 loc: *loc,
                 ref_id: *ref_id,
             },
-            RefAccessRefType::Structure { value, fn_type } => RefAccessType::Structure {
+            RefAccessRefType::Structure {
+                value,
+                fn_type,
+                properties,
+            } => RefAccessType::Structure {
                 value: value.clone(),
                 fn_type: fn_type.clone(),
+                properties: properties.clone(),
             },
         }
     }
@@ -204,10 +227,12 @@ fn join_ref_access_ref_types(a: &RefAccessRefType, b: &RefAccessRefType) -> RefA
             RefAccessRefType::Structure {
                 value: a_value,
                 fn_type: a_fn,
+                properties: a_props,
             },
             RefAccessRefType::Structure {
                 value: b_value,
                 fn_type: b_fn,
+                properties: b_props,
             },
         ) => {
             let fn_type = match (a_fn, b_fn) {
@@ -226,9 +251,37 @@ fn join_ref_access_ref_types(a: &RefAccessRefType, b: &RefAccessRefType) -> RefA
                     Some(Box::new(join_ref_access_ref_types(a_val, b_val)))
                 }
             };
-            RefAccessRefType::Structure { value, fn_type }
+            let properties = join_properties_maps(a_props, b_props);
+            RefAccessRefType::Structure {
+                value,
+                fn_type,
+                properties,
+            }
         }
     }
+}
+
+/// Join two per-property maps. If either side has no precise per-property info
+/// (`None`), the result has none either. Otherwise the maps are unioned,
+/// treating a missing key as `None` and joining the types of shared keys.
+fn join_properties_maps(
+    a: &Option<Box<RefAccessProperties>>,
+    b: &Option<Box<RefAccessProperties>>,
+) -> Option<Box<RefAccessProperties>> {
+    let (a, b) = match (a, b) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return None,
+    };
+    let mut result: RefAccessProperties = FxHashMap::default();
+    for key in a.keys().chain(b.keys()) {
+        if result.contains_key(key) {
+            continue;
+        }
+        let a_type = a.get(key).unwrap_or(&RefAccessType::None);
+        let b_type = b.get(key).unwrap_or(&RefAccessType::None);
+        result.insert(key.clone(), join_ref_access_types(a_type, b_type));
+    }
+    Some(Box::new(result))
 }
 
 fn join_ref_access_types(a: &RefAccessType, b: &RefAccessType) -> RefAccessType {
@@ -269,6 +322,10 @@ struct Env {
     changed: bool,
     data: FxHashMap<IdentifierId, RefAccessType>,
     temporaries: FxHashMap<IdentifierId, Place>,
+    /// Canonical Place for each (object identifier, property name) pair, so that
+    /// ref-taint inferred for one property does not bleed into sibling
+    /// properties of the same object.
+    property_temporaries: FxHashMap<(IdentifierId, String), Place>,
 }
 
 impl Env {
@@ -277,11 +334,30 @@ impl Env {
             changed: false,
             data: FxHashMap::default(),
             temporaries: FxHashMap::default(),
+            property_temporaries: FxHashMap::default(),
         }
     }
 
     fn define(&mut self, key: IdentifierId, value: Place) {
         self.temporaries.insert(key, value);
+    }
+
+    fn resolve(&self, object: IdentifierId) -> IdentifierId {
+        self.temporaries
+            .get(&object)
+            .map(|p| p.identifier)
+            .unwrap_or(object)
+    }
+
+    fn lookup_property(&self, object: IdentifierId, property: &PropertyLiteral) -> Option<&Place> {
+        self.property_temporaries
+            .get(&(self.resolve(object), property.to_string()))
+    }
+
+    fn define_property(&mut self, object: IdentifierId, property: &PropertyLiteral, value: Place) {
+        let object_id = self.resolve(object);
+        self.property_temporaries
+            .insert((object_id, property.to_string()), value);
     }
 
     fn reset_changed(&mut self) {
@@ -354,6 +430,86 @@ fn destructure(ty: &RefAccessType) -> RefAccessType {
         } => destructure(&RefAccessType::from_ref_type(inner)),
         other => other.clone(),
     }
+}
+
+/// Compute the ref-access type produced by loading a property from `obj_type`.
+/// `property` is `None` for computed loads. Mirrors the PropertyLoad/ComputedLoad
+/// case of the TS validation.
+fn lookup_property_type(
+    obj_type: &Option<RefAccessType>,
+    property: Option<&PropertyLiteral>,
+    loc: Option<SourceLocation>,
+) -> Option<RefAccessType> {
+    match obj_type {
+        Some(
+            structure @ RefAccessType::Structure {
+                value,
+                fn_type,
+                properties,
+            },
+        ) => {
+            // Prefer the exact per-property type when statically known.
+            let property_type = match (property, properties) {
+                (Some(property), Some(properties)) => properties.get(&property.to_string()),
+                _ => None,
+            };
+            if let Some(property_type) = property_type {
+                Some(property_type.clone())
+            } else if properties.is_none() {
+                // No precise per-property info (e.g. whole-object merge, spread):
+                // fall back to the merged type. When the object is known to hold a
+                // ref-accessing function, propagate the whole structure so the
+                // function is still detected when called through this property.
+                if fn_type.is_some() {
+                    Some(structure.clone())
+                } else {
+                    value.as_ref().map(|v| RefAccessType::from_ref_type(v))
+                }
+            } else {
+                None
+            }
+        }
+        Some(RefAccessType::Ref { ref_id }) => Some(RefAccessType::RefValue {
+            loc,
+            ref_id: Some(*ref_id),
+        }),
+        _ => None,
+    }
+}
+
+/// Key of a statically known object literal property, or `None` if computed.
+fn object_property_key_to_string(key: &ObjectPropertyKey) -> Option<String> {
+    match key {
+        ObjectPropertyKey::String { name } | ObjectPropertyKey::Identifier { name } => {
+            Some(name.clone())
+        }
+        ObjectPropertyKey::Number { name } => Some(name.to_string()),
+        ObjectPropertyKey::Computed { .. } => None,
+    }
+}
+
+/// Per-property ref-access types of an object literal, or `None` when a spread
+/// or computed key means the set of keys is not statically known.
+fn object_literal_properties(
+    properties: &[ObjectPropertyOrSpread],
+    ref_env: &Env,
+) -> Option<Box<RefAccessProperties>> {
+    let mut result: RefAccessProperties = FxHashMap::default();
+    for property in properties {
+        let property = match property {
+            ObjectPropertyOrSpread::Property(p) => p,
+            ObjectPropertyOrSpread::Spread(_) => return None,
+        };
+        let key = object_property_key_to_string(&property.key)?;
+        result.insert(
+            key,
+            ref_env
+                .get(property.place.identifier)
+                .cloned()
+                .unwrap_or(RefAccessType::None),
+        );
+    }
+    Some(Box::new(result))
 }
 
 // --- Validation helpers ---
@@ -586,12 +742,16 @@ fn collect_temporaries_sidemap(
                     {
                         continue;
                     }
-                    let temp = env
-                        .temporaries
-                        .get(&object.identifier)
-                        .cloned()
-                        .unwrap_or_else(|| object.clone());
-                    env.define(instr.lvalue.identifier, temp);
+                    // Alias this property load to the canonical temporary for the
+                    // same (object, property) path, rather than to the object as a
+                    // whole, so a ref-taint on one property does not propagate to
+                    // unrelated sibling properties of the same object.
+                    match env.lookup_property(object.identifier, property).cloned() {
+                        Some(existing) => env.define(instr.lvalue.identifier, existing),
+                        None => {
+                            env.define_property(object.identifier, property, instr.lvalue.clone());
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -689,16 +849,7 @@ fn validate_no_ref_access_in_render_impl(
                     } => {
                         validate_no_direct_ref_value_access(errors, property, ref_env);
                         let obj_type = ref_env.get(object.identifier).cloned();
-                        let lookup_type = match &obj_type {
-                            Some(RefAccessType::Structure {
-                                value: Some(value), ..
-                            }) => Some(RefAccessType::from_ref_type(value)),
-                            Some(RefAccessType::Ref { ref_id }) => Some(RefAccessType::RefValue {
-                                loc: instr.loc,
-                                ref_id: Some(*ref_id),
-                            }),
-                            _ => None,
-                        };
+                        let lookup_type = lookup_property_type(&obj_type, None, instr.loc);
                         ref_env.set(
                             instr.lvalue.identifier,
                             lookup_type.unwrap_or_else(|| {
@@ -706,18 +857,12 @@ fn validate_no_ref_access_in_render_impl(
                             }),
                         );
                     }
-                    InstructionValue::PropertyLoad { object, .. } => {
+                    InstructionValue::PropertyLoad {
+                        object, property, ..
+                    } => {
                         let obj_type = ref_env.get(object.identifier).cloned();
-                        let lookup_type = match &obj_type {
-                            Some(RefAccessType::Structure {
-                                value: Some(value), ..
-                            }) => Some(RefAccessType::from_ref_type(value)),
-                            Some(RefAccessType::Ref { ref_id }) => Some(RefAccessType::RefValue {
-                                loc: instr.loc,
-                                ref_id: Some(*ref_id),
-                            }),
-                            _ => None,
-                        };
+                        let lookup_type =
+                            lookup_property_type(&obj_type, Some(property), instr.loc);
                         ref_env.set(
                             instr.lvalue.identifier,
                             lookup_type.unwrap_or_else(|| {
@@ -806,6 +951,7 @@ fn validate_no_ref_access_in_render_impl(
                                     read_ref_effect,
                                     return_type: Box::new(return_type),
                                 }),
+                                properties: None,
                             },
                         );
                     }
@@ -1002,6 +1148,16 @@ fn validate_no_ref_access_in_render_impl(
                             );
                         }
                         let value = join_ref_access_types_many(&types_vec);
+                        // For object literals with statically known keys, also record
+                        // the exact ref-access type of each property so later loads of
+                        // a specific property answer precisely instead of using the
+                        // join of every property.
+                        let properties = match &instr.value {
+                            InstructionValue::ObjectExpression { properties, .. } => {
+                                object_literal_properties(properties, ref_env)
+                            }
+                            _ => None,
+                        };
                         match &value {
                             RefAccessType::None
                             | RefAccessType::Guard { .. }
@@ -1014,6 +1170,7 @@ fn validate_no_ref_access_in_render_impl(
                                     RefAccessType::Structure {
                                         value: value.to_ref_type().map(Box::new),
                                         fn_type: None,
+                                        properties,
                                     },
                                 );
                             }
