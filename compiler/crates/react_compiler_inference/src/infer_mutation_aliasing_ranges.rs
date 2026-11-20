@@ -108,12 +108,15 @@ impl Node {
 
 struct AliasingState {
     nodes: IndexMap<IdentifierId, Node, FxBuildHasher>,
+    // Functions whose errors have already been recorded, see append_function_errors
+    reported_functions: FxHashSet<IdentifierId>,
 }
 
 impl AliasingState {
     fn new() -> Self {
         AliasingState {
             nodes: IndexMap::default(),
+            reported_functions: FxHashSet::default(),
         }
     }
 
@@ -197,7 +200,7 @@ impl AliasingState {
             .or_insert(index);
     }
 
-    fn render(&self, index: usize, start: IdentifierId, env: &mut Environment) {
+    fn render(&mut self, index: usize, start: IdentifierId, env: &mut Environment) {
         let mut seen = FxHashSet::default();
         let mut queue: Vec<IdentifierId> = vec![start];
         while let Some(current) = queue.pop() {
@@ -208,11 +211,13 @@ impl AliasingState {
                 Some(n) => n,
                 None => continue,
             };
+            if let NodeValue::Function { function_id } = &node.value {
+                if self.reported_functions.insert(current) {
+                    append_function_errors(env, *function_id);
+                }
+            }
             if node.transitive.is_some() || node.local.is_some() {
                 continue;
-            }
-            if let NodeValue::Function { function_id } = &node.value {
-                append_function_errors(env, *function_id);
             }
             for (&alias, &when) in &node.created_from {
                 if when >= index {
@@ -293,8 +298,14 @@ impl AliasingState {
                 ident.mutable_range.end = EvaluationOrder(ident.mutable_range.end.0.max(end_val.0));
             }
 
+            // Mutating a function value models calling it, so its errors are
+            // reported. A function reached by a forward edge only had one of its
+            // captured values mutated (eg a hoisted context variable being
+            // initialized), which does not call the function.
             if let NodeValue::Function { function_id } = &node.value {
-                if node.transitive.is_none() && node.local.is_none() {
+                if entry.direction == Direction::Backwards
+                    && self.reported_functions.insert(current)
+                {
                     if should_record_errors {
                         append_function_errors(env, *function_id);
                     }
