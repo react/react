@@ -591,6 +591,33 @@ describe('ReactHooks', () => {
     ]);
   });
 
+  it('warns about variable number of symbol dependencies', async () => {
+    const {useLayoutEffect} = React;
+    const dep = Symbol('A');
+    function App(props) {
+      useLayoutEffect(() => {}, props.dependencies);
+      return null;
+    }
+    let root;
+    await act(() => {
+      root = ReactTestRenderer.create(<App dependencies={[dep]} />, {
+        unstable_isConcurrent: true,
+      });
+    });
+    await act(() => {
+      root.update(<App dependencies={[dep, 'B']} />);
+    });
+    assertConsoleErrorDev([
+      'The final argument passed to useLayoutEffect changed size ' +
+        'between renders. The order and size of this array must remain ' +
+        'constant.\n' +
+        '\n' +
+        'Previous: [Symbol(A)]\n' +
+        'Incoming: [Symbol(A), B]\n' +
+        '    in App (at **)',
+    ]);
+  });
+
   it('warns if switching from dependencies to no dependencies', async () => {
     const {useMemo} = React;
     function App({text, hasDeps}) {
