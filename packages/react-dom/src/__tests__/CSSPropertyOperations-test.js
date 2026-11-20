@@ -44,10 +44,14 @@ describe('CSSPropertyOperations', () => {
     const styles = {
       flex: 0,
       opacity: 0.5,
+      mathDepth: 1,
+      shapeImageThreshold: 0.5,
     };
     const div = <div style={styles} />;
     const html = ReactDOMServer.renderToString(div);
-    expect(html).toContain('"flex:0;opacity:0.5"');
+    expect(html).toContain(
+      '"flex:0;opacity:0.5;math-depth:1;shape-image-threshold:0.5"',
+    );
   });
 
   it('should create vendor-prefixed markup correctly', () => {
