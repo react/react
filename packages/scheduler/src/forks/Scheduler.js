@@ -496,7 +496,13 @@ function forceFrameRate(fps: number) {
 }
 
 const performWorkUntilDeadline = () => {
-  // $FlowFixMe[constant-condition]
+  // If we're already performing work, a browser-level pause (e.g., alert() or
+  // a debugger statement in Firefox or IE) allowed another event loop task to
+  // fire while the current call stack is still executing. Skip this invocation;
+  // the ongoing work loop will resume and handle any remaining tasks.
+  if (isPerformingWork) {
+    return;
+  }
   if (enableRequestPaint) {
     needsPaint = false;
   }
