@@ -281,8 +281,44 @@ const refsTests: CompilerTestCases = {
         }
       `,
     },
+    {
+      name: 'Allows reading sibling props after passing a prop as a ref',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        function Child(props: {className: string; myRef: () => void}) {
+          return <div ref={props.myRef} className={props.className} />;
+        }
+      `,
+    },
+    {
+      name: 'Allows passing callback refs from a hook result object',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useFloating} from '@floating-ui/react';
+
+        function App() {
+          const {refs, floatingStyles} = useFloating();
+          return (
+            <>
+              <div ref={refs.setReference} />
+              <div ref={refs.setFloating} style={floatingStyles} />
+            </>
+          );
+        }
+      `,
+    },
   ],
   invalid: [
+    {
+      name: 'Rejects reading the current value of a ref prop during render',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        function Component(props) {
+          return <div>{props.ref.current}</div>;
+        }
+      `,
+      errors: [{message: /Cannot access refs during render/}],
+    },
     {
       name: 'Rejects refs passed directly to unknown constructors',
       filename: 'test.tsx',
