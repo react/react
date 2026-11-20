@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<ac78e58a05968651e149a9d30ffb0655>>
+ * @generated SignedSource<<2f632f8d10500e1f538fd459414c50b9>>
  */
 
 "use strict";
@@ -10946,7 +10946,8 @@ var DefaultAsyncDispatcher = {
     },
     cacheSignal: function () {
       return readContext(CacheContext).controller.signal;
-    }
+    },
+    units: null
   },
   PossiblyWeakMap = "function" === typeof WeakMap ? WeakMap : Map,
   executionContext = 0,
@@ -13267,10 +13268,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1529 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-7b22099e-20261120",
+    version: "19.3.0-native-fb-043ce595-20261120",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-7b22099e-20261120"
+    reconcilerVersion: "19.3.0-native-fb-043ce595-20261120"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1529.rendererConfig = extraDevToolsConfig);

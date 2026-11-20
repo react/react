@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<1dc1e9601737ac93b29a32eefd209759>>
+ * @generated SignedSource<<6f52a0f36d00a1a589646bd7f0b4862a>>
  */
 
 "use strict";
@@ -16570,6 +16570,7 @@ __DEV__ &&
         cacheSignal: function () {
           return readContext(CacheContext).controller.signal;
         },
+        units: null,
         getOwner: function () {
           return current;
         }
@@ -16877,10 +16878,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-7b22099e-20261120",
+        version: "19.3.0-native-fb-043ce595-20261120",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-7b22099e-20261120"
+        reconcilerVersion: "19.3.0-native-fb-043ce595-20261120"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -17018,5 +17019,5 @@ __DEV__ &&
     exports.unstable_batchedUpdates = function (fn, a) {
       return fn(a);
     };
-    exports.version = "19.3.0-native-fb-7b22099e-20261120";
+    exports.version = "19.3.0-native-fb-043ce595-20261120";
   })();

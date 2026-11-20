@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<3c26ee5b0a75214394fa9af98712136e>>
+ * @generated SignedSource<<6b8fe58a30835068417cb81d18b82a45>>
  */
 
 "use strict";
@@ -19611,6 +19611,7 @@ __DEV__ &&
         cacheSignal: function () {
           return readContext(CacheContext).controller.signal;
         },
+        units: null,
         getOwner: function () {
           return current;
         }
@@ -19815,10 +19816,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-7b22099e-20261120",
+        version: "19.3.0-native-fb-043ce595-20261120",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-7b22099e-20261120"
+        reconcilerVersion: "19.3.0-native-fb-043ce595-20261120"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

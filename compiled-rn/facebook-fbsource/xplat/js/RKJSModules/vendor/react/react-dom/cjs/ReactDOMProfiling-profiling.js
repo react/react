@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<409d658d7f43eaf5483ca6792030dbf4>>
+ * @generated SignedSource<<77c9eb52022b802e071f32f321ba6a8e>>
  */
 
 /*
@@ -13896,7 +13896,8 @@ var DefaultAsyncDispatcher = {
     },
     cacheSignal: function () {
       return readContext(CacheContext).controller.signal;
-    }
+    },
+    units: null
   },
   PossiblyWeakMap = "function" === typeof WeakMap ? WeakMap : Map,
   executionContext = 0,
@@ -21471,14 +21472,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2491 = React.version;
 if (
-  "19.3.0-native-fb-7b22099e-20261120" !==
+  "19.3.0-native-fb-043ce595-20261120" !==
   isomorphicReactPackageVersion$jscomp$inline_2491
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2491,
-      "19.3.0-native-fb-7b22099e-20261120"
+      "19.3.0-native-fb-043ce595-20261120"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -21500,10 +21501,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2498 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-7b22099e-20261120",
+  version: "19.3.0-native-fb-043ce595-20261120",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-7b22099e-20261120",
+  reconcilerVersion: "19.3.0-native-fb-043ce595-20261120",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$344 = 0;
@@ -21798,7 +21799,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-7b22099e-20261120";
+exports.version = "19.3.0-native-fb-043ce595-20261120";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&
