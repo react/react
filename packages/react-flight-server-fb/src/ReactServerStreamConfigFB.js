@@ -213,6 +213,13 @@ export function typedArrayToBinaryChunk(
   return new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
 }
 
+export function isTypedArrayConsumed(
+  content: $ArrayBufferView,
+  chunk: BinaryChunk,
+): boolean {
+  return false;
+}
+
 export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {
   return typeof chunk === 'string'
     ? Buffer.byteLength(chunk, 'utf8')

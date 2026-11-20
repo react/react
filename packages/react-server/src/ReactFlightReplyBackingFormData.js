@@ -16,9 +16,12 @@
  * number of stored entries.
  *
  * Keys are classified by the character following the response prefix:
- * - '_' starts the namespace of referenced FormData entries. These are only
- *   ever consumed in insertion order by the "$K" scan, so they go into a
- *   plain array with a cursor.
+ * - '_' starts the namespace of referenced FormData entries. The entries of one
+ *   referenced FormData share a `prefix + '_' + <id> + '_'` block prefix, so
+ *   they are grouped under it and a "$K" lookup reads only its own group. A
+ *   reference can be reached in any order relative to the body, including a
+ *   reference inside a stream item that resolves before an earlier one, so the
+ *   lookup is by prefix and never depends on the position of the block.
  * - 'S' starts the namespace of stream/async-iterable chunks. These are the
  *   only fields that can repeat, so they accumulate in an array per key.
  * - Everything else is a one-shot chunk or an outlined Blob, looked up by
@@ -26,11 +29,10 @@
  */
 export opaque type BackingFormData = {
   prefix: string,
-  // Entries whose key is in the `prefix + '_' + ...` namespace, in insertion
-  // order. The only structure the "$K" scan reads.
-  referencedEntries: null | Array<[string, FormDataEntryValue]>,
-  // Cursor for the "$K" scan; advances monotonically.
-  keyPointer: number,
+  // Referenced FormData entries grouped by their `prefix + '_' + <id> + '_'`
+  // block prefix, each group an entry list with that block prefix removed from
+  // the key. A "$K" lookup reads the group for its own id.
+  referencedGroups: null | Map<string, Array<[string, FormDataEntryValue]>>,
   // Field name -> string, for one-shot `prefix + <decimal id>` chunk fields.
   stringChunks: null | Map<string, string>,
   // Field name (`prefix + 'S' + <decimal id>`) -> buffered chunk strings, in
@@ -55,11 +57,24 @@ export function appendBackingEntry(
   const namespace = key[prefix.length];
   switch (namespace) {
     case '_': {
-      let referencedEntries = backingStore.referencedEntries;
-      if (referencedEntries === null) {
-        referencedEntries = backingStore.referencedEntries = [];
+      // Group the entry under its reference's block prefix, keeping the key the
+      // referenced FormData carries once the block prefix is stripped.
+      const separator = key.indexOf('_', prefix.length + 1);
+      if (separator === -1) {
+        return;
       }
-      referencedEntries.push([key, value]);
+      const blockPrefix = key.slice(0, separator + 1);
+      const entryKey = key.slice(separator + 1);
+      let referencedGroups = backingStore.referencedGroups;
+      if (referencedGroups === null) {
+        referencedGroups = backingStore.referencedGroups = new Map();
+      }
+      const group = referencedGroups.get(blockPrefix);
+      if (group === undefined) {
+        referencedGroups.set(blockPrefix, [[entryKey, value]]);
+      } else {
+        group.push([entryKey, value]);
+      }
       return;
     }
     case 'S': {
@@ -102,8 +117,7 @@ export function createBackingFormData(
 ): BackingFormData {
   const backingStore: BackingFormData = {
     prefix,
-    referencedEntries: null,
-    keyPointer: 0,
+    referencedGroups: null,
     stringChunks: null,
     streamChunks: null,
     blobs: null,
@@ -117,28 +131,27 @@ export function consumeBackingEntries(
   backingStore: BackingFormData,
   formPrefix: string,
 ): FormData {
-  // Consumes the consecutive run of entries at the cursor whose keys start
-  // with `formPrefix` into a new FormData, stripping the prefix from the
-  // keys. The values of a referenced FormData are serialized as one
-  // continuous block before its reference, so once a key doesn't match we
-  // are past the values for this reference.
+  // Builds the FormData for a "$K" reference from the entries grouped under its
+  // block prefix. The reference may be reached in any order relative to the
+  // body, so the group is found by prefix, not by position.
   const data = new FormData();
-  const entries = backingStore.referencedEntries;
-  if (entries === null) {
+  const referencedGroups = backingStore.referencedGroups;
+  if (referencedGroups === null) {
     return data;
   }
-  let i = backingStore.keyPointer;
-  while (i < entries.length) {
-    const entry = entries[i];
-    const key = entry[0];
-    if (!key.startsWith(formPrefix)) {
-      break;
-    }
-    // $FlowFixMe[incompatible-type]
-    data.append(key.slice(formPrefix.length), entry[1]);
-    i++;
+  const group = referencedGroups.get(formPrefix);
+  if (group === undefined) {
+    return data;
   }
-  backingStore.keyPointer = i;
+  // The writer refers to a FormData by path after its first occurrence, so a
+  // group is read once. A repeated reference gets an empty FormData rather
+  // than another copy of the entries.
+  referencedGroups.delete(formPrefix);
+  for (let i = 0; i < group.length; i++) {
+    const entry = group[i];
+    // $FlowFixMe[incompatible-type]
+    data.append(entry[0], entry[1]);
+  }
   return data;
 }
 

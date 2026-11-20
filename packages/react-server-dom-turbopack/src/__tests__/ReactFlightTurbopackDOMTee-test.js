@@ -217,14 +217,14 @@ describe('ReactFlightTurbopackDOMTee', () => {
   });
 
   // @gate enableFlightTee
-  it('deletes undefined in objects and keeps it in arrays', async () => {
+  it('keeps undefined in objects and arrays', async () => {
     const {fromTee, fromBytes} = await readTeeAndBytes({
       obj: {a: undefined, b: 1},
       arr: [undefined, 1],
     });
     expect(fromTee).toEqual(fromBytes);
-    expect('a' in fromBytes.obj).toBe(false);
-    expect('a' in fromTee.obj).toBe(false);
+    expect('a' in fromBytes.obj).toBe(true);
+    expect('a' in fromTee.obj).toBe(true);
     expect(0 in fromTee.arr).toBe(true);
   });
 

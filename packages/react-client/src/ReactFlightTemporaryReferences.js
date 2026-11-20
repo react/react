@@ -23,6 +23,13 @@ export function writeTemporaryReference(
   set.set(reference, object);
 }
 
+export function deleteTemporaryReference(
+  set: TemporaryReferenceSet,
+  reference: string,
+): void {
+  set.delete(reference);
+}
+
 export function readTemporaryReference<T>(
   set: TemporaryReferenceSet,
   reference: string,

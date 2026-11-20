@@ -42,6 +42,7 @@ export const closeWithError = $$$config.closeWithError;
 export const stringToChunk = $$$config.stringToChunk;
 export const stringToPrecomputedChunk = $$$config.stringToPrecomputedChunk;
 export const typedArrayToBinaryChunk = $$$config.typedArrayToBinaryChunk;
+export const isTypedArrayConsumed = $$$config.isTypedArrayConsumed;
 export const byteLengthOfChunk = $$$config.byteLengthOfChunk;
 export const byteLengthOfBinaryChunk = $$$config.byteLengthOfBinaryChunk;
 export const createFastHash = $$$config.createFastHash;

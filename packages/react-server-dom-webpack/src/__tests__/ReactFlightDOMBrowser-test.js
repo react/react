@@ -424,6 +424,176 @@ describe('ReactFlightDOMBrowser', () => {
     expect(container.innerHTML).toBe('<div><span>12345</span>12345</div>');
   });
 
+  it('waits for a Set referenced through unfinished element props', async () => {
+    let resolvePayload;
+    let resolveComponent;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(
+      function Widget() {
+        return null;
+      },
+      'widget',
+      '/widget.js',
+      new Promise(resolve => (resolveComponent = resolve)),
+    );
+    const data = {};
+    const element = <Widget data={data} items={new Set([payload])} />;
+    data.alias = element.props;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {element, items: element.props.items},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    const observed = [];
+    await act(() => {
+      response.then(
+        value =>
+          observed.push(
+            value.items instanceof Set ? Array.from(value.items) : value.items,
+          ),
+        error => observed.push(error),
+      );
+    });
+    expect(observed).toEqual([]);
+
+    await act(() => resolvePayload());
+    expect(observed).toEqual([['ready']]);
+    await act(() => resolveComponent());
+  });
+
+  it('waits for shared props contents without waiting for the component module', async () => {
+    let resolvePayload;
+    let resolveComponent;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(
+      function Widget() {
+        return null;
+      },
+      'widget',
+      '/widget.js',
+      new Promise(resolve => (resolveComponent = resolve)),
+    );
+    const data = {};
+    const element = <Widget data={data} payload={payload} />;
+    data.alias = element.props;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {element, props: element.props},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    const observed = [];
+    await act(() => {
+      response.then(value => {
+        // Capture the field when it is delivered. A later write must not
+        // hide a callback that received an unfinished props object.
+        observed.push(value.props.payload);
+      });
+    });
+    expect(observed).toEqual([]);
+
+    await act(() => resolvePayload());
+    expect(observed).toEqual(['ready']);
+
+    // The component is still unavailable, but its shared data is complete.
+    await act(() => resolveComponent());
+    expect(observed).toEqual(['ready']);
+  });
+
+  it('can render an element reached through its own data after it suspends', async () => {
+    let resolvePayload;
+    const {value: payload} = clientExports(
+      {value: 'ready'},
+      'payload',
+      '/payload.js',
+      new Promise(resolve => (resolvePayload = resolve)),
+    );
+    const Widget = clientExports(function Widget({payload: value}) {
+      return <b>{value}</b>;
+    });
+    const data = {};
+    const element = <Widget data={data} payload={payload} />;
+    data.self = element;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({element, data}, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    let received;
+    await act(() => {
+      response.then(value => {
+        received = value;
+      });
+    });
+    // The model reaches `data` through the element's props, so it completes
+    // with the element.
+    expect(received).toBeUndefined();
+
+    await act(() => resolvePayload());
+    // Both paths retain the Lazy node that stood in for the element while
+    // its props loaded. It can render without replacing either slot.
+    expect(received.data.self).toBe(received.element);
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<Suspense fallback="Loading">{received.data.self}</Suspense>);
+    });
+    expect(container.innerHTML).toBe('<b>ready</b>');
+  });
+
+  it('completes a cyclic Set exposed by separate Promise results', async () => {
+    let resolveSet;
+    let resolveArray;
+    const set = new Set();
+    const array = [set];
+    set.add(set);
+    set.add(array);
+    const model = {
+      set: new Promise(resolve => (resolveSet = resolve)),
+      array: new Promise(resolve => (resolveArray = resolve)),
+    };
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    await serverAct(() => resolveSet(set));
+    await serverAct(() => resolveArray(array));
+
+    const observed = [];
+    await act(() => {
+      response.then(value => {
+        value.set.then(received => {
+          const [self, back] = Array.from(received);
+          observed.push([received.size, self instanceof Set, back[0].size]);
+        });
+        value.array.then(received => {
+          const [self, back] = Array.from(received[0]);
+          observed.push([received[0].size, self instanceof Set, back[0].size]);
+        });
+      });
+    });
+    expect(observed).toEqual([
+      [2, true, 2],
+      [2, true, 2],
+    ]);
+  });
+
   it('should resolve deduped objects in nested children of blocked models', async () => {
     let resolveOuterClientComponentChunk;
     let resolveInnerClientComponentChunk;
@@ -3048,7 +3218,10 @@ describe('ReactFlightDOMBrowser', () => {
 
     if (__DEV__ && gate(flags => flags.enableComponentPerformanceTrack)) {
       const result = await response;
-      const firstParagraph = result.root[0];
+      // The element waited for its owner and stack, which arrive through the
+      // debug channel, so it is a lazy element.
+      const lazyParagraph = result.root[0];
+      const firstParagraph = lazyParagraph._init(lazyParagraph._payload);
 
       expect(getDebugInfo(firstParagraph)).toMatchInlineSnapshot(`
         [
@@ -3064,9 +3237,9 @@ describe('ReactFlightDOMBrowser', () => {
               [
                 "Object.<anonymous>",
                 "/packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js",
-                2992,
+                3162,
                 19,
-                2976,
+                3146,
                 89,
               ],
             ],
@@ -3899,5 +4072,223 @@ describe('ReactFlightDOMBrowser', () => {
       error => error,
     );
     expect(xError).toBe(fooError);
+  });
+
+  it('adds debug info for a Server Component once its props have loaded', async () => {
+    let resolveChunk;
+    const Slot = clientExports(
+      function Slot() {
+        return 'slot';
+      },
+      'slot',
+      '/slot.js',
+      new Promise(resolve => (resolveChunk = resolve)),
+    );
+    function Server({slot}) {
+      return <div>hi</div>;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {promise: Promise.resolve(<Server slot={Slot} />)},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    let promise;
+    await act(() => {
+      response.then(root => {
+        promise = root.promise;
+      });
+    });
+
+    const getServerInfo = () =>
+      promise._debugInfo.find(info => info.name === 'Server');
+    if (__DEV__) {
+      // The entry describes the props, and one of them is still loading.
+      expect(getServerInfo()).toBe(undefined);
+    }
+
+    await act(() => resolveChunk());
+    if (__DEV__) {
+      expect(typeof getServerInfo().props.slot).toBe('function');
+    }
+  });
+
+  it('adds debug info for a Server Component whose props refer to its output', async () => {
+    function Inner({style}) {
+      return <div style={style} />;
+    }
+
+    function Component({style}) {
+      return <Inner style={style} />;
+    }
+
+    const style = {};
+    const element = <Component style={style} />;
+    style.element = element;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(element, webpackMap),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    let result;
+    await act(() => {
+      response.then(value => {
+        result = value;
+      });
+    });
+
+    if (__DEV__) {
+      let value = result;
+      while (value.$$typeof === Symbol.for('react.lazy')) {
+        value = value._init(value._payload);
+      }
+      expect(
+        value._debugInfo
+          .filter(info => typeof info.name === 'string')
+          .map(info => info.name),
+      ).toEqual(['Component', 'Inner']);
+    }
+  });
+
+  it('calls a callback once every row it can reach through its value is ready', async () => {
+    let resolveChunk;
+    const {logo} = clientExports(
+      {logo: 'logo'},
+      'logo',
+      '/logo.js',
+      new Promise(resolve => (resolveChunk = resolve)),
+    );
+    const user = {name: 'Ada'};
+    const team = {name: 'Flight', lead: user, logo};
+    user.team = team;
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {user: Promise.resolve(user), team: Promise.resolve(team)},
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    const statuses = [];
+    await act(() => {
+      response.then(root => {
+        // The team is written inside the user's row, so the team's row is a
+        // reference into it.
+        root.user.then(() => statuses.push(root.team.status));
+        root.team.then(() => statuses.push(root.user.status));
+      });
+    });
+    expect(statuses).toEqual([]);
+
+    await act(() => resolveChunk());
+    expect(statuses).toEqual(['fulfilled', 'fulfilled']);
+  });
+
+  it('does not settle an async iterable result that refers to a halted row with unstable_allowPartialStream', async () => {
+    const items = {
+      async *[Symbol.asyncIterator]() {
+        yield 'a';
+        // Outlined into its own row, which suspends and is halted by the abort.
+        return <InfiniteSuspend />;
+      },
+    };
+
+    const controller = new AbortController();
+    const {pendingResult} = await serverAct(async () => {
+      return {
+        pendingResult: ReactServerDOMStaticServer.prerender(
+          {items, closed: new ReadableStream()},
+          webpackMap,
+          {
+            signal: controller.signal,
+          },
+        ),
+      };
+    });
+
+    controller.abort();
+    const {prelude} = await serverAct(() => pendingResult);
+
+    const model = await ReactServerDOMClient.createFromReadableStream(
+      passThrough(prelude),
+      {
+        unstable_allowPartialStream: true,
+      },
+    );
+
+    // A partial stream closes its inner streams when the response closes, so
+    // this read resolves once the whole prelude has been processed.
+    const closed = await model.closed.getReader().read();
+    expect(closed.done).toBe(true);
+
+    const iterator = model.items[Symbol.asyncIterator]();
+    expect(await iterator.next()).toEqual({done: false, value: 'a'});
+
+    // The final result refers to a row that was never written. It is parsed
+    // now, after the close, so the reference finds a halted chunk.
+    let outcome = 'pending';
+    iterator.next().then(
+      result => {
+        outcome = result;
+      },
+      error => {
+        outcome = error;
+      },
+    );
+    await act(() => {});
+
+    expect(outcome).toBe('pending');
+  });
+
+  it('does not resolve a cycle that refers to a halted row with unstable_allowPartialStream', async () => {
+    const controller = new AbortController();
+
+    function AbortDuringRender() {
+      controller.abort();
+      return null;
+    }
+
+    const model = {};
+    // Outlined into its own row, which refers back to the root row.
+    model.map = new Map([['self', model]]);
+    model.trigger = <AbortDuringRender />;
+    // Not serializable. After the abort above, the prerender replaces it with
+    // a reference to a row that is never written instead of reporting an error.
+    model.missing = Symbol('not global');
+
+    const {pendingResult} = await serverAct(async () => {
+      return {
+        pendingResult: ReactServerDOMStaticServer.prerender(model, webpackMap, {
+          signal: controller.signal,
+        }),
+      };
+    });
+    const {prelude} = await serverAct(() => pendingResult);
+
+    const response = ReactServerDOMClient.createFromReadableStream(
+      passThrough(prelude),
+      {
+        unstable_allowPartialStream: true,
+      },
+    );
+
+    // Let the client read the whole prelude and close before the root row is
+    // first read, so that the missing row is looked up after the close.
+    await act(() => {});
+
+    let outcome = 'pending';
+    response.then(
+      value => {
+        outcome = value;
+      },
+      error => {
+        outcome = error;
+      },
+    );
+    await act(() => {});
+
+    expect(outcome).toBe('pending');
   });
 });

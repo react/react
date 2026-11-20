@@ -11,10 +11,81 @@
 'use strict';
 
 let assertConsoleErrorDev;
+let serverAct;
 let serverExports;
 let webpackServerMap;
 let ReactServerDOMServer;
 let ReactServerDOMClient;
+
+// `decodeReply` returns a thenable whose own `.then` resolves to undefined, so
+// the decoded value is observed through `Promise.resolve`. A rogue payload
+// must settle once all its input has arrived; race the result against a
+// bounded number of `setImmediate` turns and report a hang as 'pending'
+// instead of letting the test time out.
+function settleReply(thenable, turns = 10) {
+  return new Promise(resolve => {
+    let settled = false;
+    Promise.resolve(thenable).then(
+      value => {
+        settled = true;
+        resolve({status: 'resolved', value});
+      },
+      reason => {
+        settled = true;
+        resolve({status: 'rejected', reason});
+      },
+    );
+    let remaining = turns;
+    (function spin() {
+      if (settled) {
+        return;
+      }
+      if (remaining-- <= 0) {
+        resolve({status: 'pending'});
+        return;
+      }
+      setImmediate(spin);
+    })();
+  });
+}
+
+// Builds the FormData for one guard payload in a chosen path mode. `row.make`
+// receives a `ref` helper that returns a reference body for a chunk id. In the
+// 'waiting' and 'cycle' modes the reference points at a fresh wrapper chunk
+// that stays BLOCKED while the target is referenced (on a Blob read, or on a
+// cycle back to the root) and exposes the target's own value through `:v`, so
+// the reference resolves through the resumed path with the same observable
+// value. Reference bodies encode chunk ids in hex; the backing store keys each
+// chunk in decimal, so row ids (< 16, identical in both) are written as-is and
+// wrapper ids are converted.
+function buildGuardPayload(mode, row) {
+  const chunks = {};
+  let nextId = 100;
+  const hex = n => n.toString(16);
+  const blob = () => new Blob([new Uint8Array([1, 2, 3, 4])]);
+  function ref(id, path) {
+    let body;
+    if (mode === 'immediate' || row.block !== id) {
+      body = hex(id);
+    } else if (mode === 'cycle') {
+      const w = nextId++;
+      chunks[w] = JSON.stringify({v: '$' + hex(id), back: '$0'});
+      body = hex(w) + ':v';
+    } else {
+      const w = nextId++;
+      const b = nextId++;
+      chunks[w] = JSON.stringify({v: '$' + hex(id), pad: '$o' + hex(b)});
+      chunks[b] = blob();
+      body = hex(w) + ':v';
+    }
+    return path === undefined ? body : body + ':' + path;
+  }
+  const spec = row.make(ref);
+  Object.assign(chunks, spec.chunks);
+  const body = new FormData();
+  Object.keys(chunks).forEach(k => body.set(k, chunks[k]));
+  return {body, spec};
+}
 
 describe('ReactFlightDOMReplyEdge', () => {
   beforeEach(() => {
@@ -33,6 +104,7 @@ describe('ReactFlightDOMReplyEdge', () => {
 
     const InternalTestUtils = require('internal-test-utils');
     assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
+    serverAct = InternalTestUtils.serverAct;
   });
 
   it('can encode a reply', async () => {
@@ -43,6 +115,88 @@ describe('ReactFlightDOMReplyEdge', () => {
     );
 
     expect(decoded).toEqual({some: 'object'});
+  });
+
+  it.each(['Map', 'Set'])(
+    'can share a %s while its contents load',
+    async kind => {
+      let loadModule;
+      const loading = new Promise(resolve => (loadModule = resolve));
+      const ServerModule = serverExports({value: () => 'loaded'}, loading);
+      ReactServerDOMClient.registerServerReference(
+        ServerModule.value,
+        ServerModule.value.$$id,
+      );
+      const shared =
+        kind === 'Map'
+          ? new Map([['value', ServerModule.value]])
+          : new Set([ServerModule.value]);
+      const body = await ReactServerDOMClient.encodeReply(
+        Array(64).fill(shared),
+      );
+      const values = [];
+      const result = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+      await serverAct(() => {
+        result.then(value => values.push(value));
+      });
+      expect(values).toEqual([]);
+
+      await serverAct(() => loadModule());
+      expect(values).toHaveLength(1);
+      expect(values[0]).toHaveLength(64);
+      for (let i = 0; i < values[0].length; i++) {
+        const collection = values[0][i];
+        expect(collection.size).toBe(1);
+        expect(collection.values().next().value()).toBe('loaded');
+      }
+    },
+  );
+
+  it('rejects a Map with a primitive entry', async () => {
+    const body = new FormData();
+    body.set('0', '"$Q1"');
+    body.set('1', '["ab"]');
+    await expect(
+      Promise.resolve(ReactServerDOMServer.decodeReply(body, webpackServerMap)),
+    ).rejects.toThrow();
+  });
+
+  it('counts repeated binary values toward the array size limit', async () => {
+    const bytes = new Uint8Array(16);
+    const body = await ReactServerDOMClient.encodeReply([bytes, bytes]);
+    await expect(
+      Promise.resolve(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap, {
+          arraySizeLimit: 20,
+        }),
+      ),
+    ).rejects.toThrow('Maximum array nesting exceeded');
+  });
+
+  it('can reuse an iterator in later stream items', async () => {
+    const iterator = ['first', 'second'].values();
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue({iterator});
+        controller.enqueue({iterator});
+        controller.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const reader = result.getReader();
+    const first = await reader.read();
+    const second = await reader.read();
+    expect(first.done).toBe(false);
+    expect(second.done).toBe(false);
+    // Either occurrence can be a copy, but each iterator must have all its items.
+    new Set([first.value.iterator, second.value.iterator]).forEach(received => {
+      expect(Array.from(received)).toEqual(['first', 'second']);
+    });
+    expect((await reader.read()).done).toBe(true);
   });
 
   it('should be able to serialize any kind of typed array', async () => {
@@ -137,6 +291,63 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(resultBlob.name).toBe('filename.test'); // In this direction we allow file name to pass through but not other direction.
     expect(resultBlob.size).toBe(bytes.length * 2);
     expect(await resultBlob.arrayBuffer()).toEqual(await blob.arrayBuffer());
+  });
+
+  it('reads a referenced FormData inside a stream item regardless of order', async () => {
+    // The outer FormData is written while the reply serializes synchronously, so
+    // its entries land in the body before the stream item's FormData, which is
+    // written when the stream produces it. The server resolves the stream, and
+    // the reference inside its item, before the sibling reference that appears
+    // later in the body. Each reference must still read its own entries.
+    const makeInner = () => {
+      const inner = new FormData();
+      inner.append('a', '1');
+      inner.append('b', '2');
+      inner.append('c', '3');
+      return inner;
+    };
+    const outer = new FormData();
+    outer.append('x', 'y');
+    outer.append('z', 'w');
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue([makeInner()]);
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply([stream, outer]);
+
+    const check = async result => {
+      const reader = result[0].getReader();
+      const item = (await reader.read()).value;
+      expect(Array.from(item[0].entries())).toEqual([
+        ['a', '1'],
+        ['b', '2'],
+        ['c', '3'],
+      ]);
+      expect(Array.from(result[1].entries())).toEqual([
+        ['x', 'y'],
+        ['z', 'w'],
+      ]);
+    };
+
+    await check(await ReactServerDOMServer.decodeReply(body, webpackServerMap));
+
+    const entries = Array.from(body.entries());
+    const asyncIterable = {
+      async *[Symbol.asyncIterator]() {
+        for (let i = 0; i < entries.length; i++) {
+          yield entries[i];
+        }
+      },
+    };
+    await check(
+      await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+        asyncIterable,
+        webpackServerMap,
+      ),
+    );
   });
 
   it('should support ReadableStreams with typed arrays', async () => {
@@ -241,6 +452,242 @@ describe('ReactFlightDOMReplyEdge', () => {
     // The streamed buffers might be in different chunks and in Uint8Array form but
     // the concatenated bytes should be the same.
     expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
+  });
+
+  it('preserves a stream item while a nested iterator settles synchronously', async () => {
+    const item = {};
+    item.nested = {
+      [Symbol.asyncIterator]() {
+        let done = false;
+        return {
+          next() {
+            const result = {value: done ? undefined : {parent: item}, done};
+            done = true;
+            return {then: resolve => resolve(result)};
+          },
+        };
+      },
+    };
+    item.self = item;
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue(item);
+        controller.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const reader = result.getReader();
+    const received = (await reader.read()).value;
+    expect(received.self).toBe(received);
+    const iterator = received.nested[Symbol.asyncIterator]();
+    const nested = await iterator.next();
+    expect(nested.done).toBe(false);
+    expect(nested.value.parent).toBe(received);
+    expect(await iterator.next()).toEqual({value: undefined, done: true});
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it('can pass a stream item that contains itself', async () => {
+    const item = ['first'];
+    item.push(item);
+    item.push({back: item});
+    const map = new Map();
+    map.set('self', map);
+    const inner = {};
+    inner.self = inner;
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.enqueue(map);
+        c.enqueue({inner});
+        c.enqueue({again: item});
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    expect(first[0]).toBe('first');
+    expect(first[1]).toBe(first);
+    expect(first[2].back).toBe(first);
+    const second = (await reader.read()).value;
+    expect(second.get('self')).toBe(second);
+    const third = (await reader.read()).value;
+    expect(third.inner.self).toBe(third.inner);
+    const fourth = (await reader.read()).value;
+    expect(fourth.again).toBe(first);
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it('can refer to a stream inside an iterable item from a later Promise', async () => {
+    const inner = new ReadableStream({
+      start(c) {
+        c.enqueue('inner');
+        c.close();
+      },
+    });
+    const holder = {inner};
+    let resolveLater;
+    const later = new Promise(resolve => (resolveLater = resolve));
+    async function* items() {
+      yield {holder};
+      // The writer asks for another item only after serializing this one.
+      // The Promise must refer to the stream through the item already sent.
+      resolveLater(holder);
+    }
+    const body = await ReactServerDOMClient.encodeReply({s: items(), later});
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    const item = (await result.s.next()).value;
+    const laterValue = await result.later;
+    expect(laterValue).toBe(item.holder);
+    const read = await laterValue.inner.getReader().read();
+    expect(read.value).toBe('inner');
+  });
+
+  it('keeps a key whose value is undefined', async () => {
+    const body = await ReactServerDOMClient.encodeReply({
+      present: undefined,
+      list: [undefined, 1],
+    });
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    expect('present' in result).toBe(true);
+    expect(result.present).toBe(undefined);
+    expect(result.list).toEqual([undefined, 1]);
+  });
+
+  it('can pass a cyclic object under a property name with a colon', async () => {
+    const cyclic = {};
+    cyclic.self = cyclic;
+    // Property names join into path references with colons, so these two
+    // have to be escaped on the way.
+    const model = {'https://a/b': cyclic, '%3A': cyclic, again: cyclic};
+
+    const body = await ReactServerDOMClient.encodeReply(model);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(result['https://a/b'].self).toBe(result['https://a/b']);
+    expect(result['%3A']).toBe(result['https://a/b']);
+    expect(result.again).toBe(result['https://a/b']);
+  });
+
+  it('ends a BYOB read that is waiting when the byte stream closes', async () => {
+    const s = new ReadableStream({
+      type: 'bytes',
+      start(c) {
+        c.enqueue(new Uint8Array([1, 2, 3]));
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+
+    let sendClose;
+    const closeSent = new Promise(resolve => (sendClose = resolve));
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+        for (const entry of body) {
+          if (entry[1] === 'C') {
+            await closeSent;
+          }
+          yield entry;
+        }
+      },
+    };
+
+    const result = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader({mode: 'byob'});
+    const first = await reader.read(new Uint8Array(3));
+    expect(Array.from(first.value)).toEqual([1, 2, 3]);
+
+    const waiting = reader.read(new Uint8Array(3));
+    sendClose();
+    expect((await waiting).done).toBe(true);
+  });
+
+  it('waits for a queued stream item to initialize before closing', async () => {
+    let resolveModule;
+    const ServerModule = serverExports(
+      {
+        greet() {
+          return 'hi';
+        },
+      },
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    ReactServerDOMClient.registerServerReference(
+      ServerModule.greet,
+      ServerModule.greet.$$id,
+    );
+
+    // The first item travels as a Blob, which the decoder reads
+    // asynchronously; the second waits for its module to load.
+    const s = new ReadableStream({
+      start(c) {
+        c.enqueue({bytes: new Uint8Array([1])});
+        c.enqueue({greet: ServerModule.greet});
+        c.close();
+      },
+    });
+
+    const body = await ReactServerDOMClient.encodeReply(s);
+
+    // Deliver the second item only after the first read has completed.
+    let continueStream;
+    const firstRead = new Promise(resolve => (continueStream = resolve));
+    let finishSending;
+    const sent = new Promise(resolve => (finishSending = resolve));
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        let items = 0;
+        // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+        for (const entry of body) {
+          yield entry;
+          if (entry[0].startsWith('S') && items++ === 0) {
+            await firstRead;
+          }
+        }
+        finishSending();
+      },
+    };
+
+    const result = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+
+    const reader = result.getReader();
+    expect(Array.from((await reader.read()).value.bytes)).toEqual([1]);
+    const secondRead = reader.read();
+    continueStream();
+    await sent;
+    await serverAct(() => resolveModule());
+    expect((await secondRead).value.greet()).toBe('hi');
+    expect((await reader.read()).done).toBe(true);
   });
 
   it('should cancel the transported ReadableStream when we are cancelled', async () => {
@@ -351,6 +798,160 @@ describe('ReactFlightDOMReplyEdge', () => {
 
     expect(await decoded.a).toBe('hello');
     expect(Array.from(await decoded.b)).toEqual(Array.from(buffer));
+  });
+
+  it('drops a stream entry that resolves after the stream has errored', async () => {
+    // A bytes stream gets an invalid entry and errors, then a later entry (a
+    // Blob-backed typed array) resolves and would enqueue onto the errored
+    // controller. That throw must not escape as an unhandled rejection.
+    const rejections = [];
+    const onRejection = reason => rejections.push(reason);
+    process.on('unhandledRejection', onRejection);
+    try {
+      const body = new FormData();
+      body.set('0', '["$r1"]');
+      body.append('S1', '"nope"');
+      body.append('S1', '"$o5"');
+      body.append('S1', 'C');
+      body.set('5', new Blob([new Uint8Array([1, 2, 3, 4])]));
+      const result = await ReactServerDOMServer.decodeReply(
+        body,
+        webpackServerMap,
+      );
+      const reader = result[0].getReader();
+      let readError = null;
+      await reader.read().then(null, error => (readError = error));
+      // Let the Blob read resolve and attempt the late enqueue.
+      for (let i = 0; i < 8; i++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      expect(readError).not.toBe(null);
+      expect(readError.message).toBe('Invalid data for bytes stream.');
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+    expect(
+      rejections.filter(
+        reason => reason && /already closed|Invalid state/.test(reason.message),
+      ),
+    ).toEqual([]);
+  });
+
+  it('drops a stream entry that finishes loading after the consumer canceled the stream', async () => {
+    // The entry is a typed array whose bytes are still being read when the
+    // consumer cancels. Enqueueing it afterwards would throw.
+    const rejections = [];
+    const onRejection = reason => rejections.push(reason);
+    process.on('unhandledRejection', onRejection);
+    try {
+      const body = new FormData();
+      body.set('0', '["$r1"]');
+      body.append('S1', '"$o5"');
+      body.append('S1', 'C');
+      body.set('5', new Blob([new Uint8Array([1, 2, 3, 4])]));
+      const result = await ReactServerDOMServer.decodeReply(
+        body,
+        webpackServerMap,
+      );
+      await result[0].cancel();
+      // Let the Blob read resolve and attempt the late enqueue.
+      for (let i = 0; i < 8; i++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+    expect(rejections).toEqual([]);
+  });
+
+  it('rejects a duplicate field for a non-stream chunk instead of crashing', async () => {
+    const rejections = [];
+    const onRejection = reason => rejections.push(reason);
+    process.on('unhandledRejection', onRejection);
+    let result;
+    try {
+      const entries = [
+        ['0', '[1,2]'],
+        ['0', '[3,4]'],
+      ];
+      const iterable = {
+        async *[Symbol.asyncIterator]() {
+          // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+          for (const entry of entries) {
+            yield entry;
+          }
+        },
+      };
+      result = await settleReply(
+        ReactServerDOMServer.decodeReplyFromAsyncIterable(
+          iterable,
+          webpackServerMap,
+        ),
+      );
+      for (let i = 0; i < 6; i++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+    // The first field is the root value; the duplicate must not throw a
+    // TypeError out of the field handler.
+    expect(result.status).toBe('resolved');
+    expect(result.value).toEqual([1, 2]);
+    expect(
+      rejections.filter(
+        reason => reason && /is not a function/.test(reason.message),
+      ),
+    ).toEqual([]);
+  });
+
+  it('drops stream entries that arrive after the consumer canceled the stream', async () => {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue('first');
+        c.enqueue('second');
+        c.close();
+      },
+    });
+    const formData = await ReactServerDOMClient.encodeReply({
+      stream,
+      later: Promise.resolve('later'),
+    });
+    // Keep the independent Promise's value until after the canceled stream's
+    // remaining entries, so observing it proves the decoder kept going.
+    const laterEntry = Array.from(formData).find(
+      entry => entry[1] === '"later"',
+    );
+    expect(laterEntry).toBeDefined();
+    const entries = Array.from(formData).filter(
+      entry => entry[0] !== laterEntry[0],
+    );
+    expect(entries.length).toBe(4);
+    let continueStream;
+    const canceled = new Promise(resolve => (continueStream = resolve));
+    const iterable = {
+      async *[Symbol.asyncIterator]() {
+        yield entries[0];
+        yield entries[1];
+        await canceled;
+        yield entries[2];
+        yield entries[3];
+        yield laterEntry;
+      },
+    };
+
+    const decoded = await ReactServerDOMServer.decodeReplyFromAsyncIterable(
+      iterable,
+      webpackServerMap,
+    );
+    const reader = decoded.stream.getReader();
+    expect(await reader.read()).toEqual({value: 'first', done: false});
+    await reader.cancel('not interested');
+
+    // The stream's second item and its close marker still arrive. They must
+    // not throw into the decoder.
+    continueStream();
+    expect(await decoded.later).toBe('later');
   });
 
   it('supports streamed values whose entries are not contiguous in the body', async () => {
@@ -506,6 +1107,346 @@ describe('ReactFlightDOMReplyEdge', () => {
     expect(replyResult.boundMethod()).toBe('hi, there');
   });
 
+  it('rejects a Server Reference whose metadata waits for another row', async () => {
+    // The encoder writes the metadata as a part with nothing in it to wait
+    // for. Here it takes its id from the row that refers to it.
+    const ServerModule = serverExports({fn: (...args) => args});
+    const body = new FormData();
+    body.set('0', JSON.stringify({id: ServerModule.fn.$$id, f: '$h1'}));
+    body.set('1', JSON.stringify({id: '$0:id', bound: null}));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeReply(body, webpackServerMap),
+    );
+    expect(result.status).toBe('rejected');
+    expect(result.reason.message).toBe('Invalid reference.');
+  });
+
+  it('does not install a function into a then slot through the waiting path', async () => {
+    let called = false;
+    const ServerModule = serverExports({action: () => (called = true)});
+    const body = new FormData();
+    body.set('0', JSON.stringify({then: '$1'}));
+    body.set('1', '"$h2"');
+    body.set('2', JSON.stringify({id: ServerModule.action.$$id, bound: '$@3'}));
+    body.set('3', JSON.stringify(['ARG']));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeReply(body, webpackServerMap),
+    );
+    expect(result.status).toBe('resolved');
+    expect(result.value.then).toBe(null);
+    expect(called).toBe(false);
+  });
+
+  it('does not install a function into a then slot reached through a cycle', async () => {
+    let called = false;
+    const ServerModule = serverExports({action: () => (called = true)});
+    const body = new FormData();
+    body.set('0', JSON.stringify({then: '$1:f', z: 1}));
+    body.set('1', JSON.stringify({f: '$h2', g: '$0'}));
+    body.set('2', JSON.stringify({id: ServerModule.action.$$id, bound: null}));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeReply(body, webpackServerMap),
+    );
+    expect(result.status).toBe('resolved');
+    expect(result.value.then).toBe(null);
+    expect(result.value.z).toBe(1);
+    expect(called).toBe(false);
+  });
+
+  it('nulls a function then slot nested in an array argument', async () => {
+    let called = false;
+    const ServerModule = serverExports({action: () => (called = true)});
+    const body = new FormData();
+    body.set('0', JSON.stringify([{then: '$1'}]));
+    body.set('1', '"$h2"');
+    body.set('2', JSON.stringify({id: ServerModule.action.$$id, bound: '$@3'}));
+    body.set('3', JSON.stringify(['ARG']));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeReply(body, webpackServerMap),
+    );
+    expect(result.status).toBe('resolved');
+    expect(result.value[0].then).toBe(null);
+    expect(called).toBe(false);
+  });
+
+  it('does not call a server function sitting in a then slot during decodeAction', async () => {
+    let called = false;
+    const ServerModule = serverExports({action: () => (called = true)});
+    const id = ServerModule.action.$$id;
+    const body = new FormData();
+    body.set('$ACTION_REF_0', '');
+    body.set('$ACTION_0:0', JSON.stringify({id, bound: '$@1'}));
+    body.set('$ACTION_0:1', JSON.stringify({then: '$2:f'}));
+    body.set('$ACTION_0:2', JSON.stringify({f: '$h3', g: '$1'}));
+    body.set('$ACTION_0:3', JSON.stringify({id, bound: null}));
+    const result = await settleReply(
+      ReactServerDOMServer.decodeAction(body, webpackServerMap),
+    );
+    expect(result.status).toBe('resolved');
+    expect(called).toBe(false);
+  });
+
+  describe('settles blocked reference groups once input and async work finish', () => {
+    const decode = chunks => {
+      const body = new FormData();
+      Object.keys(chunks).forEach(k => body.set(k, chunks[k]));
+      return settleReply(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap),
+      );
+    };
+
+    it('rejects a reference that only points at itself', async () => {
+      const r = await decode({0: '"$0"'});
+      expect(r.status).toBe('rejected');
+    });
+
+    it('rejects two references that only point at each other', async () => {
+      const r = await decode({0: '"$1"', 1: '"$0"'});
+      expect(r.status).toBe('rejected');
+      // The same error as a chunk that never arrived.
+      expect(r.reason.message).toBe('Connection closed.');
+    });
+
+    it('rejects a path that only leads back into itself', async () => {
+      const r = await decode({0: JSON.stringify({a: '$0:a'})});
+      expect(r.status).toBe('rejected');
+    });
+
+    it('rejects two paths that only lead into each other', async () => {
+      const r = await decode({
+        0: JSON.stringify({a: '$1:b'}),
+        1: JSON.stringify({b: '$0:a'}),
+      });
+      expect(r.status).toBe('rejected');
+    });
+
+    it('rejects a self path that cannot be followed', async () => {
+      const r = await decode({0: JSON.stringify({a: '$0:a:x'})});
+      expect(r.status).toBe('rejected');
+    });
+
+    it('resolves a well-founded cycle whose root is null to null', async () => {
+      const r = await decode({
+        0: '"$1:a"',
+        1: JSON.stringify({a: null, c: '$0'}),
+      });
+      expect(r.status).toBe('resolved');
+      expect(r.value).toBe(null);
+    });
+
+    it.each(['R', 'r', 'X', 'x'])(
+      'errors a %s stream reference that has no entries',
+      async tag => {
+        const body = new FormData();
+        body.set('0', '["$' + tag + '1"]');
+        const result = await ReactServerDOMServer.decodeReply(
+          body,
+          webpackServerMap,
+        );
+        const stream = result[0];
+        const read =
+          tag === 'R' || tag === 'r'
+            ? stream.getReader().read()
+            : stream[Symbol.asyncIterator]().next();
+        const settled = await settleReply(read);
+        expect(settled.status).toBe('rejected');
+      },
+    );
+
+    it('errors a stream whose last entry can never complete', async () => {
+      // The first entry waits for the root, so the second entry is only parsed
+      // after the root has initialized. Row 5 refers to nothing but itself.
+      const body = new FormData();
+      body.set('0', '["$R1"]');
+      body.append('S1', '{"r":"$0"}');
+      body.append('S1', '"$5"');
+      body.append('S1', 'C');
+      body.set('5', '"$5"');
+      const result = await ReactServerDOMServer.decodeReply(
+        body,
+        webpackServerMap,
+      );
+      // The stream errors, which also drops the entry that was not read yet.
+      const read = await settleReply(result[0].getReader().read(), 20);
+      expect(read.status).toBe('rejected');
+    });
+
+    it('does not reject a blocked group while its module is still loading', async () => {
+      let loadModule;
+      const loading = new Promise(resolve => (loadModule = resolve));
+      const ServerModule = serverExports({fn: () => 'ok'}, loading);
+      const body = new FormData();
+      body.set('0', '"$h1"');
+      body.set('1', JSON.stringify({id: ServerModule.fn.$$id, bound: null}));
+      const pending = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+      const early = await settleReply(pending, 6);
+      expect(early.status).toBe('pending');
+      await serverAct(() => loadModule());
+      const result = await settleReply(pending);
+      expect(result.status).toBe('resolved');
+      expect(typeof result.value).toBe('function');
+    });
+
+    const streamEntries = entries => {
+      const iterable = {
+        async *[Symbol.asyncIterator]() {
+          // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+          for (const entry of entries) {
+            yield entry;
+          }
+        },
+      };
+      return settleReply(
+        ReactServerDOMServer.decodeReplyFromAsyncIterable(
+          iterable,
+          webpackServerMap,
+        ),
+      );
+    };
+
+    it('rejects a group still blocked when streaming input closes', async () => {
+      // The referenced chunk arrives first so the cycle is a resumed wait
+      // rather than a forward reference; it stays blocked until close.
+      const r = await streamEntries([
+        ['1', '"$0"'],
+        ['0', '"$1"'],
+      ]);
+      expect(r.status).toBe('rejected');
+    });
+  });
+
+  it.each(['fulfill', 'reject'])(
+    'a module can %s all the Promises of objects that depend on it',
+    async outcome => {
+      let resolveModule;
+      let rejectModule;
+      const {tail} = serverExports(
+        {tail: () => 'done'},
+        new Promise((resolve, reject) => {
+          resolveModule = resolve;
+          rejectModule = reject;
+        }),
+      );
+      const reference = ReactServerDOMClient.createServerReference(
+        tail.$$id,
+        () => {},
+      );
+      // Each object holds the previous one. Loading or failing the module
+      // must notify every subscriber, including those far down the chain.
+      const size = 5000;
+      const resolvers = [];
+      const model = Array.from(
+        {length: size},
+        () => new Promise(resolve => resolvers.push(resolve)),
+      );
+      const encoding = ReactServerDOMClient.encodeReply(model);
+      let previous = reference;
+      for (let i = 0; i < size; i++) {
+        previous = {previous};
+        resolvers[i](previous);
+        if (i % 250 === 249) {
+          await serverAct(() => {});
+        }
+      }
+      const body = await encoding;
+      let finished;
+      const consumed = new Promise(resolve => (finished = resolve));
+      const response = ReactServerDOMServer.decodeReplyFromAsyncIterable(
+        (async function* () {
+          yield* body.entries();
+          finished();
+        })(),
+        webpackServerMap,
+      );
+      const fulfilled = [];
+      const rejected = [];
+      const received = await response;
+      received.forEach(promise => {
+        promise.then(
+          value => fulfilled.push(value),
+          error => rejected.push(error),
+        );
+      });
+      await consumed;
+      await serverAct(() => {});
+      expect(fulfilled).toEqual([]);
+      expect(rejected).toEqual([]);
+
+      const failure = new Error('module failed');
+      await serverAct(() => {
+        if (outcome === 'fulfill') {
+          resolveModule();
+        } else {
+          rejectModule(failure);
+        }
+      });
+      expect(fulfilled.length).toBe(outcome === 'fulfill' ? size : 0);
+      expect(rejected.length).toBe(outcome === 'reject' ? size : 0);
+      if (outcome === 'fulfill') {
+        let last = fulfilled[size - 1];
+        for (let i = 0; i < size; i++) {
+          last = last.previous;
+        }
+        expect(last()).toBe('done');
+      } else {
+        rejected.forEach(error => expect(error).toBe(failure));
+      }
+    },
+    15000,
+  );
+
+  it('round trips deeply nested bound Server Functions', async () => {
+    const {identity} = serverExports({identity: value => value});
+    const reference = ReactServerDOMClient.createServerReference(
+      identity.$$id,
+      () => {},
+    );
+    const size = 1800;
+    let model = 'done';
+    for (let i = 0; i < size; i++) {
+      model = reference.bind(null, model);
+    }
+    const body = await ReactServerDOMClient.encodeReply(model);
+    let value = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    for (let i = 0; i < size; i++) {
+      value = value();
+    }
+    expect(value).toBe('done');
+  });
+
+  it('binds a server reference to its containing array once its module loads', async () => {
+    let resolveModule;
+    function read(array, other) {
+      return [array.length, array[1].length, other];
+    }
+    const ServerModule = serverExports(
+      {read},
+      new Promise(resolve => (resolveModule = resolve)),
+    );
+    ReactServerDOMClient.registerServerReference(
+      ServerModule.read,
+      ServerModule.read.$$id,
+    );
+    const array = [];
+    array.push(ServerModule.read.bind(null, array, null), array);
+
+    const body = await ReactServerDOMClient.encodeReply({array});
+    const observed = [];
+    const pending = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    await serverAct(() => {
+      pending.then(
+        value => observed.push(value.array[0]()),
+        error => observed.push(error.message),
+      );
+    });
+    expect(observed).toEqual([]);
+
+    await serverAct(() => resolveModule());
+    const decoded = await pending;
+    expect(observed).toEqual([[2, 2, null]]);
+    expect(decoded.array[1]).toBe(decoded.array);
+  });
+
   it('warns with a tailored message if eval is not available in dev', async () => {
     // eslint-disable-next-line no-eval
     const previousEval = globalThis.eval.bind(globalThis);
@@ -531,5 +1472,713 @@ describe('ReactFlightDOMReplyEdge', () => {
       // eslint-disable-next-line no-eval
       globalThis.eval = previousEval;
     }
+  });
+
+  describe('reply collection shapes the writer never emits', () => {
+    const decode = chunks => {
+      const body = new FormData();
+      Object.keys(chunks).forEach(k => body.set(k, chunks[k]));
+      return settleReply(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap),
+      );
+    };
+
+    // A Map waits for the key and value of each entry, wherever the entry
+    // comes from, so an entry supplied by reference is read once it is filled.
+    it('builds a Map whose entry pairs are supplied by reference', async () => {
+      const r = await decode({
+        0: '["$Q1","$2"]',
+        1: '["$0:1"]',
+        2: '["k","$0:0"]',
+      });
+      expect(r.status).toBe('resolved');
+      const map = r.value[0];
+      expect(map).toBeInstanceOf(Map);
+      expect(map.size).toBe(1);
+      expect(map.get('k')).toBe(map);
+      expect(r.value[1]).toEqual(['k', map]);
+    });
+  });
+
+  describe('counts arrays reached through references', () => {
+    const BIG = JSON.stringify(Array.from({length: 20}, (_, i) => i + 1));
+    const BIG_WITH_3 = BIG.slice(0, -1) + ',"$3"]';
+    const decode = (chunks, arraySizeLimit) => {
+      const body = new FormData();
+      Object.keys(chunks).forEach(k => body.set(k, chunks[k]));
+      return settleReply(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap, {
+          arraySizeLimit,
+        }),
+      );
+    };
+
+    it('counts an array each time a chunk that is already complete is referenced', async () => {
+      const r = await decode({0: '["$1","$1"]', 1: BIG}, 30);
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('counts an array reached through a chunk that waits for a typed array', async () => {
+      // The second row is only parsed when the root refers to it, because it
+      // is still reading its bytes. The root counts it once it is complete.
+      const r = await decode(
+        {
+          0: '["$1","$1"]',
+          1: BIG.slice(0, -1) + ',"$o2"]',
+          2: new Blob([new Uint8Array([1, 2, 3, 4])]),
+        },
+        30,
+      );
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('counts arrays that double through rows that each hold a typed array', async () => {
+      // Every row finishes when its own bytes are read, after the rows it
+      // refers to. Its arrays still count toward the rows that refer to it.
+      const chunks = {};
+      for (let k = 0; k < 8; k++) {
+        const next = '$' + (k + 1).toString(16);
+        const bytes = '$o' + (k + 16).toString(16);
+        chunks[k] = JSON.stringify([next, next, bytes]);
+        chunks[k + 16] = new Blob([new Uint8Array([k])]);
+      }
+      chunks[8] = '[1,2]';
+      const r = await decode(chunks, 100);
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('rejects a cyclic fan-in that exceeds the array size limit', async () => {
+      // Every reference selects the same nested array out of a chunk that is
+      // blocked by a cycle back to the root; each counts against the limit.
+      const refs = [];
+      for (let i = 0; i < 24; i++) {
+        refs.push('$1:x');
+      }
+      const r = await decode(
+        {
+          0: JSON.stringify(refs),
+          1: JSON.stringify({
+            x: [
+              [1, 2, 3],
+              [4, 5, 6],
+              [7, 8, 9],
+            ],
+            self: '$0',
+          }),
+        },
+        100,
+      );
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('rejects a billion-laughs expansion through blocked chunks', async () => {
+      // Each level references the next twice; the deepest holds a nested array
+      // and closes a cycle, so every level is counted on the resumed path.
+      const r = await decode(
+        {
+          0: '["$1","$1"]',
+          1: '["$2","$2"]',
+          2: '["$3","$3"]',
+          3: '[[1,2,3,4,5,6,7,8],"$0"]',
+        },
+        50,
+      );
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it('rejects arrays that double through references into the root', async () => {
+      // root[k] is [root[k - 1], root[k - 1]]. Every row is parsed while the
+      // root is still being parsed, so its references are fulfilled before the
+      // arrays they select have their final count.
+      const chunks = {};
+      const refs = [];
+      for (let k = 1; k <= 64; k++) {
+        refs.push('"$' + k.toString(16) + '"');
+        chunks[k] = '["$0:' + (k - 1) + '","$0:' + (k - 1) + '"]';
+      }
+      chunks[0] = '[["leaf"],' + refs.join(',') + ']';
+      const r = await decode(chunks);
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+
+    it.each([
+      [
+        'a row that is a reference to another row',
+        {0: '"$2"', 2: BIG_WITH_3, 3: '["$1","$1","$1"]', 1: '"$2"'},
+      ],
+      [
+        'a path that continues into the array of another row',
+        {0: '"$2"', 2: BIG_WITH_3, 3: '["$1:0","$1:0","$1:0"]', 1: '["$2"]'},
+      ],
+      [
+        'a path that continues into a nested array of another row',
+        {
+          0: '"$2"',
+          2: '[' + BIG + ',"$3"]',
+          3: '["$1:0:0","$1:0:0","$1:0:0"]',
+          1: '["$2"]',
+        },
+      ],
+    ])('counts an array reached through %s', async (name, chunks) => {
+      const r = await decode(chunks, 50);
+      expect(r.status).toBe('rejected');
+      expect(r.reason.message).toMatch(/Maximum array nesting exceeded/);
+    });
+  });
+
+  describe('leaves no decoder state behind for the next decode', () => {
+    // A well-founded cycle whose resolution depends on the cycle machinery, so
+    // it only settles if the module-level parse state is clean.
+    const canary = () => {
+      const body = new FormData();
+      body.set('0', '"$W1"');
+      body.set('1', '["$0","x"]');
+      return settleReply(
+        ReactServerDOMServer.decodeReply(body, webpackServerMap),
+      );
+    };
+
+    it('a server reference whose module loads after its entry does not leak parse state', async () => {
+      let loadModule;
+      const loading = new Promise(resolve => (loadModule = resolve));
+      const ServerModule = serverExports({fn: () => 'ok'}, loading);
+      const body = new FormData();
+      body.set('0', JSON.stringify({a: '$h1'}));
+      body.set(
+        '1',
+        JSON.stringify({id: ServerModule.fn.$$id, bound: null, pad: '$o2'}),
+      );
+      body.set('2', new Blob([new Uint8Array([1, 2, 3, 4])]));
+      const pending = ReactServerDOMServer.decodeReply(body, webpackServerMap);
+      // Let the Blob read settle while the module is still loading, so the
+      // server reference resolves outside any parse.
+      Promise.resolve(pending).then(
+        () => {},
+        () => {},
+      );
+      for (let i = 0; i < 6; i++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      // An independent, well-founded decode must still settle afterward.
+      const result = await canary();
+      expect(result.status).toBe('resolved');
+      expect(result.value).toBeInstanceOf(Set);
+      expect(result.value.has('x')).toBe(true);
+      await serverAct(() => loadModule());
+    });
+
+    it('two interleaved async-iterable decodes each resolve their own cycle', async () => {
+      const feed = entries => {
+        const iterable = {
+          async *[Symbol.asyncIterator]() {
+            // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+            for (const entry of entries) {
+              yield entry;
+              await null;
+            }
+          },
+        };
+        return ReactServerDOMServer.decodeReplyFromAsyncIterable(
+          iterable,
+          webpackServerMap,
+        );
+      };
+      const first = feed([
+        ['1', JSON.stringify({a: null, c: '$0'})],
+        ['0', '"$1:a"'],
+      ]);
+      const second = feed([
+        ['1', '["$0","y"]'],
+        ['0', '"$W1"'],
+      ]);
+      const firstResult = await settleReply(first);
+      const secondResult = await settleReply(second);
+      expect(firstResult.status).toBe('resolved');
+      expect(firstResult.value).toBe(null);
+      expect(secondResult.status).toBe('resolved');
+      expect(secondResult.value).toBeInstanceOf(Set);
+      expect(secondResult.value.has('y')).toBe(true);
+    });
+  });
+
+  // Each hardening guard enforced by the decoder, written as a hand-crafted
+  // chunk graph with its expected outcome. A guard has to hold both when the
+  // referenced chunk has already initialized (the immediate path) and when it
+  // is still BLOCKED and its value is installed later (the resumed path). Every
+  // reference row runs the same payload in both modes, plus a cyclic mode where
+  // the target is reached from inside a cycle back to the root; the outcome
+  // must match. Parse-time guards that fire before any reference is resolved
+  // run once.
+  describe('enforces guards on the immediate and resumed reference paths', () => {
+    let fnId;
+    let called;
+    beforeEach(() => {
+      called = false;
+      const m = serverExports({action: () => (called = true)});
+      fnId = m.action.$$id;
+    });
+
+    const metaField = () => JSON.stringify({id: fnId, bound: null});
+
+    const rows = [
+      // A function reaching a `then` slot must be dropped to null, never
+      // installed, so the containing object is not an invokable thenable.
+      {
+        name: 'then slot filled by a function via $N',
+        block: 1,
+        cycle: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({then: '$' + ref(1)}),
+            1: '"$h2"',
+            2: metaField(),
+          },
+          resolves: v => expect(v.then).toBe(null),
+          noCall: true,
+        }),
+      },
+      {
+        name: 'then slot filled by a function via $N:path',
+        block: 1,
+        cycle: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({then: '$' + ref(1, 'f')}),
+            1: JSON.stringify({f: '$h2'}),
+            2: metaField(),
+          },
+          resolves: v => expect(v.then).toBe(null),
+          noCall: true,
+        }),
+      },
+      {
+        name: 'then slot nested in an array argument',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify([{then: '$' + ref(1)}]),
+            1: '"$h2"',
+            2: metaField(),
+          },
+          resolves: v => expect(v[0].then).toBe(null),
+          noCall: true,
+        }),
+      },
+      {
+        name: 'then slot inside a Map entry value',
+        block: 3,
+        make: ref => ({
+          chunks: {
+            0: '"$Q1"',
+            1: JSON.stringify([['k', '$2']]),
+            2: JSON.stringify({then: '$' + ref(3)}),
+            3: '"$h4"',
+            4: metaField(),
+          },
+          resolves: v => expect(v.get('k').then).toBe(null),
+          noCall: true,
+        }),
+      },
+      // A reference path may only descend through plain own properties.
+      {
+        name: 'path walk into a Map',
+        block: 1,
+        cycle: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, 'x')}),
+            1: '"$Q2"',
+            2: JSON.stringify([['k', 'v']]),
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk into a Set',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, '0')}),
+            1: '"$W2"',
+            2: JSON.stringify(['x']),
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk into a typed array',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, '0')}),
+            1: '"$o2"',
+            2: new Blob([new Uint8Array([9, 9])]),
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk into a string',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, 'x')}),
+            1: JSON.stringify('hi'),
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk into null',
+        block: 1,
+        make: ref => ({
+          chunks: {0: JSON.stringify({a: '$' + ref(1, 'x')}), 1: 'null'},
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk to a non-own property',
+        block: 1,
+        make: ref => ({
+          chunks: {0: JSON.stringify({a: '$' + ref(1, 'toString')}), 1: '{}'},
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk to a __proto__ segment',
+        block: 1,
+        make: ref => ({
+          chunks: {0: JSON.stringify({a: '$' + ref(1, '__proto__')}), 1: '{}'},
+          rejects: /Invalid reference/,
+        }),
+      },
+      {
+        name: 'path walk to a constructor segment',
+        block: 1,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({a: '$' + ref(1, 'constructor')}),
+            1: '{}',
+          },
+          rejects: /Invalid reference/,
+        }),
+      },
+      // A collection is only constructed from an inline array of valid entries.
+      {
+        name: 'Map with a primitive entry',
+        block: 1,
+        cycle: true,
+        make: ref => ({
+          chunks: {
+            0: '"$Q' + ref(1) + '"',
+            1: JSON.stringify([['k', 'v'], 'primitive']),
+          },
+          rejects: /Invalid Map initializer/,
+        }),
+      },
+      {
+        name: 'Map initializer that is not an array',
+        block: 1,
+        make: ref => ({
+          chunks: {0: '"$Q' + ref(1) + '"', 1: JSON.stringify('nope')},
+          rejects: /Invalid Map initializer/,
+        }),
+      },
+      {
+        name: 'Set initializer that is not an array',
+        block: 1,
+        make: ref => ({
+          chunks: {0: '"$W' + ref(1) + '"', 1: '{}'},
+          rejects: /Invalid Set initializer/,
+        }),
+      },
+      // Guards that fire while the referenced row is parsed, before any
+      // resumed path exists.
+      {
+        name: '__proto__ key is dropped at parse',
+        parseTime: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify({__proto__: '$1', keep: 1}),
+            1: JSON.stringify({polluted: true}),
+          },
+          resolves: v => {
+            expect(Object.prototype.hasOwnProperty.call(v, '__proto__')).toBe(
+              false,
+            );
+            expect(v.keep).toBe(1);
+            expect({}.polluted).toBe(undefined);
+          },
+        }),
+      },
+      {
+        name: 'typed array id reused',
+        parseTime: true,
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify(['$o1', '$o1']),
+            1: new Blob([new Uint8Array([1])]),
+          },
+          rejects: /Already initialized typed array/,
+        }),
+      },
+      {
+        name: 'stream id reused',
+        parseTime: true,
+        make: ref => ({
+          chunks: {0: JSON.stringify(['$R1', '$R1'])},
+          rejects: /Already initialized stream/,
+        }),
+      },
+      {
+        name: 'Blob backed by a non-Blob',
+        parseTime: true,
+        make: ref => ({
+          chunks: {0: '"$B1"', 1: 'not a blob'},
+          rejects: /Referenced Blob is not a Blob/,
+        }),
+      },
+      {
+        name: 'BigInt over the digit limit',
+        parseTime: true,
+        make: ref => ({
+          chunks: {0: JSON.stringify('$n' + '9'.repeat(301))},
+          rejects: /BigInt is too large/,
+        }),
+      },
+      {
+        name: 'bound arguments over the limit',
+        parseTime: true,
+        make: ref => ({
+          chunks: {
+            0: '"$h1"',
+            1: JSON.stringify({id: fnId, bound: '$@2'}),
+            2: JSON.stringify(new Array(1001).fill(0)),
+          },
+          rejects: /too many bound arguments/,
+        }),
+      },
+      {
+        name: 'nested arrays over the size limit',
+        parseTime: true,
+        opts: {arraySizeLimit: 10},
+        make: ref => ({
+          chunks: {
+            0: JSON.stringify([
+              ['aaaaaa', 'bbbbbb'],
+              ['cccccc', 'dddddd'],
+            ]),
+          },
+          rejects: /Maximum array nesting exceeded/,
+        }),
+      },
+      {
+        name: 'reference to a missing chunk',
+        parseTime: true,
+        make: ref => ({
+          chunks: {0: '"$9"'},
+          rejects: /./,
+        }),
+      },
+    ];
+
+    const modesFor = row =>
+      row.parseTime
+        ? ['immediate']
+        : row.cycle
+          ? ['immediate', 'waiting', 'cycle']
+          : ['immediate', 'waiting'];
+
+    rows.forEach(row => {
+      modesFor(row).forEach(mode => {
+        it(`${row.name} (${mode})`, async () => {
+          const {body, spec} = buildGuardPayload(mode, row);
+          const result = await settleReply(
+            ReactServerDOMServer.decodeReply(body, webpackServerMap, row.opts),
+          );
+          if (spec.rejects) {
+            expect(result.status).toBe('rejected');
+            expect(result.reason.message).toMatch(spec.rejects);
+          } else {
+            expect(result.status).toBe('resolved');
+            spec.resolves(result.value);
+          }
+          if (spec.noCall) {
+            expect(called).toBe(false);
+          }
+        });
+      });
+    });
+
+    it('a well-founded decode still resolves after every guard payload', async () => {
+      // A guard path that left module-level parse state behind would break the
+      // next response. Run every payload, then a well-founded cycle that only
+      // settles if that state is clean.
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const modes = modesFor(row);
+        for (let j = 0; j < modes.length; j++) {
+          const mode = modes[j];
+          const {body} = buildGuardPayload(mode, row);
+          await settleReply(
+            ReactServerDOMServer.decodeReply(body, webpackServerMap, row.opts),
+          );
+          const canaryBody = new FormData();
+          canaryBody.set('0', '"$W1"');
+          canaryBody.set('1', '["$0","x"]');
+          const canary = await settleReply(
+            ReactServerDOMServer.decodeReply(canaryBody, webpackServerMap),
+          );
+          if (canary.status !== 'resolved') {
+            throw new Error(
+              `canary did not resolve after ${row.name} (${mode}): ${canary.status}`,
+            );
+          }
+        }
+      }
+    });
+  });
+
+  it('keeps a stream item whose synchronous thenable resolves to one of its objects', async () => {
+    const X = {x: 1};
+    const item = {x: X, p: {then: resolve => resolve(X)}};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const received = (await result.getReader().read()).value;
+    const resolved = await received.p;
+    expect(resolved).toBe(received.x);
+  });
+
+  it('dedupes an object that is in several items of a stream', async () => {
+    const shared = {name: 'shared', nested: {deep: true}};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue({shared});
+        c.enqueue({shared});
+        c.enqueue({shared});
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const reader = result.getReader();
+    const first = (await reader.read()).value;
+    const second = (await reader.read()).value;
+    const third = (await reader.read()).value;
+    // The object is written twice. The first time it is inside its item. The
+    // second time it gets a part of its own, and later items refer to it.
+    expect(first.shared).toEqual(shared);
+    expect(second.shared).toEqual(shared);
+    expect(third.shared).toBe(second.shared);
+  });
+
+  it('keeps a stream item whose Map value is one of its objects', async () => {
+    const X = {x: 1};
+    const item = {x: X, m: new Map([['k', X]])};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const received = (await result.getReader().read()).value;
+    expect(received.m.get('k')).toBe(received.x);
+  });
+
+  it('resolves a reference from a synchronously nested item up to an outer item', async () => {
+    function syncIterable(items) {
+      // An async iterable whose next() settles synchronously, so its items are
+      // serialized while the containing item is still on the stack.
+      return {
+        [Symbol.asyncIterator]() {
+          let i = 0;
+          return {
+            next() {
+              const result =
+                i < items.length
+                  ? {value: items[i++], done: false}
+                  : {value: undefined, done: true};
+              return {then: resolve => resolve(result)};
+            },
+          };
+        },
+      };
+    }
+    const X = {level: 'outer'};
+    const inner = {innerX: X};
+    const middle = {mid: true, nested: syncIterable([inner])};
+    const outer = {x: X, nested: syncIterable([middle])};
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(outer);
+        c.close();
+      },
+    });
+    const body = await ReactServerDOMClient.encodeReply(source);
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    const receivedOuter = (await result.getReader().read()).value;
+    const receivedMiddle = (
+      await receivedOuter.nested[Symbol.asyncIterator]().next()
+    ).value;
+    const receivedInner = (
+      await receivedMiddle.nested[Symbol.asyncIterator]().next()
+    ).value;
+    expect(receivedInner.innerX).toBe(receivedOuter.x);
+  });
+
+  it('rejects a reply when a stream item throws partway through', async () => {
+    const X = {x: 1};
+    const S = new Set([X]);
+    const item = {x: X, s: S};
+    Object.defineProperty(item, 'boom', {
+      enumerable: true,
+      get() {
+        throw new Error('getter boom');
+      },
+    });
+    const source = new ReadableStream({
+      start(c) {
+        c.enqueue(item);
+        c.close();
+      },
+    });
+    await expect(ReactServerDOMClient.encodeReply(source)).rejects.toThrow(
+      'getter boom',
+    );
+
+    // The encoder's state is per call, so the same objects encode cleanly in a
+    // fresh call even though the previous one abandoned them partway through.
+    const body = await ReactServerDOMClient.encodeReply({x: X, s: S});
+    const result = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    expect(Array.from(result.s)[0]).toBe(result.x);
   });
 });
