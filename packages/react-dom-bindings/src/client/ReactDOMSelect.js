@@ -101,7 +101,9 @@ function updateOptions(
         defaultSelected = options[i];
       }
     }
-    if (defaultSelected !== null) {
+    // A list box (size > 1) may have no selection, so only fall back to the
+    // first non-disabled option when the select renders as a dropdown.
+    if (defaultSelected !== null && node.size <= 1) {
       defaultSelected.selected = true;
     }
   }
