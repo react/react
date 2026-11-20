@@ -37,6 +37,43 @@ describe('DOMPropertyOperations', () => {
   ).set;
 
   describe('setValueForProperty', () => {
+    it('sets popover as an overloaded boolean attribute', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      // Boolean true (valueless in JSX <div popover />)
+      await act(() => {
+        root.render(
+          <div id="popover" popover={true}>
+            content
+          </div>,
+        );
+      });
+      expect(container.firstChild.hasAttribute('popover')).toBe(true);
+      expect(container.firstChild.getAttribute('popover')).toBe('');
+
+      // String "manual"
+      await act(() => {
+        root.render(
+          <div id="popover" popover="manual">
+            content
+          </div>,
+        );
+      });
+      expect(container.firstChild.hasAttribute('popover')).toBe(true);
+      expect(container.firstChild.getAttribute('popover')).toBe('manual');
+
+      // Boolean false
+      await act(() => {
+        root.render(
+          <div id="popover" popover={false}>
+            content
+          </div>,
+        );
+      });
+      expect(container.firstChild.hasAttribute('popover')).toBe(false);
+    });
+
     it('should set values as properties by default', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
