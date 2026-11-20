@@ -3770,6 +3770,44 @@ body {
     expect(getMeaningfulChildren(document.body)).toEqual('next');
   });
 
+  it('does not remove a stylesheet preload React inserted when it clears the Document on the first commit', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <body>
+          <Suspense fallback="loading...">
+            <link rel="stylesheet" href="route.css" precedence="default" />
+            <BlockedOn value="content">content</BlockedOn>
+          </Suspense>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('loading...');
+
+    await act(() => resolveText('content'));
+    expect(getMeaningfulChildren(document.body)).toEqual('loading...');
+
+    loadPreloads(['route.css']);
+    assertLog(['load preload: route.css']);
+    await waitForAll([]);
+    jest.advanceTimersByTime(1000);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('loading...');
+
+    loadStylesheets(['route.css']);
+    assertLog(['load stylesheet: route.css']);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.body)).toEqual('content');
+  });
+
   it('can suspend commits on more than one root for the same resource at the same time', async () => {
     document.body.innerHTML = '';
     const container1 = document.createElement('div');
@@ -7570,6 +7608,7 @@ body {
         <html>
           <head>
             <link rel="stylesheet" href="aresource" data-precedence="foo" />
+            <link rel="preload" href="aresource" as="style" />
           </head>
           <body>
             <div>hello world</div>
@@ -7723,6 +7762,7 @@ body {
         <html>
           <head>
             <link rel="stylesheet" href="foo" data-precedence="foo" />
+            <link rel="preload" href="foo" as="style" />
           </head>
           <body>hello world</body>
         </html>,
@@ -7777,6 +7817,7 @@ body {
             <link rel="stylesheet" href="foo" data-precedence="foo" />
             <link rel="stylesheet" href="bar" data-precedence="bar" />
             <link rel="stylesheet" href="qux" data-precedence="qux" />
+            <link rel="preload" href="qux" as="style" />
           </head>
           <body>client</body>
         </html>,
@@ -7812,6 +7853,8 @@ body {
           <head>
             <link rel="stylesheet" href="foo" data-precedence="foo" />
             <link rel="stylesheet" href="bar" data-precedence="bar" />
+            <link rel="preload" href="foo" as="style" />
+            <link rel="preload" href="bar" as="style" />
           </head>
           <body>hello</body>
         </html>,
@@ -7835,14 +7878,14 @@ body {
       });
       await assertLog(['load preload: baz', 'load stylesheet: baz']);
 
-      // The reason we do not see preloads in the head is they are inserted synchronously
-      // during render and then when the new singleton mounts it resets it's content, retaining only styles
       expect(getMeaningfulChildren(document)).toEqual(
         <html>
           <head>
             <link rel="stylesheet" href="foo" data-precedence="foo" />
             <link rel="stylesheet" href="bar" data-precedence="bar" />
             <link rel="stylesheet" href="baz" data-precedence="baz" />
+            <link rel="preload" href="foo" as="style" />
+            <link rel="preload" href="bar" as="style" />
             <link rel="preload" href="baz" as="style" />
           </head>
           <body>hello</body>

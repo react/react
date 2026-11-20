@@ -4019,8 +4019,11 @@ function clearContainerSparingly(container: Node) {
         continue;
       }
       // Stylesheet tags are retained because they may likely come from 3rd party scripts and extensions
+      // Links React inserted itself (preloads, preconnects) are retained because a resource may still
+      // be waiting on their load event.
       case 'LINK': {
         if (
+          isMarkedHoistable(node) ||
           (node as any as HTMLLinkElement).rel.toLowerCase() === 'stylesheet'
         ) {
           continue;
