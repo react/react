@@ -175,6 +175,7 @@ import {
 import {
   OffscreenLane,
   SomeRetryLane,
+  NoLane,
   NoLanes,
   includesSomeLane,
   mergeLanes,
@@ -1027,8 +1028,31 @@ function completeDehydratedSuspenseBoundary(
       // state since we're now exiting out of it. popHydrationState doesn't do that for us.
       resetHydrationState();
       if ((workInProgress.flags & DidCapture) === NoFlags) {
+        const primaryChildFragment = workInProgress.child;
+        if (
+          primaryChildFragment !== null &&
+          primaryChildFragment.tag === OffscreenComponent &&
+          primaryChildFragment.sibling !== null
+        ) {
+          // Primary hydration has only an Offscreen child. Both branches mean
+          // we hydrated the fallback, so retain the ordinary suspended state.
+          workInProgress.memoizedState = {
+            dehydrated: null,
+            treeContext: null,
+            retryLane: NoLane,
+            hydrationErrors: null,
+          };
+          workInProgress.flags |= Update;
+          // Complete normally to attach the primary tree's retry listeners.
+          return true;
+        }
         // This boundary did not suspend so it's now hydrated and unsuspended.
         nextState = workInProgress.memoizedState = null;
+      } else {
+        // Suspensey resources have no wakeable listener. Preserve their
+        // ScheduleRetry flag as a retry lane while leaving this dehydrated.
+        const retryQueue: RetryQueue | null = workInProgress.updateQueue as any;
+        scheduleRetryEffect(workInProgress, retryQueue);
       }
       // If nothing suspended, we need to schedule an effect to mark this boundary
       // as having hydrated so events know that they're free to be invoked.
