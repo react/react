@@ -17,11 +17,13 @@ import {
   HostText,
   Fragment,
 } from './ReactWorkTags';
+import {NoFlags, Placement, Hydrating} from './ReactFiberFlags';
 import {
   supportsSingletons,
   commitNewChildToFragmentInstance,
   deleteChildFromFragmentInstance,
 } from './ReactFiberConfig';
+import {traverseFragmentInstancesAndTextInstances} from './ReactFiberTreeReflection';
 
 export function commitNewChildToFragmentInstances(
   fiber: Fiber,
@@ -57,6 +59,37 @@ export function commitFragmentInstanceInsertionEffects(fiber: Fiber): void {
 
     parent = parent.return;
   }
+}
+
+export function commitHydratedFragmentInstanceInsertionEffects(
+  fiber: Fiber,
+): void {
+  if (fiber.memoizedState !== null || (fiber.flags & Placement) !== NoFlags) {
+    return;
+  }
+  traverseFragmentInstancesAndTextInstances(
+    fiber,
+    commitHydratedChildToFragmentInstances,
+    fiber,
+  );
+}
+
+function commitHydratedChildToFragmentInstances(
+  child: Fiber,
+  hydrationRoot: Fiber,
+): boolean {
+  let parent: Fiber | null = child;
+  while (parent !== null && parent !== hydrationRoot) {
+    if ((parent.flags & (Placement | Hydrating)) !== NoFlags) {
+      return false;
+    }
+    parent = parent.return;
+  }
+  if (parent === null) {
+    return false;
+  }
+  commitNewChildToFragmentInstances(child, getParentFragmentInstances(child));
+  return false;
 }
 
 export function commitFragmentInstanceDeletionEffects(fiber: Fiber): void {
