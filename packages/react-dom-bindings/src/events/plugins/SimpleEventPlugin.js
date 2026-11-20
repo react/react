@@ -149,6 +149,7 @@ function extractEvents(
     case TRANSITION_START:
       SyntheticEventCtor = SyntheticTransitionEvent;
       break;
+    case 'resize':
     case 'scroll':
     case 'scrollend':
       SyntheticEventCtor = SyntheticUIEvent;
