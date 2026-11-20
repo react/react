@@ -193,6 +193,7 @@ export function inferMutationAliasingEffects(
     fn,
     hoistedContextDeclarations,
     findNonMutatedDestructureSpreads(fn),
+    findFrozenDestructureDefaultLiterals(fn, isFunctionExpression),
   );
 
   let iterationCount = 0;
@@ -277,17 +278,20 @@ class Context {
   fn: HIRFunction;
   hoistedContextDeclarations: Map<DeclarationId, Place | null>;
   nonMutatingSpreads: Set<IdentifierId>;
+  frozenDefaultLiterals: Set<IdentifierId>;
 
   constructor(
     isFunctionExpression: boolean,
     fn: HIRFunction,
     hoistedContextDeclarations: Map<DeclarationId, Place | null>,
     nonMutatingSpreads: Set<IdentifierId>,
+    frozenDefaultLiterals: Set<IdentifierId>,
   ) {
     this.isFuctionExpression = isFunctionExpression;
     this.fn = fn;
     this.hoistedContextDeclarations = hoistedContextDeclarations;
     this.nonMutatingSpreads = nonMutatingSpreads;
+    this.frozenDefaultLiterals = frozenDefaultLiterals;
   }
 
   cacheApplySignature(
@@ -312,6 +316,338 @@ class Context {
     }
     return interned;
   }
+}
+
+/**
+ * A destructuring default such as `{items = []}` lowers to
+ * `items = props.items === undefined ? [] : props.items`. The fresh literal is
+ * mutable, so a later call that might store into that binding extends the
+ * literal's mutable range across any hook in between and the reactive scope is
+ * dropped.
+ *
+ * The other branch is already frozen (props, a hook return, or a property of
+ * one of those). The binding has to be treated as frozen on every path, because
+ * a write might be writing the real value. Mark the fallback literal frozen so
+ * the join stays frozen and later calls can still be memoized.
+ */
+function findFrozenDestructureDefaultLiterals(
+  fn: HIRFunction,
+  isFunctionExpression: boolean,
+): Set<IdentifierId> {
+  const frozen = new Set<IdentifierId>();
+  if (!isFunctionExpression) {
+    if (fn.fnType === 'Component') {
+      const [props] = fn.params;
+      if (props != null && props.kind === 'Identifier') {
+        frozen.add(props.identifier.id);
+      }
+    } else {
+      for (const param of fn.params) {
+        if (param.kind === 'Identifier') {
+          frozen.add(param.identifier.id);
+        }
+      }
+    }
+  }
+
+  const definedBy = new Map<IdentifierId, Instruction>();
+  for (const block of fn.body.blocks.values()) {
+    for (const instr of block.instructions) {
+      definedBy.set(instr.lvalue.identifier.id, instr);
+      if (instr.value.kind === 'StoreLocal') {
+        definedBy.set(instr.value.lvalue.place.identifier.id, instr);
+      }
+    }
+  }
+
+  const literals = new Set<IdentifierId>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const note = (id: IdentifierId): void => {
+      if (!frozen.has(id)) {
+        frozen.add(id);
+        changed = true;
+      }
+    };
+
+    for (const block of fn.body.blocks.values()) {
+      for (const phi of block.phis) {
+        if (phi.operands.size === 0) {
+          continue;
+        }
+        let allFrozen = true;
+        for (const operand of phi.operands.values()) {
+          if (!frozen.has(operand.identifier.id)) {
+            allFrozen = false;
+            break;
+          }
+        }
+        if (allFrozen) {
+          note(phi.place.identifier.id);
+        }
+      }
+
+      for (const instr of block.instructions) {
+        const {value} = instr;
+        switch (value.kind) {
+          case 'Destructure': {
+            if (!frozen.has(value.value.identifier.id)) {
+              break;
+            }
+            for (const item of eachPatternItem(value.lvalue.pattern)) {
+              if (item.kind === 'Identifier') {
+                note(item.identifier.id);
+              }
+            }
+            break;
+          }
+          case 'PropertyLoad':
+          case 'ComputedLoad': {
+            if (frozen.has(value.object.identifier.id)) {
+              note(instr.lvalue.identifier.id);
+            }
+            break;
+          }
+          case 'CallExpression': {
+            if (
+              getHookKind(fn.env, value.callee.identifier) != null &&
+              !isRefOrRefValue(instr.lvalue.identifier)
+            ) {
+              note(instr.lvalue.identifier.id);
+            }
+            break;
+          }
+          case 'LoadLocal': {
+            if (frozen.has(value.place.identifier.id)) {
+              note(instr.lvalue.identifier.id);
+            }
+            break;
+          }
+          case 'StoreLocal': {
+            if (frozen.has(value.value.identifier.id)) {
+              note(value.lvalue.place.identifier.id);
+              note(instr.lvalue.identifier.id);
+            }
+            break;
+          }
+        }
+      }
+
+      if (block.terminal.kind !== 'branch') {
+        continue;
+      }
+      const source = undefinedDefaultSource(block, definedBy);
+      if (source == null || !frozen.has(source)) {
+        continue;
+      }
+      const join = fn.body.blocks.get(block.terminal.fallthrough);
+      if (join == null) {
+        continue;
+      }
+      const consequent = fn.body.blocks.get(block.terminal.consequent);
+      const alternate = fn.body.blocks.get(block.terminal.alternate);
+      if (consequent == null || alternate == null) {
+        continue;
+      }
+      const consequentValue = storedPlace(
+        consequent,
+        join,
+        block.terminal.consequent,
+        definedBy,
+      );
+      const alternateValue = storedPlace(
+        alternate,
+        join,
+        block.terminal.alternate,
+        definedBy,
+      );
+      if (
+        consequentValue == null ||
+        alternateValue == null ||
+        unwrapLoad(alternateValue, definedBy) !== source
+      ) {
+        continue;
+      }
+      const literal = definedBy.get(consequentValue);
+      if (literal == null) {
+        continue;
+      }
+      const literalIds = freezableLiteralIds(literal, frozen, definedBy);
+      if (literalIds == null) {
+        continue;
+      }
+      for (const id of literalIds) {
+        if (!literals.has(id)) {
+          literals.add(id);
+          changed = true;
+        }
+      }
+    }
+  }
+  return literals;
+}
+
+function undefinedDefaultSource(
+  block: BasicBlock,
+  definedBy: Map<IdentifierId, Instruction>,
+): IdentifierId | null {
+  if (block.terminal.kind !== 'branch') {
+    return null;
+  }
+  const test = definedBy.get(block.terminal.test.identifier.id);
+  if (test == null || test.value.kind !== 'BinaryExpression') {
+    return null;
+  }
+  if (test.value.operator !== '===') {
+    return null;
+  }
+  const left = definedBy.get(test.value.left.identifier.id);
+  const right = definedBy.get(test.value.right.identifier.id);
+  if (left != null && isUndefinedPrimitive(left)) {
+    return unwrapLoad(test.value.right.identifier.id, definedBy);
+  }
+  if (right != null && isUndefinedPrimitive(right)) {
+    return unwrapLoad(test.value.left.identifier.id, definedBy);
+  }
+  return null;
+}
+
+function isUndefinedPrimitive(instr: Instruction): boolean {
+  return instr.value.kind === 'Primitive' && instr.value.value === undefined;
+}
+
+function unwrapLoad(
+  id: IdentifierId,
+  definedBy: Map<IdentifierId, Instruction>,
+): IdentifierId {
+  const instr = definedBy.get(id);
+  if (instr != null && instr.value.kind === 'LoadLocal') {
+    return instr.value.place.identifier.id;
+  }
+  return id;
+}
+
+function storedPlace(
+  block: BasicBlock,
+  join: BasicBlock,
+  predecessor: BlockId,
+  definedBy: Map<IdentifierId, Instruction>,
+): IdentifierId | null {
+  for (const phi of join.phis) {
+    const operand = phi.operands.get(predecessor);
+    if (operand == null) {
+      continue;
+    }
+    const store = definedBy.get(operand.identifier.id);
+    if (store != null && store.value.kind === 'StoreLocal') {
+      return store.value.value.identifier.id;
+    }
+    return operand.identifier.id;
+  }
+  for (const instr of block.instructions) {
+    if (instr.value.kind === 'StoreLocal') {
+      return instr.value.value.identifier.id;
+    }
+  }
+  return null;
+}
+
+function freezableLiteralIds(
+  instr: Instruction,
+  frozen: Set<IdentifierId>,
+  definedBy: Map<IdentifierId, Instruction>,
+): Set<IdentifierId> | null {
+  const ids = new Set<IdentifierId>();
+  if (!collectFreezableLiteral(instr, frozen, definedBy, ids, new Set())) {
+    return null;
+  }
+  return ids;
+}
+
+function collectFreezableLiteral(
+  instr: Instruction,
+  frozen: Set<IdentifierId>,
+  definedBy: Map<IdentifierId, Instruction>,
+  ids: Set<IdentifierId>,
+  visiting: Set<IdentifierId>,
+): boolean {
+  const id = instr.lvalue.identifier.id;
+  if (visiting.has(id)) {
+    return false;
+  }
+  visiting.add(id);
+  const places: Array<Place> = [];
+  if (instr.value.kind === 'ArrayExpression') {
+    for (const element of instr.value.elements) {
+      if (element.kind === 'Hole') {
+        continue;
+      }
+      if (element.kind === 'Spread') {
+        return false;
+      }
+      places.push(element);
+    }
+  } else if (instr.value.kind === 'ObjectExpression') {
+    for (const property of instr.value.properties) {
+      if (property.kind === 'Spread') {
+        return false;
+      }
+      places.push(property.place);
+    }
+  } else {
+    return false;
+  }
+  for (const place of places) {
+    if (
+      !placeIsFrozenOrPrimitive(
+        place.identifier.id,
+        frozen,
+        definedBy,
+        ids,
+        visiting,
+      )
+    ) {
+      return false;
+    }
+  }
+  ids.add(id);
+  return true;
+}
+
+function placeIsFrozenOrPrimitive(
+  id: IdentifierId,
+  frozen: Set<IdentifierId>,
+  definedBy: Map<IdentifierId, Instruction>,
+  ids: Set<IdentifierId>,
+  visiting: Set<IdentifierId>,
+): boolean {
+  if (frozen.has(id) || ids.has(id)) {
+    return true;
+  }
+  const instr = definedBy.get(id);
+  if (instr == null) {
+    return false;
+  }
+  if (instr.value.kind === 'Primitive') {
+    return true;
+  }
+  if (instr.value.kind === 'LoadLocal') {
+    return placeIsFrozenOrPrimitive(
+      instr.value.place.identifier.id,
+      frozen,
+      definedBy,
+      ids,
+      visiting,
+    );
+  }
+  if (
+    instr.value.kind === 'ArrayExpression' ||
+    instr.value.kind === 'ObjectExpression'
+  ) {
+    return collectFreezableLiteral(instr, frozen, definedBy, ids, visiting);
+  }
+  return false;
 }
 
 /**
@@ -710,12 +1046,28 @@ function applyEffect(
         };
         context.effectInstructionValueCache.set(effect, value);
       }
+      const freezeLiteral = context.frozenDefaultLiterals.has(
+        effect.into.identifier.id,
+      );
+      const kind = freezeLiteral ? ValueKind.Frozen : effect.value;
+      const reason = freezeLiteral
+        ? ValueReason.ReactiveFunctionArgument
+        : effect.reason;
       state.initialize(value, {
-        kind: effect.value,
-        reason: new Set([effect.reason]),
+        kind,
+        reason: new Set([reason]),
       });
       state.define(effect.into, value);
-      effects.push(effect);
+      effects.push(
+        freezeLiteral
+          ? context.internEffect({
+              kind: 'Create',
+              into: effect.into,
+              value: ValueKind.Frozen,
+              reason: ValueReason.ReactiveFunctionArgument,
+            })
+          : effect,
+      );
       break;
     }
     case 'ImmutableCapture': {
