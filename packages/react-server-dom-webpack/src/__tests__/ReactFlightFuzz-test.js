@@ -1071,9 +1071,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         }));
     }
 
-    // The reply host fails this until a Set or Map is created at its marker.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('Set containing itself', () =>
+    it('Set containing itself', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1082,9 +1080,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'set', other: 'set'},
       }));
 
-    // The reply host fails this until a Set or Map is created at its marker.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('Map containing itself', () =>
+    it('Map containing itself', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1099,9 +1095,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'map', other: 'map'},
       }));
 
-    // The reply host fails this until a Set or Map is created at its marker.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('two collections containing each other', () =>
+    it('two collections containing each other', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1172,9 +1166,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'object', other: 'object'},
       }));
 
-    // The reply host fails this until a close waits for queued stream items.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a large binary value written in two places', () =>
+    it('a large binary value written in two places', () =>
       runGraph({
         nodes: {
           binary: {special: 'large binary'},
@@ -1234,9 +1226,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'later', other: 'shared'},
       }));
 
-    // The reply host fails this until the decoder fulfills references early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a synchronous iterator that yields itself', () =>
+    it('a synchronous iterator that yields itself', () =>
       withFlightModules(async () => {
         let next = 0;
         const iterator = {
@@ -1471,9 +1461,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'stream', other: 'stream'},
       }));
 
-    // The reply host fails this until entries after a stream ends are dropped.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('stream item with a failing module', () =>
+    it('stream item with a failing module', () =>
       runGraph({
         nodes: {
           broken: {module: 'export-0', fail: 'load'},
@@ -1690,9 +1678,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         yieldBetweenPackets: false,
       }));
 
-    // The reply host fails this until the decoder fulfills references early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('function bound to its array', () =>
+    it('function bound to its array', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1702,9 +1688,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'container', other: 'container'},
       }));
 
-    // The reply host fails this until a Set or Map is created at its marker.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('function bound to its Map', () =>
+    it('function bound to its Map', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1719,9 +1703,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'container', other: 'container'},
       }));
 
-    // The reply host fails this until a Set or Map is created at its marker.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('cycle first exposed through a bound function', () =>
+    it('cycle first exposed through a bound function', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1731,9 +1713,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'fn', other: 'fn'},
       }));
 
-    // The reply host fails this until the decoder fulfills references early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('cycle first exposed through a Promise of a bound function', () =>
+    it('cycle first exposed through a Promise of a bound function', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1744,9 +1724,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'exposure', other: 'exposure'},
       }));
 
-    // The reply host fails this until the decoder fulfills references early.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('cycle first exposed through a stream item with a bound function', () =>
+    it('cycle first exposed through a stream item with a bound function', () =>
       runGraph({
         nodes: {
           ready: {module: 'export-0'},
@@ -1758,9 +1736,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'exposure', other: 'exposure'},
       }));
 
-    // The reply host fails this until FormData is decoded under its part id.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('FormData bound to a function in a larger graph', () =>
+    it('FormData bound to a function in a larger graph', () =>
       runGraph({
         nodes: {
           form: {special: 'form data'},
@@ -2186,9 +2162,7 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
         }),
     );
 
-    // The reply host fails this until entries after a stream ends are dropped.
-    // eslint-disable-next-line jest/no-disabled-tests
-    it.skip('a failed stream item behind an item that waits for another stream', () =>
+    it('a failed stream item behind an item that waits for another stream', () =>
       runGraph({
         nodes: {
           failing: {module: 'export-1', fail: 'load'},
@@ -2380,18 +2354,6 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
                     ? [
                         ...unsupportedReplyOperations,
                         // These produce cases that fail for now.
-                        'link',
-                        'self',
-                        'mutual',
-                        'duplicate',
-                        'map key',
-                        'promise',
-                        'stream',
-                        'canceled stream',
-                        'iterable',
-                        'iterator',
-                        'bound function',
-                        'root promise',
                         'undefined',
                         'colon',
                       ]
@@ -2411,8 +2373,8 @@ describe.each(['node', 'edge', 'reply'])('ReactFlightFuzz (%s)', host => {
       const scaled = generateScaleGraph(seed);
       const readTiming =
         readTimings[createRandom(seed + '/scale-demand')(readTimings.length)];
-      // Replies fail the cycle shape until a Set is created at its marker.
-      (host === 'reply' && scaled.shape === 'cycle' ? it.skip : it)(
+      it(
+        // eslint-disable-next-line jest/valid-title
         formatCaseName(
           scaled.shape + ' size=' + scaled.size,
           seed,
@@ -2676,10 +2638,7 @@ describe('ReactFlightFuzz (reply-temporary)', () => {
 
   describe('generated graphs', () => {
     seeds.forEach(seed => {
-      // Waits for the reply decoder to create a Set or Map where its marker
-      // is; generated cycles through Sets and Maps fail until then.
-      // eslint-disable-next-line jest/no-disabled-tests
-      it.skip('graph seed=' + seed, () =>
+      it('graph seed=' + seed, () =>
         runGraph(
           generateGraph(seed, {
             without: [
