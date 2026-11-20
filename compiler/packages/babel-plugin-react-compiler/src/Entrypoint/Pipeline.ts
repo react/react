@@ -119,6 +119,7 @@ function run(
   logger: Logger | null,
   filename: string | null,
   code: string | null,
+  stopAtFirstError: boolean,
 ): Result<CodegenFunction, CompilerError> {
   const contextIdentifiers = findContextIdentifiers(func);
   const env = new Environment(
@@ -138,7 +139,7 @@ function run(
     name: 'EnvironmentConfig',
     value: prettyFormat(env.config),
   });
-  return runWithEnvironment(func, env);
+  return runWithEnvironment(func, env, stopAtFirstError);
 }
 
 /*
@@ -150,12 +151,23 @@ function runWithEnvironment(
     t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
   >,
   env: Environment,
+  stopAtFirstError: boolean,
 ): Result<CodegenFunction, CompilerError> {
   const log = (value: CompilerPipelineValue): void => {
     env.logger?.debugLogIRs?.(value);
   };
+  /*
+   * Once an error is recorded the function will not be compiled. When the
+   * caller discards the errors (see `stopAtFirstError` in `compileFn`), stop
+   * there instead of running the remaining passes.
+   */
+  const shouldStop = (): boolean => stopAtFirstError && env.hasErrors();
   const hir = lower(func, env);
   log({kind: 'hir', name: 'HIR', value: hir});
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
+  }
 
   pruneMaybeThrows(hir);
   log({kind: 'hir', name: 'PruneMaybeThrows', value: hir});
@@ -168,6 +180,10 @@ function runWithEnvironment(
   if (env.enableDropManualMemoization) {
     dropManualMemoization(hir);
     log({kind: 'hir', name: 'DropManualMemoization', value: hir});
+  }
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
   }
 
   inlineImmediatelyInvokedFunctionExpressions(hir);
@@ -209,6 +225,10 @@ function runWithEnvironment(
       validateNoCapitalizedCalls(hir);
       log({kind: 'debug', name: 'ValidateNoCapitalizedCalls', value: 'ok'});
     }
+  }
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
   }
 
   optimizePropsMethodCalls(hir);
@@ -295,6 +315,10 @@ function runWithEnvironment(
     });
   }
 
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
+  }
+
   inferReactivePlaces(hir);
   log({kind: 'hir', name: 'InferReactivePlaces', value: hir});
 
@@ -307,6 +331,10 @@ function runWithEnvironment(
       validateExhaustiveDependencies(hir);
       log({kind: 'debug', name: 'ValidateExhaustiveDependencies', value: 'ok'});
     }
+  }
+
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
   }
 
   rewriteInstructionKindsBasedOnReassignment(hir);
@@ -551,6 +579,10 @@ function runWithEnvironment(
     });
   }
 
+  if (shouldStop()) {
+    return Err(env.aggregateErrors());
+  }
+
   const ast = codegenFunction(reactiveFunction, {
     uniqueIdentifiers,
     fbtOperands,
@@ -579,6 +611,12 @@ function runWithEnvironment(
   return Ok(ast);
 }
 
+/**
+ * @param stopAtFirstError If true, compilation of the function stops as soon as
+ * an error is recorded and the returned error holds only the errors found up to
+ * that point. Use it only when the errors are discarded, as the Babel plugin
+ * does when nothing would report them. By default every error is collected.
+ */
 export function compileFn(
   func: NodePath<
     t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
@@ -590,6 +628,7 @@ export function compileFn(
   logger: Logger | null,
   filename: string | null,
   code: string | null,
+  stopAtFirstError: boolean = false,
 ): Result<CodegenFunction, CompilerError> {
   return run(
     func,
@@ -600,5 +639,6 @@ export function compileFn(
     logger,
     filename,
     code,
+    stopAtFirstError,
   );
 }
