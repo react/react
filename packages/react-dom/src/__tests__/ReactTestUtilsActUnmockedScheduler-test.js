@@ -168,3 +168,41 @@ test('can handle cascading promises', async () => {
   expect(clearLog()).toEqual([0, 1, 2, 3, 4]);
   expect(container.innerHTML).toBe('5');
 });
+
+// @gate __DEV__
+test('flushes a later update after an async act queues work and rejects', async () => {
+  let setCount;
+  function Counter() {
+    const [count, set] = React.useState(0);
+    setCount = set;
+    return count;
+  }
+
+  const root = ReactDOMClient.createRoot(container);
+  await act(async () => {
+    root.render(<Counter />);
+  });
+  expect(container.textContent).toBe('0');
+
+  const expectedError = new Error('expected rejection');
+  let caughtError;
+  try {
+    await act(async () => {
+      setCount(1);
+      await Promise.resolve();
+      throw expectedError;
+    });
+  } catch (error) {
+    caughtError = error;
+  }
+  expect(caughtError).toBe(expectedError);
+
+  await act(async () => {
+    setCount(2);
+  });
+  expect(container.textContent).toBe('2');
+
+  await act(async () => {
+    root.unmount();
+  });
+});

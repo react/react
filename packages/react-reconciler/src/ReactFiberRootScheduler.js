@@ -459,17 +459,30 @@ function scheduleTaskForRootDuringMicrotask(
     const existingCallbackPriority = root.callbackPriority;
     const newCallbackPriority = getHighestPriorityLane(nextLanes);
 
-    if (
-      newCallbackPriority === existingCallbackPriority &&
-      // Special case related to `act`. If the currently scheduled task is a
-      // Scheduler task, rather than an `act` task, cancel it and re-schedule
-      // on the `act` queue.
-      !(
-        __DEV__ &&
-        ReactSharedInternals.actQueue !== null &&
-        existingCallbackNode !== fakeActCallbackNode
-      )
-    ) {
+    let canReuseCallback = newCallbackPriority === existingCallbackPriority;
+    if (__DEV__ && canReuseCallback) {
+      const actQueue = ReactSharedInternals.actQueue;
+      if (actQueue !== null) {
+        if (!isActCallbackNode(existingCallbackNode)) {
+          // Special case related to `act`. If the currently scheduled task is a
+          // Scheduler task, rather than an `act` task, cancel it and re-schedule
+          // on the `act` queue.
+          canReuseCallback = false;
+        } else if (isActCallbackNodeFromDiscardedQueue(existingCallbackNode)) {
+          // If the task was scheduled on an `act` queue that was discarded due to
+          // an error or rejection, cancel it and re-schedule on the current `act` queue.
+          canReuseCallback = false;
+        }
+      } else {
+        if (isActCallbackNodeFromDiscardedQueue(existingCallbackNode)) {
+          // If the task was scheduled on an `act` queue that was discarded due to
+          // an error or rejection, cancel it and schedule on the host Scheduler.
+          canReuseCallback = false;
+        }
+      }
+    }
+
+    if (canReuseCallback) {
       // The priority hasn't changed. We can reuse the existing task.
       return newCallbackPriority;
     } else {
@@ -622,6 +635,61 @@ function performSyncWorkOnRoot(root: FiberRoot, lanes: Lanes) {
 }
 
 const fakeActCallbackNode = {};
+// $FlowFixMe[missing-local-annot]
+const actCallbackNodes = typeof WeakMap === 'function' ? new WeakMap() : null;
+// $FlowFixMe[missing-local-annot]
+const isActCallbackNodeSet =
+  typeof WeakSet === 'function' ? new WeakSet() : null;
+
+function getFakeActCallbackNode(actQueue: mixed): Object {
+  if (
+    actCallbackNodes !== null &&
+    typeof actQueue === 'object' &&
+    actQueue !== null
+  ) {
+    let node = actCallbackNodes.get(actQueue);
+    if (node === undefined) {
+      node = {actQueue};
+      actCallbackNodes.set(actQueue, node);
+      if (isActCallbackNodeSet !== null) {
+        isActCallbackNodeSet.add(node);
+      }
+    }
+    return node;
+  }
+  return fakeActCallbackNode;
+}
+
+function isActCallbackNode(callbackNode: mixed): boolean {
+  return (
+    callbackNode === fakeActCallbackNode ||
+    (typeof callbackNode === 'object' &&
+      callbackNode !== null &&
+      isActCallbackNodeSet !== null &&
+      isActCallbackNodeSet.has(callbackNode))
+  );
+}
+
+function isActCallbackNodeFromDiscardedQueue(callbackNode: mixed): boolean {
+  if (
+    typeof callbackNode === 'object' &&
+    callbackNode !== null &&
+    isActCallbackNodeSet !== null &&
+    isActCallbackNodeSet.has(callbackNode)
+  ) {
+    // $FlowFixMe[incompatible-use]
+    const actQueue = callbackNode.actQueue;
+    if (
+      typeof actQueue === 'object' &&
+      actQueue !== null &&
+      // $FlowFixMe[incompatible-use]
+      actQueue.didThrow === true
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function scheduleCallback(
   priorityLevel: PriorityLevel,
@@ -631,15 +699,16 @@ function scheduleCallback(
     // Special case: We're inside an `act` scope (a testing utility).
     // Instead of scheduling work in the host environment, add it to a
     // fake internal queue that's managed by the `act` implementation.
-    ReactSharedInternals.actQueue.push(callback);
-    return fakeActCallbackNode;
+    const actQueue = ReactSharedInternals.actQueue;
+    actQueue.push(callback);
+    return getFakeActCallbackNode(actQueue);
   } else {
     return Scheduler_scheduleCallback(priorityLevel, callback);
   }
 }
 
 function cancelCallback(callbackNode: mixed) {
-  if (__DEV__ && callbackNode === fakeActCallbackNode) {
+  if (__DEV__ && isActCallbackNode(callbackNode)) {
     // Special `act` case: check if this is the fake callback node used by
     // the `act` implementation.
   } else if (callbackNode !== null) {
