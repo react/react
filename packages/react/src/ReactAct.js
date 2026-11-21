@@ -53,6 +53,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       ReactSharedInternals.thrownErrors.push(error);
     }
     if (ReactSharedInternals.thrownErrors.length > 0) {
+      (queue: any).didThrow = true;
       popActScope(prevActQueue, prevActScopeDepth);
       const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
       ReactSharedInternals.thrownErrors.length = 0;
@@ -111,6 +112,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
                   ReactSharedInternals.thrownErrors.push(error);
                 }
                 if (ReactSharedInternals.thrownErrors.length > 0) {
+                  (queue: any).didThrow = true;
                   ReactSharedInternals.actQueue = null;
                   const thrownError = aggregateErrors(
                     ReactSharedInternals.thrownErrors,
@@ -123,6 +125,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
               }
             },
             error => {
+              (queue: any).didThrow = true;
               popActScope(prevActQueue, prevActScopeDepth);
               if (ReactSharedInternals.thrownErrors.length > 0) {
                 const thrownError = aggregateErrors(
@@ -169,6 +172,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       popActScope(prevActQueue, prevActScopeDepth);
 
       if (ReactSharedInternals.thrownErrors.length > 0) {
+        (queue: any).didThrow = true;
         const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
         ReactSharedInternals.thrownErrors.length = 0;
         throw thrownError;
@@ -242,6 +246,9 @@ function recursivelyFlushAsyncActWork<T>(
       }
     }
     if (ReactSharedInternals.thrownErrors.length > 0) {
+      if (queue !== null) {
+        (queue: any).didThrow = true;
+      }
       ReactSharedInternals.actQueue = null;
       const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
       ReactSharedInternals.thrownErrors.length = 0;
