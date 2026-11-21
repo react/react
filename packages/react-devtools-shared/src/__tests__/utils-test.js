@@ -12,6 +12,8 @@ import {
   getDisplayNameForReactElement,
   isPlainObject,
   printOperationsArray,
+  utfDecodeStringWithRanges,
+  utfEncodeString,
 } from 'react-devtools-shared/src/utils';
 import {TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE} from 'react-devtools-shared/src/constants';
 import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
@@ -34,6 +36,29 @@ import {createElement} from 'react';
 import {symbolicateSource} from '../symbolicateSource';
 
 describe('utils', () => {
+  describe('utfEncodeString', () => {
+    it.each([
+      ['', []],
+      ['A\u00e9\u4e2d', [0x41, 0xe9, 0x4e2d]],
+      ['\ud83d\ude00\udbff\udfff', [0x1f600, 0x10ffff]],
+      ['\ud800', [0xd800]],
+      ['\udfff', [0xdfff]],
+      ['\ud800A', [0xd800, 0x41]],
+      ['\udfffA', [0xdfff, 0x41]],
+      ['\ud800\ud800', [0xd800, 0xd800]],
+      ['\udfff\udfff', [0xdfff, 0xdfff]],
+      ['\udfff\ud800', [0xdfff, 0xd800]],
+      ['\ud800\ud83d\ude00', [0xd800, 0x1f600]],
+    ])('should preserve the code points in %j', (string, expected) => {
+      const encoded = utfEncodeString(string);
+      expect(encoded).toEqual(expected);
+      expect(utfDecodeStringWithRanges(encoded, 0, encoded.length - 1)).toBe(
+        string,
+      );
+      expect(utfEncodeString(string)).toBe(encoded);
+    });
+  });
+
   describe('getDisplayName', () => {
     // @reactVersion >= 16.0
     it('should return a function name', () => {
