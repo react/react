@@ -12,9 +12,12 @@ import type {
   PreloadModuleOptions,
   PreinitOptions,
   PreinitModuleOptions,
+  PreinitScriptOptions,
+  PreinitModuleScriptOptions,
 } from './ReactDOMTypes';
 
 import ReactDOMSharedInternals from 'shared/ReactDOMSharedInternals';
+import {forEachDataAttribute} from 'react-dom-bindings/src/shared/ReactDOMDataAttributes';
 
 import {
   getCrossOriginString,
@@ -225,6 +228,17 @@ export function preinit(href: string, options: PreinitOptions) {
         'ReactDOM.preinit(): Expected the `as` property in the `options` argument (second) to contain a valid value describing the type of resource to be preinitialized but encountered %s instead. Valid values for `as` are "style" and "script".',
         getValueDescriptorExpectingEnumForWarning(options.as),
       );
+    } else if (
+      options.as !== 'script' &&
+      // The types disallow this but untyped callers can still pass it.
+      'dataAttributes' in options &&
+      options.dataAttributes != null
+    ) {
+      console.error(
+        'ReactDOM.preinit(): The `dataAttributes` option is only supported when `as` is "script" but it was passed with `as` %s for `href` "%s". The `dataAttributes` option will be ignored.',
+        getValueDescriptorExpectingEnumForWarning(options.as),
+        href,
+      );
     }
   }
   if (typeof href === 'string' && options && typeof options.as === 'string') {
@@ -251,13 +265,27 @@ export function preinit(href: string, options: PreinitOptions) {
           },
         );
     } else if (as === 'script') {
+      const scriptOptions: Required<PreinitScriptOptions> = {
+        crossOrigin,
+        integrity,
+        fetchPriority,
+        nonce: typeof options.nonce === 'string' ? options.nonce : undefined,
+      };
+      if (options.dataAttributes != null) {
+        // Copy the validated `data-*` entries straight onto the options. The
+        // hosts already copy these options onto the script's props.
+        forEachDataAttribute(
+          options.dataAttributes,
+          'ReactDOM.preinit()',
+          'href',
+          href,
+          (name, value) => {
+            scriptOptions[name] = value;
+          },
+        );
+      }
       ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
-        .X(/* preinitScript */ href, {
-          crossOrigin,
-          integrity,
-          fetchPriority,
-          nonce: typeof options.nonce === 'string' ? options.nonce : undefined,
-        });
+        .X(/* preinitScript */ href, scriptOptions);
     }
   }
   // We don't error because preinit needs to be resilient to being called in a variety of scopes
@@ -317,20 +345,33 @@ export function preinitModule(href: string, options?: ?PreinitModuleOptions) {
           options.as,
           options.crossOrigin,
         );
+        const moduleOptions: Required<PreinitModuleScriptOptions> = {
+          crossOrigin,
+          integrity:
+            typeof options.integrity === 'string'
+              ? options.integrity
+              : undefined,
+          nonce: typeof options.nonce === 'string' ? options.nonce : undefined,
+          fetchPriority:
+            typeof options.fetchPriority === 'string'
+              ? options.fetchPriority
+              : undefined,
+        };
+        if (options.dataAttributes != null) {
+          // Same as preinit: copy the validated `data-*` entries onto the
+          // options, which the hosts copy onto the script's props.
+          forEachDataAttribute(
+            options.dataAttributes,
+            'ReactDOM.preinitModule()',
+            'href',
+            href,
+            (name, value) => {
+              moduleOptions[name] = value;
+            },
+          );
+        }
         ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
-          .M(/* preinitModuleScript */ href, {
-            crossOrigin,
-            integrity:
-              typeof options.integrity === 'string'
-                ? options.integrity
-                : undefined,
-            nonce:
-              typeof options.nonce === 'string' ? options.nonce : undefined,
-            fetchPriority:
-              typeof options.fetchPriority === 'string'
-                ? options.fetchPriority
-                : undefined,
-          });
+          .M(/* preinitModuleScript */ href, moduleOptions);
       }
     } else if (options == null) {
       ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */

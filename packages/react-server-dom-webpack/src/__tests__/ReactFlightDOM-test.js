@@ -2138,6 +2138,62 @@ describe('ReactFlightDOM', () => {
     expect(hintRows.length).toEqual(6);
   });
 
+  it('forwards the `dataAttributes` of preinit and preinitModule scripts through hints', async () => {
+    function Component() {
+      return <p>hello world</p>;
+    }
+
+    const ClientComponent = clientExports(Component);
+
+    async function ServerComponent() {
+      FlightReactDOM.preinit('init', {
+        as: 'script',
+        dataAttributes: {'data-framework': 'next'},
+      });
+      FlightReactDOM.preinitModule('module', {
+        dataAttributes: {'data-framework': 'next'},
+      });
+      return <ClientComponent />;
+    }
+
+    const {writable, readable} = getTestStream();
+    const {pipe} = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        <ServerComponent />,
+        webpackMap,
+      ),
+    );
+    pipe(writable);
+
+    let response = null;
+    function getResponse() {
+      if (response === null) {
+        response = ReactServerDOMClient.createFromReadableStream(readable);
+      }
+      return response;
+    }
+
+    function App() {
+      return getResponse();
+    }
+
+    // See 'should support float methods when rendering in the client' for why
+    // we pause here.
+    await 1;
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<App />);
+    });
+
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <script async="" src="init" data-framework="next" />,
+      <script type="module" async="" src="module" data-framework="next" />,
+    ]);
+    expect(getMeaningfulChildren(container)).toEqual(<p>hello world</p>);
+  });
+
   it('preloads resources without needing to render them', async () => {
     function NoScriptComponent() {
       return (
