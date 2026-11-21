@@ -304,6 +304,112 @@ fn lower_expression_to_temporary(
     Ok(lower_value_to_temporary(builder, value)?)
 }
 
+/// Whether an array element may evaluate with side effects that could mutate
+/// values observed by an earlier spread in the same array literal.
+fn array_element_may_have_side_effects(
+    element: Option<&react_compiler_ast::expressions::Expression>,
+) -> bool {
+    match element {
+        None => false,
+        Some(expr) => expression_may_have_side_effects(expr),
+    }
+}
+
+fn expression_may_have_side_effects(
+    expr: &react_compiler_ast::expressions::Expression,
+) -> bool {
+    use react_compiler_ast::expressions::Expression::*;
+    match expr {
+        CallExpression(_)
+        | OptionalCallExpression(_)
+        | NewExpression(_)
+        | AssignmentExpression(_)
+        | UpdateExpression(_)
+        | TaggedTemplateExpression(_)
+        | YieldExpression(_)
+        | AwaitExpression(_)
+        | JSXElement(_)
+        | JSXFragment(_) => true,
+        Identifier(_)
+        | StringLiteral(_)
+        | NumericLiteral(_)
+        | BooleanLiteral(_)
+        | NullLiteral(_)
+        | BigIntLiteral(_)
+        | RegExpLiteral(_)
+        | PrivateName(_)
+        | Super(_)
+        | ThisExpression(_)
+        | MetaProperty(_)
+        | Import(_)
+        | ArrowFunctionExpression(_)
+        | FunctionExpression(_) => false,
+        // Class evaluation can run extends, computed keys, static fields/blocks,
+        // and decorators — treat as effectful.
+        ClassExpression(_) => true,
+        SequenceExpression(seq) => seq
+            .expressions
+            .iter()
+            .any(expression_may_have_side_effects),
+        ConditionalExpression(cond) => {
+            expression_may_have_side_effects(&cond.test)
+                || expression_may_have_side_effects(&cond.consequent)
+                || expression_may_have_side_effects(&cond.alternate)
+        }
+        LogicalExpression(bin) => {
+            expression_may_have_side_effects(&bin.left)
+                || expression_may_have_side_effects(&bin.right)
+        }
+        BinaryExpression(bin) => {
+            expression_may_have_side_effects(&bin.left)
+                || expression_may_have_side_effects(&bin.right)
+        }
+        UnaryExpression(unary) => match unary.operator {
+            // `delete` mutates; Rust `throw` unary is effectful.
+            react_compiler_ast::operators::UnaryOperator::Delete
+            | react_compiler_ast::operators::UnaryOperator::Throw => true,
+            _ => expression_may_have_side_effects(&unary.argument),
+        },
+        MemberExpression(member) => {
+            expression_may_have_side_effects(&member.object)
+                || (member.computed && expression_may_have_side_effects(&member.property))
+        }
+        OptionalMemberExpression(member) => {
+            expression_may_have_side_effects(&member.object)
+                || (member.computed && expression_may_have_side_effects(&member.property))
+        }
+        ArrayExpression(arr) => arr
+            .elements
+            .iter()
+            .any(|el| array_element_may_have_side_effects(el.as_ref())),
+        ObjectExpression(obj) => obj.properties.iter().any(|prop| match prop {
+            react_compiler_ast::expressions::ObjectExpressionProperty::SpreadElement(spread) => {
+                expression_may_have_side_effects(&spread.argument)
+            }
+            react_compiler_ast::expressions::ObjectExpressionProperty::ObjectMethod(method) => {
+                method.computed && expression_may_have_side_effects(&method.key)
+            }
+            react_compiler_ast::expressions::ObjectExpressionProperty::ObjectProperty(prop) => {
+                expression_may_have_side_effects(&prop.value)
+                    || (prop.computed && expression_may_have_side_effects(&prop.key))
+            }
+        }),
+        SpreadElement(spread) => expression_may_have_side_effects(&spread.argument),
+        TemplateLiteral(tmpl) => tmpl
+            .expressions
+            .iter()
+            .any(expression_may_have_side_effects),
+        ParenthesizedExpression(paren) => expression_may_have_side_effects(&paren.expression),
+        TSAsExpression(n) => expression_may_have_side_effects(&n.expression),
+        TSSatisfiesExpression(n) => expression_may_have_side_effects(&n.expression),
+        TSNonNullExpression(n) => expression_may_have_side_effects(&n.expression),
+        TSTypeAssertion(n) => expression_may_have_side_effects(&n.expression),
+        TypeCastExpression(n) => expression_may_have_side_effects(&n.expression),
+        TSInstantiationExpression(n) => expression_may_have_side_effects(&n.expression),
+        AssignmentPattern(_) => false,
+    }
+}
+
 // =============================================================================
 // Operator conversion
 // =============================================================================
@@ -738,39 +844,24 @@ fn lower_expression(
                     let loc = convert_base_loc(&unary.base);
                     match &*unary.argument {
                         Expression::MemberExpression(member) => {
-                            let object = lower_expression_to_temporary(builder, &member.object)?;
-                            if !member.computed {
-                                match &*member.property {
-                                    Expression::Identifier(prop_id) => {
-                                        Ok(InstructionValue::PropertyDelete {
-                                            object,
-                                            property: PropertyLiteral::String(prop_id.name.clone()),
-                                            loc,
-                                        })
-                                    }
-                                    _ => {
-                                        builder.record_error(CompilerErrorDetail {
-                                            reason: "Unsupported delete target".to_string(),
-                                            category: ErrorCategory::Todo,
-                                            loc: loc.clone(),
-                                            description: None,
-                                            suggestions: None,
-                                        })?;
-                                        Ok(InstructionValue::UnsupportedNode {
-                                            node_type: Some("UnaryExpression".to_string()),
-                                            original_node: serialize_expression(expr),
-                                            loc,
-                                        })
-                                    }
+                            // Match TS lowerMemberExpression: `a[0]` is a property
+                            // delete, not a computed delete of a temporary.
+                            let lowered = lower_member_expression(builder, member)?;
+                            match lowered.property {
+                                MemberProperty::Literal(property) => {
+                                    Ok(InstructionValue::PropertyDelete {
+                                        object: lowered.object,
+                                        property,
+                                        loc,
+                                    })
                                 }
-                            } else {
-                                let property =
-                                    lower_expression_to_temporary(builder, &member.property)?;
-                                Ok(InstructionValue::ComputedDelete {
-                                    object,
-                                    property,
-                                    loc,
-                                })
+                                MemberProperty::Computed(property) => {
+                                    Ok(InstructionValue::ComputedDelete {
+                                        object: lowered.object,
+                                        property,
+                                        loc,
+                                    })
+                                }
                             }
                         }
                         _ => {
@@ -1720,14 +1811,41 @@ fn lower_expression(
         Expression::ArrayExpression(arr) => {
             let loc = convert_base_loc(&arr.base);
             let mut elements: Vec<ArrayElement> = Vec::new();
-            for element in &arr.elements {
+            for (i, element) in arr.elements.iter().enumerate() {
                 match element {
                     None => {
                         elements.push(ArrayElement::Hole);
                     }
                     Some(Expression::SpreadElement(spread)) => {
                         let place = lower_expression_to_temporary(builder, &spread.argument)?;
-                        elements.push(ArrayElement::Spread(SpreadPattern { place }));
+                        // JS evaluates `...expr` by iterating `expr` before any
+                        // subsequent array elements. HIR normally defers that
+                        // iteration to the outer ArrayExpression, which can
+                        // observe mutations from later elements (e.g.
+                        // `[...a, a.push(1)]`). When a later element may have
+                        // side effects, materialize the spread into a temporary
+                        // array immediately. Pure trailing elements do not.
+                        // See https://github.com/facebook/react/issues/38140
+                        let subsequent_may_have_side_effects = arr.elements[i + 1..]
+                            .iter()
+                            .any(|el| array_element_may_have_side_effects(el.as_ref()));
+                        if subsequent_may_have_side_effects {
+                            let spread_loc = convert_base_loc(&spread.base);
+                            let materialized = lower_value_to_temporary(
+                                builder,
+                                InstructionValue::ArrayExpression {
+                                    elements: vec![ArrayElement::Spread(SpreadPattern {
+                                        place,
+                                    })],
+                                    loc: spread_loc,
+                                },
+                            )?;
+                            elements.push(ArrayElement::Spread(SpreadPattern {
+                                place: materialized,
+                            }));
+                        } else {
+                            elements.push(ArrayElement::Spread(SpreadPattern { place }));
+                        }
                     }
                     Some(expr) => {
                         let place = lower_expression_to_temporary(builder, expr)?;
