@@ -5,6 +5,7 @@ use serde::Serializer;
 use serde::de::Error as _;
 
 use crate::common::BaseNode;
+use crate::common::Comment;
 use crate::common::RawNode;
 use crate::expressions::Expression;
 use crate::expressions::Identifier;
@@ -218,6 +219,39 @@ macro_rules! known_statements {
             fn from(value: KnownStatement) -> Self {
                 match value {
                     $(KnownStatement::$variant(s) => Statement::$variant(s),)+
+                }
+            }
+        }
+
+        impl Statement {
+            /// Remove matching leading comments, preserving their order.
+            pub fn take_leading_comments_if(
+                &mut self,
+                mut predicate: impl FnMut(&Comment) -> bool,
+            ) -> Vec<Comment> {
+                let mut take = |comments: &mut Option<Vec<Comment>>| {
+                    comments.as_mut().map_or_else(Vec::new, |comments| {
+                        let (taken, kept) = std::mem::take(comments)
+                            .into_iter().partition(&mut predicate);
+                        *comments = kept;
+                        taken
+                    })
+                };
+                match self {
+                    $(Statement::$variant(s) => take(&mut s.base.leading_comments),)+
+                    Statement::Unknown(s) => {
+                        let mut comments = s.base().leading_comments.clone();
+                        let taken = take(&mut comments);
+                        if !taken.is_empty() {
+                            s.with_raw_mut(|raw| {
+                                let mut value = raw.parse_value();
+                                value["leadingComments"] = serde_json::to_value(comments)
+                                    .expect("comments serialize to JSON");
+                                *raw = RawNode::from_value(&value);
+                            }).expect("updating comments preserves the statement type");
+                        }
+                        taken
+                    }
                 }
             }
         }
