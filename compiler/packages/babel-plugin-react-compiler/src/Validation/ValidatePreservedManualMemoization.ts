@@ -192,6 +192,23 @@ function compareDeps(
         !inferred.path.some(token => token.property === 'current')))
   ) {
     return CompareDependencyResult.Ok;
+  } else if (
+    isSubpath &&
+    inferred.path.length < source.path.length &&
+    source.path[inferred.path.length].optional &&
+    !source.path.some(token => token.property === 'current') &&
+    !inferred.path.some(token => token.property === 'current')
+  ) {
+    /**
+     * When the inferred dependency is a prefix of the source dependency and the
+     * source continues with an optional property access (e.g. inferred `obj` vs
+     * source `obj?.id`), this is acceptable. The compiler may infer a less
+     * specific dependency because optional chain lowering introduces conditionals,
+     * but the user's more specific optional dependency is semantically correct —
+     * using `?.` acknowledges the conditionality and produces `undefined` when
+     * the base is nullish, so the memoization is safe.
+     */
+    return CompareDependencyResult.Ok;
   } else {
     if (isSubpath) {
       if (
