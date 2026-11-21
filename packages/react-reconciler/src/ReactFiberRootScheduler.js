@@ -463,11 +463,20 @@ function scheduleTaskForRootDuringMicrotask(
     if (__DEV__ && canReuseCallback) {
       const actQueue = ReactSharedInternals.actQueue;
       if (actQueue !== null) {
-        if (existingCallbackNode !== getFakeActCallbackNode(actQueue)) {
+        if (!isActCallbackNode(existingCallbackNode)) {
+          // Special case related to `act`. If the currently scheduled task is a
+          // Scheduler task, rather than an `act` task, cancel it and re-schedule
+          // on the `act` queue.
+          canReuseCallback = false;
+        } else if (isActCallbackNodeFromDiscardedQueue(existingCallbackNode)) {
+          // If the task was scheduled on an `act` queue that was discarded due to
+          // an error or rejection, cancel it and re-schedule on the current `act` queue.
           canReuseCallback = false;
         }
       } else {
-        if (isActCallbackNode(existingCallbackNode)) {
+        if (isActCallbackNodeFromDiscardedQueue(existingCallbackNode)) {
+          // If the task was scheduled on an `act` queue that was discarded due to
+          // an error or rejection, cancel it and schedule on the host Scheduler.
           canReuseCallback = false;
         }
       }
@@ -640,7 +649,7 @@ function getFakeActCallbackNode(actQueue: mixed): Object {
   ) {
     let node = actCallbackNodes.get(actQueue);
     if (node === undefined) {
-      node = {};
+      node = {actQueue};
       actCallbackNodes.set(actQueue, node);
       if (isActCallbackNodeSet !== null) {
         isActCallbackNodeSet.add(node);
@@ -659,6 +668,27 @@ function isActCallbackNode(callbackNode: mixed): boolean {
       isActCallbackNodeSet !== null &&
       isActCallbackNodeSet.has(callbackNode))
   );
+}
+
+function isActCallbackNodeFromDiscardedQueue(callbackNode: mixed): boolean {
+  if (
+    typeof callbackNode === 'object' &&
+    callbackNode !== null &&
+    isActCallbackNodeSet !== null &&
+    isActCallbackNodeSet.has(callbackNode)
+  ) {
+    // $FlowFixMe[incompatible-use]
+    const actQueue = callbackNode.actQueue;
+    if (
+      typeof actQueue === 'object' &&
+      actQueue !== null &&
+      // $FlowFixMe[incompatible-use]
+      actQueue.didThrow === true
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function scheduleCallback(
