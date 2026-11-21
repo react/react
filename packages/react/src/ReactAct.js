@@ -59,6 +59,31 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
     // This tracks whether the `act` call is awaited. In certain cases, not
     // awaiting it is a mistake, so we will detect that and warn.
     let didAwaitActCall = false;
+    let didReadThen = false;
+
+    const queueActWarning = (warning: () => void): void => {
+      queueSeveralMicrotasks(() => {
+        if (didReadThen && !didAwaitActCall) {
+          // Promise assimilation reads `then` before calling it in a job. A
+          // patched microtask queue may drain our checks before that job runs.
+          // Reading alone does not count as awaiting; recheck in a host task.
+          queueMacrotask(warning);
+        } else {
+          warning();
+        }
+      });
+    };
+
+    const createActThenable = (
+      then: (resolve: (T) => mixed, reject: (mixed) => mixed) => void,
+    ): Thenable<T> => {
+      return {
+        get then() {
+          didReadThen = true;
+          return then;
+        },
+      };
+    };
     try {
       // Reset this to `false` right before entering the React work loop. The
       // only place we ever read this fields is just below, right after running
@@ -118,7 +143,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
 
       // Warn if the an `act` call with an async scope is not awaited. In a
       // future release, consider making this an error.
-      queueSeveralMicrotasks(() => {
+      queueActWarning(() => {
         if (!didAwaitActCall && !didWarnNoAwaitAct) {
           didWarnNoAwaitAct = true;
           console.error(
@@ -131,52 +156,50 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
         }
       });
 
-      return {
-        then(resolve: T => mixed, reject: mixed => mixed) {
-          didAwaitActCall = true;
-          thenable.then(
-            returnValue => {
-              popActScope(prevActQueue, prevActScopeDepth);
-              if (prevActScopeDepth === 0) {
-                // We're exiting the outermost `act` scope. Flush the queue.
-                try {
-                  flushActQueue(queue);
-                  queueMacrotask(() =>
-                    // Recursively flush tasks scheduled by a microtask.
-                    recursivelyFlushAsyncActWork(returnValue, resolve, reject),
-                  );
-                } catch (error) {
-                  // `thenable` might not be a real promise, and `flushActQueue`
-                  // might throw, so we need to wrap `flushActQueue` in a
-                  // try/catch.
-                  ReactSharedInternals.thrownErrors.push(error);
-                }
-                if (ReactSharedInternals.thrownErrors.length > 0) {
-                  const thrownError = aggregateErrors(
-                    ReactSharedInternals.thrownErrors,
-                  );
-                  ReactSharedInternals.thrownErrors.length = 0;
-                  reject(thrownError);
-                }
-              } else {
-                resolve(returnValue);
+      return createActThenable((resolve, reject) => {
+        didAwaitActCall = true;
+        thenable.then(
+          returnValue => {
+            popActScope(prevActQueue, prevActScopeDepth);
+            if (prevActScopeDepth === 0) {
+              // We're exiting the outermost `act` scope. Flush the queue.
+              try {
+                flushActQueue(queue);
+                queueMacrotask(() =>
+                  // Recursively flush tasks scheduled by a microtask.
+                  recursivelyFlushAsyncActWork(returnValue, resolve, reject),
+                );
+              } catch (error) {
+                // `thenable` might not be a real promise, and `flushActQueue`
+                // might throw, so we need to wrap `flushActQueue` in a
+                // try/catch.
+                ReactSharedInternals.thrownErrors.push(error);
               }
-            },
-            error => {
-              popActScope(prevActQueue, prevActScopeDepth);
               if (ReactSharedInternals.thrownErrors.length > 0) {
                 const thrownError = aggregateErrors(
                   ReactSharedInternals.thrownErrors,
                 );
                 ReactSharedInternals.thrownErrors.length = 0;
                 reject(thrownError);
-              } else {
-                reject(error);
               }
-            },
-          );
-        },
-      };
+            } else {
+              resolve(returnValue);
+            }
+          },
+          error => {
+            popActScope(prevActQueue, prevActScopeDepth);
+            if (ReactSharedInternals.thrownErrors.length > 0) {
+              const thrownError = aggregateErrors(
+                ReactSharedInternals.thrownErrors,
+              );
+              ReactSharedInternals.thrownErrors.length = 0;
+              reject(thrownError);
+            } else {
+              reject(error);
+            }
+          },
+        );
+      });
     } else {
       const returnValue: T = result as any;
       // The callback is not an async function. Exit the current
@@ -193,7 +216,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
         // Warn if something suspends but the `act` call is not awaited.
         // In a future release, consider making this an error.
         if (queue.length !== 0) {
-          queueSeveralMicrotasks(() => {
+          queueActWarning(() => {
             if (!didAwaitActCall && !didWarnNoAwaitAct) {
               didWarnNoAwaitAct = true;
               console.error(
@@ -231,22 +254,20 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
         throw thrownError;
       }
 
-      return {
-        then(resolve: T => mixed, reject: mixed => mixed) {
-          didAwaitActCall = true;
-          if (prevActScopeDepth === 0) {
-            // If the `act` call is awaited, restore the queue we were
-            // using before (see long comment above) so we can flush it.
-            ReactSharedInternals.actQueue = queue;
-            queueMacrotask(() =>
-              // Recursively flush tasks scheduled by a microtask.
-              recursivelyFlushAsyncActWork(returnValue, resolve, reject),
-            );
-          } else {
-            resolve(returnValue);
-          }
-        },
-      };
+      return createActThenable((resolve, reject) => {
+        didAwaitActCall = true;
+        if (prevActScopeDepth === 0) {
+          // If the `act` call is awaited, restore the queue we were
+          // using before (see long comment above) so we can flush it.
+          ReactSharedInternals.actQueue = queue;
+          queueMacrotask(() =>
+            // Recursively flush tasks scheduled by a microtask.
+            recursivelyFlushAsyncActWork(returnValue, resolve, reject),
+          );
+        } else {
+          resolve(returnValue);
+        }
+      });
     }
   } else {
     throw new Error('act(...) is not supported in production builds of React.');
