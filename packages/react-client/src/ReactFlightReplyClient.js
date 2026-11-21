@@ -1269,8 +1269,10 @@ function createFakeServerFunction<A: Iterable<any>, T>(
     // If the filename starts with `/` we assume that it is a file system file
     // rather than relative to the current host. Since on the server fully qualified
     // stack traces use the file path.
-    // TODO: What does this look like on Windows?
     filename = 'file://' + filename;
+  } else if (/^[a-zA-Z]:[\\/]/.test(filename)) {
+    // On Windows, file system paths start with a drive letter instead.
+    filename = 'file:///' + filename.replace(/\\/g, '/');
   }
 
   if (sourceMap) {
