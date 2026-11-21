@@ -91,6 +91,7 @@ import {
   isServerReference,
   supportsRequestStorage,
   requestStorage,
+  captureRequestContext,
   createHints,
   createRootFormatContext,
   getChildFormatContext,
@@ -719,6 +720,10 @@ export type Request = {
   onError: (error: mixed) => ?string,
   onAllReady: () => void,
   onFatalError: mixed => void,
+  // Runs a callback in the async context the request was started in, with the
+  // request's own store set. Null until startWork, and where request storage
+  // isn't supported.
+  requestContext: null | RequestContext,
   // A Flight Client in the same process that also receives every row as it's
   // emitted. Null when there's no tee, or once it's closed.
   tee: null | FlightTee,
@@ -791,6 +796,11 @@ function cleanupTaintQueue(request: Request): void {
   }
   cleanupQueue.length = 0;
 }
+
+export type RequestContext = <R>(
+  callback: (request: Request) => R,
+  request: Request,
+) => R;
 
 function defaultErrorHandler(error: mixed) {
   console['error'](error);
@@ -879,6 +889,7 @@ function RequestInstance(
   this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.onAllReady = onAllReady;
   this.onFatalError = onFatalError;
+  this.requestContext = null;
   this.tee = null;
   this.teeDispatcher = null;
 
@@ -1145,6 +1156,8 @@ function runWithRequest<A, R>(
 // await can be attributed to the work that started them.
 // TODO: Update the host config's storage type when removing the feature flag.
 const unitStorage: AsyncLocalStorage<Unit | void> = requestStorage as any;
+const captureUnitContext: (unit: Unit) => RequestContext =
+  captureRequestContext as any;
 
 // Avoid reading async storage during synchronous work.
 let currentUnit: null | Unit = null;
@@ -3412,10 +3425,14 @@ function pingTask(request: Request, task: Task): void {
   pingedTasks.push(task);
   if (pingedTasks.length === 1) {
     request.flushScheduled = request.destination !== null;
+    // A ping comes from whoever resolved the thenable, which can be another
+    // request or a stream callback. Native promises resume in the context of
+    // the .then() call, but other thenables don't, so the retry runs in the
+    // request's own context instead of the caller's.
     if (request.type === PRERENDER || request.status === OPENING) {
-      scheduleMicrotask(() => performWork(request));
+      scheduleMicrotask(() => runInRequestContext(request, performWork));
     } else {
-      scheduleWork(() => performWork(request));
+      scheduleWork(() => runInRequestContext(request, performWork));
     }
   }
 }
@@ -8243,28 +8260,50 @@ export function startWork(request: Request): void {
   request.flushScheduled = request.destination !== null;
   // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
-    scheduleMicrotask(() => {
-      const rootUnit = request.rootUnit;
-      if (rootUnit !== null) {
-        const prevUnit = currentUnit;
-        currentUnit = rootUnit;
-        try {
-          unitStorage.run(rootUnit, performWork, request);
-        } finally {
-          currentUnit = prevUnit;
-        }
-      } else {
-        requestStorage.run(request, performWork, request);
-      }
-    });
-  } else {
-    scheduleMicrotask(() => performWork(request));
+    // Capture the caller's async context with the request's own store set.
+    // The first pass, pings and scheduled flushes all run in it. With Ledgers
+    // the store is the root unit, which exists once the root task does.
+    const rootUnit = request.rootUnit;
+    request.requestContext =
+      rootUnit !== null
+        ? captureUnitContext(rootUnit)
+        : captureRequestContext(request);
   }
+  scheduleMicrotask(() => runInRequestContext(request, performFirstPass));
   scheduleWork(() => {
     if (request.status === OPENING) {
       request.status = OPEN;
     }
   });
+}
+
+function performFirstPass(request: Request): void {
+  const rootUnit = request.rootUnit;
+  if (rootUnit !== null) {
+    const prevUnit = currentUnit;
+    currentUnit = rootUnit;
+    try {
+      performWork(request);
+    } finally {
+      currentUnit = prevUnit;
+    }
+  } else {
+    performWork(request);
+  }
+}
+
+// Work Flight schedules for itself runs in the async context the request was
+// started in, not the context of whatever triggered it.
+function runInRequestContext(
+  request: Request,
+  callback: (request: Request) => void,
+): void {
+  const requestContext = request.requestContext;
+  if (requestContext !== null) {
+    requestContext(callback, request);
+  } else {
+    callback(request);
+  }
 }
 
 function enqueueFlush(request: Request): void {
@@ -8283,11 +8322,13 @@ function enqueueFlush(request: Request): void {
     request.flushScheduled = true;
     // Unlike startWork and pingTask we intetionally use scheduleWork
     // here even during prerenders to allow as much batching as possible
-    scheduleWork(() => {
-      request.flushScheduled = false;
-      flushCompletedChunks(request);
-    });
+    scheduleWork(() => runInRequestContext(request, performScheduledFlush));
   }
+}
+
+function performScheduledFlush(request: Request): void {
+  request.flushScheduled = false;
+  flushCompletedChunks(request);
 }
 
 function callOnAllReadyIfReady(request: Request): void {
@@ -8408,6 +8449,12 @@ export function attachAbortSignal(request: Request, signal: AbortSignal): void {
   );
 }
 
+// Unlike pings and flushes, the whole abort path runs in the caller's async
+// context, including the work scheduled to finish aborted or halted tasks. The
+// caller caused the abort, and DEV async tracking records the cause of each
+// promise settled here (such as the cache signal's rejections) from the
+// context it settles in. The request's context has no such cause, so running
+// there would drop the awaited I/O from the stacks of aborted tasks.
 export function abort(request: Request, reason: mixed): void {
   // We define any status below OPEN as OPEN equivalent
   if (request.status > OPEN) {

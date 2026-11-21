@@ -6,7 +6,7 @@
  *
  * @flow
  */
-import type {Request} from 'react-server/src/ReactFlightServer';
+import type {Request, RequestContext} from 'react-server/src/ReactFlightServer';
 import type {ReactComponentInfo} from 'shared/ReactTypes';
 
 export * from 'react-server-dom-turbopack/src/server/ReactFlightServerConfigTurbopackBundler';
@@ -16,6 +16,17 @@ export * from 'react-dom-bindings/src/server/ReactFlightServerConfigDOM';
 export const supportsRequestStorage = typeof AsyncLocalStorage === 'function';
 export const requestStorage: AsyncLocalStorage<Request | void> =
   supportsRequestStorage ? new AsyncLocalStorage() : (null as any);
+
+// Captures the caller's async context with the request's own store set, so
+// work Flight schedules later (such as a retry after a ping) runs there instead
+// of in the context of whatever resolved the thenable. Where snapshot() isn't
+// available, only the request's own store is restored.
+export function captureRequestContext(request: Request): RequestContext {
+  if (typeof AsyncLocalStorage.snapshot === 'function') {
+    return requestStorage.run(request, () => AsyncLocalStorage.snapshot());
+  }
+  return (callback, req) => requestStorage.run(request, callback, req);
+}
 
 export const supportsComponentStorage: boolean =
   __DEV__ && supportsRequestStorage;
