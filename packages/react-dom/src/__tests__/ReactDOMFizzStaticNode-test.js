@@ -93,6 +93,77 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(prelude).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
+  it('removes the abort listener when an unread Node prelude is destroyed', async () => {
+    const {getEventListeners} = require('events');
+    const controller = new AbortController();
+    const {prelude} = await ReactDOMFizzStatic.prerenderToNodeStream(
+      <div>hello world</div>,
+      {signal: controller.signal},
+    );
+
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+    prelude.destroy();
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('removes the abort listener when an unread resumed Node prelude is destroyed', async () => {
+    const {getEventListeners} = require('events');
+    let ready = false;
+    function MaybeSuspend() {
+      if (!ready) {
+        throw theInfinitePromise;
+      }
+      return 'Done';
+    }
+    const tree = (
+      <Suspense fallback="Loading">
+        <MaybeSuspend />
+      </Suspense>
+    );
+    const initialController = new AbortController();
+    const initial = ReactDOMFizzStatic.prerenderToNodeStream(tree, {
+      signal: initialController.signal,
+      onError() {},
+    });
+    await jest.runAllTimers();
+    initialController.abort();
+    await jest.runAllTimers();
+    const {postponed, prelude} = await initial;
+    expect(postponed).not.toBe(null);
+    await readContent(prelude);
+
+    ready = true;
+    const controller = new AbortController();
+    const resumed = await ReactDOMFizzStatic.resumeAndPrerenderToNodeStream(
+      tree,
+      postponed,
+      {signal: controller.signal},
+    );
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+    resumed.prelude.destroy();
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('preserves the error event when an unread Node prelude is destroyed', async () => {
+    const {getEventListeners} = require('events');
+    const controller = new AbortController();
+    const {prelude} = await ReactDOMFizzStatic.prerenderToNodeStream(
+      <div>hello world</div>,
+      {signal: controller.signal},
+    );
+    const error = new Error('cancelled');
+    const errors = [];
+    prelude.on('error', received => errors.push(received));
+    const closed = new Promise(resolve => prelude.once('close', resolve));
+
+    prelude.destroy(error);
+    await jest.runAllTimers();
+    await closed;
+
+    expect(errors).toEqual([error]);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
   it('should suppport web streams', async () => {
     const result = await ReactDOMFizzStatic.prerender(<div>hello world</div>);
     const prelude = await readContentWeb(result.prelude);
