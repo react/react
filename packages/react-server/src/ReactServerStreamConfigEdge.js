@@ -256,12 +256,27 @@ export function closeWithError(destination: Destination, error: mixed): void {
 
 export {createFastHashJS as createFastHash} from 'react-server/src/createFastHashJS';
 
+// Converts bytes to a binary string in chunks. Passing every byte as an argument
+// to a single fromCharCode.apply call can exceed the engine's argument limit
+// for large buffers and throw a RangeError.
+function binaryToString(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 0x8000;
+  let result = '';
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    result += String.fromCharCode.apply(
+      String,
+      bytes.subarray(i, i + CHUNK_SIZE),
+    );
+  }
+  return result;
+}
+
 export function readAsDataURL(blob: Blob): Promise<string> {
   return blob.arrayBuffer().then(arrayBuffer => {
     const encoded =
       typeof Buffer === 'function' && typeof Buffer.from === 'function'
         ? Buffer.from(arrayBuffer).toString('base64')
-        : btoa(String.fromCharCode.apply(String, new Uint8Array(arrayBuffer)));
+        : btoa(binaryToString(new Uint8Array(arrayBuffer)));
     const mimeType = blob.type || 'application/octet-stream';
     return 'data:' + mimeType + ';base64,' + encoded;
   });
