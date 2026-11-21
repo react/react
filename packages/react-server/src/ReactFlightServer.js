@@ -3266,6 +3266,9 @@ function resolveModel(
     typeof value.toJSON === 'function'
   ) {
     // $FlowFixMe[incompatible-use]
+    if (value instanceof Date && isNaN(value.getTime())) {
+      return '$DNaN';
+    }
     jsonValue = value.toJSON(parentPropertyName);
   }
 
@@ -3449,7 +3452,8 @@ function serializeUndefined(): string {
 function serializeDate(date: Date): string {
   // JSON.stringify automatically calls Date.prototype.toJSON which calls toISOString.
   // We need only tack on a $D prefix.
-  return '$D' + date.toJSON();
+  const json = date.toJSON();
+  return json === null ? '$DNaN' : '$D' + json;
 }
 
 function serializeDateFromDateJSON(dateJSON: string): string {

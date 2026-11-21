@@ -481,6 +481,11 @@ export function processReply(
     }
 
     if (value === null) {
+      // $FlowFixMe[incompatible-use]
+      const originalValue = parent[key];
+      if (originalValue instanceof Date && isNaN(originalValue.getTime())) {
+        return '$DNaN';
+      }
       return null;
     }
 
