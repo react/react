@@ -112,12 +112,12 @@ const syncWWWPath = argv['sync-www'];
 // Non-ES2015 stuff applied before closure compiler.
 const babelPlugins = [
   // These plugins filter out non-ES2015.
-  ['@babel/plugin-proposal-class-properties', {loose: true}],
+  ['@babel/plugin-transform-class-properties', {loose: true}],
   'syntax-trailing-function-commas',
   // These use loose mode which avoids embedding a runtime.
   // TODO: Remove object spread from the source. Prefer Object.assign instead.
   [
-    '@babel/plugin-proposal-object-rest-spread',
+    '@babel/plugin-transform-object-rest-spread',
     {loose: true, useBuiltIns: true},
   ],
   ['@babel/plugin-transform-template-literals', {loose: true}],
