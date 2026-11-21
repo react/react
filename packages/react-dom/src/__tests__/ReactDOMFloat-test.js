@@ -807,6 +807,47 @@ describe('ReactDOMFloat', () => {
     );
   });
 
+  it('keeps the `nonce` on the preload for a stylesheet discovered after the shell', async () => {
+    await act(() => {
+      renderToPipeableStream(
+        <html>
+          <body>
+            <Suspense fallback="loading bar...">
+              <BlockedOn value="bar">
+                <link
+                  rel="stylesheet"
+                  href="bar"
+                  precedence="bar"
+                  nonce="R4nD0m"
+                />
+                bar
+              </BlockedOn>
+            </Suspense>
+          </body>
+        </html>,
+      ).pipe(writable);
+    });
+    await act(() => {
+      resolveText('bar');
+    });
+    expect(getMeaningfulChildren(document)).toEqual(
+      <html>
+        <head>
+          <link
+            rel="stylesheet"
+            href="bar"
+            data-precedence="bar"
+            nonce="R4nD0m"
+          />
+        </head>
+        <body>
+          {'loading bar...'}
+          <link rel="preload" href="bar" as="style" nonce="R4nD0m" />
+        </body>
+      </html>,
+    );
+  });
+
   it('can avoid inserting a late stylesheet if it already rendered on the client', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -7159,6 +7200,135 @@ body {
       );
     });
 
+    it('accepts a `nonce` option for `as: "style"`', async () => {
+      function Component({src}) {
+        ReactDOM.preinit(src, {as: 'style', nonce: 'R4nD0m'});
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <Component src="foo" />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link
+              rel="stylesheet"
+              href="foo"
+              nonce="R4nD0m"
+              data-precedence="default"
+            />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+      await clientAct(() => {
+        ReactDOMClient.hydrateRoot(
+          document,
+          <html>
+            <body>
+              <Component src="bar" />
+            </body>
+          </html>,
+        );
+      });
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link
+              rel="stylesheet"
+              href="foo"
+              nonce="R4nD0m"
+              data-precedence="default"
+            />
+            <link
+              rel="stylesheet"
+              href="bar"
+              nonce="R4nD0m"
+              data-precedence="default"
+            />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+    });
+
+    it('keeps a `nonce` on a preinit stylesheet discovered after the shell', async () => {
+      function App() {
+        return (
+          <html>
+            <body>
+              <Suspense fallback="loading...">
+                <BlockedOn value="late-nonce">
+                  <Late />
+                </BlockedOn>
+              </Suspense>
+            </body>
+          </html>
+        );
+      }
+      function Late() {
+        ReactDOM.preinit('late.css', {as: 'style', nonce: 'R4nD0m'});
+        return <div>hello</div>;
+      }
+
+      await act(() => {
+        const {pipe} = renderToPipeableStream(<App />);
+        pipe(writable);
+      });
+      await act(() => {
+        resolveText('late-nonce');
+      });
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head />
+          <body>
+            <div>hello</div>
+            <link rel="preload" href="late.css" as="style" nonce="R4nD0m" />
+          </body>
+        </html>,
+      );
+
+      function ClientApp() {
+        ReactDOM.preinit('late.css', {as: 'style', nonce: 'R4nD0m'});
+        return (
+          <html>
+            <body>
+              <Suspense fallback="loading...">
+                <div>hello</div>
+              </Suspense>
+            </body>
+          </html>
+        );
+      }
+
+      ReactDOMClient.hydrateRoot(document, <ClientApp />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link
+              rel="stylesheet"
+              href="late.css"
+              nonce="R4nD0m"
+              data-precedence="default"
+            />
+          </head>
+          <body>
+            <div>hello</div>
+            <link rel="preload" href="late.css" as="style" nonce="R4nD0m" />
+          </body>
+        </html>,
+      );
+    });
+
     it('supports fetchPriority', async () => {
       function Component({isServer}) {
         ReactDOM.preinit(isServer ? 'highserver' : 'highclient', {
@@ -7575,6 +7745,28 @@ body {
             <div>hello world</div>
           </body>
         </html>,
+      );
+    });
+
+    it('keeps the `nonce` on the preload for a stylesheet resource when client rendering', async () => {
+      const root = ReactDOMClient.createRoot(document);
+      root.render(
+        <html>
+          <head />
+          <body>
+            <link
+              rel="stylesheet"
+              href="aresource"
+              precedence="foo"
+              nonce="R4nD0m"
+            />
+            <div>hello world</div>
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <link rel="preload" as="style" href="aresource" nonce="R4nD0m" />,
       );
     });
 

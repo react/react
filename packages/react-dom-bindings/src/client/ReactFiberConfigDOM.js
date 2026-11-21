@@ -5936,6 +5936,7 @@ function preloadPropsFromStylesheet(
     href: props.href,
     crossOrigin: props.crossOrigin,
     integrity: props.integrity,
+    nonce: props.nonce,
     media: props.media,
     hrefLang: props.hrefLang,
     referrerPolicy: props.referrerPolicy,

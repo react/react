@@ -6948,6 +6948,7 @@ function preloadAsStylePropsFromProps(href: string, props: any): PreloadProps {
     crossOrigin: props.crossOrigin,
     fetchPriority: props.fetchPriority,
     integrity: props.integrity,
+    nonce: props.nonce,
     media: props.media,
     hrefLang: props.hrefLang,
     referrerPolicy: props.referrerPolicy,
