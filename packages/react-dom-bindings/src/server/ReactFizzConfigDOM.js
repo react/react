@@ -1771,12 +1771,36 @@ function pushAttribute(
         }
       }
     }
+    case 'credentialless': {
+      if (__DEV__) {
+        if (value === '' && !didWarnForNewBooleanPropsWithEmptyValue[name]) {
+          didWarnForNewBooleanPropsWithEmptyValue[name] = true;
+          console.error(
+            'Received an empty string for a boolean attribute `%s`. ' +
+              'This will treat the attribute as if it were true. ' +
+              'Pass `true` to silence this warning, or pass `false` to remove the attribute.',
+            name,
+          );
+        }
+      }
+      if (value === '' && name === 'credentialless') {
+        // Note: `inert` falls through to this case, so only treat an
+        // empty string as true for `credentialless` itself. Treat it
+        // as true (see setProp) so the attribute is rendered and the
+        // iframe is not left with more privileges than intended.
+        target.push(
+          attributeSeparator,
+          stringToChunk(name),
+          attributeEmptyString,
+        );
+        return;
+      }
+    }
     // Fallthrough for boolean props that don't have a warning for empty strings.
     case 'allowFullScreen':
     case 'async':
     case 'autoPlay':
     case 'controls':
-    case 'credentialless':
     case 'default':
     case 'defer':
     case 'disabled':
