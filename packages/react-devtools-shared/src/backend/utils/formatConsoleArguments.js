@@ -52,7 +52,8 @@ export default function formatConsoleArguments(
           break;
         }
         const [arg] = args.splice(argumentsPointer, 1);
-        template += parseInt(arg, 10).toString();
+        template +=
+          typeof arg === 'symbol' ? 'NaN' : parseInt(arg, 10).toString();
 
         break;
       }
@@ -64,7 +65,8 @@ export default function formatConsoleArguments(
           break;
         }
         const [arg] = args.splice(argumentsPointer, 1);
-        template += parseFloat(arg).toString();
+        template +=
+          typeof arg === 'symbol' ? 'NaN' : parseFloat(arg).toString();
 
         break;
       }
