@@ -26,7 +26,6 @@ import {
   enableProfilerCommitHooks,
   enableProfilerNestedUpdatePhase,
   enableSchedulingProfiler,
-  enableViewTransition,
 } from 'shared/ReactFeatureFlags';
 import {
   ClassComponent,
@@ -764,17 +763,13 @@ function commitAttachRef(finishedWork: Fiber) {
         instanceToUse = getPublicInstance(finishedWork.stateNode);
         break;
       case ViewTransitionComponent: {
-        if (enableViewTransition) {
-          const instance: ViewTransitionState = finishedWork.stateNode;
-          const props: ViewTransitionProps = finishedWork.memoizedProps;
-          const name = getViewTransitionName(props, instance);
-          if (instance.ref === null || instance.ref.name !== name) {
-            instance.ref = createViewTransitionInstance(name);
-          }
-          instanceToUse = instance.ref;
-          break;
+        const instance: ViewTransitionState = finishedWork.stateNode;
+        const props: ViewTransitionProps = finishedWork.memoizedProps;
+        const name = getViewTransitionName(props, instance);
+        if (instance.ref === null || instance.ref.name !== name) {
+          instance.ref = createViewTransitionInstance(name);
         }
-        instanceToUse = finishedWork.stateNode;
+        instanceToUse = instance.ref;
         break;
       }
       case Fragment: {
