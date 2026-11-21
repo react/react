@@ -143,8 +143,7 @@ describe('ReactDOM unknown attribute', () => {
       assertConsoleErrorDev([
         'Received an empty string for a boolean attribute `credentialless`. ' +
           'This will treat the attribute as if it were true. ' +
-          'Pass `true` to silence this warning, or pass `false` to remove the attribute.
-' +
+          'Pass `true` to silence this warning, or pass `false` to remove the attribute.\n' +
           '    in iframe (at **)',
       ]);
 
