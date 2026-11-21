@@ -4493,7 +4493,18 @@ export function getFirstHydratableChildWithinActivityInstance(
 export function getFirstHydratableChildWithinSuspenseInstance(
   parentInstance: SuspenseInstance,
 ): null | HydratableInstance {
-  return getNextHydratable(parentInstance.nextSibling);
+  let next = getNextHydratable(parentInstance.nextSibling);
+  // Fizz leaves the boundary's placeholder <template> in place when it never
+  // completes the boundary (for example because the server render errored).
+  // It isn't part of the rendered output, so skip it.
+  if (
+    next !== null &&
+    next.nodeType === ELEMENT_NODE &&
+    next.nodeName === 'TEMPLATE'
+  ) {
+    next = getNextHydratable(next.nextSibling);
+  }
+  return next;
 }
 
 // If it were possible to have more than one scope singleton in a DOM tree

@@ -940,6 +940,14 @@ function completeDehydratedActivityBoundary(
       return false;
     } else {
       emitPendingHydrationWarnings();
+      // If we suspended while hydrating this boundary but still managed to reuse
+      // the server markup (its fallback), the queued errors are recoverable.
+      // Report them in the commit phase instead of dropping them.
+      const recoverableErrors = upgradeHydrationErrorsToRecoverable();
+      if (recoverableErrors !== null) {
+        const prevState: SuspenseState = current.memoizedState;
+        prevState.hydrationErrors = recoverableErrors;
+      }
       // We might have reentered this boundary to hydrate it. If so, we need to reset the hydration
       // state since we're now exiting out of it. popHydrationState doesn't do that for us.
       resetHydrationState();
@@ -1023,6 +1031,14 @@ function completeDehydratedSuspenseBoundary(
       return false;
     } else {
       emitPendingHydrationWarnings();
+      // If we suspended while hydrating this boundary but still reused the server
+      // markup (its fallback), the queued errors are recoverable: report them in
+      // the commit phase instead of dropping them.
+      const recoverableErrors = upgradeHydrationErrorsToRecoverable();
+      if (recoverableErrors !== null) {
+        const prevState: SuspenseState = current.memoizedState;
+        prevState.hydrationErrors = recoverableErrors;
+      }
       // We might have reentered this boundary to hydrate it. If so, we need to reset the hydration
       // state since we're now exiting out of it. popHydrationState doesn't do that for us.
       resetHydrationState();
