@@ -151,9 +151,11 @@ function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
           break;
         }
         case 'PropertyLoad': {
+          // Track a loaded ref separately from its containing object.
           if (
-            isUseRefType(value.object.identifier) &&
-            value.property === 'current'
+            isUseRefType(lvalue.identifier) ||
+            (isUseRefType(value.object.identifier) &&
+              value.property === 'current')
           ) {
             continue;
           }
