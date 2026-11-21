@@ -885,6 +885,14 @@ export function processReply(
         }
       }
 
+      if (value === null) {
+        // $FlowFixMe[incompatible-use]
+        const originalValue = parent[key];
+        if (originalValue instanceof Date) {
+          return '$Dnull';
+        }
+      }
+
       // $FlowFixMe[incompatible-return]
       return value;
     }
