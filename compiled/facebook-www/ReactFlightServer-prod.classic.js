@@ -179,6 +179,8 @@ var REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"),
   REACT_LAZY_TYPE = Symbol.for("react.lazy"),
   REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"),
   REACT_VIEW_TRANSITION_TYPE = Symbol.for("react.view_transition"),
+  REACT_LEDGER_TOTAL_TYPE = Symbol.for("react.ledger_total"),
+  REACT_LEDGER_DATA_TYPE = Symbol.for("react.ledger_data"),
   MAYBE_ITERATOR_SYMBOL = Symbol.iterator;
 function getIteratorFn(maybeIterable) {
   if (null === maybeIterable || "object" !== typeof maybeIterable) return null;
@@ -374,6 +376,10 @@ function describeValueForErrorMessage(value) {
       if (isArrayImpl(value)) return "[...]";
       if (null !== value && value.$$typeof === CLIENT_REFERENCE_TAG)
         return "client";
+      if (null !== value && value.$$typeof === REACT_LEDGER_DATA_TYPE)
+        return "LedgerData";
+      if (null !== value && value.$$typeof === REACT_LEDGER_TOTAL_TYPE)
+        return "LedgerTotal";
       value = objectName(value);
       return "Object" === value ? "{...}" : value;
     case "function":
@@ -438,6 +444,9 @@ function describeObjectForErrorMessage(objectOrArray, expandedName) {
     str = "<" + describeElementType(objectOrArray.type) + "/>";
   else {
     if (objectOrArray.$$typeof === CLIENT_REFERENCE_TAG) return "client";
+    if (objectOrArray.$$typeof === REACT_LEDGER_DATA_TYPE) return "LedgerData";
+    if (objectOrArray.$$typeof === REACT_LEDGER_TOTAL_TYPE)
+      return "LedgerTotal";
     str = "{";
     i = Object.keys(objectOrArray);
     for (value = 0; value < i.length; value++) {
