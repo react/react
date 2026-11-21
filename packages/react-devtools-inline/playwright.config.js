@@ -1,7 +1,5 @@
 const semver = require('semver');
-const fs = require('fs');
-const ReactVersionSrc = fs.readFileSync(require.resolve('shared/ReactVersion'));
-const reactVersion = /export default '([^']+)';/.exec(ReactVersionSrc)[1];
+const {ReactVersion: reactVersion} = require('../../ReactVersions');
 
 const config = {
   use: {
