@@ -6,7 +6,7 @@
  */
 
 import {CompilerError} from '../CompilerError';
-import {GeneratedSource} from '../HIR';
+import {Environment, GeneratedSource, getHookKind, isUseOperator} from '../HIR';
 import {
   DeclarationId,
   Identifier,
@@ -31,6 +31,44 @@ import {eachInstructionValueLValue, eachPatternOperand} from '../HIR/visitors';
  * Phase 2: Promote identifiers which are used in a place that requires a named variable.
  */
 class PromoteTemporaries extends ReactiveFunctionVisitor<State> {
+  #env: Environment;
+
+  constructor(env: Environment) {
+    super();
+    this.#env = env;
+  }
+
+  /**
+   * Hook calls must never be treated as inlinable temporaries, even when their
+   * return value is non-reactive (e.g. useRef, which is stable). If a hook
+   * call's lvalue is left as an anonymous temporary, CodegenReactiveFunction
+   * will inline the call expression directly into its use site, which can place
+   * it inside a memoization cache block and cause it to be skipped on
+   * subsequent renders, violating the Rules of Hooks.
+   */
+  override visitInstruction(
+    instruction: ReactiveInstruction,
+    state: State,
+  ): void {
+    this.traverseInstruction(instruction, state);
+    if (
+      instruction.lvalue !== null &&
+      instruction.lvalue.identifier.name === null
+    ) {
+      const {value} = instruction;
+      if (value.kind === 'CallExpression' || value.kind === 'MethodCall') {
+        const callee =
+          value.kind === 'CallExpression' ? value.callee : value.property;
+        if (
+          getHookKind(this.#env, callee.identifier) != null ||
+          isUseOperator(callee.identifier)
+        ) {
+          promoteIdentifier(instruction.lvalue.identifier, state);
+        }
+      }
+    }
+  }
+
   override visitScope(scopeBlock: ReactiveScopeBlock, state: State): void {
     for (const dep of scopeBlock.scope.dependencies) {
       const {identifier} = dep;
@@ -437,7 +475,7 @@ export function promoteUsedTemporaries(fn: ReactiveFunction): void {
       promoteIdentifier(place.identifier, state);
     }
   }
-  visitReactiveFunction(fn, new PromoteTemporaries(), state);
+  visitReactiveFunction(fn, new PromoteTemporaries(fn.env), state);
 
   visitReactiveFunction(
     fn,
