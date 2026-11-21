@@ -45,7 +45,6 @@ import type {TemporaryReferenceSet} from './ReactFlightTemporaryReferences';
 import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
-  enableAsyncDebugInfo,
   enableFlightWeakThenables,
   enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
@@ -174,6 +173,9 @@ const __PROTO__ = '__proto__';
 const ObjectPrototype = Object.prototype;
 const ArrayPrototype = Array.prototype;
 
+type RESPONSE_SYMBOL_TYPE = 'RESPONSE_SYMBOL'; // Fake symbol type.
+const RESPONSE_SYMBOL: RESPONSE_SYMBOL_TYPE = Symbol() as any;
+
 type PendingChunk<T> = {
   status: 'pending',
   value: null | Array<InitializationReference | (T => mixed)>,
@@ -205,7 +207,7 @@ type BlockedChunk<T> = {
 type ResolvedModelChunk<T> = {
   status: 'resolved_model',
   value: UninitializedModel,
-  reason: Response,
+  reason: {[RESPONSE_SYMBOL_TYPE]: Response},
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
@@ -301,7 +303,7 @@ function reactPromiseThen<T>(
       initializeModuleChunk(chunk);
       break;
   }
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // Because only native Promises get picked up when we're awaiting we need to wrap
     // this in a native Promise in DEV. This means that these callbacks are no longer sync
     // but the lazy initialization is still sync and the .value can be inspected after,
@@ -396,10 +398,15 @@ type Response = {
   _timeOrigin: number, // Profiling-only
   _pendingInitialRender: null | TimeoutID, // Profiling-only,
   _pendingChunks: number, // DEV-only
+  // Null means a readable debug channel was supplied, so missing metadata must
+  // not be ignored. Otherwise, the set records missing chunk IDs. Closing the
+  // response clears _debugChannel, so this preserves the original choice.
+  _missingChunks: null | Set<number>, // DEV-only
   _weakResponse: WeakResponse, // DEV-only
   _debugRootOwner?: null | ReactComponentInfo, // DEV-only
   _debugRootStack?: null | Error, // DEV-only
   _debugRootTask?: null | ConsoleTask, // DEV-only
+  _debugRequestId: string | void, // DEV-only
   _debugStartTime: number, // DEV-only
   _debugEndTime: null | number, // DEV-only
   _debugIOStarted: boolean, // DEV-only
@@ -867,7 +874,7 @@ function createResolvedModelChunk<T>(
   value: UninitializedModel,
 ): ResolvedModelChunk<T> {
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new ReactPromise(RESOLVED_MODEL, value, response);
+  return new ReactPromise(RESOLVED_MODEL, value, {[RESPONSE_SYMBOL]: response});
 }
 
 function createResolvedModuleChunk<T>(
@@ -931,7 +938,9 @@ function createResolvedIteratorResultChunk<T>(
   const iteratorResultJSON =
     (done ? '{"done":true,"value":' : '{"done":false,"value":') + value + '}';
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new ReactPromise(RESOLVED_MODEL, iteratorResultJSON, response);
+  return new ReactPromise(RESOLVED_MODEL, iteratorResultJSON, {
+    [RESPONSE_SYMBOL]: response,
+  });
 }
 
 function resolveIteratorResultChunk<T>(
@@ -965,7 +974,7 @@ function resolveModelChunk<T>(
   const resolvedChunk: ResolvedModelChunk<T> = chunk as any;
   resolvedChunk.status = RESOLVED_MODEL;
   resolvedChunk.value = value;
-  resolvedChunk.reason = response;
+  resolvedChunk.reason = {[RESPONSE_SYMBOL]: response};
   if (resolveListeners !== null) {
     // This is unfortunate that we're reading this eagerly if
     // we already have listeners attached since they might no
@@ -1136,7 +1145,7 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
   initializingHandler = null;
 
   const resolvedModel = chunk.value;
-  const response = chunk.reason;
+  const response = chunk.reason[RESPONSE_SYMBOL];
 
   // We go to the BLOCKED state until we've fully resolved this.
   // We do this before parsing in case we try to initialize the same chunk
@@ -1297,11 +1306,14 @@ export function reportGlobalError(
   const response = unwrapWeakResponse(weakResponse);
   response._closed = true;
   response._closedReason = error;
-  response._chunks.forEach(chunk => {
+  response._chunks.forEach((chunk, id) => {
     // If this chunk was already resolved or errored, it won't
     // trigger an error but if it wasn't then we need to
     // because we won't be getting any new data to resolve it.
     if (chunk.status === PENDING) {
+      if (__DEV__ && response._missingChunks !== null) {
+        response._missingChunks.add(id);
+      }
       triggerErrorOnChunk(response, chunk, error);
     } else if (enableFlightWeakThenables && chunk.status === PENDING_WEAK) {
       // A weak Promise reference may never be emitted by the server. It
@@ -1660,6 +1672,11 @@ function getChunk(response: Response, id: number): SomeChunk<any> {
   let chunk = chunks.get(id);
   if (!chunk) {
     if (response._closed) {
+      if (__DEV__ && response._missingChunks !== null) {
+        // We record this missing chunk here because it did not exist when the
+        // response closed.
+        response._missingChunks.add(id);
+      }
       if (response._allowPartialStream) {
         // For partial streams, chunks accessed after close should be HALTED
         // (never resolve).
@@ -2072,6 +2089,15 @@ function loadServerReference<A: Iterable<any>, T>(
   parentObject: Object,
   key: string,
 ): (...A) => Promise<T> {
+  if (key === 'then') {
+    // This should never happen because we always serialize objects with then-functions
+    // as "thenable" which reduces to a chunk with no other fields.
+    return null as any;
+  }
+  const id = metaData.id;
+  if (typeof id !== 'string') {
+    return null as any;
+  }
   if (!response._serverReferenceConfig) {
     // In the normal case, we can't load this Server Reference in the current environment and
     // we just return a proxy to it.
@@ -2084,27 +2110,27 @@ function loadServerReference<A: Iterable<any>, T>(
   }
   // If we have a module mapping we can load the real version of this Server Reference.
   const serverReference: ClientReference<T> =
-    resolveServerReference<$FlowFixMe>(
-      response._serverReferenceConfig,
-      metaData.id,
-    );
+    resolveServerReference<$FlowFixMe>(response._serverReferenceConfig, id);
 
+  const bound = metaData.bound;
   let promise: null | Thenable<any> = preloadModule(serverReference);
   if (!promise) {
-    if (!metaData.bound) {
+    if (bound instanceof ReactPromise) {
+      promise = Promise.resolve(bound);
+    } else {
+      // We only await the bound arguments when they are one of our own chunks.
+      // Anything else could be a foreign thenable whose `then` we must not call.
       const resolvedValue = requireModule(serverReference) as any;
       registerBoundServerReference(
         resolvedValue,
-        metaData.id,
-        metaData.bound,
+        id,
+        bound,
         response._encodeFormAction,
       );
       return resolvedValue;
-    } else {
-      promise = Promise.resolve(metaData.bound);
     }
-  } else if (metaData.bound) {
-    promise = Promise.all([promise, metaData.bound]);
+  } else if (bound instanceof ReactPromise) {
+    promise = Promise.all([promise, bound]);
   }
 
   let handler: InitializationHandler;
@@ -2125,17 +2151,20 @@ function loadServerReference<A: Iterable<any>, T>(
   function fulfill(): void {
     let resolvedValue = requireModule(serverReference) as any;
 
-    if (metaData.bound) {
-      // This promise is coming from us and should have initilialized by now.
-      const boundArgs: Array<any> = (metaData.bound as any).value.slice(0);
+    if (bound) {
+      // This promise is coming from us and should have initialized by now.
+      const promiseValue = (bound as any).value;
+      const boundArgs: Array<any> = isArray(promiseValue)
+        ? promiseValue.slice(0)
+        : [];
       boundArgs.unshift(null); // this
       resolvedValue = resolvedValue.bind.apply(resolvedValue, boundArgs);
     }
 
     registerBoundServerReference(
       resolvedValue,
-      metaData.id,
-      metaData.bound,
+      id,
+      bound,
       response._encodeFormAction,
     );
 
@@ -2321,6 +2350,20 @@ function getOutlinedModel<T>(
   const path =
     reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
   const chunk = getChunk(response, id);
+  if (
+    __DEV__ &&
+    response._closed &&
+    parentObject[0] === REACT_ELEMENT_TYPE &&
+    // Slots 4 and 5 hold the element's owner and debug stack.
+    (key === '4' || key === '5')
+  ) {
+    const missingChunks = response._missingChunks;
+    // An unwired debug channel can leave owner and stack records absent. They
+    // remain optional when a lazy element is first initialized after close.
+    if (missingChunks !== null && missingChunks.has(id)) {
+      return null as any;
+    }
+  }
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (initializingChunk !== null && isArray(initializingChunk._children)) {
       initializingChunk._children.push(chunk);
@@ -2608,7 +2651,17 @@ function extractIterator(response: Response, model: Array<any>): Iterator<any> {
   return model[Symbol.iterator]();
 }
 
-function createModel(response: Response, model: any): any {
+function createModel(
+  response: Response,
+  model: any,
+  parentObject: Object,
+  key: string,
+): any {
+  if (key === 'then' && typeof model === 'function') {
+    // This should never happen because we always serialize objects with then-functions
+    // as "thenable" which reduces to a chunk with no other fields.
+    return null;
+  }
   return model;
 }
 
@@ -3019,6 +3072,7 @@ function ResponseInstance(
   debugStartTime: void | number, // DEV-only
   debugEndTime: void | number, // DEV-only
   debugChannel: void | DebugChannel, // DEV-only
+  debugRequestId: string | void, // DEV-only
 ) {
   const chunks: Map<number, SomeChunk<any>> = new Map();
   this._bundlerConfig = bundlerConfig;
@@ -3040,6 +3094,10 @@ function ResponseInstance(
   }
   if (__DEV__) {
     this._pendingChunks = 0;
+    this._missingChunks =
+      debugChannel === undefined || !debugChannel.hasReadable
+        ? new Set()
+        : null;
     this._weakResponse = {
       weak: new WeakRef(this),
       response: this,
@@ -3074,19 +3132,18 @@ function ResponseInstance(
         '"use ' + rootEnv.toLowerCase() + '"',
       );
     }
-    if (enableAsyncDebugInfo) {
-      // Track the start of the fetch to the best of our knowledge.
-      // Note: createFromFetch allows this to be marked at the start of the fetch
-      // where as if you use createFromReadableStream from the body of the fetch
-      // then the start time is when the headers resolved.
-      this._debugStartTime =
-        debugStartTime == null ? performance.now() : debugStartTime;
-      this._debugIOStarted = false;
-      // We consider everything before the first setTimeout task to be cached data
-      // and is not considered I/O required to load the stream.
-      setTimeout(markIOStarted.bind(this), 0);
-    }
+    // Track the start of the fetch to the best of our knowledge.
+    // Note: createFromFetch allows this to be marked at the start of the fetch
+    // where as if you use createFromReadableStream from the body of the fetch
+    // then the start time is when the headers resolved.
+    this._debugStartTime =
+      debugStartTime == null ? performance.now() : debugStartTime;
+    this._debugIOStarted = false;
+    // We consider everything before the first setTimeout task to be cached data
+    // and is not considered I/O required to load the stream.
+    setTimeout(markIOStarted.bind(this), 0);
     this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
+    this._debugRequestId = debugRequestId;
     this._debugFindSourceMapURL = findSourceMapURL;
     this._debugChannel = debugChannel;
     this._blockedConsole = null;
@@ -3130,6 +3187,7 @@ export function createResponse(
   debugStartTime: void | number, // DEV-only
   debugEndTime: void | number, // DEV-only
   debugChannel: void | DebugChannel, // DEV-only
+  debugRequestId: string | void, // DEV-only
 ): WeakResponse {
   if (__DEV__) {
     // We use eval to create fake function stacks which includes Component stacks.
@@ -3156,6 +3214,7 @@ export function createResponse(
       debugStartTime,
       debugEndTime,
       debugChannel,
+      debugRequestId,
     ),
   );
 }
@@ -3181,7 +3240,7 @@ export function createStreamState(
     _rowLength: 0,
     _buffer: [],
   } as Omit<StreamState, '_debugInfo' | '_debugTargetChunkSize'> as any;
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     const response = unwrapWeakResponse(weakResponse);
     // Create an entry for the I/O to load the stream itself.
     const debugValuePromise = Promise.resolve(streamDebugValue);
@@ -3216,7 +3275,7 @@ function incrementChunkDebugInfo(
   streamState: StreamState,
   chunkLength: number,
 ): void {
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     const debugInfo: ReactIOInfo = streamState._debugInfo;
     const endTime = performance.now();
     const previousEndTime = debugInfo.end;
@@ -3284,7 +3343,7 @@ function resolveChunkDebugInfo(
   streamState: StreamState,
   chunk: SomeChunk<any>,
 ): void {
-  if (__DEV__ && enableAsyncDebugInfo) {
+  if (__DEV__) {
     // Only include stream information after a macrotask. Any chunk processed
     // before that is considered cached data.
     if (response._debugIOStarted) {
@@ -4779,6 +4838,7 @@ function logComponentInfo(
       childrenEndTime,
       response._rootEnvironmentName,
       root.reason,
+      response._debugRequestId,
     );
   } else {
     logComponentRender(
@@ -4788,6 +4848,7 @@ function logComponentInfo(
       componentEndTime,
       childrenEndTime,
       response._rootEnvironmentName,
+      response._debugRequestId,
     );
   }
 }
@@ -4980,6 +5041,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     thenable.value,
+                    response._debugRequestId,
                   );
                   break;
                 case ERRORED:
@@ -4990,6 +5052,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     thenable.reason,
+                    response._debugRequestId,
                   );
                   break;
                 default:
@@ -5003,6 +5066,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     undefined,
+                    response._debugRequestId,
                   );
                   break;
               }
@@ -5014,6 +5078,7 @@ function flushComponentPerformance(
                 endTime,
                 env,
                 undefined,
+                response._debugRequestId,
               );
             }
           }
@@ -5038,6 +5103,7 @@ function flushComponentPerformance(
               componentEndTime,
               childrenEndTime,
               env,
+              response._debugRequestId,
             );
             componentEndTime = time; // The end time of previous component is the start time of the next.
             // Track the root most component of the result for deduping logging.
@@ -5057,7 +5123,14 @@ function flushComponentPerformance(
             if (endTime > childrenEndTime) {
               childrenEndTime = endTime;
             }
-            logComponentAwaitAborted(asyncInfo, trackIdx, time, endTime, env);
+            logComponentAwaitAborted(
+              asyncInfo,
+              trackIdx,
+              time,
+              endTime,
+              env,
+              response._debugRequestId,
+            );
           }
         }
       }
@@ -5251,10 +5324,7 @@ function processFullStringRow(
       return;
     }
     case 78 /* "N" */: {
-      if (
-        enableProfilerTimer &&
-        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ) {
+      if (enableProfilerTimer) {
         // Track the time origin for future debug info. We track it relative
         // to the current environment's time space.
         const timeOrigin: number = +row;
@@ -5274,7 +5344,7 @@ function processFullStringRow(
       // Fallthrough to share the error with Console entries.
     }
     case 74 /* "J" */: {
-      if (enableProfilerTimer && enableAsyncDebugInfo) {
+      if (enableProfilerTimer) {
         resolveIOInfo(response, id, row);
         return;
       }
@@ -5712,11 +5782,14 @@ export function close(weakResponse: WeakResponse): void {
   if (response._allowPartialStream) {
     // For partial streams, we halt pending chunks instead of erroring them.
     response._closed = true;
-    response._chunks.forEach(chunk => {
+    response._chunks.forEach((chunk, id) => {
       if (
         chunk.status === PENDING ||
         (enableFlightWeakThenables && chunk.status === PENDING_WEAK)
       ) {
+        if (__DEV__ && response._missingChunks !== null) {
+          response._missingChunks.add(id);
+        }
         haltChunk(response, chunk);
       } else if (chunk.status === INITIALIZED && chunk.reason !== null) {
         // Stream chunk - close gracefully instead of erroring.

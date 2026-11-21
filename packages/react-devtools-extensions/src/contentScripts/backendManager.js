@@ -57,7 +57,11 @@ function handlePageHide() {
 function welcome(event: $FlowFixMe) {
   if (
     event.source !== window ||
-    event.data.source !== 'react-devtools-content-script'
+    event.data.source !== 'react-devtools-content-script' ||
+    // Messages forwarded from the frontend use the same source.
+    // If one of them initialized the backend, for example the shutdown message of
+    // the previous DevTools instance, the initial tree would be sent to nobody.
+    event.data.hello !== true
   ) {
     return;
   }
@@ -71,7 +75,7 @@ function welcome(event: $FlowFixMe) {
   // The simplest solution is to ignore the duplicate events.
   // To be clear, this SHOULD NOT BE NECESSARY, since we remove the event handler below.
   //
-  // See https://github.com/facebook/react/issues/24162
+  // See https://github.com/react/react/issues/24162
   if (welcomeHasInitialized) {
     console.warn(
       'React DevTools detected duplicate welcome "message" events from the content script.',
@@ -276,4 +280,15 @@ if (!window.__REACT_DEVTOOLS_BACKEND_MANAGER_INJECTED__) {
 
   window.addEventListener('message', welcome);
   window.addEventListener('pagehide', handlePageHide);
+
+  // The content script stops saying hello once the first backend in this document is initialized.
+  // If this document already had a backend that was shut down, for example because DevTools were
+  // remounted without a page reload, ask the content script to say hello again.
+  window.postMessage(
+    {
+      source: 'react-devtools-backend-manager',
+      payload: {type: 'backend-manager-injected'},
+    },
+    '*',
+  );
 }

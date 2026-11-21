@@ -494,7 +494,7 @@ function getPlugins(
           allow_dynamic_import: true,
 
           // Don't let it create global variables in the browser.
-          // https://github.com/facebook/react/issues/10909
+          // https://github.com/react/react/issues/10909
           assume_function_wrapper: true,
 
           // Don't rename symbols (variable names, functions, etc). We leave

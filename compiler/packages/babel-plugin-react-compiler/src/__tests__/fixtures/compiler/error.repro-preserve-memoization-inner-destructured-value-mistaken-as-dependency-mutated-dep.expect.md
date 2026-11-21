@@ -7,7 +7,7 @@
 import {identity, Stringify, useHook} from 'shared-runtime';
 
 /**
- * Repro from https://github.com/facebook/react/issues/34262
+ * Repro from https://github.com/react/react/issues/34262
  *
  * The compiler memoizes more precisely than the original code, with two reactive scopes:
  * - One for `transform(input)` with `input` as dep

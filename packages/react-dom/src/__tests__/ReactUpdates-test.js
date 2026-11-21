@@ -849,7 +849,7 @@ describe('ReactUpdates', () => {
   });
 
   it('should queue nested updates', async () => {
-    // See https://github.com/facebook/react/issues/1147
+    // See https://github.com/react/react/issues/1147
 
     class X extends React.Component {
       state = {s: 0};
@@ -916,7 +916,7 @@ describe('ReactUpdates', () => {
   });
 
   it('should queue updates from during mount', async () => {
-    // See https://github.com/facebook/react/issues/1353
+    // See https://github.com/react/react/issues/1353
     let a;
 
     class A extends React.Component {

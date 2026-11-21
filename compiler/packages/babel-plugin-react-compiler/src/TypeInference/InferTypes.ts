@@ -266,7 +266,7 @@ function* generateInstructionTypes(
       /*
        * TODO: callee could be a hook or a function, so this type equation isn't correct.
        * We should change Hook to a subtype of Function or change unifier logic.
-       * (see https://github.com/facebook/react-forget/pull/1427)
+       * (see https://github.com/react/react-forget/pull/1427)
        */
       let shapeId: string | null = null;
       if (env.config.enableTreatSetIdentifiersAsStateSetters) {
@@ -290,7 +290,7 @@ function* generateInstructionTypes(
       /*
        * TODO: callee could be a hook or a function, so this type equation isn't correct.
        * We should change Hook to a subtype of Function or change unifier logic.
-       * (see https://github.com/facebook/react-forget/pull/1427)
+       * (see https://github.com/react/react-forget/pull/1427)
        */
       yield equation(value.tag.identifier.type, {
         kind: 'Function',

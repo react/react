@@ -231,7 +231,7 @@ describe('ReactDOMSuspensePlaceholder', () => {
     },
   );
 
-  // Regression test for https://github.com/facebook/react/issues/14188
+  // Regression test for https://github.com/react/react/issues/14188
   // @gate !disableLegacyMode
   it('can call findDOMNode() in a suspended component commit phase in legacy roots', async () => {
     const log = [];
@@ -292,7 +292,7 @@ describe('ReactDOMSuspensePlaceholder', () => {
     expect(log).toEqual(['cDU first', 'cDU second']);
   });
 
-  // Regression test for https://github.com/facebook/react/issues/14188
+  // Regression test for https://github.com/react/react/issues/14188
   it('can call legacy findDOMNode() in a suspended component commit phase (#2)', async () => {
     let suspendOnce = Promise.resolve();
     function Suspend() {

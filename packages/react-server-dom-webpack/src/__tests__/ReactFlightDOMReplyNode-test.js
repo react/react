@@ -146,4 +146,29 @@ describe('ReactFlightDOMReplyNode', () => {
     expect(decodedB.get('text_b')).toBe('value_b');
     expect(decodedB.get('file_b')).toBeInstanceOf(File);
   });
+
+  it('does not mutate the body when decoding referenced FormData', async () => {
+    const body = new FormData();
+    body.set('0', JSON.stringify(['$K1']));
+    body.append('_1_field', 'x');
+
+    const root = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    expect(root[0].get('field')).toBe('x');
+
+    // Decoding must not consume entries from the caller's FormData.
+    expect(body.get('_1_field')).toBe('x');
+    expect(body.get('0')).toBe(JSON.stringify(['$K1']));
+  });
+
+  it('can reference the same blob twice', async () => {
+    const body = new FormData();
+    body.set('0', JSON.stringify(['$B1', '$B1']));
+    body.append('1', new Blob(['hi'], {type: 'text/plain'}));
+
+    const root = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    expect(root[0] instanceof Blob).toBe(true);
+    expect(root[1] instanceof Blob).toBe(true);
+    expect(await root[0].text()).toBe('hi');
+    expect(await root[1].text()).toBe('hi');
+  });
 });

@@ -257,9 +257,7 @@ function isHostParent(fiber: Fiber): boolean {
   return (
     fiber.tag === HostComponent ||
     fiber.tag === HostRoot ||
-    // $FlowFixMe[constant-condition]
     (supportsResources ? fiber.tag === HostHoistable : false) ||
-    // $FlowFixMe[constant-condition]
     (supportsSingletons
       ? fiber.tag === HostSingleton && isSingletonScope(fiber.type)
       : false) ||
@@ -295,7 +293,6 @@ function getHostSibling(fiber: Fiber): ?Instance {
       // singleton scope. If it is a singleton scope we skip over it because
       // you only insert against this scope when you are already inside of it
       if (
-        // $FlowFixMe[constant-condition]
         supportsSingletons &&
         node.tag === HostSingleton &&
         isSingletonScope(node.type)
@@ -351,7 +348,6 @@ function insertOrAppendPlacementNodeIntoContainer(
     return;
   }
 
-  // $FlowFixMe[constant-condition]
   if (supportsSingletons ? tag === HostSingleton : false) {
     // The singleton is the fragment child. Its own children are not
     // attributed to the fragment instances above it.
@@ -411,7 +407,6 @@ function insertOrAppendPlacementNode(
     return;
   }
 
-  // $FlowFixMe[constant-condition]
   if (supportsSingletons ? tag === HostSingleton : false) {
     // The singleton is the fragment child. Its own children are not
     // attributed to the fragment instances above it.
@@ -455,7 +450,6 @@ function commitPlacement(finishedWork: Fiber): void {
   // parents while fragment bookkeeping still walks past them to ancestors.
   const parentFragmentInstances = getParentFragmentInstances(finishedWork);
 
-  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     commitImmutablePlacementNodeToFragmentInstances(
       finishedWork,
@@ -473,7 +467,6 @@ function commitPlacement(finishedWork: Fiber): void {
 
   switch (hostParentFiber.tag) {
     case HostSingleton: {
-      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         const parent: Instance = hostParentFiber.stateNode;
         const before = getHostSibling(finishedWork);
@@ -535,7 +528,6 @@ function commitImmutablePlacementNodeToFragmentInstances(
 ): void {
   const isHost =
     finishedWork.tag === HostComponent ||
-    // $FlowFixMe[constant-condition]
     (supportsSingletons ? finishedWork.tag === HostSingleton : false);
   if (isHost) {
     // A singleton is the fragment child itself, so its own children are

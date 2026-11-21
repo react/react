@@ -3,10 +3,11 @@
 'use strict';
 
 const chalk = require('chalk');
-const {exec} = require('child-process-promise');
+const {exec: execCallback} = require('child_process');
 const {readJsonSync} = require('fs-extra');
 const inquirer = require('inquirer');
 const {join, relative} = require('path');
+const {promisify} = require('util');
 const {DRY_RUN, NPM_PACKAGES, ROOT_PATH} = require('./configuration');
 const {
   checkNPMPermissions,
@@ -16,6 +17,8 @@ const {
   logger,
   readSavedBuildMetadata,
 } = require('./utils');
+
+const exec = promisify(execCallback);
 
 // This is the primary control function for this script.
 async function main() {

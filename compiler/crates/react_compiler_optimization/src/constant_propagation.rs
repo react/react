@@ -252,6 +252,13 @@ fn evaluate_phi(phi: &Phi, constants: &Constants) -> Option<Constant> {
                     if !js_strict_equal(a, b) {
                         return None;
                     }
+                    // Strict equality alone would merge 0 and -0, which are not
+                    // interchangeable. Keep rejecting NaN as before.
+                    if let (PrimitiveValue::Number(a), PrimitiveValue::Number(b)) = (a, b) {
+                        if a.value().is_sign_negative() != b.value().is_sign_negative() {
+                            return None;
+                        }
+                    }
                 }
                 (
                     Constant::LoadGlobal { binding: a, .. },
@@ -1129,4 +1136,62 @@ fn js_to_int32(n: f64) -> i32 {
 /// ECMAScript ToUint32: convert f64 to u32 with modular (wrapping) semantics.
 fn js_to_uint32(n: f64) -> u32 {
     js_to_int32(n) as u32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use react_compiler_hir::{BlockId, Effect};
+
+    #[test]
+    fn phi_numeric_constants_preserve_signed_zero() {
+        for (left, right, should_fold) in [
+            (0.0, -0.0, false),
+            (-0.0, 0.0, false),
+            (0.0, 0.0, true),
+            (-0.0, -0.0, true),
+            (42.0, 42.0, true),
+            (f64::NAN, f64::NAN, false),
+        ] {
+            let place = |id| Place {
+                identifier: IdentifierId(id),
+                effect: Effect::Read,
+                reactive: false,
+                loc: None,
+            };
+            let phi = Phi {
+                place: place(2),
+                operands: [(BlockId(0), place(0)), (BlockId(1), place(1))]
+                    .into_iter()
+                    .collect(),
+            };
+            let constants = [(IdentifierId(0), left), (IdentifierId(1), right)]
+                .into_iter()
+                .map(|(id, value)| {
+                    (
+                        id,
+                        Constant::Primitive {
+                            value: PrimitiveValue::Number(FloatValue::new(value)),
+                            loc: None,
+                        },
+                    )
+                })
+                .collect();
+            let result = evaluate_phi(&phi, &constants);
+            assert_eq!(result.is_some(), should_fold, "{left:?}, {right:?}");
+            if let Some(Constant::Primitive {
+                value: PrimitiveValue::Number(value),
+                ..
+            }) = result
+            {
+                assert_eq!(value.value().to_bits(), left.to_bits());
+            }
+        }
+
+        // Phi merging must not change the semantics of JavaScript equality.
+        assert!(js_strict_equal(
+            &PrimitiveValue::Number(FloatValue::new(0.0)),
+            &PrimitiveValue::Number(FloatValue::new(-0.0)),
+        ));
+    }
 }

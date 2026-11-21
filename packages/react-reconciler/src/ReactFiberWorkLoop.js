@@ -59,7 +59,6 @@ import {
   enableViewTransition,
   enableGestureTransition,
   enableDefaultTransitionIndicator,
-  enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
@@ -197,6 +196,7 @@ import {
   includesExpiredLane,
   getNextLanes,
   getEntangledLanes,
+  DeferredLane,
   getLanesToRetrySynchronouslyOnError,
   upgradePendingLanesToSync,
   markRootSuspended as _markRootSuspended,
@@ -1335,9 +1335,7 @@ function recoverFromConcurrentError(
   // Before rendering again, save the errors from the previous attempt.
   const errorsFromFirstAttempt = workInProgressRootConcurrentErrors;
 
-  // $FlowFixMe[constant-condition]
   const wasRootDehydrated = supportsHydration && isRootDehydrated(root);
-  // $FlowFixMe[constant-condition]
   if (wasRootDehydrated) {
     // The shell failed to hydrate. Set a flag to force a client rendering
     // during the next attempt. To do this, we call prepareFreshStack now
@@ -1355,12 +1353,26 @@ function recoverFromConcurrentError(
   }
 
   const exitStatus = renderRootSync(root, errorRetryLanes, false);
-  // A status of RootSuspendedAtTheShell means the retry unwound to the root
-  // without completing (e.g. something suspended in the shell), so the tree is
-  // incomplete and must not be treated as recovered — committing it would
-  // corrupt the current tree. Fall through and return the status as-is so the
-  // root stays suspended.
-  if (exitStatus !== RootErrored && exitStatus !== RootSuspendedAtTheShell) {
+  if (exitStatus === RootSuspendedAtTheShell) {
+    // The retry unwound to the root without completing (e.g. something
+    // suspended in the shell), so the tree is incomplete and must not be
+    // treated as recovered — committing it would corrupt the current tree.
+    // Return the status as-is so the root stays suspended.
+    //
+    // On a dehydrated root, the retry is the client render, not a check for
+    // data races, so we leave error recovery enabled.
+    if (!wasRootDehydrated) {
+      // The retry couldn't finish, so it can't tell us whether the error was
+      // caused by a data race. Disable error recovery for these lanes so the
+      // next attempt commits the error boundary instead of retrying again.
+      // That includes any deferred lane the retry spawned, which would
+      // otherwise error and retry the same way.
+      root.errorRecoveryDisabledLanes = mergeLanes(
+        root.errorRecoveryDisabledLanes,
+        mergeLanes(originallyAttemptedLanes, workInProgressDeferredLane),
+      );
+    }
+  } else if (exitStatus !== RootErrored) {
     // Successfully finished rendering on retry
 
     if (workInProgressRootDidAttachPingListener && !wasRootDehydrated) {
@@ -1805,19 +1817,35 @@ function markRootSuspended(
   spawnedLane: Lane,
   didAttemptEntireTree: boolean,
 ) {
-  if (enableParallelTransitions) {
-    // When suspending, we should always mark the entangled lanes as suspended.
-    suspendedLanes = getEntangledLanes(root, suspendedLanes);
+  // When suspending, we should always mark the entangled lanes as suspended.
+  const entangledLanes = getEntangledLanes(root, suspendedLanes);
+  let prewarmedLanes = NoLanes;
+  if (!includesSomeLane(entangledLanes, DeferredLane)) {
+    suspendedLanes = entangledLanes;
+  } else {
+    // Except for a deferred render. It's entangled with the lanes that spawned
+    // it, so that it includes their updates. But it renders the final values
+    // instead of the initial ones, so its suspending doesn't mean those lanes
+    // are blocked. It only counts as having prewarmed them.
+    prewarmedLanes = removeLanes(
+      entangledLanes,
+      mergeLanes(suspendedLanes, DeferredLane),
+    );
   }
 
   // When suspending, we should always exclude lanes that were pinged or (more
   // rarely, since we try to avoid it) updated during the render phase.
-  suspendedLanes = removeLanes(suspendedLanes, workInProgressRootPingedLanes);
-  suspendedLanes = removeLanes(
-    suspendedLanes,
+  const excludedLanes = mergeLanes(
+    workInProgressRootPingedLanes,
     workInProgressRootInterleavedUpdatedLanes,
   );
-  _markRootSuspended(root, suspendedLanes, spawnedLane, didAttemptEntireTree);
+  _markRootSuspended(
+    root,
+    removeLanes(suspendedLanes, excludedLanes),
+    removeLanes(prewarmedLanes, excludedLanes),
+    spawnedLane,
+    didAttemptEntireTree,
+  );
 }
 
 export function flushRoot(root: FiberRoot, lanes: Lanes) {
@@ -2242,6 +2270,10 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
     root.timeoutHandle = noTimeout;
     // $FlowFixMe[incompatible-call] Complains noTimeout is not a TimeoutID, despite the check above
     cancelTimeout(timeoutHandle);
+    // The timeout was holding back a throttled retry, whose data has already
+    // resolved, so nothing else will ping it. Ping it now so that it renders
+    // again once this render finishes or suspends.
+    markRootPinged(root, pendingEffectsLanes);
   }
   const cancelPendingCommit = root.cancelPendingCommit;
   if (cancelPendingCommit !== null) {
@@ -4392,7 +4424,6 @@ function flushSpawnedWork(): void {
 
   // Eagerly flush any event replaying that we unblocked within this commit.
   // This ensures that those are observed before we render any new changes.
-  // $FlowFixMe[constant-condition]
   if (supportsHydration) {
     flushHydrationEvents();
   }
@@ -5178,7 +5209,12 @@ export function resolveRetryWakeable(boundaryFiber: Fiber, wakeable: Wakeable) {
       retryCache = boundaryFiber.stateNode;
       break;
     case OffscreenComponent: {
-      const instance: OffscreenInstance = boundaryFiber.stateNode;
+      const instance: OffscreenInstance | null = boundaryFiber.stateNode;
+      if (instance === null) {
+        // The boundary was deleted before the wakeable resolved. Deletion
+        // detaches the stateNode, so there's nothing to retry.
+        return;
+      }
       retryCache = instance._retryCache;
       break;
     }

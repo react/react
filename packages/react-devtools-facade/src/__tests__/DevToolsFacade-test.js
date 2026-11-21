@@ -1469,6 +1469,29 @@ describe('react-devtools-facade', () => {
       expect(info.props.undef).toBe(null);
     });
 
+    it('normalizes BigInt props and hook values to serializable strings', () => {
+      // Beyond Number.MAX_SAFE_INTEGER, so a Number conversion would lose
+      // precision.
+      const big = BigInt('9007199254740993');
+      function Counter({data}) {
+        React.useState(data);
+        return <div>c</div>;
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(
+          <Counter data={{id: big, list: [BigInt(-1)]}} />,
+        );
+      });
+
+      const counter = getComponentTree().find(n => n.name === 'Counter');
+      const info = getComponentByUid(counter.uid, true);
+      const expected = {id: '9007199254740993n', list: ['-1n']};
+      expect(info.props.data).toEqual(expected);
+      expect(info.hooks[0].value).toEqual(expected);
+      expect(() => JSON.stringify(info)).not.toThrow();
+    });
+
     it('returns info for Memo component with correct type', () => {
       function Inner() {
         return <span>inner</span>;
@@ -1732,6 +1755,98 @@ describe('react-devtools-facade', () => {
       const info = getComponentByUid(div.uid, true);
       expect(info.hooks).toBeUndefined();
     });
+
+    it('meta is null for components without type-specific info', async () => {
+      function App() {
+        return <div>hello</div>;
+      }
+
+      await act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const app = getComponentTree().find(n => n.name === 'App');
+      expect(getComponentByUid(app.uid).meta).toBe(null);
+
+      const div = getComponentTree().find(n => n.name === 'div');
+      expect(getComponentByUid(div.uid).meta).toBe(null);
+    });
+
+    it('exposes suspended state for a Suspense boundary showing content', async () => {
+      function App() {
+        return (
+          <React.Suspense fallback={<div>loading</div>}>
+            <div>content</div>
+          </React.Suspense>
+        );
+      }
+
+      await act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const suspense = getComponentTree().find(n => n.type === 'suspense');
+      const info = getComponentByUid(suspense.uid);
+      expect(info.meta).toEqual({isSuspended: false});
+    });
+
+    it('exposes suspended state for a Suspense boundary showing fallback', async () => {
+      const never = new Promise(() => {});
+      function Suspender() {
+        React.use(never);
+        return null;
+      }
+      function App() {
+        return (
+          <React.Suspense fallback={<div>loading</div>}>
+            <Suspender />
+          </React.Suspense>
+        );
+      }
+
+      await act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const suspense = getComponentTree().find(n => n.type === 'suspense');
+      const info = getComponentByUid(suspense.uid);
+      expect(info.meta).toEqual({isSuspended: true});
+    });
+
+    it('updates suspended state when a Suspense boundary resolves', async () => {
+      let resolve;
+      const promise = new Promise(r => {
+        resolve = r;
+      });
+      function Suspender() {
+        React.use(promise);
+        return <div>content</div>;
+      }
+      function App() {
+        return (
+          <React.Suspense fallback={<div>loading</div>}>
+            <Suspender />
+          </React.Suspense>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<App />);
+      });
+
+      const suspense = getComponentTree().find(n => n.type === 'suspense');
+      expect(getComponentByUid(suspense.uid).meta).toEqual({
+        isSuspended: true,
+      });
+
+      await act(async () => {
+        resolve();
+      });
+      expect(getComponentByUid(suspense.uid).meta).toEqual({
+        isSuspended: false,
+      });
+    });
   });
 
   describe('getComponentByHostInstance', () => {
@@ -1848,6 +1963,71 @@ describe('react-devtools-facade', () => {
       expect(getComponentByHostInstance(unmanagedChild)).toEqual({
         error: 'Host instance is not managed by React',
       });
+    });
+
+    it('returns the host component for hoistables without a resource', () => {
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(
+          <>
+            <title>Facade title</title>
+            <meta name="facade-test" content="value" />
+            <link rel="author" href="https://example.com/facade-test" />
+          </>,
+        );
+      });
+
+      const tree = getComponentTree();
+      ['title', 'meta', 'link'].forEach(tag => {
+        const element = document.head.querySelector(tag);
+        expect(element).not.toBe(null);
+        const host = tree.find(n => n.name === tag);
+        const result = getComponentByHostInstance(element);
+
+        expect(result).toEqual(getComponentByUid(host.uid));
+        expect(result).toMatchObject({
+          uid: host.uid,
+          type: 'host',
+          name: tag,
+        });
+      });
+
+      act(() => {
+        root.unmount();
+      });
+    });
+
+    it('returns the host component for hoistables backed by a resource', () => {
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(
+          <style href="facade-test-style" precedence="default">
+            {'body {}'}
+          </style>,
+        );
+      });
+
+      const style = document.head.querySelector(
+        'style[data-href="facade-test-style"]',
+      );
+      expect(style).not.toBe(null);
+      const host = getComponentTree().find(n => n.name === 'style');
+      const result = getComponentByHostInstance(style);
+
+      expect(result).toEqual(getComponentByUid(host.uid));
+      expect(result).toMatchObject({
+        uid: host.uid,
+        type: 'host',
+        name: 'style',
+        props: {href: 'facade-test-style', precedence: 'default'},
+      });
+
+      act(() => {
+        root.unmount();
+      });
+      // Style resources outlive the root, so remove it to keep the shared
+      // document clean for later tests.
+      style.remove();
     });
 
     it('returns an error when no roots are mounted', () => {

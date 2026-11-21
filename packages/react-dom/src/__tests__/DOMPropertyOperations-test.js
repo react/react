@@ -146,7 +146,7 @@ describe('DOMPropertyOperations', () => {
           </select>,
         );
       });
-      // Regression test for https://github.com/facebook/react/issues/6219
+      // Regression test for https://github.com/react/react/issues/6219
       expect(container.firstChild.firstChild.value).toBe('');
       expect(container.firstChild.lastChild.value).toBe('filled');
     });
@@ -256,7 +256,7 @@ describe('DOMPropertyOperations', () => {
         root.render(<progress value={null} />);
       });
       // Ensure we move progress back to an indeterminate state.
-      // Regression test for https://github.com/facebook/react/issues/6119
+      // Regression test for https://github.com/react/react/issues/6119
       expect(container.firstChild.hasAttribute('value')).toBe(false);
     });
 

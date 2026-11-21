@@ -58,7 +58,7 @@ export class CodeEditor extends React.Component {
 
 /**
  * Prevent IE9 from raising an error on an unrecognized element:
- * See https://github.com/facebook/react/issues/13610
+ * See https://github.com/react/react/issues/13610
  */
 const supportsDetails = !(
   document.createElement('details') instanceof HTMLUnknownElement

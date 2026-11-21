@@ -10,7 +10,7 @@ version = "0.0.1-oidc.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-repository = "https://github.com/facebook/react"
+repository = "https://github.com/react/react"
 
 [workspace.dependencies]
 react_compiler_ast = { version = "0.0.1-oidc.0", path = "crates/react_compiler_ast" }

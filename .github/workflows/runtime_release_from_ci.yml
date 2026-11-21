@@ -142,7 +142,7 @@ jobs:
         id: release_node_modules
         with:
           path: scripts/release/node_modules
-          key: release-scripts-node_modules-v1-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('scripts/release/yarn.lock') }}
+          key: release-scripts-node_modules-v1-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'scripts/release/yarn.lock') }}
       - run: yarn --cwd scripts/release install --frozen-lockfile
         if: steps.release_node_modules.outputs.cache-hit != 'true'
 

@@ -38,7 +38,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: compiler-and-playground-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/**/yarn.lock') }}
+          key: compiler-and-playground-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'compiler/**/yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
         working-directory: compiler

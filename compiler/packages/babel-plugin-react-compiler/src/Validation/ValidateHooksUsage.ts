@@ -95,7 +95,7 @@ export function validateHooksUsage(fn: HIRFunction): void {
     if (typeof loc === 'symbol') {
       fn.env.recordError(errorDetail);
     } else {
-      errorsByPlace.set(loc, errorDetail);
+      errorsByPlace.set(loc.loc, errorDetail);
     }
   }
 
@@ -106,7 +106,9 @@ export function validateHooksUsage(fn: HIRFunction): void {
     const reason =
       'Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)';
     const previousError =
-      typeof place.loc !== 'symbol' ? errorsByPlace.get(place.loc) : undefined;
+      typeof place.loc !== 'symbol'
+        ? errorsByPlace.get(place.loc.loc)
+        : undefined;
 
     /*
      * In some circumstances such as optional calls, we may first encounter a "hook may not be referenced as normal values" error.
@@ -127,7 +129,9 @@ export function validateHooksUsage(fn: HIRFunction): void {
   }
   function recordInvalidHookUsageError(place: Place): void {
     const previousError =
-      typeof place.loc !== 'symbol' ? errorsByPlace.get(place.loc) : undefined;
+      typeof place.loc !== 'symbol'
+        ? errorsByPlace.get(place.loc.loc)
+        : undefined;
     if (previousError === undefined) {
       trackError(
         place.loc,
@@ -144,7 +148,9 @@ export function validateHooksUsage(fn: HIRFunction): void {
   }
   function recordDynamicHookUsageError(place: Place): void {
     const previousError =
-      typeof place.loc !== 'symbol' ? errorsByPlace.get(place.loc) : undefined;
+      typeof place.loc !== 'symbol'
+        ? errorsByPlace.get(place.loc.loc)
+        : undefined;
     if (previousError === undefined) {
       trackError(
         place.loc,

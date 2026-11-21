@@ -1210,6 +1210,71 @@ describe('ReactHooksInspectionIntegration', () => {
     `);
   });
 
+  it.each(['abc', null])(
+    'should inspect useDeferredValue state from older renderers (%s)',
+    async value => {
+      function Foo() {
+        React.useDeferredValue(value);
+        return null;
+      }
+      let renderer;
+      await act(() => {
+        renderer = ReactTestRenderer.create(<Foo />);
+      });
+      const fiber = renderer.root.findByType(Foo)._currentFiber();
+      // Older React renderers store the deferred value directly, without the
+      // {value, isInitial} wrapper. DevTools must still inspect those renderers.
+      fiber.memoizedState.memoizedState = value;
+      const tree = ReactDebugTools.inspectHooksOfFiber(fiber);
+      expect(tree[0].name).toBe('DeferredValue');
+      expect(tree[0].value).toBe(value);
+    },
+  );
+
+  it('should inspect useDeferredValue while it shows the initial value', async () => {
+    const never = new Promise(() => {});
+    function Child({value}) {
+      if (value === 'Final') {
+        React.use(never);
+      }
+      return value;
+    }
+    function Foo() {
+      const value = React.useDeferredValue('Final', 'Initial');
+      return <Child value={value} />;
+    }
+    let renderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <React.Suspense fallback="Loading">
+          <Foo />
+        </React.Suspense>,
+        {unstable_isConcurrent: true},
+      );
+    });
+    expect(renderer.toJSON()).toBe('Initial');
+    const fiber = renderer.root.findByType(Foo)._currentFiber();
+    const tree = ReactDebugTools.inspectHooksOfFiber(fiber);
+    expect(tree[0].name).toBe('DeferredValue');
+    expect(tree[0].value).toBe('Initial');
+  });
+
+  it('should inspect a useDeferredValue value that has an isInitial property', async () => {
+    const value = {isInitial: true, value: 'not the deferred value'};
+    function Foo() {
+      React.useDeferredValue(value);
+      return null;
+    }
+    let renderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(<Foo />);
+    });
+    const fiber = renderer.root.findByType(Foo)._currentFiber();
+    const tree = ReactDebugTools.inspectHooksOfFiber(fiber);
+    expect(tree[0].name).toBe('DeferredValue');
+    expect(tree[0].value).toBe(value);
+  });
+
   it('should support useDeferredValue hook', async () => {
     function Foo(props) {
       React.useDeferredValue('abc');

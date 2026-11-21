@@ -29,7 +29,6 @@ import {
   disableLegacyMode,
   enableDefaultTransitionIndicator,
   enableGestureTransition,
-  enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {clz32} from './clz32';
@@ -209,10 +208,7 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
     case TransitionLane8:
     case TransitionLane9:
     case TransitionLane10:
-      if (enableParallelTransitions) {
-        return getHighestPriorityLane(lanes);
-      }
-      return lanes & TransitionUpdateLanes;
+      return getHighestPriorityLane(lanes);
     case TransitionLane11:
     case TransitionLane12:
     case TransitionLane13:
@@ -851,6 +847,7 @@ export function markRootUpdated(root: FiberRoot, updateLane: Lane) {
 export function markRootSuspended(
   root: FiberRoot,
   suspendedLanes: Lanes,
+  prewarmedLanes: Lanes,
   spawnedLane: Lane,
   didAttemptEntireTree: boolean,
 ) {
@@ -861,7 +858,7 @@ export function markRootSuspended(
 
   if (didAttemptEntireTree) {
     // Mark these lanes as warm so we know there's nothing else to work on.
-    root.warmLanes |= suspendedLanes;
+    root.warmLanes |= suspendedLanes | prewarmedLanes;
   } else {
     // Render unwound without attempting all the siblings. Do no mark the lanes
     // as warm. This will cause a prewarm render to be scheduled.
@@ -879,7 +876,16 @@ export function markRootSuspended(
     lanes &= ~lane;
   }
 
-  if (spawnedLane !== NoLane) {
+  if (
+    spawnedLane !== NoLane &&
+    // A suspended attempt commits nothing. If it carried updates, the spawned
+    // task is entangled with them below and retries them together. If it
+    // carried none (hydration, a Suspense retry), the spawned task would
+    // render nothing and commit, and that commit clears the suspended lanes,
+    // so the suspended work would be retried at once, in a loop, until its
+    // data arrives. The deferred values are requested again by that retry.
+    includesSomeLane(suspendedLanes, UpdateLanes)
+  ) {
     markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
   }
 }

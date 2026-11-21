@@ -31,7 +31,6 @@ import {
   Fragment,
 } from './ReactWorkTags';
 import {NoFlags, Placement, Hydrating} from './ReactFiberFlags';
-import {enableFragmentRefsTextNodes} from 'shared/ReactFeatureFlags';
 
 export function getNearestMountedFiber(fiber: Fiber): null | Fiber {
   let node = fiber;
@@ -393,7 +392,7 @@ function traverseVisibleInstancesAndTextInstances<A, B, C>(
     const isHostNode =
       child.tag === HostComponent ||
       child.tag === HostSingleton ||
-      (enableFragmentRefsTextNodes && child.tag === HostText);
+      child.tag === HostText;
     if (isHostNode && fn(child, a, b, c)) {
       return true;
     } else if (
@@ -507,7 +506,7 @@ export function getFragmentInstanceOrTextInstanceSiblings(
 }
 
 /**
- * Only collects HostText with enableFragmentRefsTextNodes enabled. Otherwise, only collects HostComponent.
+ * Collects HostComponent, HostSingleton, and HostText siblings.
  * Returns true once the following host sibling has been found.
  */
 function findFragmentInstanceOrTextInstanceSiblings(
@@ -527,7 +526,7 @@ function findFragmentInstanceOrTextInstanceSiblings(
     if (
       child.tag === HostComponent ||
       child.tag === HostSingleton ||
-      (enableFragmentRefsTextNodes && child.tag === HostText)
+      child.tag === HostText
     ) {
       if (state.foundSelf) {
         result[1] = child;

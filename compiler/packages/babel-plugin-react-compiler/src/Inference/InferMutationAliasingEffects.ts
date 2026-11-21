@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {areSourceLocationsEqual} from '../HIR/SourceLocation';
 import {
   CompilerDiagnostic,
   CompilerError,
@@ -686,6 +687,9 @@ function applyEffect(
       const didFreeze = state.freeze(effect.value, effect.reason);
       if (didFreeze) {
         effects.push(effect);
+      } else {
+        // Ref validation needs the declared effect even if already frozen.
+        effects.push({...effect, alreadyFrozen: true});
       }
       break;
     }
@@ -1221,7 +1225,10 @@ function applyEffect(
             reason: 'Cannot access variable before it is declared',
             description: `${variable ?? 'This variable'} is accessed before it is declared, which prevents the earlier access from updating when this value changes over time`,
           });
-          if (hoistedAccess != null && hoistedAccess.loc != effect.value.loc) {
+          if (
+            hoistedAccess != null &&
+            !areSourceLocationsEqual(hoistedAccess.loc, effect.value.loc)
+          ) {
             diagnostic.withDetails({
               kind: 'error',
               loc: hoistedAccess.loc,

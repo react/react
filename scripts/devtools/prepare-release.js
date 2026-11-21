@@ -3,12 +3,13 @@
 'use strict';
 
 const chalk = require('chalk');
-const {exec} = require('child-process-promise');
+const {exec: execCallback} = require('child_process');
 const {readFileSync, writeFileSync} = require('fs');
 const {readJsonSync, writeJsonSync} = require('fs-extra');
 const inquirer = require('inquirer');
 const {join, relative} = require('path');
 const semver = require('semver');
+const {promisify} = require('util');
 const {
   CHANGELOG_PATH,
   DRY_RUN,
@@ -24,6 +25,8 @@ const {
   confirmContinue,
   execRead,
 } = require('./utils');
+
+const exec = promisify(execCallback);
 
 // This is the primary control function for this script.
 async function main() {
@@ -113,7 +116,7 @@ async function getCommitLog(sha) {
       let username;
       if (hasGh) {
         const response = await execRead(
-          `gh api /repos/facebook/react/pulls/${pr}`
+          `gh api /repos/react/react/pulls/${pr}`
         );
         const {user} = JSON.parse(response);
         username = `[${user.login}](${user.html_url})`;

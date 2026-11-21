@@ -1029,7 +1029,7 @@ describe('ReactDOMLegacyFiber', () => {
     }
   });
 
-  // Regression test for https://github.com/facebook/react/issues/19562
+  // Regression test for https://github.com/react/react/issues/19562
   // @gate !disableLegacyMode
   it('does not fire mouseEnter twice when relatedTarget is the root node', () => {
     let ops = [];
@@ -1360,7 +1360,7 @@ describe('ReactDOMLegacyFiber', () => {
     expect(container.innerHTML).toBe('<div>foo</div>');
   });
 
-  // Regression test for https://github.com/facebook/react/issues/12643#issuecomment-413727104
+  // Regression test for https://github.com/react/react/issues/12643#issuecomment-413727104
   // @gate !disableLegacyMode
   it('should not diff memoized host components', () => {
     const inputRef = React.createRef();

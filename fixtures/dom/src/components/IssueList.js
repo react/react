@@ -16,7 +16,7 @@ export default function IssueList({issues}) {
   let links = issues.reduce((memo, issue, i) => {
     return memo.concat(
       i > 0 && i < issues.length ? ', ' : null,
-      <a href={'https://github.com/facebook/react/issues/' + issue} key={issue}>
+      <a href={'https://github.com/react/react/issues/' + issue} key={issue}>
         {issue}
       </a>
     );

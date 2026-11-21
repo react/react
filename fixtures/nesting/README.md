@@ -51,7 +51,7 @@ This sample app uses client-side routing and consists of two routes:
 **The purpose of this demo is to show some nuances of such setup:**
 
 - How to install two versions of React in a single app with npm side by side.
-- How to avoid the ["invalid Hook call" error](https://github.com/facebook/react/issues/13991) while nesting React trees.
+- How to avoid the ["invalid Hook call" error](https://github.com/react/react/issues/13991) while nesting React trees.
 - How to pass context between different versions of React.
 - How to lazy-load the second React bundle so it's only loaded on the screens that use it.
 - How to do all of this without a special bundler configuration.

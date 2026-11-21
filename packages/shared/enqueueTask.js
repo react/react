@@ -33,7 +33,7 @@ export default function enqueueTask(task: () => void): void {
               console.error(
                 'This browser does not have a MessageChannel implementation, ' +
                   'so enqueuing tasks via await act(async () => ...) will fail. ' +
-                  'Please file an issue at https://github.com/facebook/react/issues ' +
+                  'Please file an issue at https://github.com/react/react/issues ' +
                   'if you encounter this warning.',
               );
             }

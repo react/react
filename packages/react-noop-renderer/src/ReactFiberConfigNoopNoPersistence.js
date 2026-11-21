@@ -19,7 +19,7 @@ function shim(...args: any): empty {
 }
 
 // Persistence (when unsupported)
-export const supportsPersistence = false;
+export const supportsPersistence: boolean = false;
 export const cloneInstance = shim;
 export const createContainerChildSet = shim;
 export const appendChildToContainerChildSet = shim;

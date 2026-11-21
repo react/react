@@ -469,7 +469,7 @@ describe('InspectedElement', () => {
     `);
   });
 
-  // See github.com/facebook/react/issues/22241#issuecomment-931299972
+  // See github.com/react/react/issues/22241#issuecomment-931299972
   it('should properly recover from a cache miss on the frontend', async () => {
     let targetRenderCount = 0;
 
@@ -2132,7 +2132,7 @@ describe('InspectedElement', () => {
     `);
   });
 
-  // See github.com/facebook/react/issues/21654
+  // See github.com/react/react/issues/21654
   it('should support Proxies that dont return an iterator', async () => {
     const Example = () => null;
     const proxy = new Proxy(
@@ -2170,7 +2170,7 @@ describe('InspectedElement', () => {
   });
 
   // TODO(hoxyq): Enable this test for versions ~18, currently broken
-  // Regression test for github.com/facebook/react/issues/22099
+  // Regression test for github.com/react/react/issues/22099
   // @reactVersion <= 18.2
   // eslint-disable-next-line jest/no-disabled-tests
   it.skip('should not error when an unchanged component is re-inspected after component filters changed (legacy render)', async () => {
@@ -2232,7 +2232,7 @@ describe('InspectedElement', () => {
     `);
   });
 
-  // Regression test for github.com/facebook/react/issues/22099
+  // Regression test for github.com/react/react/issues/22099
   it('should not error when an unchanged component is re-inspected after component filters changed (createRoot)', async () => {
     const Example = () => <div />;
 

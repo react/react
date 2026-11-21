@@ -15,9 +15,9 @@ import {
   enableTaint,
   enableProfilerTimer,
   enableComponentPerformanceTrack,
-  enableAsyncDebugInfo,
   enableFlightWeakThenables,
   enableFlightObjectReferences,
+  enableFlightLedgers,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -109,11 +109,10 @@ import {
 
 import {
   HooksDispatcher,
-  prepareToUseHooksForRequest,
+  switchHooksRequest,
   prepareToUseHooksForComponent,
   getThenableStateAfterSuspending,
   getTrackedThenablesAfterRendering,
-  resetHooksForRequest,
 } from './ReactFlightHooks';
 import {DefaultAsyncDispatcher} from './flight/ReactFlightAsyncDispatcher';
 
@@ -141,6 +140,15 @@ import {
   ASYNC_ITERATOR,
   REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
+
+import type {
+  Ledger,
+  LedgerCell,
+  LedgerDelta,
+  LedgerDeltaRow,
+} from 'react-server/src/ReactFlightLedgers';
+import type {UnitCacheHooks} from 'react-reconciler/src/ReactInternalTypes';
+import {createLedgerCell} from 'react-server/src/ReactFlightLedgers';
 
 import {
   describeObjectForErrorMessage,
@@ -555,6 +563,7 @@ type Task = {
   implicitSlot: boolean, // true if the root server component of this sequence had a null key
   formatContext: FormatContext, // an approximate parent context from host components
   thenableState: ThenableState | null,
+  unit: null | Unit,
   timed: boolean, // Profiling-only. Whether we need to track the completion time of this task.
   time: number, // Profiling-only. The last time stamp emitted for this task.
   environmentName: string, // DEV-only. Used to track if the environment for this task changed.
@@ -563,7 +572,36 @@ type Task = {
   debugTask: null | ConsoleTask, // DEV-only
 };
 
+// A unit is a piece of work that can be reused: a Flight task or a cache entry.
+// We associate ledger writes with these units so reusing a result also reuses
+// the writes made while producing it.
+//
+// Units form a graph through their creators and reuse references. The client
+// uses this graph to determine which writes belong to each captured ledger.
+type Unit = {
+  request: Request,
+  // Shares the task's row ID when the unit belongs to a Flight task.
+  id: number,
+  creator: null | Unit,
+  declared: boolean,
+  dirtyDeltas: null | Map<Ledger<empty>, LedgerCell>,
+  dirtyReferences: null | number | Set<number>,
+};
+
+type RequestLedgers = {
+  dirtyUnits: Array<Unit>,
+  // Maps each ledger type to its declaration row ID.
+  declaredTypes: null | Map<Ledger<empty>, number>,
+};
+
 interface Reference {}
+
+// An object's reference may include a path within a row. We also keep the
+// containing row's ID so that reusing the object can reuse its ledger entries.
+type WrittenObjectEntry = {
+  id: number,
+  reference: string,
+};
 
 type ReactClientReference = Reference & ReactClientValue;
 
@@ -605,6 +643,7 @@ export type Request = {
   pingedTasks: Array<Task>,
   completedImportChunks: Array<Chunk>,
   completedHintChunks: Array<Chunk>,
+  completedLedgerChunks: Array<Chunk>,
   // Text and TypedArray rows are pushed as a NEXT_TWO_CHUNKS_ARE_ATOMIC
   // sentinel followed by their [headerChunk, contentChunk] pair, so that
   // flushCompletedChunks can write the pair atomically and never strand the
@@ -616,7 +655,7 @@ export type Request = {
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
-  writtenObjects: WeakMap<Reference, string>,
+  writtenObjects: WeakMap<Reference, WrittenObjectEntry>,
   writtenImportStrings: Map<string, string>,
   // The combined length of the keys in writtenImportStrings.
   writtenImportStringsSize: number,
@@ -624,6 +663,8 @@ export type Request = {
   identifierPrefix: string,
   identifierCount: number,
   taintCleanupQueue: Array<string | bigint>,
+  ledgers: null | RequestLedgers,
+  rootUnit: null | Unit,
   onError: (error: mixed) => ?string,
   onAllReady: () => void,
   onFatalError: mixed => void,
@@ -708,6 +749,12 @@ function RequestInstance(
     );
   }
   ReactSharedInternals.A = DefaultAsyncDispatcher;
+  if (enableFlightLedgers) {
+    // $FlowFixMe[constant-condition]
+    if (supportsRequestStorage) {
+      DefaultAsyncDispatcher.units = DefaultUnitCacheHooks;
+    }
+  }
   if (__DEV__) {
     // Unlike Fizz or Fiber, we don't reset this and just keep it on permanently.
     // This lets it act more like the AsyncDispatcher so that we can get the
@@ -737,6 +784,9 @@ function RequestInstance(
   this.pingedTasks = pingedTasks;
   this.completedImportChunks = [] as Array<Chunk>;
   this.completedHintChunks = [] as Array<Chunk>;
+  if (enableFlightLedgers) {
+    this.completedLedgerChunks = [] as Array<Chunk>;
+  }
   this.completedRegularChunks = [] as Array<
     Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
   >;
@@ -751,6 +801,8 @@ function RequestInstance(
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
   this.taintCleanupQueue = cleanupQueue;
+  this.ledgers = null;
+  this.rootUnit = null;
   this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.onAllReady = onAllReady;
   this.onFatalError = onFatalError;
@@ -782,10 +834,7 @@ function RequestInstance(
   }
 
   let timeOrigin: number;
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     // We start by serializing the time origin. Any future timestamps will be
     // emitted relatively to this origin. Instead of using performance.timeOrigin
     // as this origin, we use the timestamp at the start of the request.
@@ -899,10 +948,238 @@ export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
   // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
-    const store = requestStorage.getStore();
-    if (store) return store;
+    if (enableFlightLedgers) {
+      const store = unitStorage.getStore();
+      if (store !== undefined) {
+        return store.request;
+      }
+    } else {
+      const store = requestStorage.getStore();
+      if (store) return store;
+    }
   }
   return null;
+}
+
+function runWithRequest<A, R>(
+  request: Request,
+  callback: (Request, A) => R,
+  argument: A,
+): R {
+  const previousDispatcher = ReactSharedInternals.H;
+  const previousRequest = currentRequest;
+  const previousHooksRequest = switchHooksRequest(request);
+  ReactSharedInternals.H = HooksDispatcher;
+  currentRequest = request;
+  try {
+    return callback(request, argument);
+  } finally {
+    ReactSharedInternals.H = previousDispatcher;
+    currentRequest = previousRequest;
+    switchHooksRequest(previousHooksRequest);
+  }
+}
+
+// With Ledgers enabled, the async context carries a unit so writes after an
+// await can be attributed to the work that started them.
+// TODO: Update the host config's storage type when removing the feature flag.
+const unitStorage: AsyncLocalStorage<Unit | void> = requestStorage as any;
+
+// Avoid reading async storage during synchronous work.
+let currentUnit: null | Unit = null;
+
+function resolveRunningUnit(): null | Unit {
+  if (currentUnit !== null) {
+    return currentUnit;
+  }
+  // $FlowFixMe[constant-condition]
+  if (supportsRequestStorage) {
+    const store = unitStorage.getStore();
+    if (store !== undefined) {
+      return store;
+    }
+  }
+  return null;
+}
+
+function currentUnitForRequest(request: Request): null | Unit {
+  const unit = resolveRunningUnit();
+  if (unit !== null && unit.request === request) {
+    return unit;
+  }
+  // A nested request must not inherit the outer request's unit.
+  return request.rootUnit;
+}
+
+function ensureRequestLedgers(request: Request): RequestLedgers {
+  const ledgers = request.ledgers;
+  if (ledgers !== null) {
+    return ledgers;
+  }
+  return (request.ledgers = createRequestLedgers());
+}
+
+// Returns whether the entry changed the accumulated value.
+// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+function accumulateLedgerEntry(cell: LedgerCell, entry: mixed): boolean {
+  if (typeof entry !== 'number') {
+    return false;
+  }
+  const state = cell.state;
+  const next = (state | entry) >>> 0;
+  if (next === state) {
+    return false;
+  }
+  cell.state = next;
+  return true;
+}
+
+function createUnit(request: Request, creator: null | Unit, id: number): Unit {
+  return {
+    request,
+    id,
+    creator,
+    declared: false,
+    dirtyDeltas: null,
+    dirtyReferences: null,
+  };
+}
+
+// The reused row may receive more ledger writes later. Record the reference
+// now so captures can include those writes without rerunning the work.
+function recordUnitReference(unit: null | Unit, row: number): void {
+  if (unit === null) {
+    return;
+  }
+  if (row === unit.id) {
+    return;
+  }
+  const ledgers = ensureRequestLedgers(unit.request);
+  // Avoid allocating a Set when only one row is reused within a work batch.
+  const pending = unit.dirtyReferences;
+  if (pending === null) {
+    if (unit.dirtyDeltas === null) {
+      ledgers.dirtyUnits.push(unit);
+    }
+    unit.dirtyReferences = row;
+  } else if (typeof pending === 'number') {
+    if (pending === row) {
+      return;
+    }
+    const references: Set<number> = new Set();
+    references.add(pending);
+    references.add(row);
+    unit.dirtyReferences = references;
+  } else {
+    if (pending.has(row)) {
+      return;
+    }
+    pending.add(row);
+  }
+}
+
+function writeLedgerEntry(unit: Unit, type: Ledger<empty>, entry: mixed): void {
+  // Record writes even if no capture exists yet, or if the request is aborting.
+  // Captures and reused values may still be serialized; the client determines
+  // which writes contribute from the records that reach it.
+  const ledgers = ensureRequestLedgers(unit.request);
+  let dirty = unit.dirtyDeltas;
+  let cell = dirty === null ? undefined : dirty.get(type);
+  if (cell === undefined) {
+    cell = createLedgerCell(type);
+    if (!accumulateLedgerEntry(cell, entry)) {
+      // A no-op first entry leaves nothing pending.
+      return;
+    }
+    if (dirty === null) {
+      // A unit is in dirtyUnits exactly when it has pending deltas or references.
+      if (unit.dirtyReferences === null) {
+        ledgers.dirtyUnits.push(unit);
+      }
+      unit.dirtyDeltas = dirty = new Map();
+    }
+    dirty.set(type, cell);
+    return;
+  }
+  accumulateLedgerEntry(cell, entry);
+}
+
+// A write is emitted when the render phase that follows it completes. Any data
+// that depends on the write is serialized by a task that completes after it, so
+// the write always precedes that data. A late write from work whose output never
+// reaches the response may be dropped if no render phase follows it.
+export function addToLedger(type: Ledger<empty>, entry: mixed): void {
+  const unit = resolveRunningUnit();
+  if (unit === null) {
+    // Ledger writes outside a Flight render are ignored.
+    return;
+  }
+  writeLedgerEntry(unit, type, entry);
+}
+
+function createRequestLedgers(): RequestLedgers {
+  return {
+    dirtyUnits: [],
+    declaredTypes: null,
+  };
+}
+
+function readEntryUnit(u: mixed): Unit {
+  return u as any;
+}
+
+const DefaultUnitCacheHooks: UnitCacheHooks = {
+  hit(unit: mixed): void {
+    const entryUnit = readEntryUnit(unit);
+    const running = resolveRunningUnit();
+    if (running === null) {
+      return;
+    }
+    if (running.request !== entryUnit.request) {
+      return;
+    }
+    recordUnitReference(running, entryUnit.id);
+  },
+  miss<T>(
+    cacheEntry: {u: mixed, ...},
+    fn: (...Array<mixed>) => T,
+    args: Array<mixed>,
+  ): T {
+    const outer = resolveRunningUnit();
+    if (outer === null) {
+      return applyCachedFunction(fn, args);
+    }
+    const request = outer.request;
+    let entryUnit: Unit;
+    if (cacheEntry.u === null) {
+      cacheEntry.u = entryUnit = createUnit(
+        request,
+        outer,
+        request.nextChunkId++,
+      );
+    } else {
+      // A recursive call can reach this entry before the first call returns.
+      // Both calls must record their writes on the same unit.
+      entryUnit = readEntryUnit(cacheEntry.u);
+      // The reentrant call's writes land on the existing unit, but its result
+      // feeds the caller, so the caller must reference that unit.
+      recordUnitReference(outer, entryUnit.id);
+    }
+    const prevUnit = currentUnit;
+    currentUnit = entryUnit;
+    try {
+      return unitStorage.run(entryUnit, applyCachedFunction, fn, args);
+    } finally {
+      currentUnit = prevUnit;
+    }
+  },
+};
+
+function applyCachedFunction<T>(
+  fn: (...Array<mixed>) => T,
+  args: Array<mixed>,
+): T {
+  return fn.apply(null, args);
 }
 
 function isTypedArray(value: any): boolean {
@@ -1002,6 +1279,7 @@ function serializeDebugThenable(
       cancelled = true;
       if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
@@ -1013,10 +1291,12 @@ function serializeDebugThenable(
         // it would get omitted. We can't omit outlined models but we can avoid
         // resolving the Promise at all by halting it.
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
       emitOutlinedDebugModelChunk(request, id, counter, value);
+      completeWork(request);
       enqueueFlush(request);
     },
     reason => {
@@ -1026,12 +1306,14 @@ function serializeDebugThenable(
       cancelled = true;
       if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
       // We don't log these errors since they didn't actually throw into Flight.
       const digest = '';
       emitErrorChunk(request, id, digest, reason, true, null);
+      completeWork(request);
       enqueueFlush(request);
     },
   );
@@ -1046,6 +1328,7 @@ function serializeDebugThenable(
     }
     cancelled = true;
     emitDebugHaltChunk(request, id);
+    completeWork(request);
     enqueueFlush(request);
     // Clean up the request so we don't leak this forever.
     request = null as any;
@@ -1065,21 +1348,25 @@ function emitRequestedDebugThenable(
     value => {
       if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
       emitOutlinedDebugModelChunk(request, id, counter, value);
+      completeWork(request);
       enqueueFlush(request);
     },
     reason => {
       if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
       // We don't log these errors since they didn't actually throw into Flight.
       const digest = '';
       emitErrorChunk(request, id, digest, reason, true, null);
+      completeWork(request);
       enqueueFlush(request);
     },
   );
@@ -1097,10 +1384,7 @@ function createThenableTask(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1150,14 +1434,13 @@ function serializeThenable(
         const keyPath = task.keyPath;
         const implicitSlot = task.implicitSlot;
         const formatContext = task.formatContext;
-        const lastTimestamp =
-          enableProfilerTimer &&
-          (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ? task.time
-            : 0;
+        const lastTimestamp = enableProfilerTimer ? task.time : 0;
         const debugOwner = __DEV__ ? task.debugOwner : null;
         const debugStack = __DEV__ ? task.debugStack : null;
         const debugTask = __DEV__ ? task.debugTask : null;
+        // The thenable may be settled by unrelated work, so the new task's
+        // unit must descend from the unit that serialized the reference.
+        const creatorUnit = resolveCreatorUnit(request);
         let settled = false;
         thenable.then(
           (value: any) => {
@@ -1179,6 +1462,7 @@ function serializeThenable(
               debugOwner,
               debugStack,
               debugTask,
+              creatorUnit,
             );
             forwardDebugInfoFromCurrentContext(request, newTask, thenable);
             pingTask(request, newTask);
@@ -1200,15 +1484,14 @@ function serializeThenable(
               debugOwner,
               debugStack,
               debugTask,
+              creatorUnit,
             );
-            if (
-              enableProfilerTimer &&
-              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ) {
+            if (enableProfilerTimer) {
               // If this is async we need to time when this task finishes.
               newTask.timed = true;
             }
             erroredTask(request, newTask, reason);
+            completeWork(request);
             enqueueFlush(request);
           },
         );
@@ -1263,10 +1546,7 @@ function serializeThenable(
         },
         reason => {
           if (newTask.status === PENDING) {
-            if (
-              enableProfilerTimer &&
-              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ) {
+            if (enableProfilerTimer) {
               // If this is async we need to time when this task finishes.
               newTask.timed = true;
             }
@@ -1274,6 +1554,7 @@ function serializeThenable(
             // When we abort we emit chunks in each pending task slot and don't need
             // to do so again here.
             erroredTask(request, newTask, reason);
+            completeWork(request);
             enqueueFlush(request);
           }
         },
@@ -1316,10 +1597,7 @@ function serializeReadableStream(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1342,6 +1620,7 @@ function serializeReadableStream(
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
       request.abortableTasks.delete(streamTask);
       request.cacheController.signal.removeEventListener('abort', abortStream);
+      completeWork(request);
       enqueueFlush(request);
       callOnAllReadyIfReady(request);
     } else {
@@ -1355,6 +1634,7 @@ function serializeReadableStream(
         } else {
           tryStreamTask(request, streamTask);
         }
+        completeWork(request);
         enqueueFlush(request);
         reader.read().then(progress, error);
       } catch (x) {
@@ -1368,6 +1648,7 @@ function serializeReadableStream(
     }
     request.cacheController.signal.removeEventListener('abort', abortStream);
     erroredTask(request, streamTask, reason);
+    completeWork(request);
     enqueueFlush(request);
 
     // $FlowFixMe[incompatible-type] should be able to pass mixed
@@ -1388,14 +1669,19 @@ function serializeReadableStream(
     } else {
       // TODO: Make this use abortTask() instead.
       erroredTask(request, streamTask, reason);
+      completeWork(request);
       enqueueFlush(request);
     }
     // $FlowFixMe[incompatible-use] should be able to pass mixed
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortStream);
-  reader.read().then(progress, error);
+  if (request.cacheController.signal.aborted) {
+    abortStream();
+  } else {
+    request.cacheController.signal.addEventListener('abort', abortStream);
+    reader.read().then(progress, error);
+  }
   return serializeByValueID(streamTask.id);
 }
 
@@ -1419,10 +1705,7 @@ function serializeAsyncIterable(
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -1476,6 +1759,7 @@ function serializeAsyncIterable(
         'abort',
         abortIterable,
       );
+      completeWork(request);
       enqueueFlush(request);
       callOnAllReadyIfReady(request);
     } else {
@@ -1483,6 +1767,7 @@ function serializeAsyncIterable(
         streamTask.model = entry.value;
         request.pendingChunks++;
         tryStreamTask(request, streamTask);
+        completeWork(request);
         enqueueFlush(request);
         if (__DEV__) {
           callIteratorInDEV(iterator, progress, error);
@@ -1501,6 +1786,7 @@ function serializeAsyncIterable(
     }
     request.cacheController.signal.removeEventListener('abort', abortIterable);
     erroredTask(request, streamTask, reason);
+    completeWork(request);
     enqueueFlush(request);
     if (typeof (iterator as any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
@@ -1522,6 +1808,7 @@ function serializeAsyncIterable(
     } else {
       // TODO: Make this use abortTask() instead.
       erroredTask(request, streamTask, signal.reason);
+      completeWork(request);
       enqueueFlush(request);
     }
     if (typeof (iterator as any).throw === 'function') {
@@ -1532,11 +1819,15 @@ function serializeAsyncIterable(
       iterator.throw(reason).then(noop, noop);
     }
   }
-  request.cacheController.signal.addEventListener('abort', abortIterable);
-  if (__DEV__) {
-    callIteratorInDEV(iterator, progress, error);
+  if (request.cacheController.signal.aborted) {
+    abortIterable();
   } else {
-    iterator.next().then(progress, error);
+    request.cacheController.signal.addEventListener('abort', abortIterable);
+    if (__DEV__) {
+      callIteratorInDEV(iterator, progress, error);
+    } else {
+      iterator.next().then(progress, error);
+    }
   }
   return serializeByValueID(streamTask.id);
 }
@@ -1547,6 +1838,7 @@ export function emitHint<Code: HintCode>(
   model: HintModel<Code>,
 ): void {
   emitHintChunk(request, code, model);
+  completeWork(request);
   enqueueFlush(request);
 }
 
@@ -1854,10 +2146,7 @@ function renderFunctionComponent<Props>(
       outlineComponentInfo(request, componentDebugInfo);
 
       // Track when we started rendering this component.
-      if (
-        enableProfilerTimer &&
-        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ) {
+      if (enableProfilerTimer) {
         advanceTaskTime(request, task, performance.now());
       }
 
@@ -1929,18 +2218,17 @@ function renderFunctionComponent<Props>(
     throw null;
   }
 
-  if (__DEV__ || (enableProfilerTimer && enableAsyncDebugInfo)) {
+  if (__DEV__ || enableProfilerTimer) {
     // Forward any debug information for any Promises that we use():ed during the render.
     // We do this at the end so that we don't keep doing this for each retry.
     const trackedThenables = getTrackedThenablesAfterRendering();
     if (trackedThenables !== null) {
-      const stacks: Array<Error> =
-        __DEV__ && enableAsyncDebugInfo
-          ? (trackedThenables as any)._stacks ||
-            ((trackedThenables as any)._stacks = [])
-          : (null as any);
+      const stacks: Array<Error> = __DEV__
+        ? (trackedThenables as any)._stacks ||
+          ((trackedThenables as any)._stacks = [])
+        : (null as any);
       for (let i = 0; i < trackedThenables.length; i++) {
-        const stack = __DEV__ && enableAsyncDebugInfo ? stacks[i] : null;
+        const stack = __DEV__ ? stacks[i] : null;
         forwardDebugInfoFromThenable(
           request,
           task,
@@ -2225,7 +2513,7 @@ function renderClientElement(
         debugStack,
       );
       // We also store this in the main dedupe set so that it can be referenced by inline React Elements.
-      request.writtenObjects.set(debugStack, serializeByValueID(id));
+      writeToDedupeMap(request, debugStack, id, serializeByValueID(id));
     }
   }
   const element = __DEV__
@@ -2276,10 +2564,7 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -2297,10 +2582,7 @@ function outlineTask(request: Request, task: Task): ReactJSONValue {
     task.implicitSlot,
     task.formatContext,
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-      ? task.time
-      : 0,
+    enableProfilerTimer ? task.time : 0,
     __DEV__ ? task.debugOwner : null,
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
@@ -2841,10 +3123,7 @@ function emitAsyncSequence(
 }
 
 function pingTask(request: Request, task: Task): void {
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     // If this was async we need to emit the time when it completes.
     task.timed = true;
   }
@@ -2884,7 +3163,16 @@ function createTask(
     debugOwner,
     debugStack,
     debugTask,
+    resolveCreatorUnit(request),
   );
+}
+
+function resolveCreatorUnit(request: Request): null | Unit {
+  // $FlowFixMe[constant-condition]
+  if (enableFlightLedgers && supportsRequestStorage) {
+    return currentUnitForRequest(request);
+  }
+  return null;
 }
 
 function createTaskWithID(
@@ -2899,6 +3187,7 @@ function createTaskWithID(
   debugOwner: null | ReactComponentInfo, // DEV-only
   debugStack: null | Error, // DEV-only
   debugTask: null | ConsoleTask, // DEV-only
+  creatorUnit: null | Unit,
 ): Task {
   request.pendingChunks++;
   if (typeof model === 'object' && model !== null) {
@@ -2908,7 +3197,17 @@ function createTaskWithID(
       // If we're in some kind of context we can't necessarily reuse this object depending
       // what parent components are used.
     } else {
-      request.writtenObjects.set(model, serializeByValueID(id));
+      writeToDedupeMap(request, model, id, serializeByValueID(id));
+    }
+  }
+  let unit = null;
+  // $FlowFixMe[constant-condition]
+  if (enableFlightLedgers && supportsRequestStorage) {
+    if (request.rootUnit === null) {
+      // The request's first task is its root.
+      unit = request.rootUnit = createUnit(request, null, id);
+    } else {
+      unit = createUnit(request, creatorUnit, id);
     }
   }
   const task: Task = {
@@ -2920,6 +3219,7 @@ function createTaskWithID(
     formatContext: formatContext,
     ping: () => pingTask(request, task),
     thenableState: null,
+    unit,
   } as Omit<
     Task,
     | 'timed'
@@ -2929,10 +3229,7 @@ function createTaskWithID(
     | 'debugStack'
     | 'debugTask',
   > as any;
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     task.timed = false;
     task.time = lastTimestamp;
   }
@@ -3068,6 +3365,17 @@ function resolveModel(
     }
   }
   return resolved;
+}
+
+function writeToDedupeMap(
+  request: Request,
+  value: Reference,
+  id: number,
+  reference: string,
+): WrittenObjectEntry {
+  const entry = {id, reference};
+  request.writtenObjects.set(value, entry);
+  return entry;
 }
 
 function serializeByValueID(id: number): string {
@@ -3298,8 +3606,7 @@ function outlineModelWithFormatContext(
     false, // It makes no sense for that use case to be contextual.
     formatContext, // Except for FormatContext we optimistically use it.
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+    enableProfilerTimer
       ? performance.now() // TODO: This should really inherit the time from the task.
       : 0,
     null, // TODO: Currently we don't associate any debug information with
@@ -3535,6 +3842,7 @@ function serializeDebugBlob(request: Request, blob: Blob): string {
         {objectLimit: model.length + 2},
         model,
       );
+      completeWork(request);
       enqueueFlush(request);
       return;
     }
@@ -3546,6 +3854,7 @@ function serializeDebugBlob(request: Request, blob: Blob): string {
   function error(reason: mixed) {
     const digest = '';
     emitErrorChunk(request, id, digest, reason, true, null);
+    completeWork(request);
     enqueueFlush(request);
     // $FlowFixMe[incompatible-type] should be able to pass mixed
     reader.cancel(reason).then(noop, noop);
@@ -3564,8 +3873,7 @@ function serializeBlob(request: Request, blob: Blob): string {
     false,
     createRootFormatContext(),
     request.abortableTasks,
-    enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+    enableProfilerTimer
       ? performance.now() // TODO: This should really inherit the time from the task.
       : 0,
     null, // TODO: Currently we don't associate any debug information with
@@ -3597,6 +3905,7 @@ function serializeBlob(request: Request, blob: Blob): string {
     }
     request.cacheController.signal.removeEventListener('abort', abortBlob);
     erroredTask(request, newTask, reason);
+    completeWork(request);
     enqueueFlush(request);
     // $FlowFixMe[incompatible-type] should be able to pass mixed
     // $FlowFixMe[incompatible-use]
@@ -3616,16 +3925,21 @@ function serializeBlob(request: Request, blob: Blob): string {
     } else {
       // TODO: Make this use abortTask() instead.
       erroredTask(request, newTask, reason);
+      completeWork(request);
       enqueueFlush(request);
     }
     // $FlowFixMe[incompatible-use] should be able to pass mixed
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortBlob);
+  if (request.cacheController.signal.aborted) {
+    abortBlob();
+  } else {
+    request.cacheController.signal.addEventListener('abort', abortBlob);
 
-  // $FlowFixMe[incompatible-type]
-  reader.read().then(progress).catch(error);
+    // $FlowFixMe[incompatible-type]
+    reader.read().then(progress).catch(error);
+  }
 
   return '$B' + newTask.id.toString(16);
 }
@@ -3739,10 +4053,7 @@ function renderModel(
           task.implicitSlot,
           task.formatContext,
           request.abortableTasks,
-          enableProfilerTimer &&
-            (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-            ? task.time
-            : 0,
+          enableProfilerTimer ? task.time : 0,
           __DEV__ ? task.debugOwner : null,
           __DEV__ ? task.debugStack : null,
           __DEV__ ? task.debugTask : null,
@@ -3826,15 +4137,15 @@ function renderModelDestructive(
   if (typeof value === 'object') {
     switch ((value as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
-        let elementReference = null;
+        let elementEntry = null;
         const writtenObjects = request.writtenObjects;
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
           // previous renders of this element. We only reuse elements if they're not wrapped
           // by another Server Component.
         } else {
-          const existingReference = writtenObjects.get(value);
-          if (existingReference !== undefined) {
+          const existingEntry = writtenObjects.get(value);
+          if (existingEntry !== undefined) {
             if (modelRoot === value) {
               // This is the ID we're currently emitting so we need to write it
               // once but if we discover it again, we refer to it by id.
@@ -3847,16 +4158,23 @@ function renderModelDestructive(
               // detect whether this already was emitted and synchronously available. In that
               // case we can refer to it synchronously and only make it lazy otherwise.
               // We currently don't have a data structure that lets us see that though.
-              return existingReference;
+              if (enableFlightLedgers) {
+                recordUnitReference(resolveRunningUnit(), existingEntry.id);
+              }
+              return existingEntry.reference;
             }
           } else if (parentPropertyName.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-            const parentReference = writtenObjects.get(parent);
-            if (parentReference !== undefined) {
+            const parentEntry = writtenObjects.get(parent);
+            if (parentEntry !== undefined) {
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
-              elementReference = parentReference + ':' + parentPropertyName;
-              writtenObjects.set(value, elementReference);
+              elementEntry = writeToDedupeMap(
+                request,
+                value,
+                parentEntry.id,
+                parentEntry.reference + ':' + parentPropertyName,
+              );
             }
           }
         }
@@ -3935,12 +4253,12 @@ function renderModelDestructive(
         if (
           typeof newChild === 'object' &&
           newChild !== null &&
-          elementReference !== null
+          elementEntry !== null
         ) {
           // If this element renders another object, we can now refer to that object through
           // the same location as this element.
           if (!writtenObjects.has(newChild)) {
-            writtenObjects.set(newChild, elementReference);
+            writtenObjects.set(newChild, elementEntry);
           }
         }
         return newChild;
@@ -4039,14 +4357,14 @@ function renderModelDestructive(
     }
 
     const writtenObjects = request.writtenObjects;
-    const existingReference = writtenObjects.get(value);
+    const existingEntry = writtenObjects.get(value);
     // $FlowFixMe[method-unbinding]
     if (typeof value.then === 'function') {
       // A weak-pending thenable may never emit, so its reference is marked
       // on the wire ($w instead of $@). That way the client knows to leave
       // it forever pending, instead of erroring it, if the stream closes
       // first.
-      if (existingReference !== undefined) {
+      if (existingEntry !== undefined) {
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
           // previous renders of this element. We only reuse Promises if they're not wrapped
@@ -4062,7 +4380,10 @@ function renderModelDestructive(
           modelRoot = null;
         } else {
           // We've seen this promise before, so we can just refer to the same result.
-          return existingReference;
+          if (enableFlightLedgers) {
+            recordUnitReference(resolveRunningUnit(), existingEntry.id);
+          }
+          return existingEntry.reference;
         }
       }
       // We assume that any object with a .then property is a "Thenable" type,
@@ -4072,16 +4393,19 @@ function renderModelDestructive(
         enableFlightWeakThenables && (value as any).status === 'pending_weak'
           ? serializeWeakPromiseID(promiseId)
           : serializePromiseID(promiseId);
-      writtenObjects.set(value, promiseReference);
+      writeToDedupeMap(request, value, promiseId, promiseReference);
       return promiseReference;
     }
 
-    if (existingReference !== undefined) {
+    if (existingEntry !== undefined) {
       if (modelRoot === value) {
-        if (existingReference !== serializeByValueID(task.id)) {
+        if (existingEntry.reference !== serializeByValueID(task.id)) {
           // Turns out that we already have this root at a different reference.
           // Use that after all.
-          return existingReference;
+          if (enableFlightLedgers) {
+            recordUnitReference(resolveRunningUnit(), existingEntry.id);
+          }
+          return existingEntry.reference;
         }
         // This is the ID we're currently emitting so we need to write it
         // once but if we discover it again, we refer to it by id.
@@ -4089,12 +4413,15 @@ function renderModelDestructive(
       } else {
         // We've already emitted this as an outlined object, so we can
         // just refer to that by its existing ID.
-        return existingReference;
+        if (enableFlightLedgers) {
+          recordUnitReference(resolveRunningUnit(), existingEntry.id);
+        }
+        return existingEntry.reference;
       }
     } else if (parentPropertyName.indexOf(':') === -1) {
       // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-      const parentReference = writtenObjects.get(parent);
-      if (parentReference !== undefined) {
+      const parentEntry = writtenObjects.get(parent);
+      if (parentEntry !== undefined) {
         // If the parent has a reference, we can refer to this object indirectly
         // through the property name inside that parent.
         let propertyName = parentPropertyName;
@@ -4117,7 +4444,12 @@ function renderModelDestructive(
               break;
           }
         }
-        writtenObjects.set(value, parentReference + ':' + propertyName);
+        writeToDedupeMap(
+          request,
+          value,
+          parentEntry.id,
+          parentEntry.reference + ':' + propertyName,
+        );
       }
     }
 
@@ -4432,9 +4764,11 @@ function logRecoverableError(
   task: Task | null, // DEV-only
 ): string {
   const prevRequest = currentRequest;
+  const prevUnit = currentUnit;
   // We clear the request context so that console.logs inside the callback doesn't
   // get forwarded to the client.
   currentRequest = null;
+  currentUnit = null;
   let errorDigest;
   try {
     const onError = request.onError;
@@ -4461,6 +4795,7 @@ function logRecoverableError(
     }
   } finally {
     currentRequest = prevRequest;
+    currentUnit = prevUnit;
   }
   if (errorDigest != null && typeof errorDigest !== 'string') {
     // eslint-disable-next-line react-internal/prod-error-codes
@@ -4580,9 +4915,11 @@ function serializeDebugErrorValue(
       const errorsId = outlineDebugModel(request, counter, errors);
       errorInfo.errors = serializeByValueID(errorsId);
     }
+    // +1 compared to the stack alone since errorInfo itself also counts
+    // against the limit.
     const id = outlineDebugModel(
       request,
-      {objectLimit: stack.length * 2 + 1},
+      {objectLimit: stack.length * 2 + 2},
       errorInfo,
     );
     return '$Z' + id.toString(16);
@@ -4826,6 +5163,127 @@ function emitHintChunk<Code: HintCode>(
   request.completedHintChunks.push(processedChunk);
 }
 
+function emitLedgerChunk(request: Request, row: string): void {
+  request.completedLedgerChunks.push(stringToChunk(row));
+}
+
+function ensureLedgerDeclared(
+  request: Request,
+  ledgers: RequestLedgers,
+  type: Ledger<empty>,
+): number {
+  let declaredTypes = ledgers.declaredTypes;
+  if (declaredTypes === null) {
+    ledgers.declaredTypes = declaredTypes = new Map();
+  }
+  let id = declaredTypes.get(type);
+  if (id === undefined) {
+    id = request.nextChunkId++;
+    declaredTypes.set(type, id);
+    emitLedgerChunk(request, serializeRowHeader('K', id) + type.kind + '\n');
+  }
+  return id;
+}
+
+function emitUnitDeclaration(request: Request, unit: Unit): void {
+  unit.declared = true;
+  const creator = unit.creator;
+  emitLedgerChunk(
+    request,
+    serializeRowHeader('Q', unit.id) +
+      (creator === null ? '[null]' : '["' + creator.id.toString(16) + '"]') +
+      '\n',
+  );
+}
+
+// Declare ancestors even when they have no writes: the client needs their
+// child links to collect writes downward from each capture. Declare ancestors
+// first so each unit can be linked to its creator as it arrives.
+function declareUnit(request: Request, unit: Unit): void {
+  if (unit.declared) {
+    return;
+  }
+  const undeclared: Array<Unit> = [unit];
+  let ancestor = unit.creator;
+  while (ancestor !== null && !ancestor.declared) {
+    undeclared.push(ancestor);
+    ancestor = ancestor.creator;
+  }
+  for (let i = undeclared.length - 1; i >= 0; i--) {
+    emitUnitDeclaration(request, undeclared[i]);
+  }
+}
+
+function emitLedgerDeltas(
+  request: Request,
+  ledgers: RequestLedgers,
+  unit: Unit,
+  dirtyDeltas: Map<Ledger<empty>, LedgerCell>,
+): void {
+  dirtyDeltas.forEach((cell, type) => {
+    // TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+    const delta: LedgerDelta = serializeNumber(cell.state);
+    const typeId = ensureLedgerDeclared(request, ledgers, type);
+    const row: LedgerDeltaRow = [typeId.toString(16), delta];
+    emitLedgerChunk(
+      request,
+      serializeRowHeader('Z', unit.id) + stringify(row) + '\n',
+    );
+  });
+}
+
+function emitUnitReferences(
+  request: Request,
+  unit: Unit,
+  pending: number | Set<number>,
+): void {
+  let references;
+  if (typeof pending === 'number') {
+    references = '"' + pending.toString(16) + '"';
+  } else {
+    references = '';
+    pending.forEach(row => {
+      references += ',"' + row.toString(16) + '"';
+    });
+    references = references.slice(1);
+  }
+  emitLedgerChunk(
+    request,
+    serializeRowHeader('F', unit.id) + '[' + references + ']\n',
+  );
+}
+
+function completeLedgerWork(request: Request): void {
+  // Prepare Ledger chunks alongside newly completed model output. This runs
+  // once at the end of each render phase, instead of upon each addToLedger
+  // call, so we can batch multiple ledger writes together.
+  const ledgers = request.ledgers;
+  if (ledgers === null) {
+    return;
+  }
+  if (ledgers.declaredTypes === null) {
+    // Wait for a capture before sending ledger records. Earlier work may still
+    // be reused by a capture that is created later.
+    return;
+  }
+  const dirtyUnits = ledgers.dirtyUnits;
+  for (let i = 0; i < dirtyUnits.length; i++) {
+    const unit = dirtyUnits[i];
+    declareUnit(request, unit);
+    const dirtyDeltas = unit.dirtyDeltas;
+    if (dirtyDeltas !== null) {
+      emitLedgerDeltas(request, ledgers, unit, dirtyDeltas);
+      unit.dirtyDeltas = null;
+    }
+    const dirtyReferences = unit.dirtyReferences;
+    if (dirtyReferences !== null) {
+      emitUnitReferences(request, unit, dirtyReferences);
+      unit.dirtyReferences = null;
+    }
+  }
+  dirtyUnits.length = 0;
+}
+
 function emitSymbolChunk(request: Request, id: number, name: string): void {
   const symbolReference = serializeSymbolReference(name);
   const processedChunk = encodeReferenceChunk(request, id, symbolReference);
@@ -4958,7 +5416,7 @@ function outlineComponentInfo(
   const ref = serializeByValueID(id);
   request.writtenDebugObjects.set(componentInfo, ref);
   // We also store this in the main dedupe set so that it can be referenced by inline React Elements.
-  request.writtenObjects.set(componentInfo, ref);
+  writeToDedupeMap(request, componentInfo, id, ref);
   return ref;
 }
 
@@ -5096,7 +5554,7 @@ function serializeIONode(
       if (name.startsWith('Window.')) {
         name = name.slice(7);
       } else if (name.startsWith('<anonymous>.')) {
-        name = name.slice(7);
+        name = name.slice('<anonymous>.'.length);
       }
     }
   }
@@ -5357,11 +5815,11 @@ function renderDebugModel(
     }
 
     const writtenObjects = request.writtenObjects;
-    const existingReference = writtenObjects.get(value);
-    if (existingReference !== undefined) {
+    const existingEntry = writtenObjects.get(value);
+    if (existingEntry !== undefined) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
-      return existingReference;
+      return existingEntry.reference;
     }
 
     if (counter.objectLimit <= 0 && !doNotLimit.has(value)) {
@@ -6016,7 +6474,7 @@ function forwardDebugInfoFromThenable(
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     const sequence = getAsyncSequenceFromPromise(thenable);
     if (sequence !== null) {
       emitAsyncSequence(request, task, sequence, debugInfo, owner, stack);
@@ -6037,7 +6495,7 @@ function forwardDebugInfoFromCurrentContext(
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     const sequence = getCurrentAsyncSequence();
     if (sequence !== null) {
       emitAsyncSequence(request, task, sequence, debugInfo, null, null);
@@ -6060,7 +6518,7 @@ function forwardDebugInfoFromAbortedTask(request: Request, task: Task): void {
       forwardDebugInfo(request, task, debugInfo);
     }
   }
-  if (enableProfilerTimer && enableAsyncDebugInfo) {
+  if (enableProfilerTimer) {
     let thenable: null | Thenable<any> = null;
     if (typeof model.then === 'function') {
       thenable = model as any;
@@ -6136,10 +6594,7 @@ function advanceTaskTime(
   task: Task,
   timestamp: number,
 ): void {
-  if (
-    !enableProfilerTimer ||
-    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
-  ) {
+  if (!enableProfilerTimer) {
     return;
   }
   // Emits a timing chunk, if the new timestamp is higher than the previous timestamp of this task.
@@ -6155,10 +6610,7 @@ function advanceTaskTime(
 }
 
 function markOperationEndTime(request: Request, task: Task, timestamp: number) {
-  if (
-    !enableProfilerTimer ||
-    (!enableComponentPerformanceTrack && !enableAsyncDebugInfo)
-  ) {
+  if (!enableProfilerTimer) {
     return;
   }
   // This is like advanceTaskTime() but always emits a timing chunk even if it doesn't advance.
@@ -6280,10 +6732,7 @@ function emitChunk(
 }
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     if (task.timed) {
       markOperationEndTime(request, task, performance.now());
     }
@@ -6305,11 +6754,34 @@ function erroredTask(request: Request, task: Task, error: mixed): void {
 const emptyRoot = {};
 
 function retryTask(request: Request, task: Task): void {
+  if (enableFlightLedgers) {
+    const unit = task.unit;
+    if (unit !== null) {
+      // Restore the task's unit when it resumes so subsequent async work
+      // inherits the same attribution.
+      const prevUnit = currentUnit;
+      currentUnit = unit;
+      try {
+        unitStorage.run(unit, retryTaskImpl, request, task);
+      } finally {
+        currentUnit = prevUnit;
+      }
+      return;
+    }
+  }
+  retryTaskImpl(request, task);
+}
+
+function retryTaskImpl(request: Request, task: Task): void {
   if (task.status !== PENDING) {
     // We completed this by other means before we had a chance to retry it.
     return;
   }
 
+  runWithRequest(request, retryTaskWithRequest, task);
+}
+
+function retryTaskWithRequest(request: Request, task: Task): void {
   const prevCanEmitDebugInfo = canEmitDebugInfo;
   task.status = RENDERING;
 
@@ -6362,10 +6834,7 @@ function retryTask(request: Request, task: Task): void {
       }
     }
     // We've finished rendering. Log the end time.
-    if (
-      enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-    ) {
+    if (enableProfilerTimer) {
       if (task.timed) {
         markOperationEndTime(request, task, performance.now());
       }
@@ -6374,7 +6843,12 @@ function retryTask(request: Request, task: Task): void {
     if (typeof resolvedModel === 'object' && resolvedModel !== null) {
       // We're not in a contextual place here so we can refer to this object by this ID for
       // any future references.
-      request.writtenObjects.set(resolvedModel, serializeByValueID(task.id));
+      writeToDedupeMap(
+        request,
+        resolvedModel,
+        task.id,
+        serializeByValueID(task.id),
+      );
 
       // Object might contain unresolved values like additional elements.
       // This is simulating what the JSON loop would do if this was part of it.
@@ -6439,6 +6913,10 @@ function retryTask(request: Request, task: Task): void {
 }
 
 function tryStreamTask(request: Request, task: Task): void {
+  runWithRequest(request, tryStreamTaskWithRequest, task);
+}
+
+function tryStreamTaskWithRequest(request: Request, task: Task): void {
   // This is used to try to emit something synchronously but if it suspends,
   // we emit a reference to a new outlined task immediately instead.
   const prevCanEmitDebugInfo = canEmitDebugInfo;
@@ -6460,13 +6938,10 @@ function tryStreamTask(request: Request, task: Task): void {
 
 function performWork(request: Request): void {
   markAsyncSequenceRootTask();
+  runWithRequest(request, performWorkWithRequest, undefined);
+}
 
-  const prevDispatcher = ReactSharedInternals.H;
-  ReactSharedInternals.H = HooksDispatcher;
-  const prevRequest = currentRequest;
-  currentRequest = request;
-  prepareToUseHooksForRequest(request);
-
+function performWorkWithRequest(request: Request): void {
   try {
     const pingedTasks = request.pingedTasks;
     request.pingedTasks = [];
@@ -6474,14 +6949,40 @@ function performWork(request: Request): void {
       const task = pingedTasks[i];
       retryTask(request, task);
     }
+    completeWork(request);
     flushCompletedChunks(request);
   } catch (error) {
     logRecoverableError(request, error, null);
     fatalError(request, error);
-  } finally {
-    ReactSharedInternals.H = prevDispatcher;
-    resetHooksForRequest();
-    currentRequest = prevRequest;
+  }
+}
+
+function completeWork(request: Request): void {
+  // Called right before exiting the render phase of performWork. This lets us
+  // batch certain kinds of serialization work that might be spread across
+  // multiple functions, components, or tasks, but without waiting for the
+  // flushing phase (which could be blocked by backpressure). Other output
+  // producers call this before scheduling a flush as well.
+  //
+  // For example, if the same ledger is written to multiple times in the same
+  // task, we can combine the writes into a single row describing the delta,
+  // rather than a separate row per addToLedger call.
+  //
+  // Call this before requesting a flush, even if one is already scheduled or
+  // no destination is attached. Once prepared, the chunks can wait for the
+  // destination without needing more render work when it resumes.
+  //
+  // Also complete before notifying onAllReady. The last task can report
+  // readiness while performWork is still running, and the callback can make
+  // the output available before performWork reaches its completion call.
+  // Abort and prerender halt paths need the same ordering.
+  //
+  // More than one of these paths can run for a batch. Completion consumes the
+  // pending writes, so another call without new work emits no additional rows.
+  // Starting or resuming a destination only drains chunks; it doesn't complete
+  // work.
+  if (enableFlightLedgers) {
+    completeLedgerWork(request);
   }
 }
 
@@ -6504,10 +7005,7 @@ function finishAbortedTask(
   }
   forwardDebugInfoFromAbortedTask(request, task);
   // Track when we aborted this task as its end time.
-  if (
-    enableProfilerTimer &&
-    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-  ) {
+  if (enableProfilerTimer) {
     if (task.timed) {
       markOperationEndTime(request, task, request.abortTime);
     }
@@ -6614,6 +7112,28 @@ function flushCompletedChunks(request: Request): void {
       }
       hintChunks.splice(0, i);
 
+      if (enableFlightLedgers) {
+        // Ledger rows must precede the model data they describe so a partial
+        // response cannot include data without its corresponding ledger entries.
+        // If backpressure interrupts this queue, stop before writing model rows.
+        const ledgerChunks = request.completedLedgerChunks;
+        i = 0;
+        for (; i < ledgerChunks.length; i++) {
+          const chunk = ledgerChunks[i];
+          const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
+          if (!keepWriting) {
+            request.destination = null;
+            i++;
+            ledgerChunks.splice(0, i);
+            // A break would let model rows flush ahead of pending ledger entries.
+            // The finally block still flushes buffered bytes, and startFlowing
+            // resumes this queue when the destination is ready again.
+            return;
+          }
+        }
+        ledgerChunks.splice(0, i);
+      }
+
       // Debug meta data comes before the model data because it will often end up blocking the model from
       // completing since the JSX will reference the debug data.
       if (__DEV__ && request.debugDestination === null) {
@@ -6710,8 +7230,9 @@ function flushCompletedChunks(request: Request): void {
     } finally {
       request.flushScheduled = false;
       completeWriting(destination);
+      // Flush on ledger backpressure returns, and on throws for bytes already buffered.
+      flushBuffered(destination);
     }
-    flushBuffered(destination);
   }
   if (request.pendingChunks === 0) {
     // There are no pending chunks left, so the render is complete and its cache
@@ -6780,7 +7301,18 @@ export function startWork(request: Request): void {
   // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     scheduleMicrotask(() => {
-      requestStorage.run(request, performWork, request);
+      const rootUnit = request.rootUnit;
+      if (rootUnit !== null) {
+        const prevUnit = currentUnit;
+        currentUnit = rootUnit;
+        try {
+          unitStorage.run(rootUnit, performWork, request);
+        } finally {
+          currentUnit = prevUnit;
+        }
+      } else {
+        requestStorage.run(request, performWork, request);
+      }
     });
   } else {
     scheduleMicrotask(() => performWork(request));
@@ -6814,6 +7346,8 @@ function enqueueFlush(request: Request): void {
 
 function callOnAllReadyIfReady(request: Request): void {
   if (request.abortableTasks.size === 0) {
+    // A prerender's callback can expose its output before performWork returns.
+    completeWork(request);
     const onAllReady = request.onAllReady;
     onAllReady();
   }
@@ -6873,6 +7407,7 @@ export function stopFlowing(request: Request): void {
 function finishHalt(request: Request, abortedTasks: Set<Task>): void {
   try {
     abortedTasks.forEach(task => finishHaltedTask(task, request));
+    completeWork(request);
     const onAllReady = request.onAllReady;
     onAllReady();
     flushCompletedChunks(request);
@@ -6889,6 +7424,7 @@ function finishAbort(
 ): void {
   try {
     abortedTasks.forEach(task => finishAbortedTask(task, request, errorId));
+    completeWork(request);
     const onAllReady = request.onAllReady;
     onAllReady();
     flushCompletedChunks(request);
@@ -6933,10 +7469,7 @@ export function abort(request: Request, reason: mixed): void {
   }
   try {
     request.status = ABORTING;
-    if (
-      enableProfilerTimer &&
-      (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-    ) {
+    if (enableProfilerTimer) {
       request.abortTime = performance.now();
     }
     request.cacheController.abort(reason);
@@ -6971,6 +7504,7 @@ export function abort(request: Request, reason: mixed): void {
         scheduleWork(() => finishAbort(request, abortableTasks, errorId));
       }
     } else {
+      completeWork(request);
       const onAllReady = request.onAllReady;
       onAllReady();
       flushCompletedChunks(request);
@@ -7017,6 +7551,7 @@ export function resolveDebugMessage(request: Request, message: string): void {
           request.pendingDebugChunks--;
           deferredDebugObjects.retained.delete(id);
           deferredDebugObjects.existing.delete(retainedValue);
+          completeWork(request);
           enqueueFlush(request);
         }
       }
@@ -7032,6 +7567,7 @@ export function resolveDebugMessage(request: Request, message: string): void {
           deferredDebugObjects.retained.delete(id);
           deferredDebugObjects.existing.delete(retainedValue);
           emitOutlinedDebugModelChunk(request, id, counter, retainedValue);
+          completeWork(request);
           enqueueFlush(request);
         }
       }
@@ -7082,5 +7618,6 @@ export function closeDebugChannel(request: Request): void {
     deferredDebugObjects.retained.delete(id);
     deferredDebugObjects.existing.delete(value);
   });
+  completeWork(request);
   enqueueFlush(request);
 }

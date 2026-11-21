@@ -162,6 +162,152 @@ describe('ReactFlightTurbopackDOMNode', () => {
     );
   });
 
+  it.each([false, true])(
+    'can render a lazy subtree after close without its debug channel (partial: %s)',
+    async allowPartialStream => {
+      let resolveChild;
+      const childReady = new Promise(resolve => {
+        resolveChild = resolve;
+      });
+
+      async function Child() {
+        await childReady;
+        return ReactServer.createElement('span', null, 'ready');
+      }
+
+      const rscStream = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(
+          ReactServer.createElement(
+            'div',
+            null,
+            ReactServer.createElement(Child),
+          ),
+          turbopackMap,
+          {
+            debugChannel: new Stream.Writable({
+              write(chunk, encoding, callback) {
+                callback();
+              },
+            }),
+          },
+        ),
+      );
+      const pendingResult = readResult(rscStream);
+      await serverAct(() => resolveChild());
+      const payload = await pendingResult;
+
+      const readable = new Stream.PassThrough(streamOptions);
+      const ended = new Promise(resolve => readable.once('end', resolve));
+      const response = ReactServerDOMClient.createFromNodeStream(
+        readable,
+        {
+          moduleMap: turbopackMap,
+          moduleLoading: turbopackModuleLoading,
+        },
+        {unstable_allowPartialStream: allowPartialStream},
+      );
+      readable.end(payload);
+      await response;
+      await ended;
+
+      function ClientRoot() {
+        return use(response);
+      }
+
+      const errors = [];
+      let completed = false;
+      const ssrStream = await serverAct(() =>
+        ReactDOMServer.renderToPipeableStream(<ClientRoot />, {
+          onAllReady() {
+            completed = true;
+          },
+          onError(error) {
+            errors.push(error);
+          },
+        }),
+      );
+      try {
+        expect(completed).toBe(true);
+        const result = await readResult(ssrStream);
+        expect(errors).toEqual([]);
+        expect(result).toBe('<div><span>ready</span></div>');
+      } finally {
+        ssrStream.abort();
+      }
+    },
+  );
+
+  it('does not ignore missing data from a supplied debug channel after close', async () => {
+    let resolveChild;
+    const childReady = new Promise(resolve => {
+      resolveChild = resolve;
+    });
+    async function Child() {
+      await childReady;
+      return ReactServer.createElement('span', null, 'ready');
+    }
+    const rscStream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        ReactServer.createElement(
+          'div',
+          null,
+          ReactServer.createElement(Child),
+        ),
+        turbopackMap,
+        {
+          debugChannel: new Stream.Writable({
+            write(chunk, encoding, callback) {
+              callback();
+            },
+          }),
+        },
+      ),
+    );
+    const pendingResult = readResult(rscStream);
+    await serverAct(() => resolveChild());
+    const payload = await pendingResult;
+
+    const readable = new Stream.PassThrough(streamOptions);
+    // We supply an empty readable channel after discarding the server's debug
+    // bytes. The client must still expect those records in development.
+    const debugReadable = new Stream.PassThrough(streamOptions);
+    const ended = new Promise(resolve => readable.once('end', resolve));
+    const debugEnded = __DEV__
+      ? new Promise(resolve => debugReadable.once('end', resolve))
+      : null;
+    const response = ReactServerDOMClient.createFromNodeStream(
+      readable,
+      {
+        moduleMap: turbopackMap,
+        moduleLoading: turbopackModuleLoading,
+      },
+      {debugChannel: debugReadable},
+    );
+    readable.end(payload);
+    debugReadable.end();
+    await response;
+    await Promise.all([ended, debugEnded]);
+
+    function ClientRoot() {
+      return use(response);
+    }
+    const errors = [];
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToPipeableStream(<ClientRoot />, {
+        onError(error) {
+          errors.push(error.message);
+        },
+      }),
+    );
+    if (__DEV__) {
+      await expect(readResult(ssrStream)).rejects.toThrow('Connection closed.');
+      expect(errors).toEqual(['Connection closed.']);
+    } else {
+      expect(await readResult(ssrStream)).toBe('<div><span>ready</span></div>');
+      expect(errors).toEqual([]);
+    }
+  });
+
   // @gate __DEV__
   it('can transport debug info through a separate debug channel', async () => {
     function Thrower() {

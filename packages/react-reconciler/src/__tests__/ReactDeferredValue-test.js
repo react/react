@@ -18,7 +18,9 @@ let useState;
 let Suspense;
 let Activity;
 let assertLog;
+let waitFor;
 let waitForPaint;
+let waitForAll;
 let textCache;
 
 describe('ReactDeferredValue', () => {
@@ -38,7 +40,9 @@ describe('ReactDeferredValue', () => {
 
     const InternalTestUtils = require('internal-test-utils');
     assertLog = InternalTestUtils.assertLog;
+    waitFor = InternalTestUtils.waitFor;
     waitForPaint = InternalTestUtils.waitForPaint;
+    waitForAll = InternalTestUtils.waitForAll;
 
     textCache = new Map();
   });
@@ -371,6 +375,56 @@ describe('ReactDeferredValue', () => {
     });
   });
 
+  it('does not reuse initialValue after the final value commits with initialValue removed', async () => {
+    function App({value, initialValue}) {
+      return <AsyncText text={useDeferredValue(value, initialValue)} />;
+    }
+    const root = ReactNoop.createRoot();
+
+    resolveText('Preview');
+    await act(() => root.render(<App value="A" initialValue="Preview" />));
+    assertLog(['Preview', 'Suspend! [A]']);
+    expect(root).toMatchRenderedOutput('Preview');
+
+    // Commit the final value, which equals the previous preview, while removing
+    // initialValue. This should permanently exit the hook's initial state.
+    await act(() => root.render(<App value="Preview" />));
+    assertLog(['Preview']);
+    expect(root).toMatchRenderedOutput('Preview');
+
+    resolveText('New Preview');
+    await act(() => root.render(<App value="B" initialValue="New Preview" />));
+    // The final value already committed, so keep it while B is pending instead
+    // of reverting to the new initialValue.
+    assertLog(['Preview', 'Suspend! [B]']);
+    expect(root).toMatchRenderedOutput('Preview');
+  });
+
+  it('stays in the initial state if initialValue is omitted before the final value commits', async () => {
+    function App({value, initialValue}) {
+      return <AsyncText text={useDeferredValue(value, initialValue)} />;
+    }
+    const root = ReactNoop.createRoot();
+
+    resolveText('Preview');
+    await act(() => root.render(<App value="A" initialValue="Preview" />));
+    assertLog(['Preview', 'Suspend! [A]']);
+    expect(root).toMatchRenderedOutput('Preview');
+
+    // Omit initialValue while the final value is still pending. The preview
+    // stays on screen, and the hook is still in its initial state.
+    await act(() => root.render(<App value="B" />));
+    assertLog(['Preview', 'Suspend! [B]']);
+    expect(root).toMatchRenderedOutput('Preview');
+
+    // The final value hasn't committed, so a new initialValue still replaces
+    // the preview.
+    resolveText('New Preview');
+    await act(() => root.render(<App value="C" initialValue="New Preview" />));
+    assertLog(['New Preview', 'Suspend! [C]']);
+    expect(root).toMatchRenderedOutput('New Preview');
+  });
+
   it('supports initialValue argument', async () => {
     function App() {
       const value = useDeferredValue('Final', 'Initial');
@@ -420,13 +474,6 @@ describe('ReactDeferredValue', () => {
         // The initial value suspended, so we attempt the final value, which
         // also suspends.
         'Suspend! [Final]',
-        ...(gate('enableParallelTransitions')
-          ? []
-          : [
-              // Existing bug: Unnecessary pre-warm.
-              'Suspend! [Loading...]',
-              'Suspend! [Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -440,6 +487,63 @@ describe('ReactDeferredValue', () => {
       await act(() => resolveText('Loading...'));
       assertLog([]);
       expect(root).toMatchRenderedOutput('Final');
+    },
+  );
+
+  it(
+    'if the deferred task errors while the original task is suspended in the ' +
+      'shell, commits the error boundary (no Suspense boundary)',
+    async () => {
+      class ErrorBoundary extends React.Component {
+        state = {error: null};
+        static getDerivedStateFromError(error) {
+          return {error};
+        }
+        render() {
+          if (this.state.error !== null) {
+            return <Text text={'Caught: ' + this.state.error.message} />;
+          }
+          return this.props.children;
+        }
+      }
+
+      function Final() {
+        throw new Error('Oops');
+      }
+
+      function App() {
+        const text = useDeferredValue('Final', 'Loading...');
+        return text === 'Final' ? <Final /> : <AsyncText text={text} />;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<Text text="Previous" />));
+      assertLog(['Previous']);
+
+      // The initial value suspends in the shell, so the transition can't
+      // finish. The deferred value throws. React retries the render
+      // synchronously before committing the error boundary, and the retry
+      // suspends on the initial value again. That must not prevent the error
+      // boundary from committing.
+      await act(() =>
+        startTransition(() =>
+          root.render(
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>,
+          ),
+        ),
+      );
+      assertLog([
+        'Suspend! [Loading...]',
+        'Caught: Oops',
+        // The synchronous retry suspends on the initial value again.
+        'Suspend! [Loading...]',
+        // Error recovery is now disabled, so the next attempt commits the
+        // error boundary.
+        'Caught: Oops',
+      ]);
+      expect(root).toMatchRenderedOutput('Caught: Oops');
     },
   );
 
@@ -465,17 +569,6 @@ describe('ReactDeferredValue', () => {
         // also suspends.
         'Suspend! [Final]',
         'Suspend! [Sibling: Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : [
-              'Suspend! [Loading...]',
-              'Suspend! [Sibling: Loading...]',
-              'Suspend! [Final]',
-              'Suspend! [Sibling: Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -493,17 +586,6 @@ describe('ReactDeferredValue', () => {
         'Suspend! [Sibling: Loading...]',
         'Final',
         'Suspend! [Sibling: Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : [
-              'Loading...',
-              'Suspend! [Sibling: Loading...]',
-              'Final',
-              'Suspend! [Sibling: Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -545,17 +627,6 @@ describe('ReactDeferredValue', () => {
         // also suspends.
         'Suspend! [Final]',
         'Suspend! [Sibling: Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : [
-              'Suspend! [Loading...]',
-              'Suspend! [Sibling: Loading...]',
-              'Suspend! [Final]',
-              'Suspend! [Sibling: Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -573,17 +644,6 @@ describe('ReactDeferredValue', () => {
         'Suspend! [Sibling: Loading...]',
         'Final',
         'Suspend! [Sibling: Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : [
-              'Loading...',
-              'Suspend! [Sibling: Loading...]',
-              'Final',
-              'Suspend! [Sibling: Final]',
-            ]),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -631,12 +691,6 @@ describe('ReactDeferredValue', () => {
         // The initial value suspended, so we attempt the final value, which
         // also suspends.
         'Suspend! [Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : ['Suspend! [Loading...]', 'Suspend! [Final]']),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -711,12 +765,6 @@ describe('ReactDeferredValue', () => {
         // The initial value suspended, so we attempt the final value, which
         // also suspends.
         'Suspend! [Final]',
-        ...(gate('enableParallelTransitions')
-          ? [
-              // With parallel transitions,
-              // we do not continue pre-warming.
-            ]
-          : ['Suspend! [Loading...]', 'Suspend! [Final]']),
       ]);
       expect(root).toMatchRenderedOutput(null);
 
@@ -824,6 +872,48 @@ describe('ReactDeferredValue', () => {
       expect(root).toMatchRenderedOutput('B');
     },
   );
+
+  it("can update initial value in place if final value hasn't committed yet", async () => {
+    function App({text}) {
+      return <AsyncText text={useDeferredValue(text, `Preview ${text}...`)} />;
+    }
+
+    const root = ReactNoop.createRoot();
+
+    resolveText('Preview A...');
+    await act(() => root.render(<App text="A" />));
+    assertLog(['Preview A...', 'Suspend! [A]']);
+    expect(root).toMatchRenderedOutput('Preview A...');
+
+    resolveText('Preview B...');
+    await act(() => root.render(<App text="B" />));
+    assertLog(['Preview B...', 'Suspend! [B]']);
+    expect(root).toMatchRenderedOutput('Preview B...');
+  });
+
+  it('transition re-render while still showing initial value does not suspend on the pending final value', async () => {
+    function App({text, nav}) {
+      return (
+        <>
+          <AsyncText text={useDeferredValue(text, `Preview ${text}...`)} />
+          <Text text={nav} />
+        </>
+      );
+    }
+    const root = ReactNoop.createRoot();
+    resolveText('Preview A...');
+    await act(() =>
+      startTransition(() => root.render(<App text="A" nav="nav1" />)),
+    );
+    assertLog(['Preview A...', 'nav1', 'Suspend! [A]', 'nav1']);
+    expect(root).toMatchRenderedOutput('Preview A...nav1');
+    // Second navigation reuses the same segment (same value/initialValue) while A is still pending
+    await act(() =>
+      startTransition(() => root.render(<App text="A" nav="nav2" />)),
+    );
+    assertLog(['Preview A...', 'nav2', 'Suspend! [A]', 'nav2']);
+    expect(root).toMatchRenderedOutput('Preview A...nav2');
+  });
 
   it('avoids a useDeferredValue waterfall when separated by a Suspense boundary', async () => {
     // Same as the previous test but with a Suspense boundary separating the
@@ -1098,7 +1188,7 @@ describe('ReactDeferredValue', () => {
     },
   );
 
-  // Regression test for https://github.com/facebook/react/issues/35821
+  // Regression test for https://github.com/react/react/issues/35821
   it('deferred value catches up when a suspension is resolved during the same render', async () => {
     let setValue;
     function App() {
@@ -1148,5 +1238,147 @@ describe('ReactDeferredValue', () => {
       'B: updated',
     ]);
     expect(root).toMatchRenderedOutput('A:updatedupdated');
+  });
+
+  it('a Suspense retry that suspends again after spawning a deferred task waits for its data', async () => {
+    function Deferred() {
+      return <Text text={useDeferredValue('Final', 'Initial')} />;
+    }
+
+    function Content() {
+      readText('A');
+      return (
+        <>
+          <Deferred />
+          <AsyncText text="B" />
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() =>
+      root.render(
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Content />
+        </Suspense>,
+      ),
+    );
+    Scheduler.unstable_clearLog();
+    expect(root).toMatchRenderedOutput('Loading...');
+
+    // Resolving A retries the boundary. Content mounts the useDeferredValue,
+    // which spawns a deferred task, and then B suspends. The retry has to wait
+    // for B: it must not be retried again because the spawned task committed.
+    // If it is, this never settles, and the test fails with "Potential
+    // infinite loop".
+    resolveText('A');
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      await waitForAll(['Initial', 'Suspend! [B]']);
+    } else {
+      // Without throttling, the retry commits the fallback right away, and the
+      // deferred task spawned by that commit renders the content again with
+      // the final value, which also waits for B. This path never marks the
+      // retry suspended, so it did not loop before the fix either.
+      await waitForAll([
+        'Initial',
+        'Suspend! [B]',
+        'Final',
+        'Suspend! [B]',
+        'Final',
+        'Suspend! [B]',
+      ]);
+    }
+    expect(root).toMatchRenderedOutput('Loading...');
+
+    await act(() => resolveText('B'));
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      assertLog(['Initial', 'B', 'Final']);
+    } else {
+      // The deferred task is the render waiting for B, with the final value.
+      assertLog(['Final', 'B']);
+    }
+    expect(root).toMatchRenderedOutput('FinalB');
+  });
+
+  it('commits the initial value if its data resolves while the deferred render is in progress', async () => {
+    // The initial value and the final value suspend on different data, and
+    // there's no Suspense boundary, so neither can commit a fallback. The data
+    // for the initial value resolves while the spawned deferred render is
+    // suspended on the final value's data. React must retry the original
+    // render, which can now commit the initial value, instead of waiting for
+    // the final value.
+    function Content({value}) {
+      if (value === 'Initial') {
+        readText('A');
+      } else {
+        // Resolve A during the deferred render. The deferred render does not
+        // include A, so the ping must not be discarded when it suspends.
+        resolveText('A');
+        readText('B');
+      }
+      return <Text text={value} />;
+    }
+
+    function App() {
+      const value = useDeferredValue('Final', 'Initial');
+      return <Content value={value} />;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(async () => {
+      startTransition(() => root.render(<App />));
+      await waitForAll([
+        // The initial value suspends.
+        'Suspend! [A]',
+        // React switches to the deferred value, which also suspends.
+        'Suspend! [B]',
+        // A was pinged during the deferred render. Retry the original render.
+        'Initial',
+        // After the initial value commits, the deferred render is attempted
+        // again. It's still waiting on B.
+        'Suspend! [B]',
+      ]);
+      expect(root).toMatchRenderedOutput('Initial');
+    });
+
+    await act(() => resolveText('B'));
+    assertLog(['Final']);
+    expect(root).toMatchRenderedOutput('Final');
+  });
+
+  it('commits the initial value if its data resolves before the deferred render starts', async () => {
+    function Content({value}) {
+      readText(value === 'Initial' ? 'A' : 'B');
+      return <Text text={value} />;
+    }
+
+    function App() {
+      const value = useDeferredValue('Final', 'Initial');
+      return <Content value={value} />;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(async () => {
+      startTransition(() => root.render(<App />));
+      await waitFor(['Suspend! [A]']);
+      expect(root).toMatchRenderedOutput(null);
+
+      // A resolves after the original render suspended, but before the
+      // deferred render runs.
+      resolveText('A');
+      await waitForAll([
+        // The deferred render runs first and suspends on B.
+        'Suspend! [B]',
+        // Then the original render is retried and commits the initial value.
+        'Initial',
+        // The deferred render is attempted again after the commit.
+        'Suspend! [B]',
+      ]);
+      expect(root).toMatchRenderedOutput('Initial');
+    });
+
+    await act(() => resolveText('B'));
+    assertLog(['Final']);
+    expect(root).toMatchRenderedOutput('Final');
   });
 });

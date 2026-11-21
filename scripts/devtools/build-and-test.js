@@ -3,9 +3,10 @@
 'use strict';
 
 const chalk = require('chalk');
-const {exec} = require('child-process-promise');
+const {exec: execCallback} = require('child_process');
 const {homedir} = require('os');
 const {join, relative} = require('path');
+const {promisify} = require('util');
 const {DRY_RUN, ROOT_PATH} = require('./configuration');
 const {
   clear,
@@ -15,6 +16,8 @@ const {
   logger,
   saveBuildMetadata,
 } = require('./utils');
+
+const exec = promisify(execCallback);
 
 // This is the primary control function for this script.
 async function main() {
