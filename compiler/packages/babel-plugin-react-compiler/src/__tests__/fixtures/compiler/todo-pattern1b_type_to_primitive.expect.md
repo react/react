@@ -26,13 +26,12 @@ describe('equalsIterable', () => {
 
 describe("equalsIterable", () => {
   const TEST_CASES = [];
-  TEST_CASES.forEach(_temp2);
+  TEST_CASES.forEach(_temp);
 });
-function _temp() {
-  expect(equalsIterable(mapOne, mapTwo, compareKeyValuePair)).toBe();
-}
-function _temp2(testCase) {
-  it(testCase.name, _temp);
+function _temp(testCase) {
+  it(testCase.name, () => {
+    expect(equalsIterable(mapOne, mapTwo, compareKeyValuePair)).toBe();
+  });
 }
 
 ```

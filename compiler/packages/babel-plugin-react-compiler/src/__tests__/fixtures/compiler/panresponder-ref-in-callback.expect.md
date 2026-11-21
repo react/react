@@ -38,7 +38,9 @@ export default function Playground() {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t0 = () => {
-      onDragEndRef.current = _temp2;
+      onDragEndRef.current = () => {
+        console.log("drag ended");
+      };
     };
     $[0] = t0;
   } else {
@@ -65,9 +67,6 @@ export default function Playground() {
     t2 = $[2];
   }
   return t2;
-}
-function _temp2() {
-  console.log("drag ended");
 }
 function _temp() {}
 

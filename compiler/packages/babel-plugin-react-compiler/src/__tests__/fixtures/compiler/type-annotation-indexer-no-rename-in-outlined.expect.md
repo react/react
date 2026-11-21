@@ -30,7 +30,10 @@ function Component(t0) {
   if ($[0] !== items) {
     const onClick = () => {
       const result = items.reduce(
-        _temp,
+        (acc, item) => {
+          acc[item.order] = item;
+          return acc;
+        },
         ({}: { [displayOrder: number]: { order: number, name: string } }),
       );
       submit(result);
@@ -42,10 +45,6 @@ function Component(t0) {
     t1 = $[1];
   }
   return t1;
-}
-function _temp(acc, item) {
-  acc[item.order] = item;
-  return acc;
 }
 
 ```

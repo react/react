@@ -138,7 +138,7 @@ function useHook7(x) {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t0 = () => {
-      setState(_temp);
+      setState((x_0) => !x_0);
     };
     $[0] = t0;
   } else {
@@ -155,9 +155,6 @@ function useHook7(x) {
     t1 = $[1];
   }
   return t1;
-}
-function _temp(x_0) {
-  return !x_0;
 }
 
 function Component(t0) {

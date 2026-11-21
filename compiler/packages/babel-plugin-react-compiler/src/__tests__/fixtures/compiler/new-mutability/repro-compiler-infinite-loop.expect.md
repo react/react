@@ -34,7 +34,7 @@ function Component() {
   const sections = Object.keys(items);
 
   for (let i = 0; i < sections.length; i = i + 3, i) {
-    chunks.push(sections.slice(i, i + 3).map(_temp));
+    chunks.push(sections.slice(i, i + 3).map((section) => <Child />));
   }
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
@@ -44,9 +44,6 @@ function Component() {
     t0 = $[0];
   }
   return t0;
-}
-function _temp(section) {
-  return <Child />;
 }
 
 ```
