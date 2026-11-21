@@ -2997,9 +2997,16 @@ describe('ReactFlightDOMNode', () => {
         return originalEnqueue.call(this, chunk);
       });
 
+    // The faulty chunk is written only after the client has read the root row.
+    // If they share a flush, the root can be queued behind earlier writes and
+    // dropped when the stream errors, depending on how the rows before it are
+    // split into writes.
+    let sendFirst;
     let sendMore;
     const model = {
-      first: Promise.resolve(view),
+      first: new Promise(resolve => {
+        sendFirst = resolve;
+      }),
       second: new Promise(resolve => {
         sendMore = resolve;
       }),
@@ -3032,6 +3039,8 @@ describe('ReactFlightDOMNode', () => {
         },
       },
     );
+
+    await serverAct(() => sendFirst(view));
 
     // This must fail. Adjust the mock above to be able to throw at a specific
     // point.
