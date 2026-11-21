@@ -6,7 +6,7 @@
  *
  * @flow
  */
-import type {Request} from 'react-server/src/ReactFizzServer';
+import type {Request, RequestContext} from 'react-server/src/ReactFizzServer';
 
 export * from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
 
@@ -18,3 +18,14 @@ export const isWorkLoopExternallyDriven = false;
 export const supportsRequestStorage = typeof AsyncLocalStorage === 'function';
 export const requestStorage: AsyncLocalStorage<Request | void> =
   supportsRequestStorage ? new AsyncLocalStorage() : (null as any);
+
+// Captures the caller's async context with the request's own store set, so
+// work Fizz schedules later (such as a retry after a ping) runs there instead
+// of in the context of whatever resolved the thenable. Where snapshot() isn't
+// available, only the request's own store is restored.
+export function captureRequestContext(request: Request): RequestContext {
+  if (typeof AsyncLocalStorage.snapshot === 'function') {
+    return requestStorage.run(request, () => AsyncLocalStorage.snapshot());
+  }
+  return (callback, ...args) => requestStorage.run(request, callback, ...args);
+}

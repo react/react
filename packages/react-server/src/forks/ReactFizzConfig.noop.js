@@ -23,7 +23,7 @@
 // So `$$$config` looks like a global variable, but it's
 // really an argument to a top-level wrapping function.
 
-import type {Request} from 'react-server/src/ReactFizzServer';
+import type {Request, RequestContext} from 'react-server/src/ReactFizzServer';
 import type {TransitionStatus} from 'react-reconciler/src/ReactFiberConfig';
 
 declare const $$$config: $FlowFixMe;
@@ -44,6 +44,8 @@ export const isWorkLoopExternallyDriven =
   $$$config.isWorkLoopExternallyDriven === true;
 export const supportsRequestStorage = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
+export const captureRequestContext: (request: Request) => RequestContext =
+  null as any;
 
 export const bindToConsole = $$$config.bindToConsole;
 
