@@ -24,13 +24,15 @@ function getLeafNode(node: ?(Node | Element)) {
 
 /**
  * Get the next sibling within a container. This will walk up the
- * DOM if a node's siblings have been exhausted.
+ * DOM if a node's siblings have been exhausted, but will not walk
+ * past the container itself.
  *
  * @param {DOMElement|DOMTextNode} node
+ * @param {DOMElement} root
  * @return {?DOMElement|DOMTextNode}
  */
-function getSiblingNode(node: ?(Node | Element)) {
-  while (node) {
+function getSiblingNode(node: ?(Node | Element), root: Element) {
+  while (node && node !== root) {
     if (node.nextSibling) {
       return node.nextSibling;
     }
@@ -64,7 +66,7 @@ function getNodeForCharacterOffset(root: Element, offset: number): ?Object {
       nodeStart = nodeEnd;
     }
 
-    node = getLeafNode(getSiblingNode(node));
+    node = getLeafNode(getSiblingNode(node, root));
   }
 }
 
