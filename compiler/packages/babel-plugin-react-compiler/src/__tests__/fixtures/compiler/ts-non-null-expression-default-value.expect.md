@@ -31,7 +31,7 @@ const THEME_MAP: ReadonlyMap<string, string> = new Map([
 export const Component = (t0) => {
   const $ = _c(2);
   const { theme: t1 } = t0;
-  const theme = t1 === undefined ? THEME_MAP.get("default") : t1;
+  const theme = t1 === undefined ? THEME_MAP.get("default")! : t1;
   const t2 = `theme-${theme}`;
   let t3;
   if ($[0] !== t2) {

@@ -239,6 +239,11 @@ export function validateHooksUsage(fn: HIRFunction): void {
           setKind(instr.lvalue, kind);
           break;
         }
+        case 'NonNullExpression': {
+          const kind = getKindForPlace(instr.value.value);
+          setKind(instr.lvalue, kind);
+          break;
+        }
         case 'StoreLocal':
         case 'StoreContext': {
           visitPlace(instr.value.value);
