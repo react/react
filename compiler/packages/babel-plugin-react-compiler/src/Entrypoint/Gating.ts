@@ -77,17 +77,23 @@ function insertAdditionalFunctionDeclaration(
 
   /**
    * Step 2: insert new function declaration
+   *
+   * The wrapper's formal parameters exist only to preserve `Function.length`
+   * parity with the original source. The actual dispatch to the optimized
+   * or unoptimized implementation is done via `Function.prototype.apply`
+   * with the wrapper's own `arguments` object and `this` value, so that
+   * extra arguments (beyond the declared params), `arguments.length`, and
+   * the call's `this` context are all forwarded faithfully. Using the
+   * synthetic params directly (as an ordinary call) would silently drop
+   * any arguments beyond what's declared and would lose `this`.
    */
   const newParams: Array<t.Identifier | t.RestElement> = [];
-  const genNewArgs: Array<() => t.Identifier | t.SpreadElement> = [];
   for (let i = 0; i < originalFnParams.length; i++) {
     const argName = `arg${i}`;
     if (originalFnParams[i].type === 'RestElement') {
       newParams.push(t.restElement(t.identifier(argName)));
-      genNewArgs.push(() => t.spreadElement(t.identifier(argName)));
     } else {
       newParams.push(t.identifier(argName));
-      genNewArgs.push(() => t.identifier(argName));
     }
   }
   // insertAfter called in reverse order of how nodes should appear in program
@@ -100,14 +106,14 @@ function insertAdditionalFunctionDeclaration(
           gatingCondition,
           t.returnStatement(
             t.callExpression(
-              compiled.id,
-              genNewArgs.map(fn => fn()),
+              t.memberExpression(compiled.id, t.identifier('apply')),
+              [t.thisExpression(), t.identifier('arguments')],
             ),
           ),
           t.returnStatement(
             t.callExpression(
-              unoptimizedFnName,
-              genNewArgs.map(fn => fn()),
+              t.memberExpression(unoptimizedFnName, t.identifier('apply')),
+              [t.thisExpression(), t.identifier('arguments')],
             ),
           ),
         ),
