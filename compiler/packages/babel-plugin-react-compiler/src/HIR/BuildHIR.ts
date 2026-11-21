@@ -2122,6 +2122,18 @@ function lowerExpression(
         }
       }
 
+      const logicalOperators: {
+        [key: string]: t.LogicalExpression['operator'];
+      } = {
+        '&&=': '&&',
+        '||=': '||',
+        '??=': '??',
+      };
+      const logicalOperator = logicalOperators[operator];
+      if (logicalOperator !== undefined) {
+        return lowerLogicalAssignment(builder, expr, logicalOperator);
+      }
+
       const operators: {
         [key: string]: Exclude<t.BinaryExpression['operator'], '|>'>;
       } = {
@@ -3331,6 +3343,245 @@ function lowerArguments(
     }
   }
   return args;
+}
+
+type LogicalAssignmentTarget =
+  | {kind: 'Identifier'; path: NodePath<t.Identifier>}
+  | {
+      kind: 'MemberExpression';
+      object: Place;
+      property: Place | string | number;
+      loc: SourceLocation;
+    };
+
+/**
+ * Captures `place` in a function-local temporary assignable in value blocks.
+ * Codegen re-emits unpromoted temporaries at each use site, so a temporary
+ * whose defining expression may have effects must be copied to a named
+ * temporary before it can be referenced more than once.
+ */
+function copyToPromotedTemporary(builder: HIRBuilder, place: Place): Place {
+  const temporary = buildTemporaryPlace(builder, place.loc);
+  promoteTemporary(temporary.identifier);
+  builder.pushHoistedDeclaration({
+    id: makeInstructionId(0),
+    lvalue: buildTemporaryPlace(builder, place.loc),
+    value: {
+      kind: 'DeclareLocal',
+      lvalue: {kind: InstructionKind.Let, place: {...temporary}},
+      type: null,
+      loc: place.loc,
+    },
+    effects: null,
+    loc: place.loc,
+  });
+  lowerValueToTemporary(builder, {
+    kind: 'StoreLocal',
+    lvalue: {kind: InstructionKind.Reassign, place: {...temporary}},
+    value: {...place},
+    type: null,
+    loc: place.loc,
+  });
+  return temporary;
+}
+
+/**
+ * Lowers `a ??= b` as `a ?? (a = b)` (and likewise for `&&=` / `||=`),
+ * reusing the value-block structure of LogicalExpression lowering so that the
+ * right-hand side and the store only evaluate when the assignment is taken.
+ * The target reference (including the object and key of member targets) is
+ * lowered exactly once in the logical test, preserving its evaluation position.
+ */
+function lowerLogicalAssignment(
+  builder: HIRBuilder,
+  expr: NodePath<t.AssignmentExpression>,
+  operator: t.LogicalExpression['operator'],
+): InstructionValue {
+  const left = expr.get('left');
+  const exprLoc = getSourceLocation(expr.node);
+  const leftLoc = getSourceLocation(left.node);
+
+  if (
+    left.isIdentifier() &&
+    left.scope.getBinding(left.node.name)?.kind === 'const'
+  ) {
+    /*
+     * Lowering the conditional store as a reassignment would lose the const
+     * check when taken, or report a false Syntax error when short-circuited.
+     */
+    builder.recordError(
+      new CompilerErrorDetail({
+        reason: 'Logical assignment to a `const` variable is not supported',
+        category: ErrorCategory.Todo,
+        loc: left.node.loc ?? null,
+        suggestions: null,
+      }),
+    );
+    return {kind: 'UnsupportedNode', node: expr.node, loc: exprLoc};
+  }
+
+  if (!left.isIdentifier() && !left.isMemberExpression()) {
+    builder.recordError(
+      new CompilerErrorDetail({
+        reason: `(BuildHIR::lowerExpression) Expected Identifier or MemberExpression, got ${left.type} lval in AssignmentExpression`,
+        category: ErrorCategory.Todo,
+        loc: expr.node.loc ?? null,
+        suggestions: null,
+      }),
+    );
+    return {kind: 'UnsupportedNode', node: expr.node, loc: exprLoc};
+  }
+
+  const continuationBlock = builder.reserve(builder.currentBlockKind());
+  const testBlock = builder.reserve('value');
+  const place = buildTemporaryPlace(builder, exprLoc);
+  const previousValuePlace = buildTemporaryPlace(builder, leftLoc);
+
+  builder.terminateWithContinuation(
+    {
+      kind: 'logical',
+      fallthrough: continuationBlock.id,
+      id: makeInstructionId(0),
+      test: testBlock.id,
+      operator,
+      loc: exprLoc,
+    },
+    testBlock,
+  );
+
+  let assignmentTarget: LogicalAssignmentTarget;
+  let previousValue: Place;
+  if (left.isIdentifier()) {
+    previousValue = lowerExpressionToTemporary(builder, left);
+    assignmentTarget = {kind: 'Identifier', path: left};
+  } else {
+    const object = lowerExpressionToTemporary(builder, left.get('object'));
+    const targetObject = copyToPromotedTemporary(builder, object);
+    /*
+     * Fix the base value before evaluating a computed key: either the
+     * key expression or a getter can reassign the original binding.
+     */
+    const {property, value} = lowerMemberExpression(
+      builder,
+      left,
+      targetObject,
+    );
+    let targetProperty = property;
+    let loadValue = value;
+    if (
+      value.kind !== 'UnsupportedNode' &&
+      typeof property !== 'string' &&
+      typeof property !== 'number'
+    ) {
+      targetProperty = copyToPromotedTemporary(builder, property);
+      loadValue = {
+        kind: 'ComputedLoad',
+        object: {...targetObject},
+        property: {...targetProperty},
+        loc: leftLoc,
+      };
+    }
+    previousValue = lowerValueToTemporary(builder, loadValue);
+    assignmentTarget = {
+      kind: 'MemberExpression',
+      object: targetObject,
+      property: targetProperty,
+      loc: leftLoc,
+    };
+  }
+
+  const consequent = builder.enter('value', () => {
+    lowerValueToTemporary(builder, {
+      kind: 'StoreLocal',
+      lvalue: {kind: InstructionKind.Const, place: {...place}},
+      value: {...previousValuePlace},
+      type: null,
+      loc: leftLoc,
+    });
+    return {
+      kind: 'goto',
+      block: continuationBlock.id,
+      variant: GotoVariant.Break,
+      id: makeInstructionId(0),
+      loc: leftLoc,
+    };
+  });
+
+  const alternate = builder.enter('value', () => {
+    const right = lowerExpressionToTemporary(builder, expr.get('right'));
+    let assignedValue: Place;
+    if (assignmentTarget.kind === 'Identifier') {
+      assignedValue = lowerValueToTemporary(
+        builder,
+        lowerAssignment(
+          builder,
+          leftLoc,
+          InstructionKind.Reassign,
+          assignmentTarget.path,
+          right,
+          'Assignment',
+        ),
+      );
+    } else {
+      const storeValue: InstructionValue =
+        typeof assignmentTarget.property === 'string' ||
+        typeof assignmentTarget.property === 'number'
+          ? {
+              kind: 'PropertyStore',
+              object: {...assignmentTarget.object},
+              property: makePropertyLiteral(assignmentTarget.property),
+              value: {...right},
+              loc: assignmentTarget.loc,
+            }
+          : {
+              kind: 'ComputedStore',
+              object: {...assignmentTarget.object},
+              property: {...assignmentTarget.property},
+              value: {...right},
+              loc: assignmentTarget.loc,
+            };
+      assignedValue = lowerValueToTemporary(builder, storeValue);
+    }
+    lowerValueToTemporary(builder, {
+      kind: 'StoreLocal',
+      lvalue: {kind: InstructionKind.Const, place: {...place}},
+      value: {...assignedValue},
+      type: null,
+      loc: exprLoc,
+    });
+    return {
+      kind: 'goto',
+      block: continuationBlock.id,
+      variant: GotoVariant.Break,
+      id: makeInstructionId(0),
+      loc: exprLoc,
+    };
+  });
+
+  builder.push({
+    id: makeInstructionId(0),
+    lvalue: {...previousValuePlace},
+    value: {
+      kind: 'LoadLocal',
+      place: previousValue,
+      loc: leftLoc,
+    },
+    effects: null,
+    loc: leftLoc,
+  });
+  builder.terminateWithContinuation(
+    {
+      kind: 'branch',
+      test: {...previousValuePlace},
+      consequent,
+      alternate,
+      fallthrough: continuationBlock.id,
+      id: makeInstructionId(0),
+      loc: exprLoc,
+    },
+    continuationBlock,
+  );
+  return {kind: 'LoadLocal', place, loc: place.loc};
 }
 
 type LoweredMemberExpression = {

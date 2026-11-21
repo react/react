@@ -111,6 +111,7 @@ export default class HIRBuilder {
   #completed: Map<BlockId, BasicBlock> = new Map();
   #current: WipBlock;
   #entry: BlockId;
+  #hoistedDeclarations: Array<Instruction> = [];
   #scopes: Array<Scope> = [];
   #context: Map<t.Identifier, SourceLocation>;
   #bindings: Bindings;
@@ -159,6 +160,15 @@ export default class HIRBuilder {
 
   currentBlockKind(): BlockKind {
     return this.#current.kind;
+  }
+
+  // Declare compiler-generated locals outside expression-only blocks.
+  pushHoistedDeclaration(instruction: Instruction): void {
+    CompilerError.invariant(instruction.value.kind === 'DeclareLocal', {
+      reason: 'Only local declarations may be hoisted to the function entry',
+      loc: instruction.loc,
+    });
+    this.#hoistedDeclarations.push(instruction);
   }
 
   // Push a statement or expression onto the current block
@@ -376,6 +386,13 @@ export default class HIRBuilder {
       blocks: this.#completed,
       entry: this.#entry,
     };
+    if (this.#hoistedDeclarations.length !== 0) {
+      const entry = ir.blocks.get(this.#entry)!;
+      entry.instructions = [
+        ...this.#hoistedDeclarations,
+        ...entry.instructions,
+      ];
+    }
     const rpoBlocks = getReversePostorderedBlocks(ir);
     for (const [id, block] of ir.blocks) {
       if (
