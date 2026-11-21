@@ -109,6 +109,27 @@ describe('utils', () => {
         ['Foobar', 'http://localhost:8081/index.bundle', 103, 74, 0, 0, false],
       ]);
     });
+
+    it('should mark an anonymous async frame as an async resume', () => {
+      const error = new Error();
+      // Assigning the stack means V8 never calls prepareStackTrace, so the
+      // parser has to fall back to reading the formatted string.
+      error.stack =
+        'Error: boom\n' +
+        '    at async https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js:5:9236';
+
+      expect(parseStackTrace(error, 1)).toEqual([
+        [
+          '',
+          'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
+          5,
+          9236,
+          0,
+          0,
+          true,
+        ],
+      ]);
+    });
   });
 
   describe('getDisplayNameForReactElement', () => {
