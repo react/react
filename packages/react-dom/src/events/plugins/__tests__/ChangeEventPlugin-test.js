@@ -255,6 +255,143 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(2);
   });
 
+  it('fires change when an uncontrolled checkbox is checked again after reset', async () => {
+    const changes = [];
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <div>
+          <form id="checkbox-form">
+            <button type="reset">Reset</button>
+          </form>
+          <input
+            type="checkbox"
+            form="checkbox-form"
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </div>,
+      );
+    });
+
+    const checkbox = container.querySelector('input');
+    checkbox.click();
+    expect(changes).toEqual([true]);
+
+    container.querySelector('button').click();
+    expect(checkbox.checked).toBe(false);
+    expect(changes).toEqual([true]);
+
+    checkbox.click();
+    expect(checkbox.checked).toBe(true);
+    expect(changes).toEqual([true, true]);
+
+    checkbox.click();
+    expect(changes).toEqual([true, true, false]);
+  });
+
+  it('tracks a reset when a native handler stops propagation at the form', async () => {
+    const changes = [];
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form>
+          <input
+            type="checkbox"
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </form>,
+      );
+    });
+
+    const checkbox = container.querySelector('input');
+    checkbox.form.addEventListener('reset', event => event.stopPropagation());
+    checkbox.click();
+    checkbox.form.reset();
+    expect(checkbox.checked).toBe(false);
+
+    checkbox.click();
+    expect(changes).toEqual([true, true]);
+  });
+
+  it('keeps tracking a reset when onReset clicks the checkbox before it resets', async () => {
+    const changes = [];
+    const ref = React.createRef();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form onReset={() => ref.current.click()}>
+          <input
+            ref={ref}
+            type="checkbox"
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </form>,
+      );
+    });
+
+    const checkbox = ref.current;
+    checkbox.form.reset();
+    expect(changes).toEqual([true]);
+    expect(checkbox.checked).toBe(false);
+
+    checkbox.click();
+    expect(changes).toEqual([true, true]);
+  });
+
+  it('does not fire duplicate changes when the click handler resets the form', async () => {
+    const changes = [];
+    let resetOnClick = true;
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form>
+          <input
+            type="checkbox"
+            onClick={event => {
+              if (resetOnClick) {
+                resetOnClick = false;
+                event.target.form.reset();
+              }
+            }}
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </form>,
+      );
+    });
+
+    const checkbox = container.querySelector('input');
+    checkbox.click();
+    expect(checkbox.checked).toBe(false);
+    expect(changes).toEqual([false]);
+
+    checkbox.click();
+    expect(changes).toEqual([false, true]);
+  });
+
+  it('keeps tracking an uncontrolled checkbox when a reset is canceled', async () => {
+    const changes = [];
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form onReset={event => event.preventDefault()}>
+          <input
+            type="checkbox"
+            onChange={event => changes.push(event.target.checked)}
+          />
+        </form>,
+      );
+    });
+
+    const checkbox = container.querySelector('input');
+    checkbox.click();
+    checkbox.form.reset();
+    expect(checkbox.checked).toBe(true);
+    expect(changes).toEqual([true]);
+
+    checkbox.click();
+    expect(changes).toEqual([true, false]);
+  });
+
   it('should not fire change setting the value programmatically', async () => {
     let called = 0;
 

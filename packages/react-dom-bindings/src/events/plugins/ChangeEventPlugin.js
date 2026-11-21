@@ -21,7 +21,10 @@ import {canUseDOM} from 'shared/ExecutionEnvironment';
 
 import getEventTarget from '../getEventTarget';
 import isEventSupported from '../isEventSupported';
-import {getNodeFromInstance} from '../../client/ReactDOMComponentTree';
+import {
+  getFiberCurrentPropsFromNode,
+  getNodeFromInstance,
+} from '../../client/ReactDOMComponentTree';
 import {updateValueIfChanged} from '../../client/inputValueTracking';
 import {enqueueStateRestore} from '../ReactDOMControlledComponent';
 
@@ -249,6 +252,74 @@ function getTargetInstForClickEvent(
   }
 }
 
+const formResets: WeakMap<
+  HTMLFormElement,
+  {
+    event: AnyNativeEvent,
+    checkboxChanges: WeakMap<HTMLInputElement, 'pending' | 'handled'>,
+  },
+> = new WeakMap();
+
+function recordFormReset(
+  nativeEvent: AnyNativeEvent,
+  targetInst: null | Fiber,
+  nativeEventTarget: null | EventTarget,
+): void {
+  if (
+    nativeEvent.isTrusted &&
+    targetInst !== null &&
+    targetInst.type === 'form' &&
+    getNodeFromInstance(targetInst) === nativeEventTarget
+  ) {
+    formResets.set(nativeEventTarget as any as HTMLFormElement, {
+      event: nativeEvent,
+      checkboxChanges: new WeakMap(),
+    });
+  }
+}
+
+function getTargetInstForCheckableEvent(
+  domEventName: DOMEventName,
+  nativeEvent: AnyNativeEvent,
+  targetNode: HTMLInputElement,
+  targetInst: null | Fiber,
+): void | null | Fiber {
+  const changedInst = getTargetInstForClickEvent(domEventName, targetInst);
+  if (
+    (domEventName === 'click' || domEventName === 'change') &&
+    targetNode.type === 'checkbox' &&
+    targetNode.form !== null
+  ) {
+    const reset = formResets.get(targetNode.form);
+    if (
+      reset !== undefined &&
+      // Handlers can dispatch a click while the reset is still in progress.
+      reset.event.eventPhase === 0 &&
+      !reset.event.defaultPrevented
+    ) {
+      const status = reset.checkboxChanges.get(targetNode);
+      if (status !== 'handled') {
+        if (domEventName === 'click') {
+          reset.checkboxChanges.set(
+            targetNode,
+            changedInst == null ? 'pending' : 'handled',
+          );
+        } else if (status === 'pending' && nativeEvent.isTrusted) {
+          const props = getFiberCurrentPropsFromNode(targetNode);
+          if (props !== null && props.checked == null) {
+            // Browser resets bypass the value tracker. If the click was
+            // missed after this reset, the native change confirms the toggle.
+            reset.checkboxChanges.set(targetNode, 'handled');
+            updateValueIfChanged(targetNode);
+            return targetInst;
+          }
+        }
+      }
+    }
+  }
+  return changedInst;
+}
+
 function getTargetInstForInputOrChangeEvent(
   domEventName: DOMEventName,
   targetInst: null | Fiber,
@@ -290,7 +361,21 @@ function extractEvents(
       handleEventFunc = handleEventsForInputEventPolyfill;
     }
   } else if (shouldUseClickEvent(targetNode)) {
-    getTargetInstFunc = getTargetInstForClickEvent;
+    const inst = getTargetInstForCheckableEvent(
+      domEventName,
+      nativeEvent,
+      targetNode as any as HTMLInputElement,
+      targetInst,
+    );
+    if (inst != null) {
+      createAndAccumulateChangeEvent(
+        dispatchQueue,
+        inst,
+        nativeEvent,
+        nativeEventTarget,
+      );
+    }
+    return;
   } else if (
     targetInst &&
     isCustomElement(targetInst.elementType, targetInst.memoizedProps)
@@ -316,4 +401,4 @@ function extractEvents(
   }
 }
 
-export {registerEvents, extractEvents};
+export {registerEvents, extractEvents, recordFormReset};
