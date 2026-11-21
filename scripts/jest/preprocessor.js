@@ -35,6 +35,22 @@ const ReactVersionTestingAgainst = process.env.REACT_VERSION || ReactVersion;
 
 const babelOptions = {
   plugins: [
+    // Avoid looking up __DEV__ through the VM global proxy when the stack is
+    // exhausted. On Node 26 this can throw a ReferenceError instead of the
+    // RangeError that Fizz uses to recover from deeply nested trees.
+    function inlineDevFlag({types: t}) {
+      return {
+        visitor: {
+          ReferencedIdentifier(p) {
+            if (p.node.name === '__DEV__' && !p.scope.hasBinding('__DEV__')) {
+              p.replaceWith(
+                t.booleanLiteral(process.env.NODE_ENV === 'development')
+              );
+            }
+          },
+        },
+      };
+    },
     // For Node environment only. For builds, Rollup takes care of ESM.
     require.resolve('@babel/plugin-transform-modules-commonjs'),
 

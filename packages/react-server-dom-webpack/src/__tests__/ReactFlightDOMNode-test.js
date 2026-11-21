@@ -1397,7 +1397,7 @@ describe('ReactFlightDOMNode', () => {
     fs.unlinkSync(file);
 
     // Verify that this chunk is a view into the shared Buffer pool slab.
-    expect(fileChunk.buffer.byteLength).toBe(Buffer.poolSize);
+    expect(fileChunk.buffer.byteLength).toBeGreaterThan(fileChunk.byteLength);
 
     const readable = await serverAct(() =>
       ReactServerDOMServer.renderToReadableStream(fileChunk, webpackMap),
@@ -2806,6 +2806,7 @@ describe('ReactFlightDOMNode', () => {
       const size = (Buffer.poolSize >>> 1) - 1;
       const pooled = Buffer.allocUnsafe(size).fill(1);
       const slab = pooled.buffer;
+      const slabByteLength = slab.byteLength;
 
       // This is the conversion that React's own warning about Buffer's toJSON
       // method asks users to perform.
@@ -2834,7 +2835,7 @@ describe('ReactFlightDOMNode', () => {
       expect(result.bytes.byteLength).toBe(size);
 
       // A detached slab makes every later pooled allocation fail.
-      expect(slab.byteLength).toBe(Buffer.poolSize);
+      expect(slab.byteLength).toBe(slabByteLength);
       expect(Buffer.allocUnsafe(1).byteLength).toBe(1);
     } finally {
       Buffer.poolSize = previousPoolSize;

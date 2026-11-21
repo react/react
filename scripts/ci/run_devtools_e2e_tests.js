@@ -151,13 +151,13 @@ async function runEndToEndTests() {
     }
   });
   testProcess.stderr.on('data', data => {
+    // Node and Playwright also write warnings here. Use the process exit code
+    // below to determine whether the tests failed.
     // Log without formatting because Playwright applies its own formatting.
     const formatted = format(data);
     if (formatted !== '') {
       console.error(formatted);
     }
-
-    exitWithCode(1);
   });
   testProcess.on('close', code => {
     logBright(`Tests completed with code: ${code}`);
