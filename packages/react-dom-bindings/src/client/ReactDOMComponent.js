@@ -752,6 +752,28 @@ function setProp(
         }
       }
     }
+    case 'credentialless': {
+      if (__DEV__) {
+        if (value === '' && !didWarnForNewBooleanPropsWithEmptyValue[key]) {
+          didWarnForNewBooleanPropsWithEmptyValue[key] = true;
+          console.error(
+            'Received an empty string for a boolean attribute `%s`. ' +
+              'This will treat the attribute as if it were true. ' +
+              'Pass `true` to silence this warning, or pass `false` to remove the attribute.',
+            key,
+          );
+        }
+      }
+      if (value === '' && key === 'credentialless') {
+        // Note: `inert` falls through to this case, so only treat an
+        // empty string as true for `credentialless` itself. An empty
+        // string rendered the attribute in 19.2 and was silently
+        // dropped in 19.3. Treat it as true so the iframe is not left
+        // with more privileges than intended.
+        domElement.setAttribute(key, '');
+        break;
+      }
+    }
     // Fallthrough for boolean props that don't have a warning for empty strings.
     case 'allowFullScreen':
     case 'async':
@@ -2881,7 +2903,6 @@ function diffHydratedGenericElement(
       case 'async':
       case 'autoPlay':
       case 'controls':
-      case 'credentialless':
       case 'default':
       case 'defer':
       case 'disabled':
@@ -3080,6 +3101,32 @@ function diffHydratedGenericElement(
           propKey,
           propKey,
           value,
+          extraAttributes,
+          serverDifferences,
+        );
+        continue;
+      case 'credentialless':
+        if (__DEV__) {
+          if (
+            value === '' &&
+            !didWarnForNewBooleanPropsWithEmptyValue[propKey]
+          ) {
+            didWarnForNewBooleanPropsWithEmptyValue[propKey] = true;
+            console.error(
+              'Received an empty string for a boolean attribute `%s`. ' +
+                'This will treat the attribute as if it were true. ' +
+                'Pass `true` to silence this warning, or pass `false` to remove the attribute.',
+              propKey,
+            );
+          }
+        }
+        // Treat an empty string as true, matching the server render, so
+        // hydration does not flag a mismatch or drop the attribute.
+        hydrateBooleanAttribute(
+          domElement,
+          propKey,
+          propKey,
+          value === '' ? true : value,
           extraAttributes,
           serverDifferences,
         );
