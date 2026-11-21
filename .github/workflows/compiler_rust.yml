@@ -67,3 +67,4 @@ jobs:
       - run: bash scripts/test-rust-port.sh
       - run: yarn workspace snap run build
       - run: yarn snap --rust
+      - run: node --test packages/babel-plugin-react-compiler-rust/__tests__/*.cjs
