@@ -174,6 +174,39 @@ describe('ReactDOMSrcObject', () => {
   });
 
   // @gate enableSrcObject
+  it('can SSR a large Blob as an img src without Buffer', async () => {
+    // Large enough that passing every byte to a single fromCharCode.apply call
+    // exceeds the engine's argument limit.
+    const size = 300000;
+    const bytes = new Uint8Array(size).fill(0xab);
+    const blob = new Blob([bytes], {type: 'image/jpeg'});
+    const expected = Buffer.from(bytes).toString('base64');
+
+    // Simulate an Edge runtime where Buffer is not available.
+    const OriginalBuffer = global.Buffer;
+    let content = '';
+    try {
+      global.Buffer = undefined;
+      const stream = await ReactDOMFizzServer.renderToReadableStream(
+        <img src={blob} />,
+      );
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) {
+          break;
+        }
+        content += decoder.decode(value, {stream: true});
+      }
+    } finally {
+      global.Buffer = OriginalBuffer;
+    }
+
+    expect(content).toContain('src="data:image/jpeg;base64,' + expected + '"');
+  });
+
+  // @gate enableSrcObject
   it('errors in DEV when mismatching a Blob during hydration', async () => {
     const blob = new Blob([new Uint8Array([69, 230, 156, 181, 68, 75])], {
       type: 'image/jpeg',
