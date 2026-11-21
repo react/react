@@ -738,7 +738,8 @@ function setProp(
       break;
     }
     // Boolean
-    case 'inert': {
+    case 'inert':
+    case 'credentialless': {
       if (__DEV__) {
         if (value === '' && !didWarnForNewBooleanPropsWithEmptyValue[key]) {
           didWarnForNewBooleanPropsWithEmptyValue[key] = true;
@@ -757,7 +758,6 @@ function setProp(
     case 'async':
     case 'autoPlay':
     case 'controls':
-    case 'credentialless':
     case 'default':
     case 'defer':
     case 'disabled':
@@ -3060,6 +3060,7 @@ function diffHydratedGenericElement(
         );
         continue;
       case 'inert':
+      case 'credentialless':
         if (__DEV__) {
           if (
             value === '' &&

@@ -1757,7 +1757,8 @@ function pushAttribute(
       }
       return;
     }
-    case 'inert': {
+    case 'inert':
+    case 'credentialless': {
       if (__DEV__) {
         if (value === '' && !didWarnForNewBooleanPropsWithEmptyValue[name]) {
           didWarnForNewBooleanPropsWithEmptyValue[name] = true;
@@ -1776,7 +1777,6 @@ function pushAttribute(
     case 'async':
     case 'autoPlay':
     case 'controls':
-    case 'credentialless':
     case 'default':
     case 'defer':
     case 'disabled':
