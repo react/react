@@ -245,6 +245,20 @@ describe('ReactDOMTextarea', () => {
     expect(div.firstChild.getAttribute('defaultValue')).toBe(null);
   });
 
+  it('should preserve leading CRLF line break for SSR', () => {
+    const markup = ReactDOMServer.renderToString(
+      <textarea defaultValue={'\r\nhello'} />,
+    );
+    expect(markup).toBe('<textarea>\n\r\nhello</textarea>');
+  });
+
+  it('should preserve leading LF line break for SSR', () => {
+    const markup = ReactDOMServer.renderToString(
+      <textarea defaultValue={'\nhello'} />,
+    );
+    expect(markup).toBe('<textarea>\n\nhello</textarea>');
+  });
+
   it('should allow setting `value` to `true`', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
