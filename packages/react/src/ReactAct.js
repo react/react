@@ -96,6 +96,20 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
         ReactSharedInternals.isBatchingLegacy = prevIsBatchingLegacy;
       }
       popActScope(prevActQueue, prevActScopeDepth);
+      // A scope that errors out may already have queued work, and every root it
+      // scheduled is pointing at this queue. Draining it here does two things:
+      // the queued work runs, and those roots drop the callback marker they're
+      // holding. Leaving the marker in place would be a problem, because a
+      // later update at the same priority reuses it instead of scheduling, and
+      // the callback it stands for is now unreachable. Then restore the queue
+      // that was active before this scope: the success paths clear it
+      // themselves after flushing, but a scope that errors out never gets
+      // there, and leaving it installed would redirect every later update
+      // outside of `act` to a queue that nothing drains.
+      if (prevActScopeDepth === 0) {
+        flushActQueue(queue);
+      }
+      ReactSharedInternals.actQueue = prevActQueue;
       const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
       ReactSharedInternals.thrownErrors.length = 0;
       throw thrownError;
@@ -164,6 +178,13 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
             },
             error => {
               popActScope(prevActQueue, prevActScopeDepth);
+              // See the comment on the sync error path above: a rejected
+              // callback never reaches the point where its scope flushes and
+              // clears the queue, so do both here.
+              if (prevActScopeDepth === 0) {
+                flushActQueue(queue);
+              }
+              ReactSharedInternals.actQueue = prevActQueue;
               if (ReactSharedInternals.thrownErrors.length > 0) {
                 const thrownError = aggregateErrors(
                   ReactSharedInternals.thrownErrors,
