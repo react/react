@@ -659,4 +659,32 @@ describe('SimpleEventPlugin', function () {
     const event = onToggle.mock.calls[0][0];
     expect(event.source).toBe(source);
   });
+
+  it('includes the InputEvent properties in input events', async function () {
+    container = document.createElement('div');
+
+    const onInput = jest.fn();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<input onInput={onInput} />);
+    });
+
+    const target = container.querySelector('input');
+    await act(() => {
+      target.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertCompositionText',
+          data: 'a',
+          isComposing: true,
+        }),
+      );
+    });
+
+    expect(onInput).toHaveBeenCalledTimes(1);
+    const event = onInput.mock.calls[0][0];
+    expect(event.inputType).toBe('insertCompositionText');
+    expect(event.data).toBe('a');
+    expect(event.isComposing).toBe(true);
+  });
 });

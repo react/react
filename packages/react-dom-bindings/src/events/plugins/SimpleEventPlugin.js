@@ -29,6 +29,7 @@ import {
   SyntheticPointerEvent,
   SyntheticSubmitEvent,
   SyntheticToggleEvent,
+  SyntheticNativeInputEvent,
 } from '../../events/SyntheticEvent';
 
 import {
@@ -173,6 +174,9 @@ function extractEvents(
       break;
     case 'submit':
       SyntheticEventCtor = SyntheticSubmitEvent;
+      break;
+    case 'input':
+      SyntheticEventCtor = SyntheticNativeInputEvent;
       break;
     case 'toggle':
     case 'beforetoggle':

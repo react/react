@@ -307,6 +307,21 @@ export const SyntheticCompositionEvent: $FlowFixMe = createSyntheticEvent(
 export const SyntheticInputEvent = SyntheticCompositionEvent;
 
 /**
+ * @interface InputEvent
+ * @see https://w3c.github.io/uievents/#interface-inputevent
+ * @see https://w3c.github.io/input-events/#interface-InputEvent
+ */
+const InputEventInterface: EventInterfaceType = {
+  ...UIEventInterface,
+  data: 0,
+  dataTransfer: 0,
+  inputType: 0,
+  isComposing: 0,
+};
+export const SyntheticNativeInputEvent: $FlowFixMe =
+  createSyntheticEvent(InputEventInterface);
+
+/**
  * Normalization of deprecated HTML5 `key` values
  * @see https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent#Key_names
  */
