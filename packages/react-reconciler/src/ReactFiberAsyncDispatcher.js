@@ -33,6 +33,7 @@ function cacheSignal(): null | AbortSignal {
 export const DefaultAsyncDispatcher: AsyncDispatcher = {
   getCacheForType,
   cacheSignal,
+  units: null,
 } as any;
 
 if (__DEV__) {

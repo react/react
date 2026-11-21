@@ -870,11 +870,17 @@ function validateChildKeys(node) {
         node._store.validated = 1;
       }
     } else if (isLazyType(node)) {
-      if (node._payload.status === 'fulfilled') {
-        if (isValidElement(node._payload.value) && node._payload.value._store) {
+      if (
+        node._payload.status === 'fulfilled' &&
+        isValidElement(node._payload.value)
+      ) {
+        if (node._payload.value._store) {
           node._payload.value._store.validated = 1;
         }
       } else if (node._store) {
+        // The value doesn't exist yet, or it's another lazy node, e.g. when
+        // Flight outlined an element that is blocked. Flight transfers the
+        // validation to the value when this lazy node is unwrapped.
         node._store.validated = 1;
       }
     }
