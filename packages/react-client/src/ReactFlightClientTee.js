@@ -8,8 +8,16 @@
  */
 
 import type {Thenable} from 'shared/ReactTypes';
-import type {FlightTee, FlightTeeDispatcher} from 'shared/ReactFlightTee';
-import type {Response, StreamState} from './ReactFlightClient';
+import type {
+  FlightTee,
+  FlightTeeDispatcher,
+  FlightTeeRow,
+} from 'shared/ReactFlightTee';
+import type {
+  Response,
+  StreamState,
+  RowInitialization,
+} from './ReactFlightClient';
 
 import {FLIGHT_TEE_VERSION} from 'shared/ReactFlightTee';
 import {enableFlightTee} from 'shared/ReactFeatureFlags';
@@ -21,6 +29,14 @@ import {
   processWireText,
   processWireBinary,
   setReaderContext,
+  beginRow,
+  endRow,
+  abortRow,
+  failRow,
+  beginElement,
+  completeElement,
+  decodeModelString,
+  ELEMENT_FIELDS,
   close,
   reportGlobalError,
   retainResponse,
@@ -31,6 +47,7 @@ import {
 type TeeInstance = {
   +_version: string,
   +_dispatcher: FlightTeeDispatcher,
+  +_elementFields: Object,
   _response: Response,
   // Keeps the response alive until it's read, since rows can arrive while
   // nothing else is waiting on it.
@@ -40,14 +57,19 @@ type TeeInstance = {
   _read: boolean,
   // Hints and module preinits that arrived before the reader did.
   _readerTasks: null | Array<() => void>,
-  // Set once reading a row threw. The response has errored, and the tee
+  // The rows being built, innermost last.
+  _rows: Array<RowInitialization>,
+  // Set once reading a wire row threw. The response has errored, and the tee
   // ignores the rest of the render.
   _failed: boolean,
+  // How many model rows were built by value, for tests.
+  _rowsByValue: number,
 };
 
 // None of the dispatcher's methods throw into the render: the bytes it writes
-// don't depend on the tee. An error reading a row errors the response, as an
-// error reading the stream does.
+// don't depend on the tee. An error building a row errors that row, as a
+// model whose parse threw does. An error reading a wire row errors the
+// response, as an error reading the stream does.
 function failTee(tee: TeeInstance, error: mixed): void {
   if (!tee._failed) {
     tee._failed = true;
@@ -59,6 +81,15 @@ function failTee(tee: TeeInstance, error: mixed): void {
   }
 }
 
+function failCurrentRow(tee: TeeInstance, error: mixed): void {
+  const rows = tee._rows;
+  if (rows.length > 0) {
+    failRow(rows[rows.length - 1], error);
+  } else {
+    failTee(tee, error);
+  }
+}
+
 function connect(flightTee: FlightTee): boolean {
   const tee: TeeInstance = flightTee as any;
   if (tee._connected) {
@@ -66,6 +97,100 @@ function connect(flightTee: FlightTee): boolean {
   }
   tee._connected = true;
   return true;
+}
+
+function teeBeginRow(flightTee: FlightTee, id: number): null | FlightTeeRow {
+  const tee: TeeInstance = flightTee as any;
+  if (tee._failed) {
+    return null;
+  }
+  let row;
+  try {
+    row = beginRow(tee._response, id);
+  } catch (x) {
+    failTee(tee, x);
+    return null;
+  }
+  if (row !== null) {
+    tee._rows.push(row);
+  }
+  return row as any;
+}
+
+function teeEndRow(
+  flightTee: FlightTee,
+  row: FlightTeeRow,
+  value: mixed,
+): void {
+  const tee: TeeInstance = flightTee as any;
+  tee._rows.pop();
+  tee._rowsByValue++;
+  try {
+    endRow(
+      tee._response,
+      tee._streamState,
+      row as any as RowInitialization,
+      value,
+    );
+  } catch (x) {
+    failTee(tee, x);
+  }
+}
+
+function teeAbortRow(flightTee: FlightTee, row: FlightTeeRow): void {
+  const tee: TeeInstance = flightTee as any;
+  tee._rows.pop();
+  try {
+    abortRow(tee._response, row as any as RowInitialization);
+  } catch (x) {
+    // If the response has closed, the row errors here, and a listener on it
+    // threw. The render doesn't wait on it.
+  }
+}
+
+function teeBeginElement(flightTee: FlightTee): void {
+  beginElement();
+}
+
+function teeCompleteElement(
+  flightTee: FlightTee,
+  type: mixed,
+  key: mixed,
+  props: mixed,
+  owner: mixed,
+  stack: mixed,
+  validated: number,
+): mixed {
+  const tee: TeeInstance = flightTee as any;
+  try {
+    return completeElement(
+      tee._response,
+      type,
+      key,
+      props,
+      owner as any,
+      stack as any,
+      validated as any,
+    );
+  } catch (x) {
+    failCurrentRow(tee, x);
+    return null;
+  }
+}
+
+function teeDecode(
+  flightTee: FlightTee,
+  parent: Object,
+  key: string,
+  value: string,
+): mixed {
+  const tee: TeeInstance = flightTee as any;
+  try {
+    return decodeModelString(tee._response, parent, key, value);
+  } catch (x) {
+    failCurrentRow(tee, x);
+    return null;
+  }
 }
 
 function teeProcessWireRow(flightTee: FlightTee, row: string): void {
@@ -134,6 +259,12 @@ function teeError(flightTee: FlightTee, error: mixed): void {
 // monomorphic.
 export const teeDispatcher: FlightTeeDispatcher = Object.freeze({
   c /* connect */: connect,
+  b /* beginRow */: teeBeginRow,
+  f /* endRow */: teeEndRow,
+  a /* abortRow */: teeAbortRow,
+  e /* beginElement */: teeBeginElement,
+  m /* completeElement */: teeCompleteElement,
+  d /* decode */: teeDecode,
   w /* processWireRow */: teeProcessWireRow,
   t /* processWireText */: teeProcessWireText,
   y /* processWireBinary */: teeProcessWireBinary,
@@ -149,6 +280,7 @@ export function createTee(response: Response): FlightTee {
   const tee: TeeInstance = {
     _version: FLIGHT_TEE_VERSION,
     _dispatcher: teeDispatcher,
+    _elementFields: ELEMENT_FIELDS,
     _response: response,
     _retainedResponse: retainResponse(response),
     // There's no stream to show as the I/O's value in DEV.
@@ -156,7 +288,9 @@ export function createTee(response: Response): FlightTee {
     _connected: false,
     _read: false,
     _readerTasks: readerTasks,
+    _rows: [],
     _failed: false,
+    _rowsByValue: 0,
   };
   setReaderContext(response, task => {
     readerTasks.push(task);
