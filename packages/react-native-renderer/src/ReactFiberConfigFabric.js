@@ -541,6 +541,7 @@ export function cloneHiddenInstance(
   const updatePayload = createAttributePayload(
     {style: {display: 'none'}},
     viewConfig.validAttributes,
+    {isInitial: false},
   );
   return {
     node: cloneNodeWithNewProps(node, updatePayload),
