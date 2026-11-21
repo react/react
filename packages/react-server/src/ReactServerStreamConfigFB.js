@@ -32,7 +32,7 @@ export function scheduleWork(callback: () => void) {
 
 export function flushBuffered(destination: Destination) {}
 
-export const supportsRequestStorage = false;
+export const supportsRequestStorage: boolean = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export function beginWriting(destination: Destination) {}

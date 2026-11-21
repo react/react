@@ -13,5 +13,5 @@ export * from 'react-markup/src/ReactFizzConfigMarkup.js';
 export * from 'react-client/src/ReactClientConsoleConfigPlain';
 
 export const isWorkLoopExternallyDriven = false;
-export const supportsRequestStorage = false;
+export const supportsRequestStorage: boolean = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;

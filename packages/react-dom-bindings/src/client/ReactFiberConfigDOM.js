@@ -820,8 +820,8 @@ export function resolveEventTimeStamp(): number {
   return event && event !== schedulerEvent ? event.timeStamp : -1.1;
 }
 
-export const isPrimaryRenderer = true;
-export const warnsIfNotActing = true;
+export const isPrimaryRenderer: boolean = true;
+export const warnsIfNotActing: boolean = true;
 // This initialization code may run even on server environments
 // if a component just imports ReactDOM (e.g. for findDOMNode).
 // Some environments might not have setTimeout or clearTimeout.

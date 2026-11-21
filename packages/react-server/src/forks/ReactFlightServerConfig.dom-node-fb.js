@@ -13,7 +13,7 @@ import type {ReactComponentInfo} from 'shared/ReactTypes';
 export * from 'react-flight-server-fb/src/server/ReactFlightServerConfigFBBundler';
 export * from 'react-flight-server-fb/src/server/ReactFlightServerConfigDOMFB';
 
-export const supportsRequestStorage = false;
+export const supportsRequestStorage: boolean = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;
