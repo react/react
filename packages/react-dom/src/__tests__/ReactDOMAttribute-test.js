@@ -131,6 +131,18 @@ describe('ReactDOM unknown attribute', () => {
       await act(() => {
         root.render(<div inert="" />);
       });
+
+      await act(() => {
+        root.render(<iframe credentialless="" />);
+      });
+      assertConsoleErrorDev([
+        'Received an empty string for a boolean attribute `credentialless`. ' +
+          'This will treat the attribute as if it were false. ' +
+          'Either pass `false` to silence this warning, or ' +
+          'pass `true` if you used an empty string in earlier versions of React to indicate this attribute is true.\n' +
+          '    in iframe (at **)',
+      ]);
+      expect(el.firstChild.getAttribute('credentialless')).toBe(null);
     });
 
     it('passes through strings', async () => {
