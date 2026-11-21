@@ -6,11 +6,14 @@
  */
 
 import {
+  Environment,
   IdentifierId,
   ReactiveFunction,
   ReactiveInstruction,
   ReactiveScopeBlock,
+  getHookKind,
   isStableType,
+  isUseOperator,
 } from '../HIR';
 import {eachPatternOperand} from '../HIR/visitors';
 import {collectReactiveIdentifiers} from './CollectReactiveIdentifiers';
@@ -24,12 +27,30 @@ import {ReactiveFunctionVisitor, visitReactiveFunction} from './visitors';
  */
 export function pruneNonReactiveDependencies(fn: ReactiveFunction): void {
   const reactiveIdentifiers = collectReactiveIdentifiers(fn);
-  visitReactiveFunction(fn, new Visitor(), reactiveIdentifiers);
+  visitReactiveFunction(fn, new Visitor(fn.env), reactiveIdentifiers);
 }
 
 type ReactiveIdentifiers = Set<IdentifierId>;
 
 class Visitor extends ReactiveFunctionVisitor<ReactiveIdentifiers> {
+  env: Environment;
+  /*
+   * Identifiers produced directly by a hook (or the `use` operator) call.
+   *
+   * These are kept as dependencies even when they are non-reactive: hooks are
+   * not memoizable, so the call must stay outside of the memoized block. If we
+   * dropped the dependency, then codegen (which inlines the value of an unnamed
+   * temporary at its use site) would move the call inside the block's `if`,
+   * making the hook conditional. `useRef` is the only built-in hook whose result
+   * is non-reactive (a ref has a stable identity), so it is the case we hit.
+   */
+  hookCallResults: Set<IdentifierId> = new Set();
+
+  constructor(env: Environment) {
+    super();
+    this.env = env;
+  }
+
   override visitInstruction(
     instruction: ReactiveInstruction,
     state: ReactiveIdentifiers,
@@ -87,6 +108,19 @@ class Visitor extends ReactiveFunctionVisitor<ReactiveIdentifiers> {
         }
         break;
       }
+      case 'CallExpression':
+      case 'MethodCall': {
+        const callee =
+          value.kind === 'CallExpression' ? value.callee : value.property;
+        if (
+          lvalue !== null &&
+          (getHookKind(this.env, callee.identifier) != null ||
+            isUseOperator(callee.identifier))
+        ) {
+          this.hookCallResults.add(lvalue.identifier.id);
+        }
+        break;
+      }
     }
   }
 
@@ -96,6 +130,14 @@ class Visitor extends ReactiveFunctionVisitor<ReactiveIdentifiers> {
   ): void {
     this.traverseScope(scopeBlock, state);
     for (const dep of scopeBlock.scope.dependencies) {
+      if (this.hookCallResults.has(dep.identifier.id)) {
+        /*
+         * Keep dependencies on hook calls: the call itself must not be hoisted
+         * into the memoized block, even if its result can't change. See
+         * `hookCallResults`.
+         */
+        continue;
+      }
       const isReactive = state.has(dep.identifier.id);
       if (!isReactive) {
         scopeBlock.scope.dependencies.delete(dep);
