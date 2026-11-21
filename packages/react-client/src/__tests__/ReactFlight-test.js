@@ -541,6 +541,23 @@ describe('ReactFlight', () => {
     expect(ReactNoop).toMatchRenderedOutput('prop: 2009-02-13T23:31:30.123Z');
   });
 
+  it('can transport an invalid Date', async () => {
+    function ComponentClient({prop}) {
+      return `prop: ${prop instanceof Date} ${String(prop)}`;
+    }
+    const Component = clientReference(ComponentClient);
+
+    const model = <Component prop={new Date(NaN)} />;
+
+    const transport = ReactNoopFlightServer.render(model);
+
+    await act(async () => {
+      ReactNoop.render(await ReactNoopFlightClient.read(transport));
+    });
+
+    expect(ReactNoop).toMatchRenderedOutput('prop: true Invalid Date');
+  });
+
   it('can transport Map', async () => {
     function ComponentClient({prop, selected}) {
       return `
