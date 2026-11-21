@@ -585,6 +585,24 @@ describe('ReactDOMInput', () => {
     expect(node.value).toBe('false');
   });
 
+  it('preserves the initial caret when mounting an autofocus text input', async () => {
+    await act(() => {
+      root.render(<input type="text" autoFocus={true} defaultValue="4444" />);
+    });
+
+    const input = container.firstChild;
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(0);
+
+    await act(() => {
+      root.render(<input type="text" autoFocus={true} defaultValue="5555" />);
+    });
+
+    expect(input.defaultValue).toBe('5555');
+    expect(input.value).toBe(disableInputAttributeSyncing ? '5555' : '4444');
+  });
+
   it('should update `defaultValue` for uncontrolled input', async () => {
     await act(() => {
       root.render(<input type="text" defaultValue="0" />);
