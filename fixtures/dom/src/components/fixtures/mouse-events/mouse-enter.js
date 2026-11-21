@@ -2,15 +2,60 @@ import TestCase from '../../TestCase';
 
 const React = window.React;
 const ReactDOM = window.ReactDOM;
+const ReactDOMClient = window.ReactDOMClient;
 
 const MouseEnter = () => {
   const containerRef = React.useRef();
 
   React.useEffect(function () {
     const hostEl = containerRef.current;
-    ReactDOM.render(<MouseEnterDetect />, hostEl, () => {
-      ReactDOM.render(<MouseEnterDetect />, hostEl.childNodes[1]);
+    const useModernRoots = ReactDOMClient && ReactDOMClient.createRoot;
+    let outerRoot;
+    let innerRoot;
+    let innerContainer;
+    let cancelled = false;
+
+    // Queue setup and cleanup so nested roots are managed outside a commit.
+    Promise.resolve().then(() => {
+      if (cancelled) {
+        return;
+      }
+      if (useModernRoots) {
+        outerRoot = ReactDOMClient.createRoot(hostEl);
+        outerRoot.render(
+          <MouseEnterDetect
+            onMount={container => {
+              if (!cancelled) {
+                innerRoot = ReactDOMClient.createRoot(container);
+                innerRoot.render(<MouseEnterDetect />);
+              }
+            }}
+          />
+        );
+      } else {
+        ReactDOM.render(<MouseEnterDetect />, hostEl, () => {
+          innerContainer = hostEl.childNodes[1];
+          ReactDOM.render(<MouseEnterDetect />, innerContainer);
+        });
+      }
     });
+
+    return () => {
+      cancelled = true;
+      Promise.resolve().then(() => {
+        if (useModernRoots) {
+          if (innerRoot) {
+            innerRoot.unmount();
+          }
+          if (outerRoot) {
+            outerRoot.unmount();
+          }
+        } else if (innerContainer) {
+          ReactDOM.unmountComponentAtNode(innerContainer);
+          ReactDOM.unmountComponentAtNode(hostEl);
+        }
+      });
+    };
   }, []);
 
   return (
@@ -38,10 +83,16 @@ const MouseEnter = () => {
   );
 };
 
-const MouseEnterDetect = () => {
+const MouseEnterDetect = ({onMount}) => {
   const [log, setLog] = React.useState({});
   const firstEl = React.useRef();
   const siblingEl = React.useRef();
+
+  React.useLayoutEffect(() => {
+    if (onMount) {
+      onMount(siblingEl.current);
+    }
+  }, [onMount]);
 
   const onMouseEnter = e => {
     const timeStamp = e.timeStamp;
