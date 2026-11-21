@@ -1257,7 +1257,11 @@ export function attach(
     // and can use the old findFiberByHostInstance strategy.
 
     if (fiber.tag === HostHoistable) {
-      releaseHostResource(nearestInstance, fiber.memoizedState);
+      if (fiber.memoizedState !== null) {
+        releaseHostResource(nearestInstance, fiber.memoizedState);
+      } else if (fiber.stateNode !== null) {
+        releaseHostInstance(nearestInstance, fiber.stateNode);
+      }
     } else if (
       fiber.tag === HostComponent ||
       fiber.tag === HostText ||
@@ -3443,8 +3447,13 @@ export function attach(
         if (nearestInstance === null) {
           throw new Error('Did not expect a host hoistable to be the root');
         }
-        aquireHostResource(nearestInstance, fiber.memoizedState);
-        trackDebugInfoFromHostResource(nearestInstance, fiber);
+        if (fiber.memoizedState !== null) {
+          aquireHostResource(nearestInstance, fiber.memoizedState);
+          trackDebugInfoFromHostResource(nearestInstance, fiber);
+        } else if (fiber.stateNode !== null) {
+          aquireHostInstance(nearestInstance, fiber.stateNode);
+          trackDebugInfoFromHostComponent(nearestInstance, fiber);
+        }
       } else if (
         fiber.tag === HostComponent ||
         fiber.tag === HostText ||
@@ -4443,8 +4452,12 @@ export function attach(
         if (prevFiber.memoizedState !== nextFiber.memoizedState) {
           releaseHostResource(nearestInstance, prevFiber.memoizedState);
           aquireHostResource(nearestInstance, nextFiber.memoizedState);
+          trackDebugInfoFromHostResource(nearestInstance, nextFiber);
+        } else if (prevFiber.stateNode !== nextFiber.stateNode) {
+          releaseHostInstance(nearestInstance, prevFiber.stateNode);
+          aquireHostInstance(nearestInstance, nextFiber.stateNode);
+          trackDebugInfoFromHostComponent(nearestInstance, nextFiber);
         }
-        trackDebugInfoFromHostResource(nearestInstance, nextFiber);
       } else if (
         nextFiber.tag === HostComponent ||
         nextFiber.tag === HostText ||
