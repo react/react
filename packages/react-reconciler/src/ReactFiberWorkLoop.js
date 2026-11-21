@@ -103,6 +103,7 @@ import {
 
 import {
   resetAfterCommit,
+  prepareForCommit,
   scheduleTimeout,
   cancelTimeout,
   noTimeout,
@@ -738,6 +739,10 @@ let pendingEffectsRenderEndTime: number = -0; // Profiling-only
 let pendingPassiveTransitions: Array<Transition> | null = null;
 let pendingRecoverableErrors: null | Array<CapturedValue<mixed>> = null;
 let pendingViewTransition: null | RunningViewTransition = null;
+// Whether we already released the host environment (re-enabled the event
+// system) after the before-mutation phase, because the mutation phase is being
+// deferred by a View Transition.
+let pendingEffectsHostReleased: boolean = false;
 let pendingViewTransitionEvents: Array<
   (types: Array<string>) => void | (() => void),
 > | null = null;
@@ -3925,6 +3930,15 @@ function commitRoot(
 
   pendingEffectsStatus = PENDING_MUTATION_PHASE;
   if (enableViewTransition && shouldStartViewTransition) {
+    if (subtreeHasBeforeMutationEffects || rootHasBeforeMutationEffect) {
+      // The before-mutation phase disabled the event system. The mutation phase
+      // is deferred until the browser calls the View Transition's update
+      // callback, which can be a few frames away. Don't swallow user input
+      // (e.g. keystrokes in a controlled input) in the meantime. We'll prepare
+      // again right before mutating.
+      resetAfterCommit(root.containerInfo);
+      pendingEffectsHostReleased = true;
+    }
     if (enableProfilerTimer && enableComponentPerformanceTrack) {
       startAnimating(lanes);
     }
@@ -4047,6 +4061,8 @@ function flushMutationEffects(): void {
   const root = pendingEffectsRoot;
   const finishedWork = pendingFinishedWork;
   const lanes = pendingEffectsLanes;
+  const hostReleased = pendingEffectsHostReleased;
+  pendingEffectsHostReleased = false;
   const subtreeMutationHasEffects =
     (finishedWork.subtreeFlags & MutationMask) !== NoFlags;
   const rootMutationHasEffect = (finishedWork.flags & MutationMask) !== NoFlags;
@@ -4059,6 +4075,11 @@ function flushMutationEffects(): void {
     const prevExecutionContext = executionContext;
     executionContext |= CommitContext;
     try {
+      if (hostReleased) {
+        // Re-disable events and re-capture the selection since we released them
+        // while waiting for the View Transition to start.
+        prepareForCommit(root.containerInfo);
+      }
       // The next phase is the mutation phase, where we mutate the host tree.
       commitMutationEffects(root, finishedWork, lanes);
 
