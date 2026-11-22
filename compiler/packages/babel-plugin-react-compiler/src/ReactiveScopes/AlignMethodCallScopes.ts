@@ -8,10 +8,13 @@
 import {
   HIRFunction,
   IdentifierId,
+  Instruction,
   ReactiveScope,
   makeInstructionId,
 } from '../HIR';
+import {getScopes} from '../HIR/AssertValidBlockNesting';
 import DisjointSet from '../Utils/DisjointSet';
+import {inRange} from './InferReactiveScopeVariables';
 
 /**
  * Ensures that method call instructions have scopes such that either:
@@ -21,10 +24,13 @@ import DisjointSet from '../Utils/DisjointSet';
 export function alignMethodCallScopes(fn: HIRFunction): void {
   const scopeMapping = new Map<IdentifierId, ReactiveScope | null>();
   const mergedScopes = new DisjointSet<ReactiveScope>();
+  const definitions = new Map<IdentifierId, Instruction>();
+  const scopes = getScopes(fn);
 
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       const {lvalue, value} = instr;
+      definitions.set(lvalue.identifier.id, instr);
       if (value.kind === 'MethodCall') {
         const lvalueScope = lvalue.identifier.scope;
         const propertyScope = value.property.identifier.scope;
@@ -42,6 +48,22 @@ export function alignMethodCallScopes(fn: HIRFunction): void {
         } else if (propertyScope !== null) {
           // else this property does not need a scope
           scopeMapping.set(value.property.identifier.id, null);
+        }
+        /*
+         * The property may still be loaded within a scope that ends before the
+         * call, e.g. when an argument mutates an earlier value as in
+         * `Math.floor(Math.abs(x))`. Extend that scope over the call so the
+         * property does not become one of its outputs.
+         */
+        const propertyLoad = definitions.get(value.property.identifier.id);
+        if (lvalueScope === null && propertyLoad !== undefined) {
+          for (const scope of scopes) {
+            if (inRange(propertyLoad, scope.range)) {
+              scope.range.end = makeInstructionId(
+                Math.max(scope.range.end, instr.id + 1),
+              );
+            }
+          }
         }
       } else if (
         value.kind === 'FunctionExpression' ||

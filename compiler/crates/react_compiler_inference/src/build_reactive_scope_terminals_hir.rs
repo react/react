@@ -36,7 +36,7 @@ use react_compiler_lowering::mark_predecessors;
 
 /// Collect all unique scopes from places in the function that have non-empty ranges.
 /// Corresponds to TS `getScopes(fn)`.
-fn get_scopes(func: &HirFunction, env: &Environment) -> Vec<ScopeId> {
+pub(crate) fn get_scopes(func: &HirFunction, env: &Environment) -> Vec<ScopeId> {
     let mut scope_ids: FxHashSet<ScopeId> = FxHashSet::default();
 
     let mut visit_place = |identifier_id: IdentifierId| {
