@@ -97,6 +97,10 @@ export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;
 
+// Hand the host sibling found for a placed fiber to its next sibling when that
+// one is placed in the same commit, so a run of n insertions is O(n), not O(n^2).
+export const enablePlacementSiblingCache = __EXPERIMENTAL__;
+
 export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
 
 export const enableViewTransitionForPersistenceMode: boolean = false;
