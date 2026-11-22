@@ -37,6 +37,7 @@ const unitlessNumbers = new Set([
   'gridColumnSpan',
   'gridColumnStart',
   'fontWeight',
+  'hyphenateLimitLines',
   'lineClamp',
   'lineHeight',
   'opacity',
