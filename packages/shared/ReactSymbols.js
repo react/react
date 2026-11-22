@@ -48,6 +48,9 @@ export const REACT_VIEW_TRANSITION_TYPE: symbol = Symbol.for(
 
 export const REACT_RECOVERABLE_TYPE: symbol = Symbol.for('react.recoverable');
 
+export const REACT_LEDGER_TOTAL_TYPE: symbol = Symbol.for('react.ledger_total');
+export const REACT_LEDGER_DATA_TYPE: symbol = Symbol.for('react.ledger_data');
+
 const MAYBE_ITERATOR_SYMBOL = Symbol.iterator;
 const FAUX_ITERATOR_SYMBOL = '@@iterator';
 
