@@ -541,4 +541,400 @@ describe('ReactSiblingPrerendering', () => {
     assertLog(['A', 'B', 'Async', 'C', 'D']);
     expect(root).toMatchRenderedOutput('ABAsyncCD');
   });
+
+  it('settles 3 suspended sibling boundaries after a parent re-render', async () => {
+    let attempts = 0;
+    function Tile({text}) {
+      attempts++;
+      if (attempts > 50) {
+        throw new Error('Infinite Suspense retry loop');
+      }
+      readText(text);
+      Scheduler.log(text);
+      return text;
+    }
+
+    function Parent() {
+      const [, setCount] = React.useState(0);
+      React.useEffect(() => {
+        setCount(1);
+      }, []);
+      return (
+        <>
+          <Suspense fallback={<Text text="loading A" />}>
+            <Tile text="A" />
+          </Suspense>
+          <Suspense fallback={<Text text="loading B" />}>
+            <Tile text="B" />
+          </Suspense>
+          <Suspense fallback={<Text text="loading C" />}>
+            <Tile text="C" />
+          </Suspense>
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    root.render(<Parent />);
+    await waitForAll([
+      // Initial mount
+      'Suspend! [A]',
+      'loading A',
+      'Suspend! [B]',
+      'loading B',
+      'Suspend! [C]',
+      'loading C',
+      // useEffect re-render (recreates the boundary elements while still pending)
+      'Suspend! [A]',
+      'loading A',
+      'Suspend! [B]',
+      'loading B',
+      'Suspend! [C]',
+      'loading C',
+      // Re-attempted unblocked retry lanes from the wrap-around collision
+      'Suspend! [B]',
+      'Suspend! [C]',
+      // When retries are not throttled, B and C commit immediately and then
+      // A, B, and C coalesce into the prerender pass during the same flush.
+      ...(!gate('alwaysThrottleRetries')
+        ? ['Suspend! [A]', 'Suspend! [B]', 'Suspend! [C]']
+        : []),
+    ]);
+
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      // Advance past FALLBACK_THROTTLE_MS (300ms) so the throttled retry commits.
+      Scheduler.unstable_advanceTime(500);
+      jest.runAllTimers();
+
+      // Without keeping previously suspended sibling retries suspended, the retry
+      // commit clears `root.suspendedLanes`, dropping A back to normal mode so A
+      // and (B, C) chase each other around RetryLanes indefinitely. With the fix,
+      // all three coalesce into one prerender pass.
+      await waitForAll(['Suspend! [A]', 'Suspend! [B]', 'Suspend! [C]']);
+    }
+    expect(root).toMatchRenderedOutput('loading Aloading Bloading C');
+    expect(attempts).toBe(11);
+
+    // No further retries should be scheduled.
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+
+    await resolveText('A');
+    await resolveText('B');
+    await resolveText('C');
+    await waitForAll(['A', 'B', 'C']);
+    expect(root).toMatchRenderedOutput('ABC');
+  });
+
+  it('settles 3 suspended sibling boundaries after a parent re-render inside act', async () => {
+    let attempts = 0;
+    function Tile({text}) {
+      attempts++;
+      if (attempts > 50) {
+        throw new Error('Infinite Suspense retry loop');
+      }
+      readText(text);
+      Scheduler.log(text);
+      return text;
+    }
+
+    function Parent() {
+      const [, setCount] = React.useState(0);
+      React.useEffect(() => {
+        setCount(1);
+      }, []);
+      return (
+        <>
+          <Suspense fallback={<Text text="loading A" />}>
+            <Tile text="A" />
+          </Suspense>
+          <Suspense fallback={<Text text="loading B" />}>
+            <Tile text="B" />
+          </Suspense>
+          <Suspense fallback={<Text text="loading C" />}>
+            <Tile text="C" />
+          </Suspense>
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<Parent />);
+    });
+    assertLog([
+      // Initial mount
+      'Suspend! [A]',
+      'loading A',
+      'Suspend! [B]',
+      'loading B',
+      'Suspend! [C]',
+      'loading C',
+      // useEffect re-render
+      'Suspend! [A]',
+      'loading A',
+      'Suspend! [B]',
+      'loading B',
+      'Suspend! [C]',
+      'loading C',
+      // act() flushes pending work and timers, so the unblocked retries commit
+      // and all three boundaries coalesce into a single prerender pass.
+      'Suspend! [B]',
+      'Suspend! [C]',
+      'Suspend! [A]',
+      'Suspend! [B]',
+      'Suspend! [C]',
+    ]);
+    expect(root).toMatchRenderedOutput('loading Aloading Bloading C');
+    expect(attempts).toBe(11);
+
+    await act(() => {
+      resolveText('A');
+      resolveText('B');
+      resolveText('C');
+    });
+    assertLog(['A', 'B', 'C']);
+    expect(root).toMatchRenderedOutput('ABC');
+  });
+
+  it('settles sibling Suspense retries spawned at different priorities', async () => {
+    let showA;
+    let showB;
+    let attempts = 0;
+
+    function Tile({text}) {
+      attempts++;
+      if (attempts > 50) {
+        throw new Error('Infinite Suspense retry loop');
+      }
+      readText(text);
+      Scheduler.log(text);
+      return text;
+    }
+
+    function Slot({text, onMount}) {
+      const [visible, setVisible] = React.useState(false);
+      React.useLayoutEffect(() => {
+        onMount(() => setVisible(true));
+      }, [onMount]);
+      if (!visible) {
+        return null;
+      }
+      return (
+        <Suspense fallback={<Text text={`loading ${text}`} />}>
+          <Tile text={text} />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    root.render(
+      <>
+        <Slot text="A" onMount={fn => (showA = fn)} />
+        <Slot text="B" onMount={fn => (showB = fn)} />
+      </>,
+    );
+    await waitForAll([]);
+
+    // Mount two sibling boundaries in separate renders (different priorities),
+    // so they occupy distinct RetryLanes even if immediate retries within a
+    // single render shared one lane.
+    startTransition(() => showA());
+    showB();
+    await waitForAll([
+      'Suspend! [B]',
+      'loading B',
+      'Suspend! [A]',
+      'loading A',
+      'Suspend! [B]',
+      ...(!gate('alwaysThrottleRetries')
+        ? ['Suspend! [A]', 'Suspend! [B]']
+        : []),
+    ]);
+
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      // Advance past FALLBACK_THROTTLE_MS so the throttled retry commits.
+      Scheduler.unstable_advanceTime(500);
+      jest.runAllTimers();
+      await waitForAll(['Suspend! [A]', 'Suspend! [B]']);
+    }
+    expect(root).toMatchRenderedOutput('loading Aloading B');
+    expect(attempts).toBe(5);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+
+    await resolveText('A');
+    await waitForAll(['A']);
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      Scheduler.unstable_advanceTime(500);
+      jest.runAllTimers();
+      await waitForAll([]);
+    }
+    expect(root).toMatchRenderedOutput('Aloading B');
+
+    await resolveText('B');
+    await waitForAll(['B']);
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      Scheduler.unstable_advanceTime(500);
+      jest.runAllTimers();
+      await waitForAll([]);
+    }
+    expect(root).toMatchRenderedOutput('AB');
+  });
+
+  it('settles sibling Suspense retries spawned at different priorities inside act', async () => {
+    let showA;
+    let showB;
+    let attempts = 0;
+
+    function Tile({text}) {
+      attempts++;
+      if (attempts > 50) {
+        throw new Error('Infinite Suspense retry loop');
+      }
+      readText(text);
+      Scheduler.log(text);
+      return text;
+    }
+
+    function Slot({text, onMount}) {
+      const [visible, setVisible] = React.useState(false);
+      React.useLayoutEffect(() => {
+        onMount(() => setVisible(true));
+      }, [onMount]);
+      if (!visible) {
+        return null;
+      }
+      return (
+        <Suspense fallback={<Text text={`loading ${text}`} />}>
+          <Tile text={text} />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(
+        <>
+          <Slot text="A" onMount={fn => (showA = fn)} />
+          <Slot text="B" onMount={fn => (showB = fn)} />
+        </>,
+      );
+    });
+    assertLog([]);
+    await act(() => {
+      startTransition(() => showA());
+      showB();
+    });
+    assertLog([
+      'Suspend! [B]',
+      'loading B',
+      'Suspend! [A]',
+      'loading A',
+      'Suspend! [B]',
+      'Suspend! [A]',
+      'Suspend! [B]',
+    ]);
+    expect(root).toMatchRenderedOutput('loading Aloading B');
+    expect(attempts).toBe(5);
+
+    await act(() => {
+      resolveText('A');
+    });
+    assertLog(['A']);
+    expect(root).toMatchRenderedOutput('Aloading B');
+
+    await act(() => {
+      resolveText('B');
+    });
+    assertLog(['B']);
+    expect(root).toMatchRenderedOutput('AB');
+  });
+
+  it('settles when a sibling retry resolves to a nested Suspense boundary while another stays pending', async () => {
+    let showA;
+    let showB;
+
+    function SlotA() {
+      const [visible, setVisible] = React.useState(false);
+      React.useLayoutEffect(() => {
+        showA = () => setVisible(true);
+      }, []);
+      if (!visible) {
+        return null;
+      }
+      return (
+        <Suspense fallback={<Text text="loading A" />}>
+          <AsyncText text="A1" />
+          <Suspense fallback={<Text text="loading A-inner" />}>
+            <AsyncText text="A2" />
+            <AsyncText text="A3" />
+          </Suspense>
+        </Suspense>
+      );
+    }
+
+    function SlotB() {
+      const [visible, setVisible] = React.useState(false);
+      React.useLayoutEffect(() => {
+        showB = () => setVisible(true);
+      }, []);
+      if (!visible) {
+        return null;
+      }
+      return (
+        <Suspense fallback={<Text text="loading B" />}>
+          <AsyncText text="B" />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    root.render(
+      <>
+        <SlotA />
+        <SlotB />
+      </>,
+    );
+    await waitForAll([]);
+
+    // Mount B at default priority and A as a transition so their immediate
+    // retries occupy separate RetryLanes. B's retry starts suspended while
+    // A mounts its fallback (which puts A on a suspended RetryLane and drops B
+    // back to unblocked).
+    startTransition(() => showA());
+    showB();
+    await waitFor(['Suspend! [B]', 'loading B', 'Suspend! [A1]', 'loading A']);
+
+    // Wait until the fallback throttle window expires so B's retry commits,
+    // then resolve A1 mid-retry. A transitions to its inner boundary (`A-inner`,
+    // skipping A3 so the inner fallback appears first), and `A-inner` and B
+    // coalesce into a single prerender pass instead of ping-ponging across
+    // distinct RetryLanes.
+    Scheduler.unstable_advanceTime(500);
+    await waitFor(['Suspend! [B]']);
+    await resolveText('A1');
+    await waitForAll(['A1', 'Suspend! [A2]', 'loading A-inner']);
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    expect(root).toMatchRenderedOutput('A1loading A-innerloading B');
+
+    await waitForAll(['Suspend! [A2]', 'Suspend! [A3]', 'Suspend! [B]']);
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+
+    await resolveText('A2');
+    await resolveText('A3');
+    await resolveText('B');
+    await waitForAll(['A2', 'A3', 'B']);
+    if (gate(flags => flags.alwaysThrottleRetries)) {
+      Scheduler.unstable_advanceTime(500);
+      jest.runAllTimers();
+    }
+    expect(root).toMatchRenderedOutput('A1A2A3B');
+  });
 });
