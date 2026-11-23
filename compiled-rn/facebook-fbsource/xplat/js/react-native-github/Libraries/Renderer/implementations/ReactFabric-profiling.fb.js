@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<2f632f8d10500e1f538fd459414c50b9>>
+ * @generated SignedSource<<25556a1cf466aabbf1e62a03ad12c257>>
  */
 
 "use strict";
@@ -1481,6 +1481,7 @@ function getViewTransitionClassName(defaultClass, eventClass) {
       ? null
       : eventClass;
 }
+function noop() {}
 function is(x, y) {
   return (x === y && (0 !== x || 1 / x === 1 / y)) || (x !== x && y !== y);
 }
@@ -2170,7 +2171,6 @@ function transferActualDuration(fiber) {
   for (var child = fiber.child; child; )
     (fiber.actualDuration += child.actualDuration), (child = child.sibling);
 }
-function noop() {}
 var firstScheduledRoot = null,
   lastScheduledRoot = null,
   didScheduleMicrotask = !1,
@@ -9416,7 +9416,7 @@ function attachSuspenseRetryListeners(finishedWork, wakeables) {
             "Expected finished root and lanes to be set. This is a bug in React."
           );
       var retry = resolveRetryWakeable.bind(null, finishedWork, wakeable);
-      wakeable.then(retry, retry);
+      attachContextPreservingListener(wakeable, retry);
     }
   });
 }
@@ -12754,7 +12754,20 @@ function attachPingListener(root, wakeable, lanes) {
     threadIDs.add(lanes),
     (pingCache = pingSuspendedRoot.bind(null, root, wakeable, lanes)),
     isDevToolsPresent && restorePendingUpdaters(root, lanes),
-    wakeable.then(pingCache, pingCache));
+    attachContextPreservingListener(wakeable, pingCache));
+}
+function attachContextPreservingListener(wakeable, listener) {
+  if ("function" !== typeof Promise) wakeable.then(listener, listener);
+  else {
+    var resolve = noop;
+    new Promise(function (r) {
+      resolve = r;
+    }).then(listener);
+    listener = function () {
+      return resolve();
+    };
+    wakeable.then(listener, listener);
+  }
 }
 function pingSuspendedRoot(root, wakeable, pingedLanes) {
   var pingCache = root.pingCache;
@@ -13268,10 +13281,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1529 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-043ce595-20261120",
+    version: "19.3.0-native-fb-89d7b2b4-20261123",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-043ce595-20261120"
+    reconcilerVersion: "19.3.0-native-fb-89d7b2b4-20261123"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1529.rendererConfig = extraDevToolsConfig);

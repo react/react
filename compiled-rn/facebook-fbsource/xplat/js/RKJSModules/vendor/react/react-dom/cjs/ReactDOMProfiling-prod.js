@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<d179340cea8d0d1ff8ce6d83de3745fb>>
+ * @generated SignedSource<<58df31a4079a1fbd961db83d5f441496>>
  */
 
 /*
@@ -10999,7 +10999,7 @@ function attachSuspenseRetryListeners(finishedWork, wakeables) {
     if (!retryCache.has(wakeable)) {
       retryCache.add(wakeable);
       var retry = resolveRetryWakeable.bind(null, finishedWork, wakeable);
-      wakeable.then(retry, retry);
+      attachContextPreservingListener(wakeable, retry);
     }
   });
 }
@@ -13977,7 +13977,20 @@ function attachPingListener(root, wakeable, lanes) {
     ((workInProgressRootDidAttachPingListener = !0),
     threadIDs.add(lanes),
     (root = pingSuspendedRoot.bind(null, root, wakeable, lanes)),
-    wakeable.then(root, root));
+    attachContextPreservingListener(wakeable, root));
+}
+function attachContextPreservingListener(wakeable, listener) {
+  if ("function" !== typeof Promise) wakeable.then(listener, listener);
+  else {
+    var resolve = noop$1;
+    new Promise(function (r) {
+      resolve = r;
+    }).then(listener);
+    listener = function () {
+      return resolve();
+    };
+    wakeable.then(listener, listener);
+  }
 }
 function pingSuspendedRoot(root, wakeable, pingedLanes) {
   var pingCache = root.pingCache;
@@ -19422,14 +19435,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2144 = React.version;
 if (
-  "19.3.0-native-fb-043ce595-20261120" !==
+  "19.3.0-native-fb-89d7b2b4-20261123" !==
   isomorphicReactPackageVersion$jscomp$inline_2144
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2144,
-      "19.3.0-native-fb-043ce595-20261120"
+      "19.3.0-native-fb-89d7b2b4-20261123"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -19451,10 +19464,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2747 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-043ce595-20261120",
+  version: "19.3.0-native-fb-89d7b2b4-20261123",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-043ce595-20261120"
+  reconcilerVersion: "19.3.0-native-fb-89d7b2b4-20261123"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_2748 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -19733,4 +19746,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-043ce595-20261120";
+exports.version = "19.3.0-native-fb-89d7b2b4-20261123";
