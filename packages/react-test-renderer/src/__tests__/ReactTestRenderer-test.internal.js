@@ -18,10 +18,7 @@ const InternalTestUtils = require('internal-test-utils');
 const waitForAll = InternalTestUtils.waitForAll;
 const act = InternalTestUtils.act;
 const Reconciler = require('react-reconciler/src/ReactFiberReconciler');
-const {
-  ConcurrentRoot,
-  LegacyRoot,
-} = require('react-reconciler/src/ReactRootTags');
+const {ConcurrentRoot} = require('react-reconciler/src/ReactRootTags');
 
 // Isolate noop renderer
 jest.resetModules();
@@ -108,18 +105,18 @@ describe('ReactTestRenderer', () => {
       expectTag(ConcurrentRoot);
     });
 
-    it('should allow unstable_isConcurrent', async () => {
+    it('should ignore unstable_isConcurrent: false in the RN test environment', () => {
+      global.IS_REACT_NATIVE_TEST_ENVIRONMENT = true;
       ReactTestRenderer.create(<div />, {
-        unstable_isConcurrent: true,
+        unstable_isConcurrent: false,
       });
-      ReactTestRenderer.create(<div />);
       expectTag(ConcurrentRoot);
     });
 
-    it('should render legacy root when RN test environment', async () => {
+    it('should render concurrent root when RN test environment', () => {
       global.IS_REACT_NATIVE_TEST_ENVIRONMENT = true;
       ReactTestRenderer.create(<div />);
-      expectTag(LegacyRoot);
+      expectTag(ConcurrentRoot);
     });
   });
 
