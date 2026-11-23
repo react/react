@@ -11,7 +11,7 @@ import type {Fiber} from './ReactInternalTypes';
 
 import {runWithFiberInDEV} from './ReactCurrentFiber';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
-import {StrictLegacyMode} from './ReactTypeOfMode';
+import {StrictMode} from './ReactTypeOfMode';
 
 type FiberArray = Array<Fiber>;
 type FiberToFiberComponentsMap = Map<Fiber, FiberArray>;
@@ -30,7 +30,7 @@ if (__DEV__) {
 
     let node: null | Fiber = fiber;
     while (node !== null) {
-      if (node.mode & StrictLegacyMode) {
+      if (node.mode & StrictMode) {
         maybeStrictRoot = node;
       }
       node = node.return;
@@ -75,7 +75,7 @@ if (__DEV__) {
     }
 
     if (
-      fiber.mode & StrictLegacyMode &&
+      fiber.mode & StrictMode &&
       typeof instance.UNSAFE_componentWillMount === 'function'
     ) {
       pendingUNSAFE_ComponentWillMountWarnings.push(fiber);
@@ -89,7 +89,7 @@ if (__DEV__) {
     }
 
     if (
-      fiber.mode & StrictLegacyMode &&
+      fiber.mode & StrictMode &&
       typeof instance.UNSAFE_componentWillReceiveProps === 'function'
     ) {
       pendingUNSAFE_ComponentWillReceivePropsWarnings.push(fiber);
@@ -103,7 +103,7 @@ if (__DEV__) {
     }
 
     if (
-      fiber.mode & StrictLegacyMode &&
+      fiber.mode & StrictMode &&
       typeof instance.UNSAFE_componentWillUpdate === 'function'
     ) {
       pendingUNSAFE_ComponentWillUpdateWarnings.push(fiber);

@@ -82,8 +82,7 @@ import {
   NoMode,
   ConcurrentMode,
   ProfileMode,
-  StrictLegacyMode,
-  StrictEffectsMode,
+  StrictMode,
   SuspenseyImagesMode,
 } from './ReactTypeOfMode';
 import {
@@ -526,7 +525,7 @@ export function resetWorkInProgress(
 export function createHostRootFiber(isStrictMode: boolean): Fiber {
   let mode: number = ConcurrentMode;
   if (isStrictMode === true) {
-    mode |= StrictLegacyMode | StrictEffectsMode;
+    mode |= StrictMode;
   }
 
   if (__DEV__ || (enableProfilerTimer && isDevToolsPresent)) {
@@ -587,7 +586,7 @@ export function createFiberFromTypeAndProps(
       // $FlowFixMe[invalid-compare]
       case REACT_STRICT_MODE_TYPE:
         fiberTag = Mode;
-        mode |= StrictLegacyMode | StrictEffectsMode;
+        mode |= StrictMode;
         break;
       // $FlowFixMe[invalid-compare]
       case REACT_PROFILER_TYPE:

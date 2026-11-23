@@ -110,7 +110,7 @@ import {
 } from './ReactFiberFlags';
 import getComponentNameFromFiber from './getComponentNameFromFiber';
 
-import {StrictLegacyMode} from './ReactTypeOfMode';
+import {StrictMode} from './ReactTypeOfMode';
 import {
   markSkippedUpdateLanes,
   isUnsafeClassRenderPhaseUpdate,
@@ -401,7 +401,7 @@ function getStateFromUpdate<State>(
         }
         const nextState = payload.call(instance, prevState, nextProps);
         if (__DEV__) {
-          if (workInProgress.mode & StrictLegacyMode) {
+          if (workInProgress.mode & StrictMode) {
             setIsStrictModeForDevtools(true);
             try {
               payload.call(instance, prevState, nextProps);
@@ -431,7 +431,7 @@ function getStateFromUpdate<State>(
         }
         partialState = payload.call(instance, prevState, nextProps);
         if (__DEV__) {
-          if (workInProgress.mode & StrictLegacyMode) {
+          if (workInProgress.mode & StrictMode) {
             setIsStrictModeForDevtools(true);
             try {
               payload.call(instance, prevState, nextProps);

@@ -11,12 +11,7 @@ import type {Fiber} from './ReactInternalTypes';
 import type {Lanes} from './ReactFiberLane';
 import type {UpdateQueue} from './ReactFiberClassUpdateQueue';
 
-import {
-  LayoutStatic,
-  Update,
-  Snapshot,
-  MountLayoutDev,
-} from './ReactFiberFlags';
+import {LayoutStatic, Update, Snapshot} from './ReactFiberFlags';
 import {
   disableLegacyContext,
   enableSchedulingProfiler,
@@ -30,7 +25,7 @@ import assign from 'shared/assign';
 import isArray from 'shared/isArray';
 import {REACT_CONTEXT_TYPE, REACT_CONSUMER_TYPE} from 'shared/ReactSymbols';
 
-import {NoMode, StrictLegacyMode, StrictEffectsMode} from './ReactTypeOfMode';
+import {StrictMode} from './ReactTypeOfMode';
 
 import {
   enqueueUpdate,
@@ -135,7 +130,7 @@ function applyDerivedStateFromProps(
   const prevState = workInProgress.memoizedState;
   let partialState = getDerivedStateFromProps(nextProps, prevState);
   if (__DEV__) {
-    if (workInProgress.mode & StrictLegacyMode) {
+    if (workInProgress.mode & StrictMode) {
       setIsStrictModeForDevtools(true);
       try {
         // Invoke the function an extra time to help detect side-effects.
@@ -259,7 +254,7 @@ function checkShouldComponentUpdate(
       nextContext,
     );
     if (__DEV__) {
-      if (workInProgress.mode & StrictLegacyMode) {
+      if (workInProgress.mode & StrictMode) {
         setIsStrictModeForDevtools(true);
         try {
           // Invoke the function an extra time to help detect side-effects.
@@ -588,7 +583,7 @@ function constructClassInstance(
   let instance = new ctor(props, context);
   // Instantiate twice to help detect side-effects.
   if (__DEV__) {
-    if (workInProgress.mode & StrictLegacyMode) {
+    if (workInProgress.mode & StrictMode) {
       setIsStrictModeForDevtools(true);
       try {
         instance = new ctor(props, context);
@@ -799,7 +794,7 @@ function mountClassInstance(
       }
     }
 
-    if (workInProgress.mode & StrictLegacyMode) {
+    if (workInProgress.mode & StrictMode) {
       ReactStrictModeWarnings.recordLegacyContextWarning(
         workInProgress,
         instance,
@@ -843,9 +838,6 @@ function mountClassInstance(
 
   if (typeof instance.componentDidMount === 'function') {
     workInProgress.flags |= Update | LayoutStatic;
-  }
-  if (__DEV__ && (workInProgress.mode & StrictEffectsMode) !== NoMode) {
-    workInProgress.flags |= MountLayoutDev;
   }
 }
 
@@ -926,9 +918,6 @@ function resumeMountClassInstance(
     if (typeof instance.componentDidMount === 'function') {
       workInProgress.flags |= Update | LayoutStatic;
     }
-    if (__DEV__ && (workInProgress.mode & StrictEffectsMode) !== NoMode) {
-      workInProgress.flags |= MountLayoutDev;
-    }
     return false;
   }
 
@@ -972,17 +961,11 @@ function resumeMountClassInstance(
     if (typeof instance.componentDidMount === 'function') {
       workInProgress.flags |= Update | LayoutStatic;
     }
-    if (__DEV__ && (workInProgress.mode & StrictEffectsMode) !== NoMode) {
-      workInProgress.flags |= MountLayoutDev;
-    }
   } else {
     // If an update was already in progress, we should schedule an Update
     // effect even though we're bailing out, so that cWU/cDU are called.
     if (typeof instance.componentDidMount === 'function') {
       workInProgress.flags |= Update | LayoutStatic;
-    }
-    if (__DEV__ && (workInProgress.mode & StrictEffectsMode) !== NoMode) {
-      workInProgress.flags |= MountLayoutDev;
     }
 
     // If shouldComponentUpdate returned false, we should still update the

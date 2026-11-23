@@ -49,7 +49,7 @@ import {
   REACT_MEMO_CACHE_SENTINEL,
 } from 'shared/ReactSymbols';
 
-import {NoMode, StrictEffectsMode, StrictLegacyMode} from './ReactTypeOfMode';
+import {NoMode, StrictMode} from './ReactTypeOfMode';
 import {
   NoLane,
   SyncLane,
@@ -82,8 +82,6 @@ import {
   StaticMask as StaticMaskEffect,
   Update as UpdateEffect,
   StoreConsistency,
-  MountLayoutDev as MountLayoutDevEffect,
-  MountPassiveDev as MountPassiveDevEffect,
   FormReset,
 } from './ReactFiberFlags';
 import {
@@ -587,7 +585,7 @@ export function renderWithHooks<Props, SecondArg>(
   //
   // There are plenty of tests to ensure this behavior is correct.
   const shouldDoubleRenderDEV =
-    __DEV__ && (workInProgress.mode & StrictLegacyMode) !== NoMode;
+    __DEV__ && (workInProgress.mode & StrictMode) !== NoMode;
 
   shouldDoubleInvokeUserFnsInHooksDEV = shouldDoubleRenderDEV;
   let children = __DEV__
@@ -901,16 +899,7 @@ export function bailoutHooks(
   workInProgress.updateQueue = current.updateQueue;
   // TODO: Don't need to reset the flags here, because they're reset in the
   // complete phase (bubbleProperties).
-  if (__DEV__ && (workInProgress.mode & StrictEffectsMode) !== NoMode) {
-    workInProgress.flags &= ~(
-      MountPassiveDevEffect |
-      MountLayoutDevEffect |
-      PassiveEffect |
-      UpdateEffect
-    );
-  } else {
-    workInProgress.flags &= ~(PassiveEffect | UpdateEffect);
-  }
+  workInProgress.flags &= ~(PassiveEffect | UpdateEffect);
   current.lanes = removeLanes(current.lanes, lanes);
 }
 
@@ -2686,24 +2675,12 @@ function mountEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): void {
-  if (
-    __DEV__ &&
-    (currentlyRenderingFiber.mode & StrictEffectsMode) !== NoMode
-  ) {
-    mountEffectImpl(
-      MountPassiveDevEffect | PassiveEffect | PassiveStaticEffect,
-      HookPassive,
-      create,
-      deps,
-    );
-  } else {
-    mountEffectImpl(
-      PassiveEffect | PassiveStaticEffect,
-      HookPassive,
-      create,
-      deps,
-    );
-  }
+  mountEffectImpl(
+    PassiveEffect | PassiveStaticEffect,
+    HookPassive,
+    create,
+    deps,
+  );
 }
 
 function updateEffect(
@@ -2785,13 +2762,7 @@ function mountLayoutEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): void {
-  let fiberFlags: Flags = UpdateEffect | LayoutStaticEffect;
-  if (
-    __DEV__ &&
-    (currentlyRenderingFiber.mode & StrictEffectsMode) !== NoMode
-  ) {
-    fiberFlags |= MountLayoutDevEffect;
-  }
+  const fiberFlags: Flags = UpdateEffect | LayoutStaticEffect;
   return mountEffectImpl(fiberFlags, HookLayout, create, deps);
 }
 
@@ -2857,13 +2828,7 @@ function mountImperativeHandle<T>(
   const effectDeps =
     deps !== null && deps !== undefined ? deps.concat([ref]) : null;
 
-  let fiberFlags: Flags = UpdateEffect | LayoutStaticEffect;
-  if (
-    __DEV__ &&
-    (currentlyRenderingFiber.mode & StrictEffectsMode) !== NoMode
-  ) {
-    fiberFlags |= MountLayoutDevEffect;
-  }
+  const fiberFlags: Flags = UpdateEffect | LayoutStaticEffect;
   mountEffectImpl(
     fiberFlags,
     HookLayout,

@@ -132,12 +132,7 @@ import {
   getIsHydrating,
   popHydrationStateOnInterruptedWork,
 } from './ReactFiberHydrationContext';
-import {
-  NoMode,
-  ProfileMode,
-  StrictLegacyMode,
-  StrictEffectsMode,
-} from './ReactTypeOfMode';
+import {NoMode, ProfileMode, StrictMode} from './ReactTypeOfMode';
 import {
   HostRoot,
   ClassComponent,
@@ -5375,8 +5370,7 @@ function doubleInvokeEffectsInDEVIfNecessary(
 
 function commitDoubleInvokeEffectsInDEV(root: FiberRoot) {
   if (__DEV__) {
-    const doubleInvokeEffects =
-      (root.current.mode & (StrictLegacyMode | StrictEffectsMode)) !== NoMode;
+    const doubleInvokeEffects = (root.current.mode & StrictMode) !== NoMode;
     recursivelyTraverseAndDoubleInvokeEffectsInDEV(
       root,
       root.current,

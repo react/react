@@ -158,7 +158,7 @@ import {
   getBumpedLaneForHydration,
   pickArbitraryLane,
 } from './ReactFiberLane';
-import {StrictLegacyMode} from './ReactTypeOfMode';
+import {StrictMode} from './ReactTypeOfMode';
 import {
   shouldSetTextContent,
   isSuspenseInstancePending,
@@ -1426,7 +1426,7 @@ function updateFunctionComponent(
       }
     }
 
-    if (workInProgress.mode & StrictLegacyMode) {
+    if (workInProgress.mode & StrictMode) {
       ReactStrictModeWarnings.recordLegacyContextWarning(workInProgress, null);
     }
 
@@ -1717,7 +1717,7 @@ function finishClassComponent(
     }
     if (__DEV__) {
       nextChildren = callRenderInDEV(instance);
-      if (workInProgress.mode & StrictLegacyMode) {
+      if (workInProgress.mode & StrictMode) {
         setIsStrictModeForDevtools(true);
         try {
           callRenderInDEV(instance);

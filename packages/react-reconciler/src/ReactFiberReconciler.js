@@ -86,7 +86,7 @@ import {
   current as ReactCurrentFiberCurrent,
   runWithFiberInDEV,
 } from './ReactCurrentFiber';
-import {StrictLegacyMode} from './ReactTypeOfMode';
+import {StrictMode} from './ReactTypeOfMode';
 import {
   SyncLane,
   SelectiveHydrationLane,
@@ -192,12 +192,12 @@ function findHostInstanceWithWarning(
     if (hostFiber === null) {
       return null;
     }
-    if (hostFiber.mode & StrictLegacyMode) {
+    if (hostFiber.mode & StrictMode) {
       const componentName = getComponentNameFromFiber(fiber) || 'Component';
       if (!didWarnAboutFindNodeInStrictMode[componentName]) {
         didWarnAboutFindNodeInStrictMode[componentName] = true;
         runWithFiberInDEV(hostFiber, () => {
-          if (fiber.mode & StrictLegacyMode) {
+          if (fiber.mode & StrictMode) {
             console.error(
               '%s is deprecated in StrictMode. ' +
                 '%s was passed an instance of %s which is inside StrictMode. ' +
