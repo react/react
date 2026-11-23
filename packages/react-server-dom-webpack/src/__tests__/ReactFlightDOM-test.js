@@ -3657,6 +3657,31 @@ describe('ReactFlightDOM', () => {
       expect(await renderToText({text})).toMatch(/[0-9a-f]+:T[0-9a-f]+,/);
     });
 
+    it('finds unpaired surrogates without a native isWellFormed', async () => {
+      const isWellFormed = String.prototype.isWellFormed;
+      delete String.prototype.isWellFormed;
+      try {
+        const prefix = 'a'.repeat(1024);
+        const model = {
+          high: prefix + '\uD800b',
+          low: prefix + 'b\uDC00',
+          highAtEnd: prefix + '\u{1F600}\uD800',
+          reversed: prefix + '\uDE00\uD83D',
+          pairs: prefix + '\u{1F600}\u{10FFFF}',
+        };
+        const result = await render(model);
+        expect(result).toEqual(model);
+        // Only the well-formed string gets its own text chunk.
+        const textRows = (await renderToText(model)).match(
+          /[0-9a-f]+:T[0-9a-f]+,/g,
+        );
+        expect(textRows.length).toBe(1);
+      } finally {
+        // eslint-disable-next-line no-extend-native
+        String.prototype.isWellFormed = isWellFormed;
+      }
+    });
+
     it('counts large strings with an unpaired surrogate towards the debug object limit', async () => {
       // The component ignores its props, so they can only reach the output as
       // debug info.

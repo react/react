@@ -4045,12 +4045,17 @@ const surrogateCodeUnit = /[\uD800-\uDFFF]/;
 // JSON payload instead, since JSON.stringify escapes unpaired surrogates as
 // \ud800-style sequences and JSON.parse restores them.
 function isWellFormedString(value: string): boolean {
-  if (!surrogateCodeUnit.test(value)) {
+  if (typeof (value as any).isWellFormed === 'function') {
+    // Native in Node 20+ and other current runtimes, and much faster.
+    return (value as any).isWellFormed();
+  }
+  const start = value.search(surrogateCodeUnit);
+  if (start === -1) {
     // Fast path: the overwhelming majority of strings don't contain any
     // surrogate code units at all.
     return true;
   }
-  for (let i = 0; i < value.length; i++) {
+  for (let i = start; i < value.length; i++) {
     const code = value.charCodeAt(i);
     if (code < 0xd800 || code > 0xdfff) {
       continue;
