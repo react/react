@@ -5056,9 +5056,16 @@ export function attachContextPreservingListener(
   wakeable: Wakeable,
   listener: () => void,
 ): void {
-  if (__DEV__ && isConcurrentActEnvironment()) {
+  if (
+    // Without native promises there's no context to preserve.
+    typeof Promise !== 'function' ||
     // Tests that use act expect the listener to run synchronously, inside the
     // act scope that settled the wakeable. They don't need the async context.
+    // Checking actQueue first avoids the misconfigured-environment warning
+    // that isConcurrentActEnvironment logs inside an act scope.
+    (__DEV__ &&
+      (ReactSharedInternals.actQueue !== null || isConcurrentActEnvironment()))
+  ) {
     wakeable.then(listener, listener);
     return;
   }
