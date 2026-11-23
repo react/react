@@ -398,10 +398,15 @@ type Response = {
   _timeOrigin: number, // Profiling-only
   _pendingInitialRender: null | TimeoutID, // Profiling-only,
   _pendingChunks: number, // DEV-only
+  // Null means a readable debug channel was supplied, so missing metadata must
+  // not be ignored. Otherwise, the set records missing chunk IDs. Closing the
+  // response clears _debugChannel, so this preserves the original choice.
+  _missingChunks: null | Set<number>, // DEV-only
   _weakResponse: WeakResponse, // DEV-only
   _debugRootOwner?: null | ReactComponentInfo, // DEV-only
   _debugRootStack?: null | Error, // DEV-only
   _debugRootTask?: null | ConsoleTask, // DEV-only
+  _debugRequestId: string | void, // DEV-only
   _debugStartTime: number, // DEV-only
   _debugEndTime: null | number, // DEV-only
   _debugIOStarted: boolean, // DEV-only
@@ -1301,11 +1306,14 @@ export function reportGlobalError(
   const response = unwrapWeakResponse(weakResponse);
   response._closed = true;
   response._closedReason = error;
-  response._chunks.forEach(chunk => {
+  response._chunks.forEach((chunk, id) => {
     // If this chunk was already resolved or errored, it won't
     // trigger an error but if it wasn't then we need to
     // because we won't be getting any new data to resolve it.
     if (chunk.status === PENDING) {
+      if (__DEV__ && response._missingChunks !== null) {
+        response._missingChunks.add(id);
+      }
       triggerErrorOnChunk(response, chunk, error);
     } else if (enableFlightWeakThenables && chunk.status === PENDING_WEAK) {
       // A weak Promise reference may never be emitted by the server. It
@@ -1664,6 +1672,11 @@ function getChunk(response: Response, id: number): SomeChunk<any> {
   let chunk = chunks.get(id);
   if (!chunk) {
     if (response._closed) {
+      if (__DEV__ && response._missingChunks !== null) {
+        // We record this missing chunk here because it did not exist when the
+        // response closed.
+        response._missingChunks.add(id);
+      }
       if (response._allowPartialStream) {
         // For partial streams, chunks accessed after close should be HALTED
         // (never resolve).
@@ -2337,6 +2350,20 @@ function getOutlinedModel<T>(
   const path =
     reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
   const chunk = getChunk(response, id);
+  if (
+    __DEV__ &&
+    response._closed &&
+    parentObject[0] === REACT_ELEMENT_TYPE &&
+    // Slots 4 and 5 hold the element's owner and debug stack.
+    (key === '4' || key === '5')
+  ) {
+    const missingChunks = response._missingChunks;
+    // An unwired debug channel can leave owner and stack records absent. They
+    // remain optional when a lazy element is first initialized after close.
+    if (missingChunks !== null && missingChunks.has(id)) {
+      return null as any;
+    }
+  }
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (initializingChunk !== null && isArray(initializingChunk._children)) {
       initializingChunk._children.push(chunk);
@@ -3045,6 +3072,7 @@ function ResponseInstance(
   debugStartTime: void | number, // DEV-only
   debugEndTime: void | number, // DEV-only
   debugChannel: void | DebugChannel, // DEV-only
+  debugRequestId: string | void, // DEV-only
 ) {
   const chunks: Map<number, SomeChunk<any>> = new Map();
   this._bundlerConfig = bundlerConfig;
@@ -3066,6 +3094,10 @@ function ResponseInstance(
   }
   if (__DEV__) {
     this._pendingChunks = 0;
+    this._missingChunks =
+      debugChannel === undefined || !debugChannel.hasReadable
+        ? new Set()
+        : null;
     this._weakResponse = {
       weak: new WeakRef(this),
       response: this,
@@ -3111,6 +3143,7 @@ function ResponseInstance(
     // and is not considered I/O required to load the stream.
     setTimeout(markIOStarted.bind(this), 0);
     this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
+    this._debugRequestId = debugRequestId;
     this._debugFindSourceMapURL = findSourceMapURL;
     this._debugChannel = debugChannel;
     this._blockedConsole = null;
@@ -3154,6 +3187,7 @@ export function createResponse(
   debugStartTime: void | number, // DEV-only
   debugEndTime: void | number, // DEV-only
   debugChannel: void | DebugChannel, // DEV-only
+  debugRequestId: string | void, // DEV-only
 ): WeakResponse {
   if (__DEV__) {
     // We use eval to create fake function stacks which includes Component stacks.
@@ -3180,6 +3214,7 @@ export function createResponse(
       debugStartTime,
       debugEndTime,
       debugChannel,
+      debugRequestId,
     ),
   );
 }
@@ -4803,6 +4838,7 @@ function logComponentInfo(
       childrenEndTime,
       response._rootEnvironmentName,
       root.reason,
+      response._debugRequestId,
     );
   } else {
     logComponentRender(
@@ -4812,6 +4848,7 @@ function logComponentInfo(
       componentEndTime,
       childrenEndTime,
       response._rootEnvironmentName,
+      response._debugRequestId,
     );
   }
 }
@@ -5004,6 +5041,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     thenable.value,
+                    response._debugRequestId,
                   );
                   break;
                 case ERRORED:
@@ -5014,6 +5052,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     thenable.reason,
+                    response._debugRequestId,
                   );
                   break;
                 default:
@@ -5027,6 +5066,7 @@ function flushComponentPerformance(
                     endTime,
                     env,
                     undefined,
+                    response._debugRequestId,
                   );
                   break;
               }
@@ -5038,6 +5078,7 @@ function flushComponentPerformance(
                 endTime,
                 env,
                 undefined,
+                response._debugRequestId,
               );
             }
           }
@@ -5062,6 +5103,7 @@ function flushComponentPerformance(
               componentEndTime,
               childrenEndTime,
               env,
+              response._debugRequestId,
             );
             componentEndTime = time; // The end time of previous component is the start time of the next.
             // Track the root most component of the result for deduping logging.
@@ -5081,7 +5123,14 @@ function flushComponentPerformance(
             if (endTime > childrenEndTime) {
               childrenEndTime = endTime;
             }
-            logComponentAwaitAborted(asyncInfo, trackIdx, time, endTime, env);
+            logComponentAwaitAborted(
+              asyncInfo,
+              trackIdx,
+              time,
+              endTime,
+              env,
+              response._debugRequestId,
+            );
           }
         }
       }
@@ -5733,11 +5782,14 @@ export function close(weakResponse: WeakResponse): void {
   if (response._allowPartialStream) {
     // For partial streams, we halt pending chunks instead of erroring them.
     response._closed = true;
-    response._chunks.forEach(chunk => {
+    response._chunks.forEach((chunk, id) => {
       if (
         chunk.status === PENDING ||
         (enableFlightWeakThenables && chunk.status === PENDING_WEAK)
       ) {
+        if (__DEV__ && response._missingChunks !== null) {
+          response._missingChunks.add(id);
+        }
         haltChunk(response, chunk);
       } else if (chunk.status === INITIALIZED && chunk.reason !== null) {
         // Stream chunk - close gracefully instead of erroring.

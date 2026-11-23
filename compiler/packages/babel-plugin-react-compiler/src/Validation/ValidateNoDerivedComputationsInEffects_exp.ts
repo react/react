@@ -5,6 +5,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {getBabelLocation} from '../HIR/SourceLocation';
+import type * as t from '@babel/types';
+import type {GeneratedSource} from '../HIR/SourceLocation';
 import {Result} from '../Utils/Result';
 import {CompilerDiagnostic, CompilerError, Effect} from '..';
 import {ErrorCategory} from '../CompilerError';
@@ -21,7 +24,6 @@ import {
   isUseStateType,
   BasicBlock,
   isUseRefType,
-  SourceLocation,
   ArrayExpression,
 } from '../HIR';
 import {eachInstructionLValue, eachInstructionOperand} from '../HIR/visitors';
@@ -49,7 +51,10 @@ type ValidationContext = {
   readonly derivationCache: DerivationCache;
   readonly effectsCache: Map<IdentifierId, EffectMetadata>;
   readonly setStateLoads: Map<IdentifierId, IdentifierId | null>;
-  readonly setStateUsages: Map<IdentifierId, Set<SourceLocation>>;
+  readonly setStateUsages: Map<
+    IdentifierId,
+    Set<t.SourceLocation | typeof GeneratedSource>
+  >;
 };
 
 const MAX_FIXPOINT_ITERATIONS = 100;
@@ -190,7 +195,10 @@ export function validateNoDerivedComputationsInEffects_exp(
   const effectsCache: Map<IdentifierId, EffectMetadata> = new Map();
 
   const setStateLoads: Map<IdentifierId, IdentifierId> = new Map();
-  const setStateUsages: Map<IdentifierId, Set<SourceLocation>> = new Map();
+  const setStateUsages: Map<
+    IdentifierId,
+    Set<t.SourceLocation | typeof GeneratedSource>
+  > = new Map();
 
   const context: ValidationContext = {
     functions,
@@ -322,7 +330,7 @@ function getRootSetState(
 function maybeRecordSetState(
   instr: Instruction,
   loads: Map<IdentifierId, IdentifierId | null>,
-  usages: Map<IdentifierId, Set<SourceLocation>>,
+  usages: Map<IdentifierId, Set<t.SourceLocation | typeof GeneratedSource>>,
 ): void {
   for (const operand of eachInstructionLValue(instr)) {
     if (
@@ -339,7 +347,7 @@ function maybeRecordSetState(
 
     const rootSetState = getRootSetState(operand.identifier.id, loads);
     if (rootSetState !== null && usages.get(rootSetState) === undefined) {
-      usages.set(rootSetState, new Set([operand.loc]));
+      usages.set(rootSetState, new Set([getBabelLocation(operand.loc)]));
     }
   }
 }
@@ -403,7 +411,9 @@ function recordInstructionDerivations(
         context.setStateLoads,
       );
       if (rootSetStateId !== null) {
-        context.setStateUsages.get(rootSetStateId)?.add(operand.loc);
+        context.setStateUsages
+          .get(rootSetStateId)
+          ?.add(getBabelLocation(operand.loc));
       }
     }
 
@@ -644,7 +654,7 @@ function validateEffect(
 
   const effectSetStateUsages: Map<
     IdentifierId,
-    Set<SourceLocation>
+    Set<t.SourceLocation | typeof GeneratedSource>
   > = new Map();
 
   // Consider setStates in the effect's dependency array as being part of effectSetStateUsages
@@ -652,7 +662,7 @@ function validateEffect(
     if (dep.kind === 'Identifier') {
       const root = getRootSetState(dep.identifier.id, context.setStateLoads);
       if (root !== null) {
-        effectSetStateUsages.set(root, new Set([dep.loc]));
+        effectSetStateUsages.set(root, new Set([getBabelLocation(dep.loc)]));
       }
     }
   }
@@ -696,7 +706,9 @@ function validateEffect(
             context.setStateLoads,
           );
           if (rootSetStateId !== null) {
-            effectSetStateUsages.get(rootSetStateId)?.add(operand.loc);
+            effectSetStateUsages
+              .get(rootSetStateId)
+              ?.add(getBabelLocation(operand.loc));
           }
         }
       }

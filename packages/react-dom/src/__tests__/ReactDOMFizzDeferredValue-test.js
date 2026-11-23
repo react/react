@@ -24,6 +24,7 @@ let act;
 let serverAct;
 let assertLog;
 let waitForPaint;
+let waitForAll;
 let container;
 let React;
 let Scheduler;
@@ -46,6 +47,7 @@ describe('ReactDOMFizzForm', () => {
     Suspense = React.Suspense;
     assertLog = require('internal-test-utils').assertLog;
     waitForPaint = require('internal-test-utils').waitForPaint;
+    waitForAll = require('internal-test-utils').waitForAll;
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -191,4 +193,95 @@ describe('ReactDOMFizzForm', () => {
       expect(cRef.current).toBe(serverRenderedC);
     },
   );
+
+  async function shellSuspendsDuringHydration(hydrateInTransition) {
+    let suspendOnClient = false;
+    let shellResolved = false;
+    let resolveShell;
+    const shellPromise = new Promise(resolve => {
+      resolveShell = resolve;
+    });
+    shellPromise.then(() => {
+      shellResolved = true;
+    });
+
+    function Deferred() {
+      const text = useDeferredValue('Final', 'Initial');
+      return <Text text={text} />;
+    }
+
+    function Shell() {
+      if (suspendOnClient && !shellResolved) {
+        Scheduler.log('Suspend! [Shell]');
+        throw shellPromise;
+      }
+      return <Text text="Shell" />;
+    }
+
+    function App() {
+      return (
+        <div>
+          <span>
+            <Deferred />
+          </span>
+          <span>
+            <Shell />
+          </span>
+        </div>
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<App />),
+    );
+    await readIntoContainer(stream);
+    assertLog(['Initial', 'Shell']);
+
+    // On the client the shell suspends during hydration, after the
+    // useDeferredValue above it has spawned a deferred lane.
+    suspendOnClient = true;
+    if (hydrateInTransition) {
+      React.startTransition(() => {
+        ReactDOMClient.hydrateRoot(container, <App />);
+      });
+    } else {
+      ReactDOMClient.hydrateRoot(container, <App />);
+    }
+    // The root waits for the promise: it does not keep retrying the suspended
+    // hydration because the spawned deferred lane committed. If it does, this
+    // never settles, and the test fails with "Potential infinite loop".
+    if (hydrateInTransition) {
+      await waitForAll(['Initial', 'Suspend! [Shell]']);
+    } else {
+      await waitForAll([
+        'Initial',
+        'Suspend! [Shell]',
+        'Initial',
+        'Suspend! [Shell]',
+      ]);
+    }
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Initial</span>
+        <span>Shell</span>
+      </div>,
+    );
+
+    await act(() => resolveShell());
+    assertLog(['Initial', 'Shell', 'Final']);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Final</span>
+        <span>Shell</span>
+      </div>,
+    );
+  }
+
+  it('does not spin when the shell suspends during a transition hydration that spawned a deferred lane', async () => {
+    await shellSuspendsDuringHydration(true);
+  });
+
+  it('does not spin when the shell suspends during a default hydration that spawned a deferred lane', async () => {
+    await shellSuspendsDuringHydration(false);
+  });
 });

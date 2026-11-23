@@ -2385,6 +2385,46 @@ fn build_typed_globals(
     ));
     globals.insert("MutationObserver".to_string(), mutation_observer_ctor);
 
+    let performance_observer_ctor = add_function(
+        shapes,
+        Vec::new(),
+        FunctionSignatureBuilder {
+            // The callback is retained for later delivery, not invoked by construction.
+            positional_params: vec![Effect::Freeze],
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            ..Default::default()
+        },
+        None,
+        true,
+    );
+    typed_globals.push((
+        "PerformanceObserver".to_string(),
+        performance_observer_ctor.clone(),
+    ));
+    globals.insert("PerformanceObserver".to_string(), performance_observer_ctor);
+
+    let reporting_observer_ctor = add_function(
+        shapes,
+        Vec::new(),
+        FunctionSignatureBuilder {
+            // The callback is retained for later delivery, not invoked by construction.
+            // The `observe()` options are a separate constructor argument here, unlike
+            // PerformanceObserver, so they are read instead of being retained.
+            positional_params: vec![Effect::Freeze, Effect::Read],
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            ..Default::default()
+        },
+        None,
+        true,
+    );
+    typed_globals.push((
+        "ReportingObserver".to_string(),
+        reporting_observer_ctor.clone(),
+    ));
+    globals.insert("ReportingObserver".to_string(), reporting_observer_ctor);
+
     // React global object — reuses the same REACT_APIS types (matching TS behavior
     // where the same type objects are used as both standalone globals and React.* properties)
     let react_create_element = add_function(

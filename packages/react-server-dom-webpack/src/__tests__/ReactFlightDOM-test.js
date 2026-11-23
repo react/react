@@ -3388,4 +3388,202 @@ describe('ReactFlightDOM', () => {
 
     // We expect it to get to the end here rather than hang on the reader.
   });
+
+  describe('hooks in streamed values', () => {
+    async function render(model, options) {
+      const {writable, readable} = getTestStream();
+      const {pipe} = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(model, webpackMap, {
+          identifierPrefix: 'stream-',
+          ...options,
+        }),
+      );
+      pipe(writable);
+      return ReactServerDOMClient.createFromReadableStream(readable);
+    }
+
+    function Item({children}) {
+      return <span id={FlightReact.useId()}>{children}</span>;
+    }
+
+    it('supports hooks in components yielded from an async iterable', async () => {
+      async function* items() {
+        yield <Item>first</Item>;
+        yield <Item>second</Item>;
+      }
+
+      const model = await render({items: items()});
+      const iterator = model.items[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      const second = await iterator.next();
+      expect(first.done).toBe(false);
+      expect(second.done).toBe(false);
+      expect(await iterator.next()).toEqual({done: true, value: undefined});
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div>
+            {first.value}
+            {second.value}
+          </div>,
+        );
+      });
+      expect(container.innerHTML).toBe(
+        '<div><span id="_stream-S_1_">first</span>' +
+          '<span id="_stream-S_2_">second</span></div>',
+      );
+    });
+
+    it.each([false, true])(
+      'supports hooks in an async iterator return value with a preceding yield: %s',
+      async includeYield => {
+        async function* items() {
+          if (includeYield) {
+            yield 'first';
+          }
+          return <Item>returned</Item>;
+        }
+
+        const model = await render({items: items()});
+        const iterator = model.items[Symbol.asyncIterator]();
+        if (includeYield) {
+          expect(await iterator.next()).toEqual({done: false, value: 'first'});
+        }
+        const returned = await iterator.next();
+        expect(returned.done).toBe(true);
+
+        const container = document.createElement('div');
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(returned.value);
+        });
+        expect(container.innerHTML).toBe(
+          '<span id="_stream-S_1_">returned</span>',
+        );
+      },
+    );
+
+    it('supports hooks in components emitted by a ReadableStream', async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(<Item>first</Item>);
+          controller.enqueue(<Item>second</Item>);
+          controller.close();
+        },
+      });
+
+      const model = await render({stream});
+      const reader = model.stream.getReader();
+      const first = await reader.read();
+      const second = await reader.read();
+      expect(first.done).toBe(false);
+      expect(second.done).toBe(false);
+      expect(await reader.read()).toEqual({done: true, value: undefined});
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div>
+            {first.value}
+            {second.value}
+          </div>,
+        );
+      });
+      expect(container.innerHTML).toBe(
+        '<div><span id="_stream-S_1_">first</span>' +
+          '<span id="_stream-S_2_">second</span></div>',
+      );
+    });
+
+    it('renders synchronous iterator thenables immediately and restores outer hooks', async () => {
+      const events = [];
+      function LoggedItem({children}) {
+        events.push(children);
+        return <Item>{children}</Item>;
+      }
+      const items = {
+        [Symbol.asyncIterator]() {
+          let index = 0;
+          return {
+            next() {
+              const done = index++ !== 0;
+              const label = done ? 'returned' : 'yielded';
+              return {
+                then(resolve) {
+                  events.push('before ' + label);
+                  resolve({done, value: <LoggedItem>{label}</LoggedItem>});
+                  events.push('after ' + label);
+                },
+              };
+            },
+          };
+        },
+      };
+
+      const model = await render({
+        items,
+        sibling: <LoggedItem>sibling</LoggedItem>,
+      });
+      expect(events).toEqual([
+        'before yielded',
+        'yielded',
+        'before returned',
+        'returned',
+        'after returned',
+        'after yielded',
+        'sibling',
+      ]);
+      const iterator = model.items[Symbol.asyncIterator]();
+      const yielded = await iterator.next();
+      const returned = await iterator.next();
+      expect(yielded.done).toBe(false);
+      expect(returned.done).toBe(true);
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div>
+            {yielded.value}
+            {returned.value}
+            {model.sibling}
+          </div>,
+        );
+      });
+      expect(container.innerHTML).toBe(
+        '<div><span id="_stream-S_1_">yielded</span>' +
+          '<span id="_stream-S_2_">returned</span>' +
+          '<span id="_stream-S_3_">sibling</span></div>',
+      );
+    });
+
+    // @gate __DEV__
+    it('supports hooks in the cause of an asynchronously rejected error', async () => {
+      const error = new Error('outer', {cause: <Item>cause</Item>});
+      const errors = [];
+      const model = await render(
+        {failure: Promise.reject(error)},
+        {
+          onError(reason) {
+            errors.push(reason);
+          },
+        },
+      );
+      expect(errors).toEqual([error]);
+      const failure = await Promise.resolve(model.failure).catch(
+        reason => reason,
+      );
+      expect(failure.message).toBe('outer');
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(failure.cause);
+      });
+      expect(container.innerHTML).toBe('<span id="_stream-S_1_">cause</span>');
+    });
+  });
 });

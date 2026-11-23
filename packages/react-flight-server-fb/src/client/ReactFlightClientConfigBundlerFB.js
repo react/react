@@ -56,19 +56,17 @@ export function resolveClientReference<T>(
   return metadata;
 }
 
-// Called on the server when decoding a client's action reply (via decodeReply).
-// Maps the $$id string sent by the client back to module metadata so the server
-// can locate and execute the actual function. $$hblp is null because this runs
-// on the server — there is no client module to download.
+// Server references received from a client need authorization before loading
+// their modules. This does not affect client references or action serialization.
 export function resolveServerReference<T>(
   config: ServerManifest,
   id: ServerReferenceId,
 ): ClientReference<T> {
-  return {
-    $$typeof: Symbol.for('react.client.reference'),
-    $$id: id,
-    $$hblp: null,
-  } as any;
+  // Decoding requires a registered server-action manifest that authorizes IDs
+  // before module loading, plus own-export checks.
+  throw new Error(
+    'Server-reference decoding is not supported by the FB Flight bundler.',
+  );
 }
 
 const asyncModuleCache: Map<string, Thenable<any>> = new Map();

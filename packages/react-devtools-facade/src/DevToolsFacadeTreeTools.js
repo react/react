@@ -46,6 +46,12 @@ export type HookNode = {
   subHooks: Array<HookNode>,
 };
 
+// Meta for type: 'suspense'. isSuspended is true while the boundary shows its
+// fallback.
+export type SuspenseMeta = {isSuspended: boolean};
+
+export type NodeMeta = SuspenseMeta | null;
+
 export type NodeInfo = {
   uid: string,
   type: string,
@@ -53,6 +59,7 @@ export type NodeInfo = {
   key?: string,
   props?: {[string]: mixed},
   hooks?: Array<HookNode>,
+  meta: NodeMeta,
 };
 
 export type SourceLocation = {
@@ -204,12 +211,14 @@ const MAX_NORMALIZE_DEPTH = 3;
 // Normalize a value to a plain, serialization-safe shape. Tracks seen objects
 // to break circular references and limits depth to avoid stack overflow on
 // deeply nested structures. Functions/symbols/elements become descriptive
-// strings so the result can be safely serialized downstream.
+// strings and BigInts become '<digits>n' strings (JSON.stringify throws on
+// them) so the result can be safely serialized downstream.
 function normalizeValue(val: mixed, seen?: Set<mixed>, depth?: number): mixed {
   if (val === undefined) return null;
   if (typeof val === 'function')
     return val.name ? '[fn ' + val.name + ']' : '[fn]';
   if (typeof val === 'symbol') return '[symbol]';
+  if (typeof val === 'bigint') return val.toString() + 'n';
   if (typeof val === 'object' && val !== null) {
     if ((val as any).$$typeof != null) return '[React element]';
     const currentDepth = depth || 0;
@@ -400,11 +409,12 @@ export function createTreeTools(
 
     if (fiber.tag === HostHoistable) {
       const resource = fiber.memoizedState;
-      if (
-        resource != null &&
-        typeof resource === 'object' &&
-        (resource as any).instance != null
-      ) {
+      if (resource == null) {
+        // Hoistables that aren't backed by a Resource (e.g. <title>, <meta>)
+        // keep their instance on stateNode, like a HostComponent.
+        return fiber.stateNode;
+      }
+      if (typeof resource === 'object' && (resource as any).instance != null) {
         return (resource as any).instance;
       }
     }
@@ -448,6 +458,7 @@ export function createTreeTools(
       uid: getUid(fiber),
       type: getTypeTagForFiber(internals, fiber),
       name: getDisplayName(internals, fiber),
+      meta: null,
     };
     if (fiber.key != null) {
       info.key = String(fiber.key);
@@ -455,6 +466,14 @@ export function createTreeTools(
     const props = normalizeProps(fiber.memoizedProps);
     if (props != null) {
       info.props = props;
+    }
+    if (fiber.tag === internals.ReactTypeOfWork.SuspenseComponent) {
+      // A non-null memoizedState on a SuspenseComponent fiber means the
+      // boundary is blocked.
+      // TODO: A dehydrated boundary pending hydration also has a non-null
+      // memoizedState but still shows its SSR content, so it arguably
+      // shouldn't count as suspended.
+      info.meta = {isSuspended: fiber.memoizedState !== null};
     }
     if (includeHooks) {
       // Hooks are only inspectable for function components, forwardRef, and

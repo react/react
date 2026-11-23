@@ -601,6 +601,104 @@ describe('ReactDOMFizzStaticBrowser', () => {
     expect(getVisibleChildren(container)).toEqual(<div>hello</div>);
   });
 
+  // @gate enableFizzExternalRuntime
+  it('preserves the external runtime configuration when resuming an empty prelude', async () => {
+    let prerendering = true;
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+
+    function Content() {
+      React.use(promise);
+      return <p>Content</p>;
+    }
+
+    function Document() {
+      if (prerendering) {
+        React.use(theInfinitePromise);
+      }
+      return (
+        <html>
+          <body>
+            <Suspense fallback="Loading">
+              <Content />
+            </Suspense>
+          </body>
+        </html>
+      );
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={null}>
+          <Document />
+        </Suspense>
+      );
+    }
+
+    const prerenderController = new AbortController();
+    let pendingPrerender;
+    await serverAct(() => {
+      pendingPrerender = ReactDOMFizzStatic.prerender(<App />, {
+        signal: prerenderController.signal,
+        onError() {},
+        unstable_externalRuntimeSrc: {
+          src: '/react-runtime.js',
+          integrity: 'sha256-runtime',
+        },
+      });
+    });
+    await serverAct(() => prerenderController.abort());
+    const prerendered = await pendingPrerender;
+    expect(prerendered.postponed).not.toBe(null);
+    expect(await readContent(prerendered.prelude)).toBe('');
+
+    const resumeAndPrerenderController = new AbortController();
+    let pendingResumeAndPrerender;
+    await serverAct(() => {
+      pendingResumeAndPrerender = ReactDOMFizzStatic.resumeAndPrerender(
+        <App />,
+        JSON.parse(JSON.stringify(prerendered.postponed)),
+        {
+          signal: resumeAndPrerenderController.signal,
+          onError() {},
+        },
+      );
+    });
+    await serverAct(() => resumeAndPrerenderController.abort());
+    const resumedAndPrerendered = await pendingResumeAndPrerender;
+    expect(resumedAndPrerendered.postponed).not.toBe(null);
+    expect(await readContent(resumedAndPrerendered.prelude)).toBe('');
+
+    prerendering = false;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(resumedAndPrerendered.postponed)),
+        {
+          nonce: 'resume-nonce',
+        },
+      ),
+    );
+    const reader = resumed.getReader();
+    const {value, done} = await reader.read();
+    expect(done).toBe(false);
+    let html = Buffer.from(value).toString('utf8');
+    reader.releaseLock();
+    const remaining = readContent(resumed);
+    await serverAct(() => {
+      resolve();
+    });
+    html += await remaining;
+
+    const doc = new JSDOM(html).window.document;
+    expect(doc.querySelectorAll('template[data-rci]')).toHaveLength(1);
+    const scripts = doc.querySelectorAll('script[src="/react-runtime.js"]');
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0].hasAttribute('async')).toBe(true);
+    expect(scripts[0].getAttribute('integrity')).toBe('sha256-runtime');
+    expect(scripts[0].getAttribute('nonce')).toBe('resume-nonce');
+  });
+
   it('can resume render of a prerender', async () => {
     const errors = [];
 

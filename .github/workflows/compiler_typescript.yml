@@ -51,7 +51,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/yarn.lock') }}
+          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'compiler/yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - run: yarn workspace babel-plugin-react-compiler lint
@@ -71,7 +71,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/yarn.lock') }}
+          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'compiler/yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - run: yarn workspace babel-plugin-react-compiler jest
@@ -95,7 +95,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/yarn.lock') }}
+          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('.nvmrc', 'compiler/yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - run: xvfb-run -a yarn workspace ${{ matrix.workspace_name }} test
