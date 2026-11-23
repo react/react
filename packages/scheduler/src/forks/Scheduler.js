@@ -496,6 +496,11 @@ function forceFrameRate(fps: number) {
 }
 
 const performWorkUntilDeadline = () => {
+  if (isPerformingWork) {
+    // A browser may dispatch a queued message while a blocking call is open.
+    return;
+  }
+
   // $FlowFixMe[constant-condition]
   if (enableRequestPaint) {
     needsPaint = false;

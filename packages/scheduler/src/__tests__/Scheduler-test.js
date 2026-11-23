@@ -113,8 +113,11 @@ describe('SchedulerBrowser', () => {
       currentTime = 0;
     }
     function fireMessageEvent() {
-      ensureLogIsEmpty();
-      if (!hasPendingMessageEvent) {
+      const isReentrant = isFiringMessageEvent;
+      if (!isReentrant) {
+        ensureLogIsEmpty();
+      }
+      if (!hasPendingMessageEvent && !isReentrant) {
         throw Error('No message event was scheduled');
       }
       hasPendingMessageEvent = false;
@@ -125,14 +128,16 @@ describe('SchedulerBrowser', () => {
       try {
         onMessage();
       } finally {
-        isFiringMessageEvent = false;
-        if (hasPendingDiscreteEvent) {
-          log('Discrete Event');
-          hasPendingDiscreteEvent = false;
-        }
-        if (hasPendingContinuousEvent) {
-          log('Continuous Event');
-          hasPendingContinuousEvent = false;
+        isFiringMessageEvent = isReentrant;
+        if (!isReentrant) {
+          if (hasPendingDiscreteEvent) {
+            log('Discrete Event');
+            hasPendingDiscreteEvent = false;
+          }
+          if (hasPendingContinuousEvent) {
+            log('Continuous Event');
+            hasPendingContinuousEvent = false;
+          }
         }
       }
     }
@@ -227,6 +232,39 @@ describe('SchedulerBrowser', () => {
       runtime.assertLog(['Message Event', 'B']);
     } else {
       runtime.assertLog(['Message Event', 'A', 'B']);
+    }
+  });
+
+  it('does not perform work reentrantly', () => {
+    let isReentrant = false;
+    let didRunTaskReentrantly = false;
+    scheduleCallback(NormalPriority, () => {
+      runtime.log('A');
+      scheduleCallback(NormalPriority, () => {
+        if (isReentrant) {
+          didRunTaskReentrantly = true;
+        }
+        runtime.log('B');
+      });
+      isReentrant = true;
+      runtime.fireMessageEvent();
+      isReentrant = false;
+    });
+    runtime.assertLog(['Post Message']);
+
+    runtime.fireMessageEvent();
+    expect(didRunTaskReentrantly).toBe(false);
+    if (gate(flags => flags.enableAlwaysYieldScheduler)) {
+      runtime.assertLog([
+        'Message Event',
+        'A',
+        'Message Event',
+        'Post Message',
+      ]);
+      runtime.fireMessageEvent();
+      runtime.assertLog(['Message Event', 'B']);
+    } else {
+      runtime.assertLog(['Message Event', 'A', 'Message Event', 'B']);
     }
   });
 
