@@ -46,7 +46,6 @@ import {
   Profiler,
   MemoComponent,
   SimpleMemoComponent,
-  IncompleteClassComponent,
   ScopeComponent,
 } from 'react-reconciler/src/ReactWorkTags';
 import isArray from 'shared/isArray';
@@ -234,7 +233,6 @@ function toTree(node: null | Fiber): $FlowFixMe {
     case Profiler:
     case ForwardRef:
     case MemoComponent:
-    case IncompleteClassComponent:
     case ScopeComponent:
       return childrenToTree(node.child);
     default:

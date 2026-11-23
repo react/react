@@ -72,7 +72,6 @@ import {
   ActivityComponent,
   SuspenseComponent,
   DehydratedFragment,
-  IncompleteClassComponent,
   MemoComponent,
   SimpleMemoComponent,
   SuspenseListComponent,
@@ -523,7 +522,6 @@ function commitBeforeMutationEffectsOnFiber(
     case HostSingleton:
     case HostText:
     case HostPortal:
-    case IncompleteClassComponent:
       // Nothing to do for these component types
       break;
     case ViewTransitionComponent:

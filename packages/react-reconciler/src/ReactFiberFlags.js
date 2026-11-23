@@ -53,7 +53,6 @@ export const HostEffectMask = /*               */ 0b0000000000000000111111111111
 // These are not really side effects, but we still reuse this field.
 export const Incomplete = /*                   */ 0b0000000000000001000000000000000;
 export const ShouldCapture = /*                */ 0b0000000000000010000000000000000;
-export const ForceUpdateForLegacySuspense = /* */ 0b0000000000000100000000000000000;
 export const DidPropagateContext = /*          */ 0b0000000000001000000000000000000;
 export const NeedsPropagation = /*             */ 0b0000000000010000000000000000000;
 

@@ -95,7 +95,6 @@ import {
   Ref,
   RefStatic,
   ChildDeletion,
-  ForceUpdateForLegacySuspense,
   StaticMask,
   ShouldCapture,
   ForceClientRender,
@@ -592,10 +591,6 @@ function updateSimpleMemoComponent(
           workInProgress,
           renderLanes,
         );
-      } else if ((current.flags & ForceUpdateForLegacySuspense) !== NoFlags) {
-        // This is a special case that only exists for legacy mode.
-        // See https://github.com/react/react/pull/19216.
-        didReceiveUpdate = true;
       }
     }
   }
@@ -4076,17 +4071,11 @@ function beginWork(
           renderLanes,
         );
       }
-      if ((current.flags & ForceUpdateForLegacySuspense) !== NoFlags) {
-        // This is a special case that only exists for legacy mode.
-        // See https://github.com/react/react/pull/19216.
-        didReceiveUpdate = true;
-      } else {
-        // An update was scheduled on this fiber, but there are no new props
-        // nor legacy context. Set this to false. If an update queue or context
-        // consumer produces a changed value, it will set this to true. Otherwise,
-        // the component will assume the children have not changed and bail out.
-        didReceiveUpdate = false;
-      }
+      // An update was scheduled on this fiber, but there are no new props
+      // nor legacy context. Set this to false. If an update queue or context
+      // consumer produces a changed value, it will set this to true. Otherwise,
+      // the component will assume the children have not changed and bail out.
+      didReceiveUpdate = false;
     }
   } else {
     didReceiveUpdate = false;
