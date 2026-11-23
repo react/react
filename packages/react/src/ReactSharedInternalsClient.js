@@ -36,10 +36,6 @@ export type SharedStateClient = {
   // When zero this means we're outside an async startTransition.
   asyncTransitions: number,
 
-  // Used to reproduce behavior of `batchedUpdates` in legacy mode.
-  isBatchingLegacy: boolean,
-  didScheduleLegacyUpdate: boolean,
-
   // Tracks whether something called `use` during the current batch of work.
   // Determines whether we should yield to microtasks to unwrap already resolved
   // promises without suspending.
@@ -70,8 +66,6 @@ if (enableGestureTransition) {
 if (__DEV__) {
   ReactSharedInternals.actQueue = null;
   ReactSharedInternals.asyncTransitions = 0;
-  ReactSharedInternals.isBatchingLegacy = false;
-  ReactSharedInternals.didScheduleLegacyUpdate = false;
   ReactSharedInternals.didUsePromise = false;
   ReactSharedInternals.thrownErrors = [];
   // Stack implementation injected by the current renderer.
