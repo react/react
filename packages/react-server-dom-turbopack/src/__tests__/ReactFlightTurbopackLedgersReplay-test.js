@@ -243,6 +243,75 @@ describe('ReactFlightTurbopackLedgersReplay', () => {
     expect(await complete.page.data.props.children).toBe('done');
   });
 
+  // A server that reads a render in the same process through a tee forwards
+  // its totals the same way as one that decodes the bytes.
+  // @gate enableFlightLedgers && enableFlightTee
+  it('forwards partial and final totals from a response read through a tee', async () => {
+    const ledgers = [
+      ReactServer.createMaxLedger(),
+      ReactServer.createSetLedger(),
+    ];
+    let openGate;
+    const gate = new Promise(resolve => {
+      openGate = resolve;
+    });
+    function Page() {
+      ReactServer.addToLedger(ledgers[0], 10);
+      ReactServer.addToLedger(ledgers[1], 'shell');
+      return (
+        <div>
+          {gate.then(() => {
+            ReactServer.addToLedger(ledgers[0], 40);
+            ReactServer.addToLedger(ledgers[1], 'late');
+            return 'done';
+          })}
+        </div>
+      );
+    }
+    function App() {
+      return {page: ReactServer.captureLedgers(<Page />, ledgers)};
+    }
+    const tee = ReactServerDOMConsumer.createTee(serverConsumerManifest);
+    await serverAct(() => {
+      ReactServerDOMServer.renderToPipeableStream(<App />, turbopackMap, {
+        tee,
+      }).pipe(new Stream.PassThrough());
+    });
+    const source = ReactServerDOMConsumer.createFromTee(tee);
+    async function Replay() {
+      return await source;
+    }
+    const output = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<Replay />, turbopackMap),
+    );
+    const reader = output.getReader();
+    const chunks = [];
+    async function collect() {
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) return;
+        chunks.push(Buffer.from(value));
+      }
+    }
+    const finished = collect();
+    await serverAct(() => {});
+    const prefix = Buffer.concat(chunks);
+    await serverAct(() => openGate());
+    await finished;
+    const shell = await decodeInBrowser(streamFrom(prefix), {
+      unstable_allowPartialStream: true,
+    });
+    const complete = await decodeInBrowser(streamFrom(Buffer.concat(chunks)));
+    expect(await Promise.all(shell.page.ledgers)).toEqual([
+      10,
+      new Set(['shell']),
+    ]);
+    const expected = [40, new Set(['shell', 'late'])];
+    expect(await Promise.all(complete.page.ledgers)).toEqual(expected);
+    expect(await Promise.all((await source).page.ledgers)).toEqual(expected);
+    expect(await complete.page.data.props.children).toBe('done');
+  });
+
   // @gate enableFlightLedgers
   it('preserves shadowing when a nested capture arrives after the first poll', async () => {
     const Tags = ReactServer.createSetLedger();

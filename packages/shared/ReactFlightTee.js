@@ -10,9 +10,10 @@
 import ReactVersion from 'shared/ReactVersion';
 
 // A tee lets a Flight Client in the same process read a Flight render without
-// reading its bytes. The client creates it and it's passed to the server
-// render, which keeps writing bytes to its destination and also hands every
-// row to the tee as it's emitted.
+// reading its bytes. The client creates it with `createTee` and it's passed to
+// the server render, which keeps writing bytes to its destination and also
+// hands every row to the tee as it's emitted. The reader then calls
+// `createFromTee` to get the root.
 //
 // The server and client are built as separate bundles, so the server checks
 // that the tee comes from the same version of React.

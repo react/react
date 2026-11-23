@@ -430,6 +430,13 @@ export function isAwaitInUserspace(
 
 initAsyncDebugInfo();
 
+// A tee reads each row as it's emitted, so a log that the tee's reader replays
+// runs while the server queues the log's row, with that log's request. The
+// replay isn't the request's own log, so it isn't recorded again. A log from
+// another request, or one made while serializing the log, is recorded as
+// usual.
+let requestEmittingConsoleToTee: null | Request = null;
+
 function patchConsole(consoleInst: typeof console, methodName: string) {
   const descriptor = Object.getOwnPropertyDescriptor(consoleInst, methodName);
   if (
@@ -447,6 +454,12 @@ function patchConsole(consoleInst: typeof console, methodName: string) {
       const request = resolveRequest();
       if (methodName === 'assert' && arguments[0]) {
         // assert doesn't emit anything unless first argument is falsy so we can skip it.
+      } else if (
+        enableFlightTee &&
+        request !== null &&
+        request === requestEmittingConsoleToTee
+      ) {
+        // The tee's reader is replaying the log that's being emitted.
       } else if (request !== null) {
         // Extract the stack. Not all console logs print the full stack but they have at
         // least the line it was called from. We could optimize transfer by keeping just
@@ -6909,7 +6922,18 @@ function emitConsoleChunk(
       'Unknown Value: React could not send it from the server.',
     ]);
   }
-  queueDebugRow(request, ':W' + json + '\n');
+  const row = ':W' + json + '\n';
+  if (enableFlightTee && request.tee !== null) {
+    const prevRequest = requestEmittingConsoleToTee;
+    requestEmittingConsoleToTee = request;
+    try {
+      queueDebugRow(request, row);
+    } finally {
+      requestEmittingConsoleToTee = prevRequest;
+    }
+  } else {
+    queueDebugRow(request, row);
+  }
 }
 
 function emitTimeOriginChunk(request: Request, timeOrigin: number): void {

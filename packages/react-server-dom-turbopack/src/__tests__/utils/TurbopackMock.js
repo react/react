@@ -39,10 +39,17 @@ exports.moduleLoading = {
   prefix: '/prefix/',
 };
 
-exports.clientExports = function clientExports(moduleExports, chunkUrl) {
+exports.clientExports = function clientExports(
+  moduleExports,
+  chunkUrl,
+  blockOnChunk,
+) {
   const chunks = [];
   if (chunkUrl !== undefined) {
     chunks.push(chunkUrl);
+    if (blockOnChunk) {
+      turbopackChunkMap[chunkUrl] = blockOnChunk;
+    }
   }
   const idx = '' + turbopackModuleIdx++;
   turbopackClientModules[idx] = moduleExports;

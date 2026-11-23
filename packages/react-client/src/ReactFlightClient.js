@@ -434,6 +434,10 @@ type Response = {
   _allowPartialStream: boolean,
   _tempRefs: void | TemporaryReferenceSet, // the set temporary references can be resolved from
   _ledgers: null | ResponseLedgers,
+  // Runs hints and module preinits in the reader's context. Null when the rows
+  // come from a stream, where they run in the context that reads the stream.
+  // Only builds used with SSR have a reader in the same process.
+  _readerContext: null | ((task: () => void) => void),
   _timeOrigin: number, // Profiling-only
   _pendingInitialRender: null | TimeoutID, // Profiling-only,
   _pendingChunks: number, // DEV-only
@@ -531,6 +535,12 @@ function readChunk<T>(chunk: SomeChunk<T>): T {
     default:
       throw chunk.reason;
   }
+}
+
+// Returns a strong reference that keeps a response alive while nothing else
+// does. In DEV a response is only held weakly once no chunks are pending.
+export function retainResponse(weakResponse: WeakResponse): mixed {
+  return unwrapWeakResponse(weakResponse);
 }
 
 export function getRoot<T>(weakResponse: WeakResponse): Thenable<T> {
@@ -3326,6 +3336,10 @@ function ResponseInstance(
   if (enableFlightLedgers) {
     this._ledgers = null;
   }
+  // $FlowFixMe[constant-condition]
+  if (usedWithSSR) {
+    this._readerContext = null;
+  }
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     this._timeOrigin = 0;
     this._pendingInitialRender = null;
@@ -3721,11 +3735,24 @@ function resolveModule(
     clientReferenceMetadata,
   );
 
-  prepareDestinationForModule(
-    response._moduleLoading,
-    response._nonce,
-    clientReferenceMetadata,
-  );
+  // $FlowFixMe[constant-condition]
+  const readerContext = usedWithSSR ? response._readerContext : null;
+  if (readerContext === null) {
+    prepareDestinationForModule(
+      response._moduleLoading,
+      response._nonce,
+      clientReferenceMetadata,
+    );
+  } else {
+    readerContext(
+      prepareDestinationForModule.bind(
+        null,
+        response._moduleLoading,
+        response._nonce,
+        clientReferenceMetadata,
+      ),
+    );
+  }
 
   // TODO: Add an option to encode modules that are lazy loaded.
   // For now we preload all modules as early as possible since it's likely
@@ -4275,7 +4302,13 @@ function resolveHint<Code: HintCode>(
   model: UninitializedModel,
 ): void {
   const hintModel: HintModel<Code> = parseModel(response, model);
-  dispatchHint(code, hintModel);
+  // $FlowFixMe[constant-condition]
+  const readerContext = usedWithSSR ? response._readerContext : null;
+  if (readerContext === null) {
+    dispatchHint(code, hintModel);
+  } else {
+    readerContext(dispatchHint.bind(null, code, hintModel));
+  }
 }
 
 // Ledger rows form a graph alongside the model. We can decode them without
@@ -5992,6 +6025,58 @@ function processFullStringRow(
       return;
     }
   }
+}
+
+// The entry points for a tee (see shared/ReactFlightTee) that a string row
+// can't take. A tee gets whole rows from a Flight Server in the same process,
+// in emit order. It reads each string row with processStringChunk, and the
+// length-prefixed rows arrive here instead, without their framing.
+
+export function processWireText(
+  weakResponse: WeakResponse,
+  streamState: StreamState,
+  id: number,
+  text: string,
+): void {
+  if (hasGCedResponse(weakResponse)) {
+    return;
+  }
+  const response = unwrapWeakResponse(weakResponse);
+  incrementChunkDebugInfo(streamState, text.length);
+  resolveText(response, id, text, streamState);
+}
+
+export function processWireBinary(
+  weakResponse: WeakResponse,
+  streamState: StreamState,
+  id: number,
+  tag: number,
+  bytes: Uint8Array,
+): void {
+  if (hasGCedResponse(weakResponse)) {
+    return;
+  }
+  const response = unwrapWeakResponse(weakResponse);
+  incrementChunkDebugInfo(streamState, bytes.byteLength);
+  // The server's destination still has to write these bytes, so copy them, as
+  // reading them from a stream would. The copy also owns its whole buffer.
+  const copy = bytes.slice();
+  if (tag === 98 /* "b" */) {
+    resolveBuffer(response, id, copy, streamState);
+  } else {
+    processFullBinaryRow(response, streamState, id, tag, [], copy);
+  }
+}
+
+// Hints and module preinits dispatch into the ambient renderer, which Fizz
+// finds through AsyncLocalStorage. A tee's rows arrive in the server's
+// render, so the tee routes them to its reader's context instead.
+export function setReaderContext(
+  weakResponse: WeakResponse,
+  runInReaderContext: null | ((task: () => void) => void),
+): void {
+  const response = unwrapWeakResponse(weakResponse);
+  response._readerContext = runInReaderContext;
 }
 
 export function processBinaryChunk(
