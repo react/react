@@ -18,3 +18,48 @@ export type LedgerKind = 1;
 export type Ledger<-E> = {
   +kind: LedgerKind,
 };
+
+// One total for each ledger passed to captureLedgers, in the same order.
+// Keep the values opaque because they can only be read after Flight decoding.
+export type LedgerTotals<V: $ReadOnlyArray<Ledger<empty>>> = {
+  [K in keyof V]: mixed, // eslint-disable-line no-unused-vars
+};
+
+// A capture describes where to collect writes. It can be rendered by multiple
+// requests; each request assigns its own stream IDs to these handles.
+export type LedgerTotal = {
+  $$typeof: symbol,
+  type: Ledger<empty>,
+  then: () => mixed,
+};
+
+export type LedgerDataObject<T> = {
+  $$typeof: symbol,
+  totals: Array<LedgerTotal>,
+  input: T,
+};
+
+// Used to combine writes within a server work batch and to accumulate totals
+// on the client.
+// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+export type LedgerCell = {+kind: 1, state: number};
+
+// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+export function createLedgerCell(type: Ledger<empty>): LedgerCell {
+  return {kind: MASK_LEDGER, state: 0};
+}
+
+// Wire format for the writes combined in a work batch.
+// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+export type LedgerDelta = number | string;
+
+// Row IDs in ledger records are hexadecimal strings.
+
+// Q: The unit's creator (null for the root) and captured ledger total IDs.
+export type LedgerUnitDeclaration = [null | string, Array<string>];
+
+// Z: Ledger type ID and the writes accumulated since the previous emission.
+export type LedgerDeltaRow = [string, LedgerDelta];
+
+// F: Row IDs of reused computations.
+export type LedgerReferencesRow = Array<string>;
