@@ -10353,4 +10353,20 @@ background-color: green;
     // outlining for animation reveals, even during the shell flush.
     expect(streamedContent).toContain('Image Fallback');
   });
+
+// https://github.com/react/react/issues/38359
+  it('does not throw when unmounting a hoistable that was removed from the document by a third-party script', async () => {
+    const root = ReactDOMClient.createRoot(container);
+    root.render(<link rel="icon" href="favicon.ico" />);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="icon" href="favicon.ico" />,
+    );
+// A third-party script (for example, a browser extension) removes the
+    // hoistable from the document.
+    document.querySelector('link[rel="icon"]').remove();
+// Unmounting should not throw even though the hoistable is already gone.
+    root.unmount();
+expect(getMeaningfulChildren(document.head)).toBe(undefined);
+expect(getMeaningfulChildren(container)).toBe(undefined);
 });
