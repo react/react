@@ -409,9 +409,6 @@ export function shouldAttemptEagerTransition() {
 // The ART renderer is secondary to the React DOM renderer.
 export const isPrimaryRenderer = false;
 
-// The ART renderer shouldn't trigger missing act() warnings
-export const warnsIfNotActing = false;
-
 export const supportsMutation: boolean = true;
 
 export function appendChild(parentInstance, child) {
