@@ -17,6 +17,7 @@ import type {ServerManifest} from 'react-client/src/ReactFlightClientConfig';
 import type {Busboy} from 'busboy';
 import type {Writable} from 'stream';
 import type {Thenable} from 'shared/ReactTypes';
+import type {FlightTee} from 'shared/ReactFlightTee';
 
 import type {Duplex} from 'stream';
 
@@ -34,6 +35,7 @@ import {
   stopFlowing,
   abort,
   attachAbortSignal,
+  attachTee,
   resolveDebugMessage,
   closeDebugChannel,
 } from 'react-server/src/ReactFlightServer';
@@ -157,6 +159,7 @@ type Options = {
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
   startTime?: number,
+  tee?: FlightTee,
 };
 
 type PipeableStream = {
@@ -199,6 +202,9 @@ function renderToPipeableStream(
     __DEV__ && options ? options.filterStackFrame : undefined,
     debugChannelReadable !== undefined,
   );
+  if (options && options.tee) {
+    attachTee(request, options.tee);
+  }
   let hasStartedFlowing = false;
   startWork(request);
   if (debugChannelWritable !== undefined) {
@@ -358,6 +364,9 @@ function renderToReadableStream(
     __DEV__ && options ? options.filterStackFrame : undefined,
     debugChannelReadable !== undefined,
   );
+  if (options && options.tee) {
+    attachTee(request, options.tee);
+  }
   if (options && options.signal) {
     attachAbortSignal(request, options.signal);
   }
@@ -430,6 +439,7 @@ type PrerenderOptions = {
   temporaryReferences?: TemporaryReferenceSet,
   signal?: AbortSignal,
   startTime?: number,
+  tee?: FlightTee,
 };
 
 type StaticResult = {
@@ -466,6 +476,9 @@ function prerenderToNodeStream(
       __DEV__ && options ? options.filterStackFrame : undefined,
       false,
     );
+    if (options && options.tee) {
+      attachTee(request, options.tee);
+    }
     if (options && options.signal) {
       attachAbortSignal(request, options.signal);
     }
@@ -520,6 +533,9 @@ function prerender(
       __DEV__ && options ? options.filterStackFrame : undefined,
       false,
     );
+    if (options && options.tee) {
+      attachTee(request, options.tee);
+    }
     if (options && options.signal) {
       attachAbortSignal(request, options.signal);
     }
