@@ -36,7 +36,6 @@ import {
   enableDefaultTransitionIndicator,
 } from 'shared/ReactFeatureFlags';
 import {initializeUpdateQueue} from './ReactFiberClassUpdateQueue';
-import {ConcurrentRoot} from './ReactRootTags';
 import {createCache, retainCache} from './ReactFiberCacheComponent';
 
 export type RootState = {
@@ -56,7 +55,6 @@ function FiberRootNode(
   onDefaultTransitionIndicator: any,
   formState: ReactFormState<any, any> | null,
 ) {
-  this.tag = ConcurrentRoot;
   this.containerInfo = containerInfo;
   this.pendingChildren = null;
   this.current = null;
