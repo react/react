@@ -3600,6 +3600,22 @@ describe('ReactFlightDOM', () => {
       return ReactServerDOMClient.createFromReadableStream(readable);
     }
 
+    async function renderToText(model) {
+      const writable = new Stream.PassThrough();
+      writable.setEncoding('utf8');
+      let text = '';
+      writable.on('data', chunk => {
+        text += chunk;
+      });
+      const ended = new Promise(resolve => writable.on('end', resolve));
+      const {pipe} = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(model, webpackMap),
+      );
+      pipe(writable);
+      await ended;
+      return text;
+    }
+
     it('preserves an unpaired surrogate in a string model', async () => {
       const text = 'a\uD800b';
       expect(await render(text)).toBe(text);
@@ -3637,6 +3653,30 @@ describe('ReactFlightDOM', () => {
       const text = 'a'.repeat(1024) + '\u{1F600}\u{10FFFF}';
       const model = await render({text});
       expect(model.text).toBe(text);
+      // A well-formed string still gets its own text chunk.
+      expect(await renderToText({text})).toMatch(/[0-9a-f]+:T[0-9a-f]+,/);
+    });
+
+    it('counts large strings with an unpaired surrogate towards the debug object limit', async () => {
+      // The component ignores its props, so they can only reach the output as
+      // debug info.
+      function Component() {
+        return null;
+      }
+      const props = {};
+      const count = 20;
+      for (let i = 0; i < count; i++) {
+        props['p' + i] = 'marker-' + i + '-' + 'a'.repeat(1024) + '\uD800';
+      }
+      const output = await renderToText(<Component {...props} />);
+      if (__DEV__) {
+        expect(output).toContain('marker-0-');
+        // Once the limit is reached, the rest are deferred.
+        expect(output).toContain('"$Y');
+        expect(output).not.toContain('marker-' + (count - 1) + '-');
+      } else {
+        expect(output).not.toContain('marker-');
+      }
     });
   });
 });

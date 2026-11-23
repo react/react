@@ -6283,7 +6283,7 @@ function renderDebugModel(
         'server.'
       );
     }
-    if (value.length >= 1024 && isWellFormedString(value)) {
+    if (value.length >= 1024) {
       // Large strings are counted towards the object limit.
       if (counter.objectLimit <= 0) {
         // We've reached our max number of objects to serialize across the wire so we serialize this
@@ -6291,10 +6291,14 @@ function renderDebugModel(
         return serializeDeferredObject(request, value);
       }
       counter.objectLimit--;
-      // For large strings, we encode them outside the JSON payload so that we
-      // don't have to double encode and double parse the strings. This can also
-      // be more compact in case the string has a lot of escaped characters.
-      return serializeDebugLargeTextString(request, value);
+      // Unpaired surrogates don't survive the UTF-8 encoding of a text chunk,
+      // so those strings stay in the JSON payload where they can be escaped.
+      if (isWellFormedString(value)) {
+        // For large strings, we encode them outside the JSON payload so that we
+        // don't have to double encode and double parse the strings. This can also
+        // be more compact in case the string has a lot of escaped characters.
+        return serializeDebugLargeTextString(request, value);
+      }
     }
     return escapeStringValue(value);
   }
