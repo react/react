@@ -1118,6 +1118,7 @@ __DEV__ &&
           ? null
           : eventClass;
     }
+    function noop() {}
     function is(x, y) {
       return (x === y && (0 !== x || 1 / x === 1 / y)) || (x !== x && y !== y);
     }
@@ -3372,7 +3373,6 @@ __DEV__ &&
       for (var child = fiber.child; child; )
         (fiber.actualDuration += child.actualDuration), (child = child.sibling);
     }
-    function noop() {}
     function ensureRootIsScheduled(root) {
       root !== lastScheduledRoot &&
         null === root.next &&
@@ -13109,7 +13109,7 @@ __DEV__ &&
                 "Expected finished root and lanes to be set. This is a bug in React."
               );
           var retry = resolveRetryWakeable.bind(null, finishedWork, wakeable);
-          wakeable.then(retry, retry);
+          attachContextPreservingListener(wakeable, retry);
         }
       });
     }
@@ -17501,7 +17501,25 @@ __DEV__ &&
         threadIDs.add(lanes),
         (pingCache = pingSuspendedRoot.bind(null, root, wakeable, lanes)),
         isDevToolsPresent && restorePendingUpdaters(root, lanes),
-        wakeable.then(pingCache, pingCache));
+        attachContextPreservingListener(wakeable, pingCache));
+    }
+    function attachContextPreservingListener(wakeable, listener) {
+      if (
+        "function" !== typeof Promise ||
+        null !== ReactSharedInternals.actQueue ||
+        isConcurrentActEnvironment()
+      )
+        wakeable.then(listener, listener);
+      else {
+        var resolve = noop;
+        new Promise(function (r) {
+          resolve = r;
+        }).then(listener);
+        listener = function () {
+          return resolve();
+        };
+        wakeable.then(listener, listener);
+      }
     }
     function pingSuspendedRoot(root, wakeable, pingedLanes) {
       var pingCache = root.pingCache;
@@ -20698,10 +20716,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-33e52451-20261121",
+        version: "19.3.0-www-classic-89d7b2b4-20261123",
         rendererPackageName: "react-art",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-33e52451-20261121"
+        reconcilerVersion: "19.3.0-www-classic-89d7b2b4-20261123"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -20736,7 +20754,7 @@ __DEV__ &&
     exports.Shape = Shape;
     exports.Surface = Surface;
     exports.Text = Text;
-    exports.version = "19.3.0-www-classic-33e52451-20261121";
+    exports.version = "19.3.0-www-classic-89d7b2b4-20261123";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

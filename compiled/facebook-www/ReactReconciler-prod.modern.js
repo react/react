@@ -607,6 +607,7 @@ module.exports = function ($$$config) {
         ? null
         : eventClass;
   }
+  function noop$1() {}
   function is(x, y) {
     return (x === y && (0 !== x || 1 / x === 1 / y)) || (x !== x && y !== y);
   }
@@ -1264,7 +1265,6 @@ module.exports = function ($$$config) {
     root.transitionTypes = null;
     return claimed;
   }
-  function noop$1() {}
   function ensureRootIsScheduled(root) {
     root !== lastScheduledRoot &&
       null === root.next &&
@@ -9414,7 +9414,7 @@ module.exports = function ($$$config) {
       if (!retryCache.has(wakeable)) {
         retryCache.add(wakeable);
         var retry = resolveRetryWakeable.bind(null, finishedWork, wakeable);
-        wakeable.then(retry, retry);
+        attachContextPreservingListener(wakeable, retry);
       }
     });
   }
@@ -12661,7 +12661,20 @@ module.exports = function ($$$config) {
       ((workInProgressRootDidAttachPingListener = !0),
       threadIDs.add(lanes),
       (root = pingSuspendedRoot.bind(null, root, wakeable, lanes)),
-      wakeable.then(root, root));
+      attachContextPreservingListener(wakeable, root));
+  }
+  function attachContextPreservingListener(wakeable, listener) {
+    if ("function" !== typeof Promise) wakeable.then(listener, listener);
+    else {
+      var resolve = noop$1;
+      new Promise(function (r) {
+        resolve = r;
+      }).then(listener);
+      listener = function () {
+        return resolve();
+      };
+      wakeable.then(listener, listener);
+    }
   }
   function pingSuspendedRoot(root, wakeable, pingedLanes) {
     var pingCache = root.pingCache;
@@ -14478,7 +14491,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-33e52451-20261121"
+      reconcilerVersion: "19.3.0-www-modern-89d7b2b4-20261123"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);

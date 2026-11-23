@@ -786,6 +786,7 @@ function getViewTransitionClassName(defaultClass, eventClass) {
       ? null
       : eventClass;
 }
+function noop() {}
 function is(x, y) {
   return (x === y && (0 !== x || 1 / x === 1 / y)) || (x !== x && y !== y);
 }
@@ -1340,7 +1341,6 @@ function claimQueuedTransitionTypes(root) {
   root.transitionTypes = null;
   return claimed;
 }
-function noop() {}
 var firstScheduledRoot = null,
   lastScheduledRoot = null,
   didScheduleMicrotask = !1,
@@ -8398,7 +8398,7 @@ function attachSuspenseRetryListeners(finishedWork, wakeables) {
     if (!retryCache.has(wakeable)) {
       retryCache.add(wakeable);
       var retry = resolveRetryWakeable.bind(null, finishedWork, wakeable);
-      wakeable.then(retry, retry);
+      attachContextPreservingListener(wakeable, retry);
     }
   });
 }
@@ -10920,7 +10920,20 @@ function attachPingListener(root, wakeable, lanes) {
     ((workInProgressRootDidAttachPingListener = !0),
     threadIDs.add(lanes),
     (root = pingSuspendedRoot.bind(null, root, wakeable, lanes)),
-    wakeable.then(root, root));
+    attachContextPreservingListener(wakeable, root));
+}
+function attachContextPreservingListener(wakeable, listener) {
+  if ("function" !== typeof Promise) wakeable.then(listener, listener);
+  else {
+    var resolve = noop;
+    new Promise(function (r) {
+      resolve = r;
+    }).then(listener);
+    listener = function () {
+      return resolve();
+    };
+    wakeable.then(listener, listener);
+  }
 }
 function pingSuspendedRoot(root, wakeable, pingedLanes) {
   var pingCache = root.pingCache;
@@ -11500,10 +11513,10 @@ var slice = Array.prototype.slice,
   })(React.Component);
 var internals$jscomp$inline_1587 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-33e52451-20261121",
+  version: "19.3.0-www-modern-89d7b2b4-20261123",
   rendererPackageName: "react-art",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-33e52451-20261121"
+  reconcilerVersion: "19.3.0-www-modern-89d7b2b4-20261123"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1588 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11529,4 +11542,4 @@ exports.RadialGradient = RadialGradient;
 exports.Shape = TYPES.SHAPE;
 exports.Surface = Surface;
 exports.Text = Text;
-exports.version = "19.3.0-www-modern-33e52451-20261121";
+exports.version = "19.3.0-www-modern-89d7b2b4-20261123";
