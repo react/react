@@ -20,7 +20,6 @@ import type {
 } from 'react-reconciler/src/ReactInternalTypes';
 import type {UpdateQueue} from 'react-reconciler/src/ReactFiberClassUpdateQueue';
 import type {ReactNodeList} from 'shared/ReactTypes';
-import type {RootTag} from 'react-reconciler/src/ReactRootTags';
 import type {EventPriority} from 'react-reconciler/src/ReactEventPriorities';
 import type {TransitionTypes} from 'react/src/ReactTransitionType';
 import typeof * as HostConfig from 'react-reconciler/src/ReactFiberConfig';
@@ -1206,10 +1205,7 @@ function createReactNoop(
       return getPendingChildren(container);
     },
 
-    getOrCreateRootContainer(
-      rootID: string = DEFAULT_ROOT_ID,
-      tag: RootTag,
-    ): Container {
+    getOrCreateRootContainer(rootID: string = DEFAULT_ROOT_ID): Container {
       let root = roots.get(rootID);
       if (!root) {
         const container: Container = {
@@ -1222,8 +1218,7 @@ function createReactNoop(
         root = NoopRenderer.createContainer(
           // $FlowFixMe[incompatible-call] -- Discovered when typechecking noop-renderer
           container,
-          // $FlowFixMe[incompatible-type]
-          tag,
+          ConcurrentRoot,
           null,
           // $FlowFixMe[incompatible-type] -- Discovered when typechecking noop-renderer
           null,
@@ -1283,10 +1278,6 @@ function createReactNoop(
           return getChildrenAsJSX(container);
         },
       };
-    },
-
-    createLegacyRoot() {
-      throw new Error('createLegacyRoot: Unsupported Legacy Mode API.');
     },
 
     getChildrenAsJSX(rootID: string = DEFAULT_ROOT_ID) {
@@ -1363,20 +1354,12 @@ function createReactNoop(
       ReactNoop.renderToRootWithID(element, DEFAULT_ROOT_ID, callback);
     },
 
-    renderLegacySyncRoot(element: React$Element<any>, callback: ?Function) {
-      throw new Error('createLegacyRoot: Unsupported Legacy Mode API.');
-    },
-
     renderToRootWithID(
       element: React$Element<any>,
       rootID: string,
       callback: ?Function,
     ) {
-      const container = ReactNoop.getOrCreateRootContainer(
-        rootID,
-        // $FlowFixMe[incompatible-type]
-        ConcurrentRoot,
-      );
+      const container = ReactNoop.getOrCreateRootContainer(rootID);
       const root = roots.get(container.rootID);
       // $FlowFixMe[incompatible-type]
       NoopRenderer.updateContainer(element, root, null, callback);
