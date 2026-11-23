@@ -10370,3 +10370,4 @@ background-color: green;
 expect(getMeaningfulChildren(document.head)).toBe(undefined);
 expect(getMeaningfulChildren(container)).toBe(undefined);
 });
+});
