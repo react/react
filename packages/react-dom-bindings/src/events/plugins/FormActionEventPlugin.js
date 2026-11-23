@@ -107,7 +107,7 @@ function extractEvents(
         const pendingState: FormStatus = {
           pending: true,
           data: formData,
-          method: form.method,
+          method: getFormMethod(form),
           action: action,
         };
         if (__DEV__) {
@@ -136,7 +136,7 @@ function extractEvents(
       const pendingState: FormStatus = {
         pending: true,
         data: formData,
-        method: form.method,
+        method: getFormMethod(form),
         action: action,
       };
       if (__DEV__) {
@@ -161,6 +161,18 @@ function extractEvents(
   });
 }
 
+function getFormMethod(form: HTMLFormElement): string {
+  const method = form.method;
+  if (typeof method === 'string') {
+    return method;
+  }
+  // A form control named "method" shadows form.method. Read the attribute and
+  // normalize it the way the method property does.
+  const attribute = form.getAttribute('method');
+  const normalized = attribute == null ? '' : attribute.toLowerCase();
+  return normalized === 'post' || normalized === 'dialog' ? normalized : 'get';
+}
+
 export {extractEvents};
 
 export function dispatchReplayedFormAction(
@@ -172,7 +184,7 @@ export function dispatchReplayedFormAction(
   const pendingState: FormStatus = {
     pending: true,
     data: formData,
-    method: form.method,
+    method: getFormMethod(form),
     action: action,
   };
   if (__DEV__) {

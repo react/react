@@ -945,6 +945,49 @@ describe('ReactDOMForm', () => {
     assertLog(['Async action finished', 'No pending action']);
   });
 
+  it('useFormStatus reports the method when a field is named "method"', async () => {
+    const formRef = React.createRef();
+
+    function Status() {
+      const {pending, method} = useFormStatus();
+      if (!pending) {
+        return <Text text="No pending action" />;
+      }
+      return <Text text={`Pending action, method is ${method}`} />;
+    }
+
+    async function myAction() {
+      await getText('Wait');
+    }
+
+    function App() {
+      return (
+        <form action={myAction} ref={formRef}>
+          <input type="hidden" name="method" value="DELETE" />
+          <Status />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+    assertLog(['No pending action']);
+
+    // In browsers, a named control shadows the form property of the same
+    // name. JSDOM doesn't implement this, so emulate it.
+    Object.defineProperty(formRef.current, 'method', {
+      configurable: true,
+      value: formRef.current.elements.method,
+    });
+
+    await submit(formRef.current);
+    assertLog(['Pending action, method is get']);
+    expect(container.textContent).toBe('Pending action, method is get');
+
+    await act(() => resolveText('Wait'));
+    assertLog(['No pending action']);
+  });
+
   it('should error if submitting a form manually', async () => {
     const ref = React.createRef();
 
@@ -1645,6 +1688,39 @@ describe('ReactDOMForm', () => {
     await act(() => resolveText('Wait'));
     assertLog([]);
     expect(inputRef.current.value).toEqual('0');
+  });
+
+  it('resets the form after an action when a field is named "reset"', async () => {
+    const formRef = React.createRef();
+    const inputRef = React.createRef();
+
+    function action() {
+      Scheduler.log('Action');
+    }
+
+    function App() {
+      return (
+        <form action={action} ref={formRef}>
+          <input ref={inputRef} type="text" name="username" defaultValue="" />
+          <input type="reset" name="reset" value="Reset" />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    // In browsers, a named control shadows the form property of the same
+    // name. JSDOM doesn't implement this, so emulate it.
+    Object.defineProperty(formRef.current, 'reset', {
+      configurable: true,
+      value: formRef.current.elements.reset,
+    });
+
+    inputRef.current.value = 'dirty';
+    await submit(formRef.current);
+    assertLog(['Action']);
+    expect(inputRef.current.value).toBe('');
   });
 
   it('requestFormReset schedules a form reset after transition completes', async () => {
