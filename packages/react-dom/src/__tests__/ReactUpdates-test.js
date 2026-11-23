@@ -66,6 +66,13 @@ describe('ReactUpdates', () => {
     );
   }
 
+  it('unstable_batchedUpdates should return value from a callback', () => {
+    const result = ReactDOM.unstable_batchedUpdates(function () {
+      return 42;
+    });
+    expect(result).toEqual(42);
+  });
+
   it('should batch state when updating state twice', async () => {
     let componentState;
     let setState;

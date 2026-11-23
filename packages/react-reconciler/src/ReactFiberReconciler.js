@@ -24,7 +24,6 @@ import type {Lane} from './ReactFiberLane';
 import type {ActivityState} from './ReactFiberActivityComponent';
 import type {SuspenseState} from './ReactFiberSuspenseComponent';
 
-import {LegacyRoot} from './ReactRootTags';
 import {
   findCurrentHostFiber,
   findCurrentHostFiberWithNoPortals,
@@ -40,10 +39,7 @@ import {
 } from './ReactWorkTags';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
 import isArray from 'shared/isArray';
-import {
-  enableSchedulingProfiler,
-  disableLegacyMode,
-} from 'shared/ReactFeatureFlags';
+import {enableSchedulingProfiler} from 'shared/ReactFeatureFlags';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
   getPublicInstance,
@@ -262,7 +258,6 @@ export function createContainer(
   const initialChildren = null;
   const root = createFiberRoot(
     containerInfo,
-    tag,
     hydrate,
     initialChildren,
     hydrationCallbacks,
@@ -312,7 +307,6 @@ export function createHydrationContainer(
   const hydrate = true;
   const root = createFiberRoot(
     containerInfo,
-    tag,
     hydrate,
     initialChildren,
     hydrationCallbacks,
@@ -375,9 +369,6 @@ export function updateContainerSync(
   parentComponent: ?component(...props: any),
   callback: ?Function,
 ): Lane {
-  if (!disableLegacyMode && container.tag === LegacyRoot) {
-    flushPendingEffects();
-  }
   const current = container.current;
   updateContainerImpl(
     current,
