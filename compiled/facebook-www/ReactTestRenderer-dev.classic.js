@@ -13,7 +13,7 @@
 "use strict";
 __DEV__ &&
   (function () {
-    function JSCompiler_object_inline_createNodeMock_1443() {
+    function JSCompiler_object_inline_createNodeMock_1424() {
       return null;
     }
     function findHook(fiber, id) {
@@ -658,7 +658,6 @@ __DEV__ &&
       0 !== spawnedLane && markSpawnedDeferredLane(root, spawnedLane, 0);
       0 !== suspendedRetryLanes &&
         0 === updatedLanes &&
-        0 !== root.tag &&
         (root.suspendedLanes |=
           suspendedRetryLanes & ~(previouslyPendingLanes & ~finishedLanes));
     }
@@ -3179,44 +3178,42 @@ __DEV__ &&
         : didScheduleMicrotask ||
           ((didScheduleMicrotask = !0), scheduleImmediateRootScheduleTask());
     }
-    function flushSyncWorkAcrossRoots_impl(syncTransitionLanes, onlyLegacy) {
+    function flushSyncWorkAcrossRoots_impl(syncTransitionLanes) {
       if (!isFlushingWork && mightHavePendingSyncWork) {
         isFlushingWork = !0;
         do {
           var didPerformSomeWork = !1;
           for (var root = firstScheduledRoot; null !== root; ) {
-            if (!onlyLegacy)
-              if (0 !== syncTransitionLanes) {
-                var pendingLanes = root.pendingLanes;
-                if (0 === pendingLanes) var nextLanes = 0;
-                else {
-                  var suspendedLanes = root.suspendedLanes,
-                    pingedLanes = root.pingedLanes;
-                  nextLanes =
-                    (1 << (31 - clz32(42 | syncTransitionLanes) + 1)) - 1;
-                  nextLanes &= pendingLanes & ~(suspendedLanes & ~pingedLanes);
-                  nextLanes =
-                    nextLanes & 201326741
-                      ? (nextLanes & 201326741) | 1
-                      : nextLanes
-                        ? nextLanes | 2
-                        : 0;
-                }
-                0 !== nextLanes &&
+            if (0 !== syncTransitionLanes) {
+              var pendingLanes = root.pendingLanes;
+              if (0 === pendingLanes) var nextLanes = 0;
+              else {
+                var suspendedLanes = root.suspendedLanes,
+                  pingedLanes = root.pingedLanes;
+                nextLanes =
+                  (1 << (31 - clz32(42 | syncTransitionLanes) + 1)) - 1;
+                nextLanes &= pendingLanes & ~(suspendedLanes & ~pingedLanes);
+                nextLanes =
+                  nextLanes & 201326741
+                    ? (nextLanes & 201326741) | 1
+                    : nextLanes
+                      ? nextLanes | 2
+                      : 0;
+              }
+              0 !== nextLanes &&
+                ((didPerformSomeWork = !0),
+                performSyncWorkOnRoot(root, nextLanes));
+            } else
+              (nextLanes = workInProgressRootRenderLanes),
+                (nextLanes = getNextLanes(
+                  root,
+                  root === workInProgressRoot ? nextLanes : 0,
+                  null !== root.cancelPendingCommit || -1 !== root.timeoutHandle
+                )),
+                0 === (nextLanes & 3) ||
+                  checkIfRootIsPrerendering(root, nextLanes) ||
                   ((didPerformSomeWork = !0),
                   performSyncWorkOnRoot(root, nextLanes));
-              } else
-                (nextLanes = workInProgressRootRenderLanes),
-                  (nextLanes = getNextLanes(
-                    root,
-                    root === workInProgressRoot ? nextLanes : 0,
-                    null !== root.cancelPendingCommit ||
-                      -1 !== root.timeoutHandle
-                  )),
-                  0 === (nextLanes & 3) ||
-                    checkIfRootIsPrerendering(root, nextLanes) ||
-                    ((didPerformSomeWork = !0),
-                    performSyncWorkOnRoot(root, nextLanes));
             root = root.next;
           }
         } while (didPerformSomeWork);
@@ -3252,7 +3249,7 @@ __DEV__ &&
       }
       (pendingEffectsStatus !== NO_PENDING_EFFECTS &&
         pendingEffectsStatus !== PENDING_PASSIVE_PHASE) ||
-        flushSyncWorkAcrossRoots_impl(syncTransitionLanes, !1);
+        flushSyncWorkAcrossRoots_impl(syncTransitionLanes);
       if (0 !== currentEventTransitionLane) {
         currentEventTransitionLane = 0;
         if (
@@ -8249,6 +8246,79 @@ __DEV__ &&
           pushTopLevelContextObject(workInProgress, root.context, !1);
       pushHostContainer(workInProgress, root.containerInfo);
     }
+    function mountLazyComponent(workInProgress, elementType, renderLanes) {
+      var props = workInProgress.pendingProps;
+      elementType = resolveLazy(elementType);
+      elementType = resolveTypeForHotReloading(elementType);
+      workInProgress.type = elementType;
+      if ("function" === typeof elementType) {
+        if (shouldConstruct(elementType))
+          return (
+            (props = resolveClassComponentProps(elementType, props)),
+            (workInProgress.tag = 1),
+            updateClassComponent(
+              null,
+              workInProgress,
+              elementType,
+              props,
+              renderLanes
+            )
+          );
+        workInProgress.tag = 0;
+        validateFunctionComponentInDev(workInProgress, elementType);
+        return updateFunctionComponent(
+          null,
+          workInProgress,
+          elementType,
+          props,
+          renderLanes
+        );
+      }
+      if (void 0 !== elementType && null !== elementType) {
+        var $$typeof = elementType.$$typeof;
+        if ($$typeof === REACT_FORWARD_REF_TYPE)
+          return (
+            (workInProgress.tag = 11),
+            updateForwardRef(
+              null,
+              workInProgress,
+              elementType,
+              props,
+              renderLanes
+            )
+          );
+        if ($$typeof === REACT_MEMO_TYPE)
+          return (
+            (workInProgress.tag = 14),
+            updateMemoComponent(
+              null,
+              workInProgress,
+              elementType,
+              props,
+              renderLanes
+            )
+          );
+        if ($$typeof === REACT_CONTEXT_TYPE)
+          return (
+            (workInProgress.tag = 10),
+            (workInProgress.type = elementType),
+            updateContextProvider(null, workInProgress, renderLanes)
+          );
+      }
+      workInProgress = "";
+      null !== elementType &&
+        "object" === typeof elementType &&
+        elementType.$$typeof === REACT_LAZY_TYPE &&
+        (workInProgress =
+          " Did you wrap a component in React.lazy() more than once?");
+      renderLanes = getComponentNameFromType(elementType) || elementType;
+      throw Error(
+        "Element type is invalid. Received a promise that resolves to: " +
+          renderLanes +
+          ". Lazy element type must resolve to a class or function." +
+          workInProgress
+      );
+    }
     function validateFunctionComponentInDev(workInProgress, Component) {
       Component &&
         Component.childContextTypes &&
@@ -9129,85 +9199,11 @@ __DEV__ &&
       workInProgress.lanes = 0;
       switch (workInProgress.tag) {
         case 16:
-          a: if (
-            ((returnFiber = workInProgress.pendingProps),
-            (current = resolveLazy(workInProgress.elementType)),
-            (current = resolveTypeForHotReloading(current)),
-            (workInProgress.type = current),
-            "function" === typeof current)
-          )
-            shouldConstruct(current)
-              ? ((returnFiber = resolveClassComponentProps(
-                  current,
-                  returnFiber
-                )),
-                (workInProgress.tag = 1),
-                (workInProgress = updateClassComponent(
-                  null,
-                  workInProgress,
-                  current,
-                  returnFiber,
-                  renderLanes
-                )))
-              : ((workInProgress.tag = 0),
-                validateFunctionComponentInDev(workInProgress, current),
-                (workInProgress = updateFunctionComponent(
-                  null,
-                  workInProgress,
-                  current,
-                  returnFiber,
-                  renderLanes
-                )));
-          else {
-            if (void 0 !== current && null !== current)
-              if (
-                ((prevSibling = current.$$typeof),
-                prevSibling === REACT_FORWARD_REF_TYPE)
-              ) {
-                workInProgress.tag = 11;
-                workInProgress = updateForwardRef(
-                  null,
-                  workInProgress,
-                  current,
-                  returnFiber,
-                  renderLanes
-                );
-                break a;
-              } else if (prevSibling === REACT_MEMO_TYPE) {
-                workInProgress.tag = 14;
-                workInProgress = updateMemoComponent(
-                  null,
-                  workInProgress,
-                  current,
-                  returnFiber,
-                  renderLanes
-                );
-                break a;
-              } else if (prevSibling === REACT_CONTEXT_TYPE) {
-                workInProgress.tag = 10;
-                workInProgress.type = current;
-                workInProgress = updateContextProvider(
-                  null,
-                  workInProgress,
-                  renderLanes
-                );
-                break a;
-              }
-            workInProgress = "";
-            null !== current &&
-              "object" === typeof current &&
-              current.$$typeof === REACT_LAZY_TYPE &&
-              (workInProgress =
-                " Did you wrap a component in React.lazy() more than once?");
-            current = getComponentNameFromType(current) || current;
-            throw Error(
-              "Element type is invalid. Received a promise that resolves to: " +
-                current +
-                ". Lazy element type must resolve to a class or function." +
-                workInProgress
-            );
-          }
-          return workInProgress;
+          return mountLazyComponent(
+            workInProgress,
+            workInProgress.elementType,
+            renderLanes
+          );
         case 0:
           return updateFunctionComponent(
             current,
@@ -9253,7 +9249,7 @@ __DEV__ &&
           suspendIfUpdateReadFromEntangledAsyncAction();
           prevSibling = nextProps.element;
           prevSibling === returnFiber
-            ? (workInProgress = bailoutOnAlreadyFinishedWork(
+            ? (current = bailoutOnAlreadyFinishedWork(
                 current,
                 workInProgress,
                 renderLanes
@@ -9264,8 +9260,8 @@ __DEV__ &&
                 prevSibling,
                 renderLanes
               ),
-              (workInProgress = workInProgress.child));
-          return workInProgress;
+              (current = workInProgress.child));
+          return current;
         case 26:
         case 27:
         case 5:
@@ -9427,7 +9423,7 @@ __DEV__ &&
           nextProps = 0 !== (workInProgress.flags & 128);
           workInProgress.flags &= -129;
           if (null === current)
-            workInProgress = mountActivityChildren(workInProgress, prevSibling);
+            current = mountActivityChildren(workInProgress, prevSibling);
           else if (
             ((returnFiber = current.memoizedState), null !== returnFiber)
           )
@@ -9436,7 +9432,7 @@ __DEV__ &&
               if (nextProps) {
                 if (workInProgress.flags & 256) {
                   workInProgress.flags &= -257;
-                  workInProgress = retryActivityComponentWithoutHydrating(
+                  current = retryActivityComponentWithoutHydrating(
                     current,
                     workInProgress,
                     renderLanes
@@ -9446,7 +9442,7 @@ __DEV__ &&
                 if (null !== workInProgress.memoizedState) {
                   workInProgress.child = current.child;
                   workInProgress.flags |= 128;
-                  workInProgress = null;
+                  current = null;
                   break b;
                 }
                 throw Error(
@@ -9482,17 +9478,14 @@ __DEV__ &&
                     );
                   renderDidSuspendDelayIfPossible();
                 }
-                workInProgress = retryActivityComponentWithoutHydrating(
+                current = retryActivityComponentWithoutHydrating(
                   current,
                   workInProgress,
                   renderLanes
                 );
               } else
-                (workInProgress = mountActivityChildren(
-                  workInProgress,
-                  prevSibling
-                )),
-                  (workInProgress.flags |= 134221824);
+                (current = mountActivityChildren(workInProgress, prevSibling)),
+                  (current.flags |= 134221824);
             }
           else
             (returnFiber = current.child),
@@ -9506,9 +9499,8 @@ __DEV__ &&
               (current = createWorkInProgress(returnFiber, prevSibling)),
               (current.ref = workInProgress.ref),
               (workInProgress.child = current),
-              (current.return = workInProgress),
-              (workInProgress = current);
-          return workInProgress;
+              (current.return = workInProgress);
+          return current;
         case 22:
           return updateOffscreenComponent(
             current,
@@ -14269,12 +14261,12 @@ __DEV__ &&
           (ReactSharedInternals.T = prevTransition),
           (executionContext = prevExecutionContext),
           (executionContext & (RenderContext | CommitContext)) === NoContext &&
-            flushSyncWorkAcrossRoots_impl(0, !1);
+            flushSyncWorkAcrossRoots_impl(0);
       }
     }
     function flushSyncWork() {
       return (executionContext & (RenderContext | CommitContext)) === NoContext
-        ? (flushSyncWorkAcrossRoots_impl(0, !1), !1)
+        ? (flushSyncWorkAcrossRoots_impl(0), !1)
         : !0;
     }
     function resetWorkInProgressStack() {
@@ -15638,7 +15630,11 @@ __DEV__ &&
         var remainingLanes = startViewTransitionStartTime.pendingLanes;
         0 === remainingLanes && (legacyErrorBoundariesThatAlreadyFailed = null);
         abortedViewTransition ||
-          commitDoubleInvokeEffectsInDEV(startViewTransitionStartTime);
+          recursivelyTraverseAndDoubleInvokeEffectsInDEV(
+            startViewTransitionStartTime,
+            startViewTransitionStartTime.current,
+            0 !== (startViewTransitionStartTime.current.mode & 24)
+          );
         remainingLanes = lanesToEventPriority(endTime);
         finishedWork = finishedWork.stateNode;
         if (
@@ -15733,7 +15729,7 @@ __DEV__ &&
                 (rootWithNestedUpdates = startViewTransitionStartTime)))
           : ((nestedUpdateCount = 0), (rootWithNestedUpdates = null));
         abortedViewTransition || finalizeRender(endTime, commitEndTime);
-        flushSyncWorkAcrossRoots_impl(0, !1);
+        flushSyncWorkAcrossRoots_impl(0);
       }
     }
     function makeErrorInfo(componentStack) {
@@ -15846,7 +15842,11 @@ __DEV__ &&
           transitions,
           finishedWork
         );
-        commitDoubleInvokeEffectsInDEV(priority);
+        recursivelyTraverseAndDoubleInvokeEffectsInDEV(
+          priority,
+          priority.current,
+          0 !== (priority.current.mode & 24)
+        );
         executionContext = startTime;
         var passiveEffectsEndTime = now$1();
         finishedWork$jscomp$0 = passiveEffectStartTime;
@@ -15882,7 +15882,7 @@ __DEV__ &&
                   "secondary-dark"
                 ));
         finalizeRender(lanes, passiveEffectsEndTime);
-        flushSyncWorkAcrossRoots_impl(0, !1);
+        flushSyncWorkAcrossRoots_impl(0);
         didScheduleUpdateDuringPassiveEffects
           ? priority === rootWithPassiveNestedUpdates
             ? nestedPassiveUpdateCount++
@@ -16139,15 +16139,6 @@ __DEV__ &&
       } finally {
         setIsStrictModeForDevtools(!1);
       }
-    }
-    function commitDoubleInvokeEffectsInDEV(root) {
-      var doubleInvokeEffects = !0;
-      root.current.mode & 24 || (doubleInvokeEffects = !1);
-      recursivelyTraverseAndDoubleInvokeEffectsInDEV(
-        root,
-        root.current,
-        doubleInvokeEffects
-      );
     }
     function warnAboutUpdateOnNotYetMountedFiberInDEV(fiber) {
       if ((executionContext & RenderContext) === NoContext) {
@@ -16641,7 +16632,6 @@ __DEV__ &&
     }
     function FiberRootNode(
       containerInfo,
-      tag,
       hydrate,
       identifierPrefix,
       onUncaughtError,
@@ -16705,7 +16695,6 @@ __DEV__ &&
     ) {
       containerInfo = new FiberRootNode(
         containerInfo,
-        tag,
         !1,
         identifierPrefix,
         onUncaughtError,
@@ -19214,10 +19203,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-dddccc26-20261124",
+        version: "19.3.0-www-classic-92bb0678-20261124",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-dddccc26-20261124"
+        reconcilerVersion: "19.3.0-www-classic-92bb0678-20261124"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -19238,7 +19227,7 @@ __DEV__ &&
     exports._Scheduler = Scheduler;
     exports.act = act;
     exports.create = function (element, options) {
-      var createNodeMock = JSCompiler_object_inline_createNodeMock_1443,
+      var createNodeMock = JSCompiler_object_inline_createNodeMock_1424,
         isConcurrentOnly = !0 !== global.IS_REACT_NATIVE_TEST_ENVIRONMENT,
         isConcurrent = isConcurrentOnly,
         isStrictMode = !1;
@@ -19353,5 +19342,5 @@ __DEV__ &&
     exports.unstable_batchedUpdates = function (fn, a) {
       return fn(a);
     };
-    exports.version = "19.3.0-www-classic-dddccc26-20261124";
+    exports.version = "19.3.0-www-classic-92bb0678-20261124";
   })();
