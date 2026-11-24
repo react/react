@@ -9,8 +9,6 @@
 
 'use strict';
 
-const {COMMENT_NODE} = require('react-dom-bindings/src/client/HTMLNodeType');
-
 let React;
 let ReactDOM;
 let ReactDOMClient;
@@ -282,43 +280,6 @@ describe('ReactMount', () => {
     });
     expect(container1.textContent).toEqual('2');
     expect(container2.textContent).toEqual('a!');
-  });
-
-  describe('mount point is a comment node', () => {
-    let containerDiv;
-    let mountPoint;
-
-    beforeEach(() => {
-      containerDiv = document.createElement('div');
-      containerDiv.innerHTML = 'A<!-- react-mount-point-unstable -->B';
-      mountPoint = containerDiv.childNodes[1];
-      expect(mountPoint.nodeType).toBe(COMMENT_NODE);
-    });
-
-    // @gate !disableLegacyMode
-    it('renders at a comment node', () => {
-      function Char(props) {
-        return props.children;
-      }
-      function list(chars) {
-        return chars.split('').map(c => <Char key={c}>{c}</Char>);
-      }
-
-      ReactDOM.render(list('aeiou'), mountPoint);
-      expect(containerDiv.innerHTML).toBe(
-        'Aaeiou<!-- react-mount-point-unstable -->B',
-      );
-
-      ReactDOM.render(list('yea'), mountPoint);
-      expect(containerDiv.innerHTML).toBe(
-        'Ayea<!-- react-mount-point-unstable -->B',
-      );
-
-      ReactDOM.render(list(''), mountPoint);
-      expect(containerDiv.innerHTML).toBe(
-        'A<!-- react-mount-point-unstable -->B',
-      );
-    });
   });
 
   // @gate !disableLegacyMode

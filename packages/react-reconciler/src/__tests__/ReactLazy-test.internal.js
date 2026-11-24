@@ -1616,6 +1616,101 @@ describe('ReactLazy', () => {
     expect(root).toMatchRenderedOutput('ba');
   });
 
+  it('mount and reorder lazy types in a transition', async () => {
+    class Child extends React.Component {
+      componentWillUnmount() {
+        Scheduler.log('Did unmount: ' + this.props.label);
+      }
+      componentDidMount() {
+        Scheduler.log('Did mount: ' + this.props.label);
+      }
+      componentDidUpdate() {
+        Scheduler.log('Did update: ' + this.props.label);
+      }
+      render() {
+        return <Text text={this.props.label} />;
+      }
+    }
+
+    function ChildA({lowerCase}) {
+      return <Child label={lowerCase ? 'a' : 'A'} />;
+    }
+
+    function ChildB({lowerCase}) {
+      return <Child label={lowerCase ? 'b' : 'B'} />;
+    }
+
+    const LazyChildA = lazy(() => {
+      Scheduler.log('Init A');
+      return fakeImport(ChildA);
+    });
+    const LazyChildB = lazy(() => {
+      Scheduler.log('Init B');
+      return fakeImport(ChildB);
+    });
+    const LazyChildA2 = lazy(() => {
+      Scheduler.log('Init A2');
+      return fakeImport(ChildA);
+    });
+    const LazyChildB2 = lazy(() => {
+      Scheduler.log('Init B2');
+      return fakeImport(ChildB);
+    });
+
+    function Parent({swap}) {
+      return (
+        <Suspense fallback={<Text text="Outer..." />}>
+          <Suspense fallback={<Text text="Loading..." />}>
+            {swap
+              ? [
+                  <LazyChildB2 key="B" lowerCase={true} />,
+                  <LazyChildA2 key="A" lowerCase={true} />,
+                ]
+              : [<LazyChildA key="A" />, <LazyChildB key="B" />]}
+          </Suspense>
+        </Suspense>
+      );
+    }
+
+    const root = ReactTestRenderer.create(<Parent swap={false} />, {
+      unstable_isConcurrent: true,
+    });
+
+    await waitForAll([
+      'Init A',
+      'Loading...',
+      // pre-warming
+      'Init B',
+    ]);
+    expect(root).not.toMatchRenderedOutput('AB');
+
+    await act(() => {
+      resolveFakeImport(ChildA);
+      resolveFakeImport(ChildB);
+    });
+    assertLog(['A', 'B', 'Did mount: A', 'Did mount: B']);
+    expect(root).toMatchRenderedOutput('AB');
+
+    // Swap the position of A and B in a transition, so the old children stay
+    // on screen while the new lazy wrappers load.
+    await act(() => {
+      React.startTransition(() => {
+        root.update(<Parent swap={true} />);
+      });
+    });
+    // Both wrappers resolve to the current types, so the fibers are reused
+    // and updated instead of remounted.
+    assertLog([
+      'Init B2',
+      'Init A2',
+      'b',
+      'a',
+      'Did update: b',
+      'Did update: a',
+    ]);
+    expect(root).toMatchRenderedOutput('ba');
+  });
+
   describe('legacy mode', () => {
     // @gate !disableLegacyMode
     it('mount and reorder lazy elements (legacy mode)', async () => {
@@ -1684,80 +1779,6 @@ describe('ReactLazy', () => {
       await resolveFakeImport(ChildA2);
 
       await waitForAll(['b', 'a', 'Did update: b', 'Did update: a']);
-      expect(root).toMatchRenderedOutput('ba');
-    });
-
-    // @gate !disableLegacyMode
-    it('mount and reorder lazy types (legacy mode)', async () => {
-      class Child extends React.Component {
-        componentDidMount() {
-          Scheduler.log('Did mount: ' + this.props.label);
-        }
-        componentDidUpdate() {
-          Scheduler.log('Did update: ' + this.props.label);
-        }
-        render() {
-          return <Text text={this.props.label} />;
-        }
-      }
-
-      function ChildA({lowerCase}) {
-        return <Child label={lowerCase ? 'a' : 'A'} />;
-      }
-
-      function ChildB({lowerCase}) {
-        return <Child label={lowerCase ? 'b' : 'B'} />;
-      }
-
-      const LazyChildA = lazy(() => {
-        Scheduler.log('Init A');
-        return fakeImport(ChildA);
-      });
-      const LazyChildB = lazy(() => {
-        Scheduler.log('Init B');
-        return fakeImport(ChildB);
-      });
-      const LazyChildA2 = lazy(() => {
-        Scheduler.log('Init A2');
-        return fakeImport(ChildA);
-      });
-      const LazyChildB2 = lazy(() => {
-        Scheduler.log('Init B2');
-        return fakeImport(ChildB);
-      });
-
-      function Parent({swap}) {
-        return (
-          <Suspense fallback={<Text text="Outer..." />}>
-            <Suspense fallback={<Text text="Loading..." />}>
-              {swap
-                ? [
-                    <LazyChildB2 key="B" lowerCase={true} />,
-                    <LazyChildA2 key="A" lowerCase={true} />,
-                  ]
-                : [<LazyChildA key="A" />, <LazyChildB key="B" />]}
-            </Suspense>
-          </Suspense>
-        );
-      }
-
-      const root = ReactTestRenderer.create(<Parent swap={false} />, {
-        unstable_isConcurrent: false,
-      });
-
-      assertLog(['Init A', 'Init B', 'Loading...']);
-      expect(root).not.toMatchRenderedOutput('AB');
-
-      await resolveFakeImport(ChildA);
-      await resolveFakeImport(ChildB);
-
-      await waitForAll(['A', 'B', 'Did mount: A', 'Did mount: B']);
-      expect(root).toMatchRenderedOutput('AB');
-
-      // Swap the position of A and B
-      root.update(<Parent swap={true} />);
-      assertLog(['Init B2', 'Loading...']);
-      await waitForAll(['Init A2', 'b', 'a', 'Did update: b', 'Did update: a']);
       expect(root).toMatchRenderedOutput('ba');
     });
   });

@@ -106,42 +106,70 @@ describe('ReactDOMSuspensePlaceholder', () => {
     return text;
   }
 
-  // @gate !disableLegacyMode
-  it('hides and unhides timed out DOM elements in legacy roots', async () => {
-    const divs = [
-      React.createRef(null),
-      React.createRef(null),
-      React.createRef(null),
-    ];
-    function App() {
+  it('hides and unhides timed out DOM elements', async () => {
+    function App({text}) {
       return (
         <Suspense fallback={<Text text="Loading..." />}>
-          <div ref={divs[0]}>
+          <div>
             <Text text="A" />
           </div>
-          <div ref={divs[1]}>
-            <AsyncText text="B" />
+          <div>
+            <AsyncText text={text} />
           </div>
-          <div style={{display: 'inline'}} ref={divs[2]}>
+          <div style={{display: 'inline'}}>
             <Text text="C" />
           </div>
         </Suspense>
       );
     }
-    ReactDOM.render(<App />, container);
-    expect(window.getComputedStyle(divs[0].current).display).toEqual('none');
-    expect(window.getComputedStyle(divs[1].current).display).toEqual('none');
-    expect(window.getComputedStyle(divs[2].current).display).toEqual('none');
-    assertLog(['A', 'Suspend! [B]', 'C', 'Loading...']);
-    await act(async () => {
-      await resolveText('B');
+    // A concurrent root only shows the fallback on mount, so mount the content
+    // first and suspend it with an update.
+    resolveText('B');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<App text="B" />);
+    });
+    // Refs are detached while hidden, so hold on to the DOM nodes.
+    const divs = Array.from(container.querySelectorAll('div'));
+    expect(divs.length).toBe(3);
+    expect(window.getComputedStyle(divs[0]).display).toEqual('block');
+    expect(window.getComputedStyle(divs[1]).display).toEqual('block');
+    expect(window.getComputedStyle(divs[2]).display).toEqual('inline');
+    assertLog(['A', 'B', 'C']);
+
+    await act(() => {
+      root.render(<App text="B2" />);
+    });
+    // The same DOM nodes are hidden, not deleted.
+    container.querySelectorAll('div').forEach((div, i) => {
+      expect(div).toBe(divs[i]);
+    });
+    expect(window.getComputedStyle(divs[0]).display).toEqual('none');
+    expect(window.getComputedStyle(divs[1]).display).toEqual('none');
+    expect(window.getComputedStyle(divs[2]).display).toEqual('none');
+    expect(container.textContent).toEqual('ABCLoading...');
+    assertLog([
+      'A',
+      'Suspend! [B2]',
+      'Loading...',
+      // pre-warming
+      'A',
+      'Suspend! [B2]',
+      'C',
+    ]);
+    await act(() => {
+      resolveText('B2');
     });
 
-    expect(window.getComputedStyle(divs[0].current).display).toEqual('block');
-    expect(window.getComputedStyle(divs[1].current).display).toEqual('block');
+    container.querySelectorAll('div').forEach((div, i) => {
+      expect(div).toBe(divs[i]);
+    });
+    expect(window.getComputedStyle(divs[0]).display).toEqual('block');
+    expect(window.getComputedStyle(divs[1]).display).toEqual('block');
     // This div's display was set with a prop.
-    expect(window.getComputedStyle(divs[2].current).display).toEqual('inline');
-    assertLog(['B']);
+    expect(window.getComputedStyle(divs[2]).display).toEqual('inline');
+    expect(container.textContent).toEqual('AB2C');
+    assertLog(['A', 'B2', 'C']);
   });
 
   it('hides and unhides timed out text nodes', async () => {

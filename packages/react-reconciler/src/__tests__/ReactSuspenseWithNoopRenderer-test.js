@@ -1085,6 +1085,107 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
+  // @gate enableLegacyCache
+  it('hides/unhides suspended children before layout effects fire', async () => {
+    const {useLayoutEffect} = React;
+
+    // Keep the node outside of the ref, because refs are detached when a
+    // tree is hidden.
+    let node = null;
+
+    // A sibling that renders before the boundary. Its layout effect fires
+    // after the boundary's mutation phase, but before the layout phase
+    // reaches the boundary.
+    function Reader({text}) {
+      useLayoutEffect(() => {
+        if (node === null) {
+          // On mount, this runs before the span's ref is attached.
+          return;
+        }
+        if (global.__PERSISTENT__) {
+          Scheduler.log(ReactNoop.getPendingChildrenAsJSX());
+        } else {
+          Scheduler.log('Child is hidden: ' + node.hidden);
+        }
+      });
+      return null;
+    }
+
+    function App({text}) {
+      return (
+        <>
+          <Reader text={text} />
+          <Suspense fallback={<Text text="Loading..." />}>
+            <span
+              ref={n => {
+                if (n) {
+                  node = n;
+                }
+              }}
+              hidden={false}>
+              <AsyncText text={text} />
+            </span>
+          </Suspense>
+        </>
+      );
+    }
+
+    seedNextTextCache('A');
+    await act(() => {
+      ReactNoop.render(<App text="A" />);
+    });
+    assertLog(['A']);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span>
+        <span prop="A" />
+      </span>,
+    );
+
+    // Suspend without a transition, so the boundary hides its children.
+    await act(() => {
+      ReactNoop.render(<App text="B" />);
+    });
+    assertLog([
+      'Suspend! [B]',
+      'Loading...',
+      // The child should have already been hidden
+      global.__PERSISTENT__ ? (
+        <>
+          <span hidden={true}>
+            <span prop="A" />
+          </span>
+          <span prop="Loading..." />
+        </>
+      ) : (
+        'Child is hidden: true'
+      ),
+      // pre-warming
+      'Suspend! [B]',
+    ]);
+
+    // Switch back to the cached text, so the boundary unhides its children
+    // in the same commit that re-runs the reader's layout effect.
+    await act(() => {
+      ReactNoop.render(<App text="A" />);
+    });
+    assertLog([
+      'A',
+      // The child should have already been unhidden
+      global.__PERSISTENT__ ? (
+        <span>
+          <span prop="A" />
+        </span>
+      ) : (
+        'Child is hidden: false'
+      ),
+    ]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span>
+        <span prop="A" />
+      </span>,
+    );
+  });
+
   describe('legacy mode mode', () => {
     // @gate enableLegacyCache && !disableLegacyMode
     it('times out immediately', async () => {
@@ -1378,48 +1479,6 @@ describe('ReactSuspenseWithNoopRenderer', () => {
         await act(() => {
           resolveText('Hi');
         });
-        assertLog(['Hi']);
-      });
-    } else {
-      // @gate enableLegacyCache && !disableLegacyMode
-      it('hides/unhides suspended children before layout effects fire (mutation)', async () => {
-        const {useRef, useLayoutEffect} = React;
-
-        function Parent() {
-          const child = useRef(null);
-
-          useLayoutEffect(() => {
-            Scheduler.log('Child is hidden: ' + child.current.hidden);
-          });
-
-          return (
-            <span ref={child} hidden={false}>
-              <AsyncText text="Hi" />
-            </span>
-          );
-        }
-
-        function App(props) {
-          return (
-            <Suspense fallback={<Text text="Loading..." />}>
-              <Parent />
-            </Suspense>
-          );
-        }
-
-        ReactNoop.renderLegacySyncRoot(<App middleText="B" />);
-
-        assertLog([
-          'Suspend! [Hi]',
-          'Loading...',
-          // The child should have already been hidden
-          'Child is hidden: true',
-        ]);
-
-        await act(() => {
-          resolveText('Hi');
-        });
-
         assertLog(['Hi']);
       });
     }
