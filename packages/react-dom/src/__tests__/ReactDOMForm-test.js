@@ -945,6 +945,44 @@ describe('ReactDOMForm', () => {
     assertLog(['Async action finished', 'No pending action']);
   });
 
+  it('useFormStatus updates a consumer nested under a bailed-out component', async () => {
+    const formRef = React.createRef();
+
+    function Status() {
+      const {pending} = useFormStatus();
+      return <Text text={pending ? 'Pending' : 'Idle'} />;
+    }
+
+    // Doesn't read the form status, so it bails out and the change has to be
+    // propagated through it to Status.
+    function Wrapper() {
+      return <Status />;
+    }
+
+    async function myAction() {
+      await getText('Wait');
+    }
+
+    function App() {
+      return (
+        <form action={myAction} ref={formRef}>
+          <Wrapper />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+    assertLog(['Idle']);
+
+    await submit(formRef.current);
+    assertLog(['Pending']);
+    expect(container.textContent).toBe('Pending');
+
+    await act(() => resolveText('Wait'));
+    assertLog(['Idle']);
+  });
+
   it('should error if submitting a form manually', async () => {
     const ref = React.createRef();
 
