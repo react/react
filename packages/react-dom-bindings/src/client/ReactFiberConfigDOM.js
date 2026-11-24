@@ -124,7 +124,6 @@ import {
 import {
   enableCreateEventHandleAPI,
   enableScopeAPI,
-  disableLegacyMode,
   enableMoveBefore,
   disableCommentsAsDOMContainers,
   enableSuspenseyImages,
@@ -5199,9 +5198,7 @@ function getDocumentFromRoot(root: HoistableRoot): Document {
 const previousDispatcher =
   ReactDOMSharedInternals.d; /* ReactDOMCurrentDispatcher */
 ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */ = {
-  f /* flushSyncWork */: disableLegacyMode
-    ? flushSyncWork
-    : previousDispatcher.f /* flushSyncWork */,
+  f /* flushSyncWork */: flushSyncWork,
   r: requestFormReset,
   D /* prefetchDNS */: prefetchDNS,
   C /* preconnect */: preconnect,
@@ -5213,17 +5210,11 @@ ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */ = {
 };
 
 function flushSyncWork() {
-  if (disableLegacyMode) {
-    const previousWasRendering = previousDispatcher.f(); /* flushSyncWork */
-    const wasRendering = flushSyncWorkOnAllRoots();
-    // Since multiple dispatchers can flush sync work during a single flushSync call
-    // we need to return true if any of them were rendering.
-    return previousWasRendering || wasRendering;
-  } else {
-    throw new Error(
-      'flushSyncWork should not be called from builds that support legacy mode. This is a bug in React.',
-    );
-  }
+  const previousWasRendering = previousDispatcher.f(); /* flushSyncWork */
+  const wasRendering = flushSyncWorkOnAllRoots();
+  // Since multiple dispatchers can flush sync work during a single flushSync call
+  // we need to return true if any of them were rendering.
+  return previousWasRendering || wasRendering;
 }
 
 function requestFormReset(form: HTMLFormElement) {

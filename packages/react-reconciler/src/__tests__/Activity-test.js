@@ -105,51 +105,6 @@ describe('Activity', () => {
     );
   });
 
-  // @gate enableLegacyHidden && !disableLegacyMode
-  it('does not defer in legacy mode', async () => {
-    let setState;
-    function Foo() {
-      const [state, _setState] = useState('A');
-      setState = _setState;
-      return <Text text={state} />;
-    }
-
-    const root = ReactNoop.createLegacyRoot();
-    await act(() => {
-      root.render(
-        <>
-          <LegacyHidden mode="hidden">
-            <Foo />
-          </LegacyHidden>
-          <Text text="Outside" />
-        </>,
-      );
-
-      ReactNoop.flushSync();
-
-      // Should not defer the hidden tree
-      assertLog(['A', 'Outside']);
-    });
-    expect(root).toMatchRenderedOutput(
-      <>
-        <span prop="A" />
-        <span prop="Outside" />
-      </>,
-    );
-
-    // Test that the children can be updated
-    await act(() => {
-      setState('B');
-    });
-    assertLog(['B']);
-    expect(root).toMatchRenderedOutput(
-      <>
-        <span prop="B" />
-        <span prop="Outside" />
-      </>,
-    );
-  });
-
   // @gate enableLegacyHidden
   it('does defer in concurrent mode', async () => {
     let setState;

@@ -13,7 +13,6 @@
 let JSDOM;
 let Stream;
 let React;
-let ReactDOM;
 let ReactDOMClient;
 let ReactDOMFizzServer;
 let document;
@@ -39,7 +38,6 @@ describe('ReactDOM HostSingleton', () => {
     jest.resetModules();
     JSDOM = require('jsdom').JSDOM;
     React = require('react');
-    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMFizzServer = require('react-dom/server');
     Stream = require('stream');
@@ -1332,23 +1330,5 @@ describe('ReactDOM HostSingleton', () => {
         <body>foo</body>
       </html>,
     );
-  });
-
-  // https://github.com/react/react/issues/26128
-  // @gate !disableLegacyMode
-  it('(#26128) does not throw when rendering at body in legacy mode', async () => {
-    ReactDOM.render(<div />, document.body);
-  });
-
-  // https://github.com/react/react/issues/26128
-  // @gate !disableLegacyMode
-  it('(#26128) does not throw when rendering at <html> in legacy mode', async () => {
-    ReactDOM.render(<body />, document.documentElement);
-  });
-
-  // https://github.com/react/react/issues/26128
-  // @gate !disableLegacyMode
-  it('(#26128) does not throw when rendering at document in legacy mode', async () => {
-    ReactDOM.render(<html />, document);
   });
 });
