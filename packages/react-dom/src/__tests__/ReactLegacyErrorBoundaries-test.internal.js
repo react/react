@@ -12,6 +12,7 @@
 let PropTypes;
 let React;
 let ReactDOM;
+let ReactDOMClient;
 let act;
 let assertConsoleErrorDev;
 
@@ -41,6 +42,7 @@ describe('ReactLegacyErrorBoundaries', () => {
     jest.resetModules();
     PropTypes = require('prop-types');
     ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
     React = require('react');
     act = require('internal-test-utils').act;
     assertConsoleErrorDev =
@@ -896,19 +898,30 @@ describe('ReactLegacyErrorBoundaries', () => {
     ]);
   });
 
-  // @gate !disableLegacyMode
-  it('propagates errors on retry on mounting', () => {
+  it('propagates errors on retry on mounting with a componentDidCatch-only boundary', async () => {
     const container = document.createElement('div');
-    ReactDOM.render(
-      <ErrorBoundary>
-        <RetryErrorBoundary>
-          <BrokenRender />
-        </RetryErrorBoundary>
-      </ErrorBoundary>,
-      container,
-    );
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <ErrorBoundary>
+          <RetryErrorBoundary>
+            <BrokenRender />
+          </RetryErrorBoundary>
+        </ErrorBoundary>,
+      );
+    });
     expect(container.firstChild.textContent).toBe('Caught an error: Hello.');
     expect(log).toEqual([
+      'ErrorBoundary constructor',
+      'ErrorBoundary componentWillMount',
+      'ErrorBoundary render success',
+      'RetryErrorBoundary constructor',
+      'RetryErrorBoundary componentWillMount',
+      'RetryErrorBoundary render',
+      'BrokenRender constructor',
+      'BrokenRender componentWillMount',
+      'BrokenRender render [!]',
+      // logs for error retry
       'ErrorBoundary constructor',
       'ErrorBoundary componentWillMount',
       'ErrorBoundary render success',
@@ -927,6 +940,11 @@ describe('ReactLegacyErrorBoundaries', () => {
       'BrokenRender constructor',
       'BrokenRender componentWillMount',
       'BrokenRender render [!]',
+      // logs for error retry
+      'RetryErrorBoundary render',
+      'BrokenRender constructor',
+      'BrokenRender componentWillMount',
+      'BrokenRender render [!]',
       // This time, the error propagates to the higher boundary
       'RetryErrorBoundary componentWillUnmount',
       'ErrorBoundary componentDidCatch',
@@ -937,7 +955,7 @@ describe('ReactLegacyErrorBoundaries', () => {
     ]);
 
     log.length = 0;
-    ReactDOM.unmountComponentAtNode(container);
+    root.unmount();
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
 

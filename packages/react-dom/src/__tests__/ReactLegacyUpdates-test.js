@@ -11,6 +11,7 @@
 
 let React;
 let ReactDOM;
+let ReactDOMClient;
 let findDOMNode;
 let act;
 let Scheduler;
@@ -24,6 +25,7 @@ describe('ReactLegacyUpdates', () => {
     jest.resetModules();
     React = require('react');
     ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
     findDOMNode =
       ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE
         .findDOMNode;
@@ -1179,11 +1181,10 @@ describe('ReactLegacyUpdates', () => {
     expect(ops).toEqual(['Hello', '']);
   });
 
-  // @gate !disableLegacyMode
   it(
-    'in legacy mode, updates in componentWillUpdate and componentDidUpdate ' +
+    'updates in componentWillUpdate and componentDidUpdate ' +
       'should both flush in the immediately subsequent commit',
-    () => {
+    async () => {
       const ops = [];
       class Foo extends React.Component {
         state = {a: false, b: false};
@@ -1205,10 +1206,15 @@ describe('ReactLegacyUpdates', () => {
       }
 
       const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
       // Mount
-      ReactDOM.render(<Foo />, container);
+      await act(() => {
+        root.render(<Foo />);
+      });
       // Root update
-      ReactDOM.render(<Foo />, container);
+      await act(() => {
+        root.render(<Foo />);
+      });
       expect(ops).toEqual([
         // Mount
         'a: false, b: false',
@@ -1223,11 +1229,10 @@ describe('ReactLegacyUpdates', () => {
     },
   );
 
-  // @gate !disableLegacyMode
   it(
-    'in legacy mode, updates in componentWillUpdate and componentDidUpdate ' +
+    'updates in componentWillUpdate and componentDidUpdate ' +
       '(on a sibling) should both flush in the immediately subsequent commit',
-    () => {
+    async () => {
       const ops = [];
       class Foo extends React.Component {
         state = {a: false};
@@ -1260,22 +1265,25 @@ describe('ReactLegacyUpdates', () => {
       }
 
       const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
       // Mount
-      ReactDOM.render(
-        <div>
-          <Foo />
-          <Bar />
-        </div>,
-        container,
-      );
+      await act(() => {
+        root.render(
+          <div>
+            <Foo />
+            <Bar />
+          </div>,
+        );
+      });
       // Root update
-      ReactDOM.render(
-        <div>
-          <Foo />
-          <Bar />
-        </div>,
-        container,
-      );
+      await act(() => {
+        root.render(
+          <div>
+            <Foo />
+            <Bar />
+          </div>,
+        );
+      });
       expect(ops).toEqual([
         // Mount
         'a: false',
@@ -1450,15 +1458,20 @@ describe('ReactLegacyUpdates', () => {
     expect(ref.current).toBe(null);
   });
 
-  // @gate !disableLegacyMode
-  it('does not fall into an infinite update loop', async () => {
+  it('does not fall into an infinite update loop with setState in componentWillUpdate', async () => {
+    let shouldStop = false;
+    // Safety net so the test can't spin if no error is ever reported.
+    let updateCount = 0;
+    const maxUpdates = 1000;
     class NonTerminating extends React.Component {
       state = {step: 0};
       componentDidMount() {
         this.setState({step: 1});
       }
       UNSAFE_componentWillUpdate() {
-        this.setState({step: 2});
+        if (!shouldStop && ++updateCount < maxUpdates) {
+          this.setState({step: 2});
+        }
       }
       render() {
         return (
@@ -1471,11 +1484,50 @@ describe('ReactLegacyUpdates', () => {
     }
 
     const container = document.createElement('div');
-    await expect(async () => {
-      await act(() => {
-        ReactDOM.render(<NonTerminating />, container);
-      });
-    }).rejects.toThrow('Maximum');
+    const errors = [];
+    const captureError = error => {
+      errors.push(error);
+      // Stop scheduling updates so the recoverable variant can terminate.
+      shouldStop = true;
+    };
+    const root = ReactDOMClient.createRoot(container, {
+      onUncaughtError: captureError,
+      onRecoverableError: captureError,
+      onCaughtError: captureError,
+    });
+
+    await act(() => {
+      root.render(<NonTerminating />);
+    });
+
+    expect(updateCount).toBeLessThan(maxUpdates);
+    expect(errors.length).toBe(1);
+    if (
+      gate(
+        flags =>
+          flags.enableInfiniteRenderLoopDetection &&
+          flags.enableInfiniteRenderLoopDetectionForceThrow,
+      )
+    ) {
+      expect(errors[0].message).toContain(
+        'Maximum update depth exceeded. This could be an infinite loop.',
+      );
+      expect(container.textContent).toBe('');
+    } else {
+      // Unlike legacy roots, concurrent roots retry the render synchronously
+      // after the error, starting from a reset update count, so the error is
+      // only reported as recoverable and the loop resumes until shouldStop.
+      expect(errors[0].message).toContain(
+        'There was an error during concurrent rendering but React was able ' +
+          'to recover by instead synchronously rendering the entire root.',
+      );
+      expect(errors[0].cause.message).toContain(
+        'Maximum update depth exceeded. This can happen when a component ' +
+          'repeatedly calls setState inside componentWillUpdate or ' +
+          'componentDidUpdate.',
+      );
+      expect(container.textContent).toBe('Hello 2');
+    }
   });
 
   // @gate !disableLegacyMode

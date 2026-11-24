@@ -1687,9 +1687,11 @@ describe('ReactLazy', () => {
       expect(root).toMatchRenderedOutput('ba');
     });
 
-    // @gate !disableLegacyMode
-    it('mount and reorder lazy types (legacy mode)', async () => {
+    it('mount and reorder lazy types in a transition', async () => {
       class Child extends React.Component {
+        componentWillUnmount() {
+          Scheduler.log('Did unmount: ' + this.props.label);
+        }
         componentDidMount() {
           Scheduler.log('Did mount: ' + this.props.label);
         }
@@ -1742,22 +1744,41 @@ describe('ReactLazy', () => {
       }
 
       const root = ReactTestRenderer.create(<Parent swap={false} />, {
-        unstable_isConcurrent: false,
+        unstable_isConcurrent: true,
       });
 
-      assertLog(['Init A', 'Init B', 'Loading...']);
+      await waitForAll([
+        'Init A',
+        'Loading...',
+        // pre-warming
+        'Init B',
+      ]);
       expect(root).not.toMatchRenderedOutput('AB');
 
-      await resolveFakeImport(ChildA);
-      await resolveFakeImport(ChildB);
-
-      await waitForAll(['A', 'B', 'Did mount: A', 'Did mount: B']);
+      await act(() => {
+        resolveFakeImport(ChildA);
+        resolveFakeImport(ChildB);
+      });
+      assertLog(['A', 'B', 'Did mount: A', 'Did mount: B']);
       expect(root).toMatchRenderedOutput('AB');
 
-      // Swap the position of A and B
-      root.update(<Parent swap={true} />);
-      assertLog(['Init B2', 'Loading...']);
-      await waitForAll(['Init A2', 'b', 'a', 'Did update: b', 'Did update: a']);
+      // Swap the position of A and B in a transition, so the old children stay
+      // on screen while the new lazy wrappers load.
+      await act(() => {
+        React.startTransition(() => {
+          root.update(<Parent swap={true} />);
+        });
+      });
+      // Both wrappers resolve to the current types, so the fibers are reused
+      // and updated instead of remounted.
+      assertLog([
+        'Init B2',
+        'Init A2',
+        'b',
+        'a',
+        'Did update: b',
+        'Did update: a',
+      ]);
       expect(root).toMatchRenderedOutput('ba');
     });
   });
