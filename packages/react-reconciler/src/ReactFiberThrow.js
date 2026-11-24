@@ -70,6 +70,7 @@ import {
   restorePendingUpdaters,
   renderDidSuspend,
 } from './ReactFiberWorkLoop';
+import {cloneForwardRefStateNode} from './ReactFiber';
 import {propagateParentContextChangesToDeferredTree} from './ReactFiberNewContext';
 import {logUncaughtError, logCaughtError} from './ReactFiberErrorLogger';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
@@ -227,6 +228,12 @@ function resetSuspendedComponent(sourceFiber: Fiber, rootRenderLanes: Lanes) {
       tag === SimpleMemoComponent)
   ) {
     const currentSource = sourceFiber.alternate;
+    if (tag === ForwardRef) {
+      // Legacy Suspense commits this incomplete Fiber with its previous
+      // memoizedProps. Restore the matching cache without sharing a mutable box
+      // with the current Fiber.
+      cloneForwardRefStateNode(currentSource, sourceFiber);
+    }
     if (currentSource) {
       sourceFiber.updateQueue = currentSource.updateQueue;
       sourceFiber.memoizedState = currentSource.memoizedState;
