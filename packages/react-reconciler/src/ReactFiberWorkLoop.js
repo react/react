@@ -62,6 +62,7 @@ import {
 } from 'shared/ReactFeatureFlags';
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
+import noop from 'shared/noop';
 import is from 'shared/objectIs';
 
 import reportGlobalError from 'shared/reportGlobalError';
@@ -5040,8 +5041,43 @@ export function attachPingListener(
         restorePendingUpdaters(root, lanes);
       }
     }
-    wakeable.then(ping, ping);
+    attachContextPreservingListener(wakeable, ping);
   }
+}
+
+// Attaches a listener that runs in the async context of the caller, not the
+// context of whoever settles the wakeable. Custom thenables, like Flight's
+// ReactPromise, often call their listeners synchronously from wherever the
+// data arrives. That drops the context of the render that suspended, which
+// browsers use to attribute work to a user interaction (e.g. Chrome's soft
+// navigation detection). A native promise reaction captures the current
+// context when `.then` is called, so route the listener through one.
+export function attachContextPreservingListener(
+  wakeable: Wakeable,
+  listener: () => void,
+): void {
+  if (
+    // Without native promises there's no context to preserve.
+    typeof Promise !== 'function' ||
+    // Tests that use act expect the listener to run synchronously, inside the
+    // act scope that settled the wakeable. They don't need the async context.
+    // Checking actQueue first avoids the misconfigured-environment warning
+    // that isConcurrentActEnvironment logs inside an act scope.
+    (__DEV__ &&
+      (ReactSharedInternals.actQueue !== null || isConcurrentActEnvironment()))
+  ) {
+    wakeable.then(listener, listener);
+    return;
+  }
+  let resolve: () => void = noop;
+  const nativePromise = new Promise<void>(r => {
+    resolve = r;
+  });
+  nativePromise.then(listener);
+  // Settle without forwarding the value. Forwarding it would make the native
+  // promise adopt it if it were itself a thenable.
+  const settle = () => resolve();
+  wakeable.then(settle, settle);
 }
 
 function pingSuspendedRoot(

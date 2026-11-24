@@ -15,6 +15,10 @@ module.exports = {
     WeakMap: 'readonly',
     WeakSet: 'readonly',
     WeakRef: 'readonly',
+    // React Native isn't required to provide Promise. The reconciler only uses
+    // it behind a `typeof Promise` feature test, to preserve async context
+    // across Suspense pings, so declaring it here is safe.
+    Promise: 'readonly',
 
     Int8Array: 'readonly',
     Uint8Array: 'readonly',
