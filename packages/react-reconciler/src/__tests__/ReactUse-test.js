@@ -2347,4 +2347,62 @@ describe('ReactUse', () => {
     assertLog(['Hi']);
     expect(root).toMatchRenderedOutput('Hi');
   });
+
+  it('does not crash when a frozen, non-instrumented thenable is passed to use()', async () => {
+    // A thenable that hasn't been instrumented yet doesn't accept new
+    // properties, so React can't attach the `status`/`value` expandos that it
+    // normally uses to track thenables. It has to fall back to a side table
+    // instead of throwing a TypeError.
+    let resolve;
+    const frozenThenable = new Promise(r => {
+      resolve = r;
+    });
+    Object.freeze(frozenThenable);
+
+    function Child() {
+      return <Text text={use(frozenThenable)} />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Child />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog(['Loading...']);
+    expect(root).toMatchRenderedOutput('Loading...');
+
+    await act(() => resolve('Hi'));
+    assertLog(['Hi']);
+    expect(root).toMatchRenderedOutput('Hi');
+  });
+
+  it('throws the rejection reason of a frozen, non-instrumented thenable', async () => {
+    const error = new Error('Oops');
+    const frozenThenable = Promise.reject(error);
+    // Avoid an unhandled rejection warning; this doesn't add any properties.
+    frozenThenable.catch(() => {});
+    Object.freeze(frozenThenable);
+
+    function Child() {
+      return <Text text={use(frozenThenable)} />;
+    }
+
+    const uncaughtErrors = [];
+    const root = ReactNoop.createRoot({
+      onUncaughtError(e) {
+        uncaughtErrors.push(e);
+      },
+    });
+    await act(() => {
+      root.render(<Child />);
+    });
+    expect(uncaughtErrors).toEqual([error]);
+  });
 });

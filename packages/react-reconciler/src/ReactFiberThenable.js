@@ -107,6 +107,39 @@ export function isThenableResolved(thenable: Thenable<mixed>): boolean {
   return status === 'fulfilled' || status === 'rejected';
 }
 
+type ThenableTrackingRecord = {
+  status: 'pending' | 'fulfilled' | 'rejected',
+  value: mixed,
+  reason: mixed,
+};
+
+/**
+ * Normally we track a thenable by attaching `status`/`value`/`reason` expandos
+ * to it. A thenable that doesn't accept new properties — for example a promise
+ * that was passed through `Object.freeze` — would throw a TypeError if we tried
+ * to write those expandos, so for those we keep the tracking state in a side
+ * table instead. WeakMap keeps the entry alive for exactly as long as the
+ * thenable itself is alive.
+ */
+const nonExtensibleThenables: WeakMap<
+  Thenable<any>,
+  ThenableTrackingRecord,
+> = new WeakMap();
+
+function getTrackingRecord(
+  thenable: Thenable<any>,
+): ThenableTrackingRecord | null {
+  if (Object.isExtensible(thenable)) {
+    return null;
+  }
+  let record = nonExtensibleThenables.get(thenable);
+  if (record === undefined) {
+    record = {status: 'pending', value: undefined, reason: undefined};
+    nonExtensibleThenables.set(thenable, record);
+  }
+  return record;
+}
+
 // DEV-only
 let lastSuspendedFiber: null | Fiber = null;
 let lastSuspendedStack: null | Error = null;
@@ -242,6 +275,27 @@ export function trackUsedThenable<T>(
       throw rejectedError;
     }
     default: {
+      // Non-extensible thenables can't store the status/value/reason expandos,
+      // so they're tracked in a side table. If we already resolved one on a
+      // previous attempt, unwrap it now instead of instrumenting it again.
+      const trackingRecord =
+        typeof thenable.status === 'string'
+          ? null
+          : getTrackingRecord(thenable);
+      if (trackingRecord !== null && trackingRecord.status !== 'pending') {
+        if (trackingRecord.status === 'fulfilled') {
+          return trackingRecord.value as any;
+        }
+        const rejectedError = trackingRecord.reason;
+        checkIfUseWrappedInAsyncCatch(rejectedError);
+        throw rejectedError;
+      }
+      // The object that holds the status for this thenable. This is the
+      // thenable itself unless it's non-extensible, in which case it's the
+      // side table record.
+      const trackedThenable: any =
+        trackingRecord !== null ? trackingRecord : thenable;
+
       if (typeof thenable.status === 'string') {
         // Only instrument the thenable if the status if not defined. If
         // it's defined, but an unknown value, assume it's been instrumented by
@@ -277,19 +331,19 @@ export function trackUsedThenable<T>(
           );
         }
 
-        const pendingThenable: PendingThenable<T> = thenable as any;
+        const pendingThenable: PendingThenable<T> = trackedThenable;
         pendingThenable.status = 'pending';
-        pendingThenable.then(
+        thenable.then(
           fulfilledValue => {
-            if (thenable.status === 'pending') {
-              const fulfilledThenable: FulfilledThenable<T> = thenable as any;
+            if (pendingThenable.status === 'pending') {
+              const fulfilledThenable: FulfilledThenable<T> = trackedThenable;
               fulfilledThenable.status = 'fulfilled';
               fulfilledThenable.value = fulfilledValue;
             }
           },
           (error: mixed) => {
-            if (thenable.status === 'pending') {
-              const rejectedThenable: RejectedThenable<T> = thenable as any;
+            if (pendingThenable.status === 'pending') {
+              const rejectedThenable: RejectedThenable<T> = trackedThenable;
               rejectedThenable.status = 'rejected';
               rejectedThenable.reason = error;
             }
@@ -298,13 +352,13 @@ export function trackUsedThenable<T>(
       }
 
       // Check one more time in case the thenable resolved synchronously.
-      switch ((thenable as Thenable<T>).status) {
+      switch (trackedThenable.status) {
         case 'fulfilled': {
-          const fulfilledThenable: FulfilledThenable<T> = thenable as any;
+          const fulfilledThenable: FulfilledThenable<T> = trackedThenable;
           return fulfilledThenable.value;
         }
         case 'rejected': {
-          const rejectedThenable: RejectedThenable<T> = thenable as any;
+          const rejectedThenable: RejectedThenable<T> = trackedThenable;
           const rejectedError = rejectedThenable.reason;
           checkIfUseWrappedInAsyncCatch(rejectedError);
           throw rejectedError;
