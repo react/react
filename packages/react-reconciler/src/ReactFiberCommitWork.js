@@ -184,6 +184,7 @@ import {
 import {
   captureCommitPhaseError,
   resolveRetryWakeable,
+  attachContextPreservingListener,
   markCommitTimeOfFallback,
   restorePendingUpdaters,
   addTransitionStartCallbackToPendingTransition,
@@ -1956,7 +1957,7 @@ function attachSuspenseRetryListeners(
       }
 
       const retry = resolveRetryWakeable.bind(null, finishedWork, wakeable);
-      wakeable.then(retry, retry);
+      attachContextPreservingListener(wakeable, retry);
     }
   });
 }
