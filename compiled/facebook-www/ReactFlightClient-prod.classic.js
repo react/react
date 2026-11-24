@@ -545,6 +545,9 @@ Object.defineProperty(ReactPromise.prototype, "then", {
         break;
       case "resolved_module":
         initializeModuleChunk(this);
+        break;
+      case "resolved_ledger":
+        initializeLedgerChunk(this);
     }
     switch (this.status) {
       case "fulfilled":
@@ -573,6 +576,9 @@ function readChunk(chunk) {
       break;
     case "resolved_module":
       initializeModuleChunk(chunk);
+      break;
+    case "resolved_ledger":
+      initializeLedgerChunk(chunk);
   }
   switch (chunk.status) {
     case "fulfilled":
@@ -936,19 +942,19 @@ function fulfillReference(response, reference, value) {
       value.$$typeof === REACT_LAZY_TYPE;
 
     ) {
-      var referencedChunk$27 = value._payload;
-      if (referencedChunk$27 === handler.chunk) value = handler.value;
+      var referencedChunk$28 = value._payload;
+      if (referencedChunk$28 === handler.chunk) value = handler.value;
       else {
-        switch (referencedChunk$27.status) {
+        switch (referencedChunk$28.status) {
           case "resolved_model":
-            initializeModelChunk(referencedChunk$27);
+            initializeModelChunk(referencedChunk$28);
             break;
           case "resolved_module":
-            initializeModuleChunk(referencedChunk$27);
+            initializeModuleChunk(referencedChunk$28);
         }
-        switch (referencedChunk$27.status) {
+        switch (referencedChunk$28.status) {
           case "fulfilled":
-            value = referencedChunk$27.value;
+            value = referencedChunk$28.value;
             continue;
         }
         break;
@@ -1244,6 +1250,8 @@ function parseModelString(response, parentObject, key, value) {
         return;
       case "S":
         return Symbol.for(value.slice(2));
+      case "y":
+        return;
       case "h":
         return (
           (value = value.slice(2)),
@@ -1434,8 +1442,8 @@ function startReadableStream(response, id, type) {
             (previousBlockedChunk = chunk));
       } else {
         chunk = previousBlockedChunk;
-        var chunk$39 = new ReactPromise("pending", null, null);
-        chunk$39.then(
+        var chunk$40 = new ReactPromise("pending", null, null);
+        chunk$40.then(
           function (v) {
             return controller.enqueue(v);
           },
@@ -1443,10 +1451,10 @@ function startReadableStream(response, id, type) {
             return controller.error(e);
           }
         );
-        previousBlockedChunk = chunk$39;
+        previousBlockedChunk = chunk$40;
         chunk.then(function () {
-          previousBlockedChunk === chunk$39 && (previousBlockedChunk = null);
-          resolveModelChunk(response, chunk$39, json);
+          previousBlockedChunk === chunk$40 && (previousBlockedChunk = null);
+          resolveModelChunk(response, chunk$40, json);
         });
       }
     },
@@ -1603,12 +1611,45 @@ function resolveErrorProd() {
   error.stack = "Error: " + error.message;
   return error;
 }
+function initializeLedgerChunk(chunk) {
+  var record = chunk.value,
+    type = record.type,
+    JSCompiler_object_inline_state_196 = 0,
+    units = record.graph.units;
+  record = record.roots.slice();
+  for (var visited = new Set(), i = 0; i < record.length; i++) {
+    var unit = record[i];
+    if (!visited.has(unit)) {
+      visited.add(unit);
+      var cells = unit.cells;
+      cells = null === cells ? void 0 : cells.get(type);
+      void 0 !== cells &&
+        (JSCompiler_object_inline_state_196 =
+          (JSCompiler_object_inline_state_196 | cells.state) >>> 0);
+      cells = unit.references;
+      if (null !== cells)
+        for (var j = 0; j < cells.length; j++) {
+          var target = units.get(cells[j]);
+          void 0 !== target && record.push(target);
+        }
+      unit = unit.children;
+      if (null !== unit)
+        for (cells = 0; cells < unit.length; cells++)
+          (j = unit[cells]),
+            (target = j.capturedLedgers),
+            (null !== target && -1 !== target.indexOf(type)) || record.push(j);
+    }
+  }
+  chunk.status = "fulfilled";
+  chunk.value = JSCompiler_object_inline_state_196;
+  chunk.reason = null;
+}
 function mergeBuffer(buffer, lastChunk) {
   for (var l = buffer.length, byteLength = lastChunk.length, i = 0; i < l; i++)
     byteLength += buffer[i].byteLength;
   byteLength = new Uint8Array(byteLength);
-  for (var i$40 = (i = 0); i$40 < l; i$40++) {
-    var chunk = buffer[i$40];
+  for (var i$41 = (i = 0); i$41 < l; i$41++) {
+    var chunk = buffer[i$41];
     byteLength.set(chunk, i);
     i += chunk.byteLength;
   }

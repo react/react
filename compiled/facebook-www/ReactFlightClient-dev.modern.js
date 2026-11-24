@@ -1505,6 +1505,9 @@ __DEV__ &&
           break;
         case "resolved_module":
           initializeModuleChunk(chunk);
+          break;
+        case "resolved_ledger":
+          initializeLedgerChunk(chunk);
       }
       switch (chunk.status) {
         case "fulfilled":
@@ -2681,6 +2684,8 @@ __DEV__ &&
             return;
           case "S":
             return Symbol.for(value.slice(2));
+          case "y":
+            return;
           case "h":
             var ref = value.slice(2);
             return getOutlinedModel(
@@ -3113,8 +3118,8 @@ __DEV__ &&
                   (previousBlockedChunk = chunk));
             } else {
               chunk = previousBlockedChunk;
-              var _chunk4 = createPendingChunk(response);
-              _chunk4.then(
+              var _chunk5 = createPendingChunk(response);
+              _chunk5.then(
                 function (v) {
                   return controller.enqueue(v);
                 },
@@ -3122,11 +3127,11 @@ __DEV__ &&
                   return controller.error(e);
                 }
               );
-              previousBlockedChunk = _chunk4;
+              previousBlockedChunk = _chunk5;
               chunk.then(function () {
-                previousBlockedChunk === _chunk4 &&
+                previousBlockedChunk === _chunk5 &&
                   (previousBlockedChunk = null);
-                resolveModelChunk(response, _chunk4, json);
+                resolveModelChunk(response, _chunk5, json);
               });
             }
           },
@@ -3333,6 +3338,45 @@ __DEV__ &&
       response.name = name;
       response.environmentName = env;
       return response;
+    }
+    function initializeLedgerChunk(chunk) {
+      var response = chunk.reason,
+        total = chunk.value,
+        type = total.type,
+        JSCompiler_object_inline_state_350 = 0,
+        units = total.graph.units;
+      total = total.roots.slice();
+      for (var visited = new Set(), i = 0; i < total.length; i++) {
+        var unit = total[i];
+        if (!visited.has(unit)) {
+          visited.add(unit);
+          var cells = unit.cells;
+          cells = null === cells ? void 0 : cells.get(type);
+          void 0 !== cells &&
+            (JSCompiler_object_inline_state_350 =
+              (JSCompiler_object_inline_state_350 | cells.state) >>> 0);
+          cells = unit.references;
+          if (null !== cells)
+            for (var j = 0; j < cells.length; j++) {
+              var target = units.get(cells[j]);
+              void 0 !== target && total.push(target);
+            }
+          unit = unit.children;
+          if (null !== unit)
+            for (cells = 0; cells < unit.length; cells++)
+              (j = unit[cells]),
+                (target = j.capturedLedgers),
+                (null !== target && -1 !== target.indexOf(type)) ||
+                  total.push(j);
+        }
+      }
+      type = JSCompiler_object_inline_state_350;
+      chunk.status = "fulfilled";
+      chunk.value = type;
+      chunk.reason = null;
+      null !== response &&
+        (filterDebugInfo(response, chunk),
+        moveDebugInfoFromChunkToInnerValue(chunk, type));
     }
     function createFakeFunction(
       name,
@@ -3635,18 +3679,18 @@ __DEV__ &&
                 ),
                 (response._blockedConsole = blockedChunk));
         else {
-          var _chunk5 = createPendingChunk(response);
-          _chunk5.then(
+          var _chunk6 = createPendingChunk(response);
+          _chunk6.then(
             function (v) {
               return replayConsoleWithCallStackInDEV(response, v);
             },
             function () {}
           );
-          response._blockedConsole = _chunk5;
+          response._blockedConsole = _chunk6;
           var unblock = function () {
-            response._blockedConsole === _chunk5 &&
+            response._blockedConsole === _chunk6 &&
               (response._blockedConsole = null);
-            resolveModelChunk(response, _chunk5, json);
+            resolveModelChunk(response, _chunk6, json);
           };
           blockedChunk.then(unblock, unblock);
         }
@@ -4524,6 +4568,7 @@ __DEV__ &&
             "halted" !== id.status &&
             "blocked" !== id.status &&
             "resolved_module" !== id.status &&
+            "resolved_ledger" !== id.status &&
             ((streamState = id._debugChunk),
             (tag = createResolvedModelChunk(response, row)),
             (tag._debugChunk = streamState),
@@ -5078,6 +5123,9 @@ __DEV__ &&
             break;
           case "resolved_module":
             initializeModuleChunk(this);
+            break;
+          case "resolved_ledger":
+            initializeLedgerChunk(this);
         }
         var resolveCallback = resolve,
           rejectCallback = reject,
@@ -5232,10 +5280,10 @@ __DEV__ &&
       return hook.checkDCE ? !0 : !1;
     })({
       bundleType: 1,
-      version: "19.3.0-www-modern-89d7b2b4-20261123",
+      version: "19.3.0-www-modern-dddccc26-20261124",
       rendererPackageName: "react-flight-server-fb",
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-89d7b2b4-20261123",
+      reconcilerVersion: "19.3.0-www-modern-dddccc26-20261124",
       getCurrentComponentInfo: function () {
         return currentOwnerInDEV;
       }
