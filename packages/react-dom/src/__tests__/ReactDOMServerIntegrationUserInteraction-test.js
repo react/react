@@ -364,6 +364,22 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       expect(changeCount).toBe(1);
     });
 
+    it('should not replay a change event when hydrating a textarea whose value contains \\r\\n', async () => {
+      let changeCount = 0;
+      const element = (
+        <textarea value={'Hello\r\nworld'} onChange={() => changeCount++} />
+      );
+      const field = await serverRender(element);
+      // The DOM normalizes \r\n to \n in the value.
+      expect(field.value).toBe('Hello\nworld');
+
+      resetModules();
+      const clientField = await renderIntoDom(element, field.parentNode, true);
+      expect(clientField === field).toBe(true);
+      expect(clientField.value).toBe('Hello\nworld');
+      expect(changeCount).toBe(0);
+    });
+
     it('should not blow away user-selected value on successful reconnect to an uncontrolled select', () =>
       testUserInteractionBeforeClientRender(
         <select defaultValue="Hello">

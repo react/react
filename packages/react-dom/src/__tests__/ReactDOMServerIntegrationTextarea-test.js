@@ -84,6 +84,26 @@ describe('ReactDOMServerIntegrationTextarea', () => {
     expect(e.value).toBe('foo');
   });
 
+  itRenders(
+    'a textarea with a defaultValue starting with a newline',
+    async render => {
+      const e = await render(<textarea defaultValue={'\nfoo'} />);
+      expect(e.value).toBe('\nfoo');
+    },
+  );
+
+  itRenders(
+    'a textarea with a defaultValue starting with a carriage return',
+    async render => {
+      // The HTML parser normalizes \r\n and \r to \n before it drops the
+      // newline that directly follows <textarea>.
+      const crlf = await render(<textarea defaultValue={'\r\nfoo'} />);
+      expect(crlf.value).toBe('\nfoo');
+      const cr = await render(<textarea defaultValue={'\rfoo'} />);
+      expect(cr.value).toBe('\nfoo');
+    },
+  );
+
   itRenders('a textarea value overriding defaultValue', async render => {
     const e = await render(
       <textarea value="foo" defaultValue="bar" readOnly={true} />,
