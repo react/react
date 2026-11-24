@@ -6,6 +6,7 @@ let assertLog;
 let waitFor;
 let waitForPaint;
 let waitForAll;
+let waitForMicrotasks;
 let textCache;
 let startTransition;
 let Suspense;
@@ -23,6 +24,7 @@ describe('ReactSiblingPrerendering', () => {
     waitFor = require('internal-test-utils').waitFor;
     waitForPaint = require('internal-test-utils').waitForPaint;
     waitForAll = require('internal-test-utils').waitForAll;
+    waitForMicrotasks = require('internal-test-utils').waitForMicrotasks;
     startTransition = React.startTransition;
     Suspense = React.Suspense;
     Activity = React.Activity;
@@ -506,7 +508,8 @@ describe('ReactSiblingPrerendering', () => {
       assertLog([]);
       expect(root).toMatchRenderedOutput(null);
 
-      await resolveText('Async');
+      resolveText('Async');
+      await waitForMicrotasks();
       assertLog(['A', 'B', 'Async', 'C', 'D']);
       expect(root).toMatchRenderedOutput('ABAsyncCD');
     },
@@ -537,7 +540,8 @@ describe('ReactSiblingPrerendering', () => {
 
     // While we're prerendering, Async resolves. We should unwind and
     // start over, rather than continue prerendering D.
-    await resolveText('Async');
+    resolveText('Async');
+    await waitForMicrotasks();
     assertLog(['A', 'B', 'Async', 'C', 'D']);
     expect(root).toMatchRenderedOutput('ABAsyncCD');
   });

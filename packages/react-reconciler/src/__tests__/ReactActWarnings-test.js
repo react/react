@@ -399,6 +399,35 @@ describe('act warnings', () => {
 
   // @gate __DEV__
   // @gate enableLegacyCache
+  it('does not warn if Suspense retry is wrapped in sync act', async () => {
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <AsyncText text="Async" />
+        </Suspense>
+      );
+    }
+    await withActEnvironment(true, async () => {
+      const root = ReactNoop.createRoot();
+      act(() => {
+        root.render(<App />);
+      });
+      assertLog(['Suspend! [Async]', 'Loading...', 'Suspend! [Async]']);
+      act(() => {
+        resolveText('Async');
+      });
+      // The retry should be flushed by the time act returns.
+      assertLog(['Async']);
+      expect(root).toMatchRenderedOutput('Async');
+      // Give a late ping a chance to fire, so a stray act warning would be
+      // caught by the console assertions at the end of the test.
+      await null;
+      await null;
+    });
+  });
+
+  // @gate __DEV__
+  // @gate enableLegacyCache
   it('warns if Suspense ping is not wrapped', async () => {
     function App({showMore}) {
       return (
