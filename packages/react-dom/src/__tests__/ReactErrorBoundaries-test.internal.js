@@ -1014,6 +1014,83 @@ describe('ReactErrorBoundaries', () => {
     assertLog(['ErrorBoundary componentWillUnmount']);
   });
 
+  it('propagates errors on retry on mounting with a componentDidCatch-only boundary', async () => {
+    // Without getDerivedStateFromError, the boundary renders null children,
+    // commits, and retries from componentDidCatch. If the retry throws again,
+    // the boundary has already failed in this batch, so the error must go to
+    // the next boundary up instead of looping.
+    class RetryDidCatchBoundary extends React.Component {
+      render() {
+        Scheduler.log('RetryDidCatchBoundary render');
+        return <BrokenRender />;
+      }
+      componentDidMount() {
+        Scheduler.log('RetryDidCatchBoundary componentDidMount');
+      }
+      componentWillUnmount() {
+        Scheduler.log('RetryDidCatchBoundary componentWillUnmount');
+      }
+      componentDidCatch() {
+        Scheduler.log('RetryDidCatchBoundary componentDidCatch [!]');
+        this.setState({});
+      }
+    }
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(async () => {
+      root.render(
+        <ErrorBoundary>
+          <RetryDidCatchBoundary />
+        </ErrorBoundary>,
+      );
+    });
+    expect(container.firstChild.textContent).toBe('Caught an error: Hello.');
+    assertLog([
+      'ErrorBoundary constructor',
+      'ErrorBoundary componentWillMount',
+      'ErrorBoundary render success',
+      'RetryDidCatchBoundary render',
+      'BrokenRender constructor',
+      'BrokenRender componentWillMount',
+      'BrokenRender render [!]',
+      // logs for error retry
+      'ErrorBoundary constructor',
+      'ErrorBoundary componentWillMount',
+      'ErrorBoundary render success',
+      'RetryDidCatchBoundary render',
+      'BrokenRender constructor',
+      'BrokenRender componentWillMount',
+      'BrokenRender render [!]',
+      // The boundary commits with null children, then retries
+      'RetryDidCatchBoundary componentDidMount',
+      'RetryDidCatchBoundary componentDidCatch [!]',
+      'ErrorBoundary componentDidMount',
+      // Retry
+      'RetryDidCatchBoundary render',
+      'BrokenRender constructor',
+      'BrokenRender componentWillMount',
+      'BrokenRender render [!]',
+      // This time, the error propagates to the higher boundary
+      'ErrorBoundary static getDerivedStateFromError',
+      'ErrorBoundary componentWillUpdate',
+      'ErrorBoundary render error',
+      // logs for error retry
+      'RetryDidCatchBoundary render',
+      'BrokenRender constructor',
+      'BrokenRender componentWillMount',
+      'BrokenRender render [!]',
+      'ErrorBoundary static getDerivedStateFromError',
+      'ErrorBoundary componentWillUpdate',
+      'ErrorBoundary render error',
+      'RetryDidCatchBoundary componentWillUnmount',
+      'ErrorBoundary componentDidUpdate',
+    ]);
+
+    root.unmount();
+    assertLog(['ErrorBoundary componentWillUnmount']);
+  });
+
   it('propagates errors inside boundary during componentWillMount', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);

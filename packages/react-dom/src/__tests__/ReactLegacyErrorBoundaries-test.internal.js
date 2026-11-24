@@ -12,7 +12,6 @@
 let PropTypes;
 let React;
 let ReactDOM;
-let ReactDOMClient;
 let act;
 let assertConsoleErrorDev;
 
@@ -35,14 +34,12 @@ describe('ReactLegacyErrorBoundaries', () => {
   let BothErrorBoundaries;
   let ErrorMessage;
   let NoopErrorBoundary;
-  let RetryErrorBoundary;
   let Normal;
 
   beforeEach(() => {
     jest.resetModules();
     PropTypes = require('prop-types');
     ReactDOM = require('react-dom');
-    ReactDOMClient = require('react-dom/client');
     React = require('react');
     act = require('internal-test-utils').act;
     assertConsoleErrorDev =
@@ -542,31 +539,6 @@ describe('ReactLegacyErrorBoundaries', () => {
       }
     };
 
-    RetryErrorBoundary = class extends React.Component {
-      constructor(props) {
-        super(props);
-        log.push('RetryErrorBoundary constructor');
-      }
-      render() {
-        log.push('RetryErrorBoundary render');
-        return <BrokenRender />;
-      }
-      UNSAFE_componentWillMount() {
-        log.push('RetryErrorBoundary componentWillMount');
-      }
-      componentDidMount() {
-        log.push('RetryErrorBoundary componentDidMount');
-      }
-      componentWillUnmount() {
-        log.push('RetryErrorBoundary componentWillUnmount');
-      }
-      componentDidCatch(error) {
-        log.push('RetryErrorBoundary componentDidCatch [!]');
-        // In Fiber, calling setState() (and failing) is treated as a rethrow.
-        this.setState({});
-      }
-    };
-
     ErrorMessage = class extends React.Component {
       constructor(props) {
         super(props);
@@ -896,67 +868,6 @@ describe('ReactLegacyErrorBoundaries', () => {
       'ErrorBoundary componentWillUnmount',
       'ErrorMessage componentWillUnmount',
     ]);
-  });
-
-  it('propagates errors on retry on mounting with a componentDidCatch-only boundary', async () => {
-    const container = document.createElement('div');
-    const root = ReactDOMClient.createRoot(container);
-    await act(() => {
-      root.render(
-        <ErrorBoundary>
-          <RetryErrorBoundary>
-            <BrokenRender />
-          </RetryErrorBoundary>
-        </ErrorBoundary>,
-      );
-    });
-    expect(container.firstChild.textContent).toBe('Caught an error: Hello.');
-    expect(log).toEqual([
-      'ErrorBoundary constructor',
-      'ErrorBoundary componentWillMount',
-      'ErrorBoundary render success',
-      'RetryErrorBoundary constructor',
-      'RetryErrorBoundary componentWillMount',
-      'RetryErrorBoundary render',
-      'BrokenRender constructor',
-      'BrokenRender componentWillMount',
-      'BrokenRender render [!]',
-      // logs for error retry
-      'ErrorBoundary constructor',
-      'ErrorBoundary componentWillMount',
-      'ErrorBoundary render success',
-      'RetryErrorBoundary constructor',
-      'RetryErrorBoundary componentWillMount',
-      'RetryErrorBoundary render',
-      'BrokenRender constructor',
-      'BrokenRender componentWillMount',
-      'BrokenRender render [!]',
-      // In Fiber, failed error boundaries render null before attempting to recover
-      'RetryErrorBoundary componentDidMount',
-      'RetryErrorBoundary componentDidCatch [!]',
-      'ErrorBoundary componentDidMount',
-      // Retry
-      'RetryErrorBoundary render',
-      'BrokenRender constructor',
-      'BrokenRender componentWillMount',
-      'BrokenRender render [!]',
-      // logs for error retry
-      'RetryErrorBoundary render',
-      'BrokenRender constructor',
-      'BrokenRender componentWillMount',
-      'BrokenRender render [!]',
-      // This time, the error propagates to the higher boundary
-      'RetryErrorBoundary componentWillUnmount',
-      'ErrorBoundary componentDidCatch',
-      // Render the error
-      'ErrorBoundary componentWillUpdate',
-      'ErrorBoundary render error',
-      'ErrorBoundary componentDidUpdate',
-    ]);
-
-    log.length = 0;
-    root.unmount();
-    expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
 
   // @gate !disableLegacyMode
@@ -1369,7 +1280,6 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
-
   // @gate !disableLegacyMode
   it('catches if child throws in render during update', () => {
     const container = document.createElement('div');

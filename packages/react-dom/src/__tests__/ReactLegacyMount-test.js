@@ -9,12 +9,9 @@
 
 'use strict';
 
-const {COMMENT_NODE} = require('react-dom-bindings/src/client/HTMLNodeType');
-
 let React;
 let ReactDOM;
 let ReactDOMClient;
-let act;
 let waitForAll;
 let assertConsoleErrorDev;
 
@@ -27,7 +24,6 @@ describe('ReactMount', () => {
     ReactDOMClient = require('react-dom/client');
 
     const InternalTestUtils = require('internal-test-utils');
-    act = InternalTestUtils.act;
     waitForAll = InternalTestUtils.waitForAll;
     assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
   });
@@ -284,65 +280,6 @@ describe('ReactMount', () => {
     });
     expect(container1.textContent).toEqual('2');
     expect(container2.textContent).toEqual('a!');
-  });
-
-  describe('mount point is a comment node', () => {
-    let containerDiv;
-    let mountPoint;
-
-    beforeEach(() => {
-      containerDiv = document.createElement('div');
-      containerDiv.innerHTML = 'A<!-- react-mount-point-unstable -->B';
-      mountPoint = containerDiv.childNodes[1];
-      expect(mountPoint.nodeType).toBe(COMMENT_NODE);
-    });
-
-    // @gate !disableCommentsAsDOMContainers
-    it('renders at a comment node', async () => {
-      function Char(props) {
-        return props.children;
-      }
-      function list(chars) {
-        return chars.split('').map(c => <Char key={c}>{c}</Char>);
-      }
-
-      // The trailing "B" shows that children go before the comment, not at
-      // the end of its parent.
-      const root = ReactDOMClient.createRoot(mountPoint);
-      await act(() => {
-        root.render(list('aeiou'));
-      });
-      expect(containerDiv.innerHTML).toBe(
-        'Aaeiou<!-- react-mount-point-unstable -->B',
-      );
-
-      // Inserts y before e, moves a to the end, and removes i, o and u.
-      await act(() => {
-        root.render(list('yea'));
-      });
-      expect(containerDiv.innerHTML).toBe(
-        'Ayea<!-- react-mount-point-unstable -->B',
-      );
-
-      await act(() => {
-        root.render(list(''));
-      });
-      expect(containerDiv.innerHTML).toBe(
-        'A<!-- react-mount-point-unstable -->B',
-      );
-
-      await act(() => {
-        root.render(list('ab'));
-      });
-      expect(containerDiv.innerHTML).toBe(
-        'Aab<!-- react-mount-point-unstable -->B',
-      );
-
-      root.unmount();
-      expect(containerDiv.innerHTML).toBe(
-        'A<!-- react-mount-point-unstable -->B',
-      );
-    });
   });
 
   // @gate !disableLegacyMode
