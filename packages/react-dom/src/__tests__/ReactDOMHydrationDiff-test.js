@@ -1465,6 +1465,45 @@ describe('ReactDOMServerHydration', () => {
 
           The server used "renderToString" which does not support Suspense. If you intended for this Suspense boundary to render the fallback content on the server consider throwing an Error somewhere within the Suspense boundary. If you intended to have the server wait for the suspended component please switch to "renderToPipeableStream" which supports Suspense on the server]
             Owner Stack: null",
+            "Caught [Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
+
+          - A server/client branch \`if (typeof window !== 'undefined')\`.
+          - Variable input such as \`Date.now()\` or \`Math.random()\` which changes each time it's called.
+          - Date formatting in a user's locale which doesn't match the server.
+          - External changing data without sending a snapshot of it along with the HTML.
+          - Invalid HTML tag nesting.
+
+          It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+          https://react.dev/link/hydration-mismatch
+
+            <Mismatch isClient={true}>
+              <div className="parent">
+                <Suspense fallback={<Fragment>}>
+                  <p>
+          +       <br>
+          ]
+            Owner Stack:
+              in br (at **)
+              in Mismatch (at **)",
+            "Caught [Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
+
+          - A server/client branch \`if (typeof window !== 'undefined')\`.
+          - Variable input such as \`Date.now()\` or \`Math.random()\` which changes each time it's called.
+          - Date formatting in a user's locale which doesn't match the server.
+          - External changing data without sending a snapshot of it along with the HTML.
+          - Invalid HTML tag nesting.
+
+          It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+          https://react.dev/link/hydration-mismatch]
+            Owner Stack:
+              in p (at **)
+              in Mismatch (at **)",
+            "Caught [Switched to client rendering because the server rendering aborted due to:
+
+          The server used "renderToString" which does not support Suspense. If you intended for this Suspense boundary to render the fallback content on the server consider throwing an Error somewhere within the Suspense boundary. If you intended to have the server wait for the suspended component please switch to "renderToPipeableStream" which supports Suspense on the server]
+            Owner Stack: null",
           ]
         `);
       });
@@ -1490,6 +1529,44 @@ describe('ReactDOMServerHydration', () => {
 
         expect(testMismatch(Mismatch)).toMatchInlineSnapshot(`
           [
+            "Caught [Switched to client rendering because the server rendering aborted due to:
+
+          The server used "renderToString" which does not support Suspense. If you intended for this Suspense boundary to render the fallback content on the server consider throwing an Error somewhere within the Suspense boundary. If you intended to have the server wait for the suspended component please switch to "renderToPipeableStream" which supports Suspense on the server]
+            Owner Stack: null",
+            "Caught [Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
+
+          - A server/client branch \`if (typeof window !== 'undefined')\`.
+          - Variable input such as \`Date.now()\` or \`Math.random()\` which changes each time it's called.
+          - Date formatting in a user's locale which doesn't match the server.
+          - External changing data without sending a snapshot of it along with the HTML.
+          - Invalid HTML tag nesting.
+
+          It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+          https://react.dev/link/hydration-mismatch
+
+            <Mismatch isClient={true}>
+              <div className="parent">
+                <Suspense fallback={<Fragment>}>
+          -       <br>
+          ]
+            Owner Stack:
+              in Suspense (at **)
+              in Mismatch (at **)",
+            "Caught [Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
+
+          - A server/client branch \`if (typeof window !== 'undefined')\`.
+          - Variable input such as \`Date.now()\` or \`Math.random()\` which changes each time it's called.
+          - Date formatting in a user's locale which doesn't match the server.
+          - External changing data without sending a snapshot of it along with the HTML.
+          - Invalid HTML tag nesting.
+
+          It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+          https://react.dev/link/hydration-mismatch]
+            Owner Stack:
+              in p (at **)
+              in Mismatch (at **)",
             "Caught [Switched to client rendering because the server rendering aborted due to:
 
           The server used "renderToString" which does not support Suspense. If you intended for this Suspense boundary to render the fallback content on the server consider throwing an Error somewhere within the Suspense boundary. If you intended to have the server wait for the suspended component please switch to "renderToPipeableStream" which supports Suspense on the server]
