@@ -1275,6 +1275,19 @@ export function attach(
     }
   }
 
+  // Hooks shipped in 16.8, along with the injected dispatcher used to inspect them.
+  const supportsHooks = renderer.currentDispatcherRef !== undefined;
+
+  // Mirrors the fiber tags accepted by inspectHooksOfFiber in react-debug-tools.
+  function canInspectHooks(fiber: Fiber): boolean {
+    return (
+      supportsHooks &&
+      (fiber.tag === FunctionComponent ||
+        fiber.tag === SimpleMemoComponent ||
+        fiber.tag === ForwardRef)
+    );
+  }
+
   function getChangeDescription(
     prevFiber: Fiber | null,
     nextFiber: Fiber,
@@ -1320,9 +1333,16 @@ export function attach(
             state: null,
           };
         } else {
-          const prevHooks = inspectHooks(prevFiber);
-          const nextHooks = inspectHooks(nextFiber);
-          const indices = getChangedHooksIndices(prevHooks, nextHooks);
+          // Not every tag in this group owns inspectable hooks. In particular,
+          // MemoComponent fibers (e.g. memo(forwardRef()) or memo() with a custom
+          // compare function) wrap a child fiber that owns the hooks.
+          const indices =
+            canInspectHooks(prevFiber) && canInspectHooks(nextFiber)
+              ? getChangedHooksIndices(
+                  inspectHooks(prevFiber),
+                  inspectHooks(nextFiber),
+                )
+              : null;
           const data: ChangeDescription = {
             context: getContextChanged(prevFiber, nextFiber),
             didHooksChange: indices !== null && indices.length > 0,
