@@ -148,9 +148,11 @@ import type {
   LedgerCell,
   LedgerTotal,
   LedgerDataObject,
+  LedgerTotalRecord,
   LedgerEntryWireForm,
   LedgerDelta,
   LedgerDeltaRow,
+  DecodedLedgerTotal,
 } from 'react-server/src/ReactFlightLedgers';
 import type {UnitCacheHooks} from 'react-reconciler/src/ReactInternalTypes';
 import {
@@ -159,6 +161,7 @@ import {
   MIN_LEDGER,
   MAX_LEDGER,
   createLedgerCell,
+  readLedgerTotal,
 } from 'react-server/src/ReactFlightLedgers';
 
 import {
@@ -604,10 +607,22 @@ type Unit = {
   dirtyReferences: null | number | Set<number>,
 };
 
+// A source total, the unit carrying its entries into this response, and what
+// has been emitted so far: a scalar cell, or a position in the source's Set
+// entries.
+type ForwardedTotal = {
+  source: LedgerTotalRecord,
+  carrier: Unit,
+  emitted: LedgerCell,
+  emittedEntries: number,
+};
+
 type RequestLedgers = {
   dirtyUnits: Array<Unit>,
   // Maps ledger types and total handles to their declaration row IDs.
   declarations: null | Map<Ledger<empty> | LedgerTotal, number>,
+  // Totals that may still receive entries from their source responses.
+  forwardedTotals: null | Array<ForwardedTotal>,
 };
 
 interface Reference {}
@@ -717,6 +732,13 @@ const {
 function throwTaintViolation(message: string) {
   // eslint-disable-next-line react-internal/prod-error-codes
   throw new Error(message);
+}
+
+function throwIfTaintedObject(value: Object) {
+  const tainted = TaintRegistryObjects.get(value);
+  if (tainted !== undefined) {
+    throwTaintViolation(tainted);
+  }
 }
 
 function throwIfTaintedValue(value: string | bigint) {
@@ -1190,6 +1212,7 @@ function createRequestLedgers(): RequestLedgers {
   return {
     dirtyUnits: [],
     declarations: null,
+    forwardedTotals: null,
   };
 }
 
@@ -4506,10 +4529,7 @@ function renderModelDestructive(
     }
 
     if (enableTaint) {
-      const tainted = TaintRegistryObjects.get(value);
-      if (tainted !== undefined) {
-        throwTaintViolation(tainted);
-      }
+      throwIfTaintedObject(value);
     }
 
     const writtenObjects = request.writtenObjects;
@@ -4824,10 +4844,7 @@ function renderModelDestructive(
     }
 
     if (enableTaint) {
-      const tainted = TaintRegistryObjects.get(value);
-      if (tainted !== undefined) {
-        throwTaintViolation(tainted);
-      }
+      throwIfTaintedObject(value);
     }
 
     if (isOpaqueTemporaryReference(value)) {
@@ -5508,6 +5525,49 @@ function emitUnitReferences(
   );
 }
 
+// A destination can skip intermediate source updates. Joining the current
+// reduction accounts for them; emitted only suppresses redundant wire entries.
+function completeForwardedLedgerTotal(forwarded: ForwardedTotal): void {
+  const source = forwarded.source;
+  const reduced = readLedgerTotal(source);
+  const carrier = forwarded.carrier;
+  const emitted = forwarded.emitted;
+  switch (reduced.kind) {
+    case BIT_LEDGER:
+      if (reduced.state && accumulateLedgerEntry(emitted, true)) {
+        writeLedgerEntry(carrier, source.type, true);
+      }
+      break;
+    case MASK_LEDGER:
+      if (accumulateLedgerEntry(emitted, reduced.state)) {
+        writeLedgerEntry(carrier, source.type, reduced.state);
+      }
+      break;
+    case MIN_LEDGER:
+    case MAX_LEDGER: {
+      const state = reduced.state;
+      if (state !== null && accumulateLedgerEntry(emitted, state)) {
+        writeLedgerEntry(carrier, source.type, state);
+      }
+      break;
+    }
+    default: {
+      // Set entries are only ever appended, so resume after the last one this
+      // destination emitted instead of scanning the whole total each time.
+      let entries = source.entries;
+      if (entries === null) {
+        source.entries = entries = Array.from(reduced.state);
+      }
+      // These writes accumulate in the carrier's dirty cell. Completion emits
+      // all new Set entries together in one Ledger row.
+      for (let i = forwarded.emittedEntries; i < entries.length; i++) {
+        writeLedgerEntry(carrier, source.type, entries[i]);
+      }
+      forwarded.emittedEntries = entries.length;
+    }
+  }
+}
+
 function completeLedgerWork(request: Request): void {
   // Prepare Ledger chunks alongside newly completed model output. This runs
   // once at the end of each render phase, instead of upon each addToLedger
@@ -5520,6 +5580,21 @@ function completeLedgerWork(request: Request): void {
     // Wait until a capture is used before sending ledger records. Earlier work
     // may still be reused by a capture that is rendered later.
     return;
+  }
+  const forwardedTotals = ledgers.forwardedTotals;
+  if (forwardedTotals !== null) {
+    let pending = 0;
+    for (let i = 0; i < forwardedTotals.length; i++) {
+      const forwarded = forwardedTotals[i];
+      completeForwardedLedgerTotal(forwarded);
+      if (forwarded.source.graph !== null) {
+        forwardedTotals[pending++] = forwarded;
+      }
+    }
+    forwardedTotals.length = pending;
+    if (pending === 0) {
+      ledgers.forwardedTotals = null;
+    }
   }
   const dirtyUnits = ledgers.dirtyUnits;
   try {
@@ -5538,8 +5613,9 @@ function completeLedgerWork(request: Request): void {
       }
     }
   } catch (error) {
-    // A value tainted after it was written. Completion runs outside any task,
-    // and many of its callers can't handle a throw, so fail the request here.
+    // A forwarded entry, or a value tainted after it was written. Completion
+    // runs outside any task, and many of its callers can't handle a throw, so
+    // fail the request here.
     dirtyUnits.length = 0;
     logRecoverableError(request, error, null);
     fatalError(request, error);
@@ -5550,11 +5626,51 @@ function completeLedgerWork(request: Request): void {
 
 function serializeLedgerTotal(
   request: Request,
-  total: LedgerTotal,
+  total: LedgerTotal | DecodedLedgerTotal,
 ): ReactJSONValue {
+  if (enableTaint) {
+    // Totals are serialized before the model path's object taint check.
+    throwIfTaintedObject(total);
+  }
+  // Decoded totals forward work from their source response. Fresh handles
+  // describe a capture in this response, even if another response used them.
+  const decoded: DecodedLedgerTotal = total as any;
+  const source = decoded.total;
+  if (source === undefined) {
+    const ledgers = ensureRequestLedgers(request);
+    const id = ensureLedgerTotalDeclared(request, ledgers, total as any);
+    return '$y' + id.toString(16);
+  }
+  // A render may have assigned the object a model location already. Only
+  // reuse an established Ledger reference here.
+  const existing = request.writtenObjects.get(decoded);
+  if (existing !== undefined && existing.reference[1] === 'y') {
+    return existing.reference;
+  }
+  // Forward it as a total of this request, carried by one rowless unit.
   const ledgers = ensureRequestLedgers(request);
-  const id = ensureLedgerTotalDeclared(request, ledgers, total);
-  return '$y' + id.toString(16);
+  let forwardedTotals = ledgers.forwardedTotals;
+  if (forwardedTotals === null) {
+    ledgers.forwardedTotals = forwardedTotals = [];
+  }
+  const id = declareLedgerTotal(request, ledgers, source.type);
+  const unit = createUnit(
+    request,
+    currentUnitForRequest(request),
+    request.nextChunkId++,
+  );
+  unit.totals = [id];
+  declareUnit(request, unit);
+  forwardedTotals.push({
+    source,
+    carrier: unit,
+    emitted: createLedgerCell(source.type),
+    emittedEntries: 0,
+  });
+  const reference = '$y' + id.toString(16);
+  // Keep identity after the source closes and active forwarding is discarded.
+  writeToDedupeMap(request, decoded, unit.id, reference);
+  return reference;
 }
 
 function emitSymbolChunk(request: Request, id: number, name: string): void {
@@ -7256,7 +7372,7 @@ function completeWork(request: Request): void {
   // More than one of these paths can run for a batch. Completion consumes the
   // pending writes, so another call without new work emits no additional rows.
   // Starting or resuming a destination only drains chunks; it doesn't complete
-  // work.
+  // work or sample forwarded totals again.
   if (enableFlightLedgers) {
     completeLedgerWork(request);
   }
