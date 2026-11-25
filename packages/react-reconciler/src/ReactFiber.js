@@ -80,7 +80,6 @@ import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 import {NoLanes} from './ReactFiberLane';
 import {
   NoMode,
-  ConcurrentMode,
   ProfileMode,
   StrictMode,
   SuspenseyImagesMode,
@@ -523,7 +522,7 @@ export function resetWorkInProgress(
 }
 
 export function createHostRootFiber(isStrictMode: boolean): Fiber {
-  let mode: number = ConcurrentMode;
+  let mode: number = NoMode;
   if (isStrictMode === true) {
     mode |= StrictMode;
   }
