@@ -1610,6 +1610,26 @@ function rerenderReducer<S, I, A>(
       // render's.
       const action = update.action;
       newState = reducer(newState, action);
+
+      const baseQueueLast = hook.baseQueue;
+      if (baseQueueLast !== null) {
+        // There are skipped updates in the base queue. This update needs to
+        // be rebased on top of them when the base queue is processed, so
+        // append a clone to the end. Use NoLane so it's never skipped.
+        const clone: Update<S, A> = {
+          lane: NoLane,
+          revertLane: NoLane,
+          gesture: null,
+          action,
+          hasEagerState: update.hasEagerState,
+          eagerState: update.eagerState,
+          next: null as any,
+        };
+        clone.next = baseQueueLast.next;
+        baseQueueLast.next = clone;
+        hook.baseQueue = clone;
+      }
+
       update = update.next;
     } while (update !== firstRenderPhaseUpdate);
 
@@ -1621,9 +1641,9 @@ function rerenderReducer<S, I, A>(
 
     hook.memoizedState = newState;
     // Don't persist the state accumulated from the render phase updates to
-    // the base state unless the queue is empty.
-    // TODO: Not sure if this is the desired semantics, but it's what we
-    // do for gDSFP. I can't remember why.
+    // the base state unless the queue is empty. If it's not empty, the
+    // render phase updates were appended to the base queue above so that
+    // they're replayed when it's processed.
     if (hook.baseQueue === null) {
       hook.baseState = newState;
     }
