@@ -136,7 +136,16 @@ async function fetchFileWithCaching(url: string): Promise<string> {
     );
 
     const normalizedReferenceURL = normalizeUrlIfValid(url);
-    const resource = resources.find(r => r.url === normalizedReferenceURL);
+    const resource = resources.find(
+      r =>
+        r.url === normalizedReferenceURL &&
+        // A source-mapped original ("sm-script") can share the URL of the
+        // script it was compiled into, e.g. Vite serves App.tsx compiled at
+        // /src/App.tsx and its source map points back to the same URL.
+        // Chrome then lists only the original, which isn't what stack
+        // locations refer to, so get the script from the Network log instead.
+        !r.type.startsWith('sm-'),
+    );
 
     if (resource != null) {
       const content = await new Promise(resolve =>
