@@ -4542,6 +4542,85 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('does not hydrate a head script against the importMap option script', async () => {
+    const importMap = {
+      imports: {foo: './path/to/foo.js'},
+    };
+    function App() {
+      return (
+        <html>
+          <head>
+            <script id="data" type="application/json">
+              {'{"ok":true}'}
+            </script>
+          </head>
+          <body>
+            <div>hello world</div>
+          </body>
+        </html>
+      );
+    }
+    await act(() => {
+      renderToPipeableStream(<App />, {importMap}).pipe(writable);
+    });
+
+    const importMapScript = document.head.querySelector(
+      'script[type="importmap"]',
+    );
+    const dataScript = document.getElementById('data');
+    const errors = [];
+    ReactDOMClient.hydrateRoot(document, <App />, {
+      onRecoverableError(error) {
+        errors.push(error.message);
+      },
+    });
+    await waitForAll([]);
+
+    expect(errors).toEqual([]);
+    expect(document.head.querySelector('script[type="importmap"]')).toBe(
+      importMapScript,
+    );
+    expect(document.getElementById('data')).toBe(dataScript);
+    expect(document.head.querySelectorAll('script#data').length).toBe(1);
+  });
+
+  it('hydrates an importmap script rendered by the app', async () => {
+    function App() {
+      return (
+        <html>
+          <head>
+            <script type="importmap">{'{"imports":{}}'}</script>
+          </head>
+          <body>
+            <div>hello world</div>
+          </body>
+        </html>
+      );
+    }
+    await act(() => {
+      renderToPipeableStream(<App />).pipe(writable);
+    });
+
+    const importMapScript = document.head.querySelector(
+      'script[type="importmap"]',
+    );
+    const errors = [];
+    ReactDOMClient.hydrateRoot(document, <App />, {
+      onRecoverableError(error) {
+        errors.push(error.message);
+      },
+    });
+    await waitForAll([]);
+
+    expect(errors).toEqual([]);
+    expect(
+      document.head.querySelectorAll('script[type="importmap"]').length,
+    ).toBe(1);
+    expect(document.head.querySelector('script[type="importmap"]')).toBe(
+      importMapScript,
+    );
+  });
+
   // bugfix: https://github.com/react/react/issues/27286
   it('can render custom elements with children on ther server', async () => {
     await act(() => {
