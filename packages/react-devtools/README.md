@@ -87,17 +87,17 @@ This will ensure the developer tools are connected. **Don’t forget to remove i
 
 ## Advanced
 
-By default DevTools listen to port `8097` on `localhost`. If you need to customize the server or client connection settings, the following environment variables are available:
+By default DevTools listen to port `8097` on all network interfaces. If you need to customize the server or client connection settings, the following environment variables are available:
 
 | Env Var | Default | Description |
 |---|---|---|
-| `HOST` | `"localhost"` | Host the local server binds to. |
+| `HOST` | | Host the local server binds to, e.g. `127.0.0.1` to only accept local connections. Listens on all interfaces when unset. Prefer `127.0.0.1` over `localhost`, which may only bind the IPv6 loopback. To only change the host clients connect to, use `REACT_DEVTOOLS_CLIENT_HOST`. |
 | `PORT` | `8097` | Port the local server listens on. |
 | `REACT_DEVTOOLS_PORT` | | Alias for `PORT`. Takes precedence if both are set. |
 | `KEY` | | Path to an SSL key file. Enables HTTPS when set alongside `CERT`. |
 | `CERT` | | Path to an SSL certificate file. Enables HTTPS when set alongside `KEY`. |
 | `REACT_DEVTOOLS_PATH` | | Path appended to the WebSocket URI served to clients (e.g. `/__react_devtools__/`). |
-| `REACT_DEVTOOLS_CLIENT_HOST` | `HOST` | Overrides the host in the script served to connecting clients. |
+| `REACT_DEVTOOLS_CLIENT_HOST` | `HOST` or `"localhost"` | Overrides the host in the script served to connecting clients. |
 | `REACT_DEVTOOLS_CLIENT_PORT` | `PORT` | Overrides the port in the script served to connecting clients. |
 | `REACT_DEVTOOLS_CLIENT_USE_HTTPS` | | Set to `"true"` to make the served client script use `wss://`. |
 

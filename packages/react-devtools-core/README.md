@@ -92,7 +92,8 @@ startServer(
   // Port defaults to 8097
   1234,
 
-  // Host defaults to "localhost"
+  // Host the server binds to, defaults to all interfaces.
+  // Clients also connect to it, unless overridden by `clientOptions.host`.
   "example.devserver.com",
 
   // Optional config for secure socket (WSS).
@@ -149,7 +150,7 @@ This method accepts the following parameters:
 | Name | Default | Description |
 |---|---|---|
 | `port` | `8097` | Port the local server listens on. |
-| `host` | `"localhost"` | Host the local server binds to. |
+| `host` | | Host the local server binds to, e.g. `"127.0.0.1"` to only accept local connections. Listens on all interfaces when omitted. Prefer `"127.0.0.1"` over `"localhost"`, which may only bind the IPv6 loopback. To only change the host clients connect to, use `clientOptions.host`. |
 | `httpsOptions` | | _Optional_ object defining `key` and `cert` strings. |
 | `loggerOptions` | | _Optional_ object defining a `surface` string (to be included with DevTools logging events). |
 | `path` | | _Optional_ path to append to the WebSocket URI served to connecting clients (e.g. `"/__react_devtools__/"`). Also set via the `REACT_DEVTOOLS_PATH` env var in the Electron app. |
@@ -161,7 +162,7 @@ When connecting through a reverse proxy, the client may need to connect to a dif
 
 | Field | Default | Description |
 |---|---|---|
-| `host` | server `host` | Host the client connects to. |
+| `host` | server `host` or `"localhost"` | Host the client connects to. |
 | `port` | server `port` | Port the client connects to. |
 | `useHttps` | server `useHttps` | Whether the client should use `wss://`. |
 
@@ -183,7 +184,7 @@ REACT_DEVTOOLS_CLIENT_USE_HTTPS=true \
 REACT_DEVTOOLS_PATH=/__react_devtools__/ \
 react-devtools
 ```
-The server listens on `localhost:8097`. The served script tells clients:
+The server listens on port `8097` on all interfaces. The served script tells clients:
 ```js
 connectToDevTools({host: 'remote.example.com', port: 443, useHttps: true, path: '/__react_devtools__/'})
 ```
