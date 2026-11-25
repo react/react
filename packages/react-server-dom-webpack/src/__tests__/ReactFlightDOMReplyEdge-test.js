@@ -532,4 +532,34 @@ describe('ReactFlightDOMReplyEdge', () => {
       globalThis.eval = previousEval;
     }
   });
+
+  it('does not warn if eval is not available but a debug eval hook is installed', async () => {
+    // eslint-disable-next-line no-eval
+    const previousEval = globalThis.eval.bind(globalThis);
+    // eslint-disable-next-line no-eval
+    globalThis.eval = () => {
+      throw new Error('eval is disabled');
+    };
+    const debugEval = jest.fn(code => previousEval(code));
+    globalThis[Symbol.for('react.debug_eval')] = debugEval;
+
+    try {
+      const body = await ReactServerDOMClient.encodeReply({some: 'object'});
+      const decoded = await ReactServerDOMServer.decodeReply(
+        body,
+        webpackServerMap,
+      );
+
+      expect(decoded).toEqual({some: 'object'});
+      if (__DEV__) {
+        expect(debugEval).toHaveBeenCalledWith('null');
+      } else {
+        expect(debugEval).not.toHaveBeenCalled();
+      }
+    } finally {
+      // eslint-disable-next-line no-eval
+      globalThis.eval = previousEval;
+      delete globalThis[Symbol.for('react.debug_eval')];
+    }
+  });
 });
