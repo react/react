@@ -126,6 +126,7 @@ import {
   REACT_FORWARD_REF_TYPE,
   REACT_MEMO_TYPE,
   REACT_CONTEXT_TYPE,
+  REACT_ELEMENT_TYPE,
 } from 'shared/ReactSymbols';
 import {REACT_RECOVERABLE_DIGEST} from 'shared/ReactRecoverable';
 import {setCurrentFiber} from './ReactCurrentFiber';
@@ -239,6 +240,7 @@ import {
   claimNextHydratableSuspenseInstance,
   warnIfHydrating,
   queueHydrationError,
+  upgradeHydrationErrorsToRecoverable,
 } from './ReactFiberHydrationContext';
 import {
   constructClassInstance,
@@ -2195,6 +2197,7 @@ const SUSPENDED_MARKER: SuspenseState = {
   treeContext: null,
   retryLane: NoLane,
   hydrationErrors: null,
+  keptServerFallback: false,
 };
 
 function mountSuspenseOffscreenState(renderLanes: Lanes): OffscreenState {
@@ -2788,6 +2791,36 @@ function mountDehydratedSuspenseComponent(
   return null;
 }
 
+function isSameFallback(
+  prevFallback: mixed,
+  nextFallback: mixed,
+): boolean {
+  // Whether two fallbacks would render the same output. This is intentionally
+  // conservative: anything we can't prove equal counts as different, which
+  // just recreates the fallback like before. False positives must be
+  // impossible, so elements must match on type, key, and shallow-equal
+  // props. The ref is compared as part of props: in React 19 ref is a
+  // regular prop, and reading element.ref directly logs a dev warning, so
+  // we must not touch it here.
+  if (prevFallback === nextFallback) {
+    return true;
+  }
+  if (
+    typeof prevFallback === 'object' &&
+    prevFallback !== null &&
+    typeof nextFallback === 'object' &&
+    nextFallback !== null &&
+    prevFallback.$$typeof === REACT_ELEMENT_TYPE &&
+    nextFallback.$$typeof === REACT_ELEMENT_TYPE &&
+    prevFallback.type === nextFallback.type &&
+    prevFallback.key === nextFallback.key &&
+    shallowEqual(prevFallback.props, nextFallback.props)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function updateDehydratedSuspenseComponent(
   current: Fiber,
   workInProgress: Fiber,
@@ -2828,9 +2861,12 @@ function updateDehydratedSuspenseComponent(
         ({digest} = getSuspenseInstanceFallbackErrorDetails(suspenseInstance));
       }
 
-      // This is unreachable in renderers that do not support hydration.
-      // $FlowFixMe[invalid-compare]
-      if (digest !== REACT_RECOVERABLE_DIGEST) {
+      if (
+        // This is unreachable in renderers that do not support hydration.
+        // $FlowFixMe[invalid-compare]
+        digest !== REACT_RECOVERABLE_DIGEST &&
+        !suspenseState.keptServerFallback
+      ) {
         let error: Error;
         if (__DEV__ && message) {
           // eslint-disable-next-line react-internal/prod-error-codes
@@ -2851,6 +2887,16 @@ function updateDehydratedSuspenseComponent(
         );
         queueHydrationError(capturedValue);
       }
+      // Propagate context changes now, so that if the client render
+      // suspends, we can tell whether the server fallback is still current.
+      // This is unconditional: even when the boundary also received new
+      // props, a context change affecting the fallback must still mark
+      // childLanes, otherwise the keep check in the second pass can't see it.
+      lazilyPropagateParentContextChanges(
+        current,
+        workInProgress,
+        renderLanes,
+      );
       return retrySuspenseComponentWithoutHydrating(
         current,
         workInProgress,
@@ -3006,6 +3052,44 @@ function updateDehydratedSuspenseComponent(
       // The dehydrated completion pass expects this flag to be there
       // but the normal suspense pass doesn't.
       workInProgress.flags |= DidCapture;
+      return null;
+    } else if (
+      isSuspenseInstanceFallback(suspenseInstance) &&
+      // Only the fallback itself matters here, not the primary children: a
+      // transition that changes only the primary children leaves the fallback
+      // element identical, so the server fallback node can stay in place.
+      isSameFallback(current.memoizedProps.fallback, nextProps.fallback) &&
+      !includesSomeLane(renderLanes, current.childLanes) &&
+      // We retry when the data we suspended on resolves. Suspensey resources,
+      // like stylesheets, don't leave anything to wait on here, and only
+      // retry once a fallback commits, so for those we recreate the fallback
+      // as before.
+      workInProgress.updateQueue !== null
+    ) {
+      // The server left this boundary in its fallback state, and the client
+      // render suspended. Nothing has changed since the server render, so the
+      // fallback we would mount is the one already in the DOM. Replacing it
+      // would restart animations, so stay dehydrated and keep the server
+      // fallback. We'll try the client render again when the data resolves.
+      pushFallbackTreeSuspenseHandler(workInProgress);
+
+      // Report the error queued in the first pass now, as we would if we had
+      // recreated the fallback. We mark the state below so retrying doesn't
+      // report it again.
+      upgradeHydrationErrorsToRecoverable();
+
+      workInProgress.child = current.child;
+      workInProgress.flags |= DidCapture;
+      const nextState: SuspenseState = {
+        dehydrated: suspenseState.dehydrated,
+        treeContext: suspenseState.treeContext,
+        // Retry at a normal retry lane once the data resolves, like a client
+        // rendered boundary would, rather than at the hydration lane.
+        retryLane: NoLane,
+        hydrationErrors: suspenseState.hydrationErrors,
+        keptServerFallback: true,
+      };
+      workInProgress.memoizedState = nextState;
       return null;
     } else {
       // Suspended but we should no longer be in dehydrated mode.
@@ -3835,6 +3919,23 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
       const state: SuspenseState | null = workInProgress.memoizedState;
       if (state !== null) {
         if (state.dehydrated !== null) {
+          if (state.keptServerFallback) {
+            // We're showing the server fallback in place of one rendered on
+            // the client. If a context changed, the fallback might have to
+            // change too, so render the boundary instead of bailing out.
+            lazilyPropagateParentContextChanges(
+              current,
+              workInProgress,
+              renderLanes,
+            );
+            if (includesSomeLane(renderLanes, workInProgress.childLanes)) {
+              return updateSuspenseComponent(
+                current,
+                workInProgress,
+                renderLanes,
+              );
+            }
+          }
           // We're not going to render the children, so this is just to maintain
           // push/pop symmetry
           pushPrimaryTreeSuspenseHandler(workInProgress);
