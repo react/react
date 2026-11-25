@@ -45,6 +45,38 @@ export function symbolicateSourceWithCache(
   return promise;
 }
 
+// Decodes data:[<media-type>][;base64],<data>
+function decodeDataURL(url: string): string {
+  const commaIndex = url.indexOf(',');
+  const data = url.slice(commaIndex + 1);
+  if (!url.slice(0, commaIndex).endsWith(';base64')) {
+    return decodeURIComponent(data);
+  }
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function fetchSourceMap(
+  fetchFileWithCaching: FetchFileWithCaching,
+  sourceMapURL: string,
+): Promise<string | null> {
+  if (sourceMapURL.startsWith('data:')) {
+    // Inline source maps (e.g. every module served by Vite in development)
+    // are already here. Fetching them would cost a round trip per stack frame,
+    // and they never match a cached resource, so it takes the slowest path.
+    try {
+      return Promise.resolve(decodeDataURL(sourceMapURL));
+    } catch (e) {
+      return Promise.resolve(null);
+    }
+  }
+  return fetchFileWithCaching(sourceMapURL).catch(() => null);
+}
+
 const SOURCE_MAP_ANNOTATION_PREFIX = 'sourceMappingURL=';
 export async function symbolicateSource(
   fetchFileWithCaching: FetchFileWithCaching,
@@ -90,8 +122,9 @@ export async function symbolicateSource(
           return null;
         }
       }
-      const sourceMap = await fetchFileWithCaching(sourceMapURL).catch(
-        () => null,
+      const sourceMap = await fetchSourceMap(
+        fetchFileWithCaching,
+        sourceMapURL,
       );
       if (sourceMap != null) {
         try {
