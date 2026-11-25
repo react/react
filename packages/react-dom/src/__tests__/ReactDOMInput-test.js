@@ -16,7 +16,6 @@ function emptyFunction() {}
 
 describe('ReactDOMInput', () => {
   let React;
-  let ReactDOM;
   let ReactDOMClient;
   let ReactDOMServer;
   let Scheduler;
@@ -92,7 +91,6 @@ describe('ReactDOMInput', () => {
     ).set;
 
     React = require('react');
-    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
     Scheduler = require('scheduler');
@@ -1780,8 +1778,7 @@ describe('ReactDOMInput', () => {
     assertInputTrackingIsCurrent(container);
   });
 
-  // @gate !disableLegacyMode
-  it('should control radio buttons if the tree updates during render in legacy mode', async () => {
+  it('should control radio buttons if the tree updates during render across roots', async () => {
     container.remove();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -1804,7 +1801,7 @@ describe('ReactDOMInput', () => {
         sharedParent.appendChild(container2);
       }
       componentDidMount() {
-        ReactDOM.render(<ComponentB />, container2);
+        ReactDOMClient.createRoot(container2).render(<ComponentB />);
       }
       render() {
         return (
@@ -1839,7 +1836,10 @@ describe('ReactDOMInput', () => {
       }
     }
 
-    ReactDOM.render(<ComponentA />, container1);
+    const root1 = ReactDOMClient.createRoot(container1);
+    await act(() => {
+      root1.render(<ComponentA />);
+    });
 
     expect(aNode.checked).toBe(false);
     expect(bNode.checked).toBe(true);
@@ -1854,7 +1854,14 @@ describe('ReactDOMInput', () => {
     setUntrackedChecked.call(bNode, false);
 
     // Now let's run the actual ReactDOMInput change event handler
-    dispatchEventOnNode(aNode, 'click');
+    await act(() => {
+      dispatchEventOnNode(aNode, 'click');
+      // The update appends container2 to the shared parent before the
+      // restore runs, at the end of the event.
+      expect(container2.parentNode).toBe(sharedParent);
+      expect(aNode.checked).toBe(false);
+      expect(bNode.checked).toBe(true);
+    });
 
     // The original state should have been restored
     expect(aNode.checked).toBe(false);
