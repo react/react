@@ -234,6 +234,25 @@ function evaluateInstruction(
       return value;
     }
     case 'LoadGlobal': {
+      /*
+       * A LoadGlobal is only a compile-time constant if the binding it reads
+       * can never be reassigned. Import bindings are immutable, but a binding
+       * declared in this module (ModuleLocal) may be a `let`/`var` that is
+       * reassigned at any point - including by a call between the load and its
+       * use. Tracking it as a constant forwards the *value* of the load to the
+       * use site, which then observes a later value:
+       *
+       *   let pending = 'value';
+       *   const copy = pending;
+       *   pending = null;
+       *   console.log(copy); // must log 'value', not null
+       *
+       * NonLocalBinding doesn't record whether a module binding is `const`, so
+       * module bindings are never treated as constants.
+       */
+      if (value.binding.kind === 'ModuleLocal') {
+        return null;
+      }
       return value;
     }
     case 'ComputedLoad': {
