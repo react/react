@@ -2715,6 +2715,13 @@ fn lower_block_statement_inner(
         return Ok(());
     }
 
+    // References to each hoistable binding (parallel to `hoistable`), gathered
+    // on first use and reused for every later statement in this block instead
+    // of rescanning all references in the scope info per statement. Each list
+    // keeps `ref_node_id_to_binding` order and holds only references that have
+    // an identifier loc entry (the others were always skipped below).
+    let mut binding_refs: Vec<Option<Vec<(u32, u32, bool)>>> = vec![None; hoistable.len()];
+
     // Track which bindings have been "declared" (their declaration statement has been seen)
     let mut declared: FxHashSet<BindingId> = FxHashSet::default();
 
@@ -2759,7 +2766,9 @@ fn lower_block_statement_inner(
         }
         let mut will_hoist: Vec<HoistInfo> = Vec::new();
 
-        for (binding_id, name, kind, decl_type, _decl_start, decl_node_id) in &hoistable {
+        for (hoistable_idx, (binding_id, name, kind, decl_type, _decl_start, decl_node_id)) in
+            hoistable.iter().enumerate()
+        {
             if declared.contains(binding_id) {
                 continue;
             }
@@ -2778,23 +2787,30 @@ fn lower_block_statement_inner(
             // since that's the only statement type where decl_start is a declaration, not
             // a reference.
             let apply_decl_filter = !matches!(kind, AstBindingKind::Hoisted) || is_function_decl;
-            let refs_in_stmt: Vec<(u32, u32)> = builder
-                .scope_info()
-                .ref_node_id_to_binding
+            let refs = binding_refs[hoistable_idx].get_or_insert_with(|| {
+                builder
+                    .scope_info()
+                    .ref_node_id_to_binding
+                    .iter()
+                    .filter_map(|(&ref_nid, &ref_bid)| {
+                        if ref_bid != *binding_id {
+                            return None;
+                        }
+                        let entry = builder.identifier_locs().get(&ref_nid)?;
+                        Some((ref_nid, entry.start, entry.is_jsx))
+                    })
+                    .collect()
+            });
+            let refs_in_stmt: Vec<(u32, u32)> = refs
                 .iter()
-                .filter_map(|(&ref_nid, &ref_bid)| {
-                    if ref_bid != *binding_id {
-                        return None;
-                    }
-                    let entry = builder.identifier_locs().get(&ref_nid)?;
-                    let ref_start = entry.start;
+                .filter_map(|&(ref_nid, ref_start, is_jsx)| {
                     if ref_start < stmt_start || ref_start >= stmt_end {
                         return None;
                     }
                     if apply_decl_filter && *decl_node_id == Some(ref_nid) {
                         return None;
                     }
-                    if entry.is_jsx {
+                    if is_jsx {
                         return None;
                     }
                     Some((ref_start, ref_nid))
