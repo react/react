@@ -11,7 +11,6 @@ import {
 } from './ReactDOMControlledComponent';
 
 import {
-  batchedUpdates as batchedUpdatesImpl,
   discreteUpdates as discreteUpdatesImpl,
   flushSyncWork,
 } from 'react-reconciler/src/ReactFiberReconciler';
@@ -51,7 +50,7 @@ export function batchedUpdates(fn, a, b) {
   }
   isInsideEventHandler = true;
   try {
-    return batchedUpdatesImpl(fn, a, b);
+    return fn(a, b);
   } finally {
     isInsideEventHandler = false;
     finishEventHandler();

@@ -12,9 +12,6 @@
 // scheduled work and instead do synchronous work.
 
 // Defaults
-let batchedUpdatesImpl = function (fn, bookkeeping) {
-  return fn(bookkeeping);
-};
 let discreteUpdatesImpl = function (fn, a, b, c, d) {
   return fn(a, b, c, d);
 };
@@ -29,7 +26,7 @@ export function batchedUpdates(fn, bookkeeping) {
   }
   isInsideEventHandler = true;
   try {
-    return batchedUpdatesImpl(fn, bookkeeping);
+    return fn(bookkeeping);
   } finally {
     isInsideEventHandler = false;
   }
@@ -45,10 +42,6 @@ export function discreteUpdates(fn, a, b, c, d) {
   }
 }
 
-export function setBatchingImplementation(
-  _batchedUpdatesImpl,
-  _discreteUpdatesImpl,
-) {
-  batchedUpdatesImpl = _batchedUpdatesImpl;
+export function setBatchingImplementation(_discreteUpdatesImpl) {
   discreteUpdatesImpl = _discreteUpdatesImpl;
 }

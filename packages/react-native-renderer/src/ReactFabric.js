@@ -13,7 +13,6 @@ import type {FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
 import type {RenderRootOptions} from './ReactNativeTypes';
 
 import {
-  batchedUpdates as batchedUpdatesImpl,
   discreteUpdates,
   createContainer,
   updateContainer,
@@ -204,7 +203,7 @@ function getPublicInstanceFromRootTag(
   return null;
 }
 
-setBatchingImplementation(batchedUpdatesImpl, discreteUpdates);
+setBatchingImplementation(discreteUpdates);
 
 const roots = new Map<number, FiberRoot>();
 

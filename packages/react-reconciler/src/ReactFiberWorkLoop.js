@@ -1824,8 +1824,8 @@ export function deferredUpdates<A>(fn: () => A): A {
 }
 
 export function batchedUpdates<A, R>(fn: A => R, a: A): R {
-  // batchedUpdates is a no-op now, but there's still some internal react-dom
-  // code calling it.
+  // batchedUpdates is a no-op now. It's only kept because it's part of the
+  // public reconciler API.
   return fn(a);
 }
 
