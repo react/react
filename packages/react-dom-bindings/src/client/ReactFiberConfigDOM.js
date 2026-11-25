@@ -4177,6 +4177,14 @@ export function canHydrateInstance(
           // in theory lead to a hydration error later if a 3rd party injected an inline script before the React rendered nodes.
           // Falling back to client rendering if this happens should be seemless though so we will try this hueristic and revisit later
           // if we learn it is problematic
+          if (
+            element.getAttribute('type') === 'importmap' &&
+            anyProps.type !== 'importmap'
+          ) {
+            // Fizz writes the `importMap` option into the head outside the React tree, so it
+            // can only match an import map the app renders itself.
+            break;
+          }
           const srcAttr = element.getAttribute('src');
           if (
             srcAttr !== (anyProps.src == null ? null : anyProps.src) ||
