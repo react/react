@@ -12,6 +12,7 @@ import {preinitScriptForSSR} from 'react-client/src/ReactFlightClientConfig';
 export type ModuleLoading = null | {
   prefix: string,
   crossOrigin?: 'use-credentials' | '',
+  integrity?: {+[chunkFilename: string]: string},
 };
 
 export function prepareDestinationWithChunks(
@@ -21,11 +22,13 @@ export function prepareDestinationWithChunks(
   nonce: ?string,
 ) {
   if (moduleLoading !== null) {
+    const integrity = moduleLoading.integrity;
     for (let i = 1; i < chunks.length; i += 2) {
       preinitScriptForSSR(
         moduleLoading.prefix + chunks[i],
         nonce,
         moduleLoading.crossOrigin,
+        integrity === undefined ? undefined : integrity[chunks[i]],
       );
     }
   }

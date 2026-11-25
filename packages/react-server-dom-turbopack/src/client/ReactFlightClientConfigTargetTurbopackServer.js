@@ -14,6 +14,7 @@ import type {Chunk} from '../shared/ReactFlightImportMetadata';
 export type ModuleLoading = null | {
   prefix: string,
   crossOrigin?: 'use-credentials' | '',
+  integrity?: {+[chunkFilename: string]: string},
 };
 
 export function prepareDestinationWithChunks(
@@ -22,13 +23,16 @@ export function prepareDestinationWithChunks(
   nonce: ?string,
 ) {
   if (moduleLoading !== null) {
+    const integrity = moduleLoading.integrity;
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       // A merged chunk is `[mergedChunkFilename, ...]`; preinit its own URL.
+      const chunkFilename = typeof chunk === 'string' ? chunk : chunk[0];
       preinitScriptForSSR(
-        moduleLoading.prefix + (typeof chunk === 'string' ? chunk : chunk[0]),
+        moduleLoading.prefix + chunkFilename,
         nonce,
         moduleLoading.crossOrigin,
+        integrity === undefined ? undefined : integrity[chunkFilename],
       );
     }
   }

@@ -3078,4 +3078,62 @@ describe('ReactFlightDOMNode', () => {
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
   });
+
+  it('should add integrity from moduleLoading to Flight preinitialized scripts', async () => {
+    function ClientComponent() {
+      return <span>Client Component</span>;
+    }
+    const ClientComponentOnTheClient = clientExports(
+      ClientComponent,
+      123,
+      'path/to/chunk.js',
+    );
+    const ClientComponentOnTheServer = clientExports(ClientComponent);
+
+    const clientId = webpackMap[ClientComponentOnTheClient.$$id].id;
+    delete webpackModules[clientId];
+
+    const ssrMetadata = webpackMap[ClientComponentOnTheServer.$$id];
+    const translationMap = {
+      [clientId]: {
+        '*': ssrMetadata,
+      },
+    };
+    const serverConsumerManifest = {
+      moduleMap: translationMap,
+      moduleLoading: {
+        ...webpackModuleLoading,
+        integrity: {'path/to/chunk.js': 'sha384-abc'},
+      },
+    };
+
+    function App() {
+      return <ClientComponentOnTheClient />;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(<App />, webpackMap),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    let response;
+
+    stream.pipe(readable);
+
+    function ClientRoot() {
+      if (response) return use(response);
+      response = ReactServerDOMClient.createFromNodeStream(
+        readable,
+        serverConsumerManifest,
+      );
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToPipeableStream(<ClientRoot />),
+    );
+    const result = await readResult(ssrStream);
+    expect(result).toEqual(
+      '<script src="/path/to/chunk.js" async="" integrity="sha384-abc"></script><span>Client Component</span>',
+    );
+  });
 });

@@ -128,11 +128,12 @@ export function preinitScriptForSSR(
   href: string,
   nonce: ?string,
   crossOrigin: ?string,
+  integrity: ?string,
 ) {
   ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
     .X(/* preinitScript */ href, {
       crossOrigin: getCrossOriginString(crossOrigin),
-      integrity: undefined,
+      integrity: typeof integrity === 'string' ? integrity : undefined,
       fetchPriority: undefined,
       nonce,
     });

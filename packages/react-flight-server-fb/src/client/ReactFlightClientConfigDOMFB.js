@@ -31,4 +31,5 @@ export function preinitScriptForSSR(
   href: string,
   nonce: ?string,
   crossOrigin: ?string,
+  integrity: ?string,
 ) {}
