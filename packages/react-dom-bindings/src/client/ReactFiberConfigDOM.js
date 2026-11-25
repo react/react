@@ -5479,6 +5479,7 @@ function preinitStyle(
         link.onload = resolve;
         link.onerror = reject;
       });
+      (link as any)._p.catch(noop);
       link.addEventListener('load', () => {
         state.loading |= Loaded;
       });
@@ -6012,6 +6013,7 @@ export function acquireResource(
           linkInstance.onload = resolve;
           linkInstance.onerror = reject;
         });
+        (linkInstance as any)._p.catch(noop);
         setInitialProperties(instance, 'link', stylesheetProps);
         resource.state.loading |= Inserted;
         insertStylesheet(instance, qualifiedProps.precedence, hoistableRoot);
@@ -6715,6 +6717,7 @@ export function suspendResource(
           linkInstance.onload = resolve;
           linkInstance.onerror = reject;
         });
+        (linkInstance as any)._p.catch(noop);
         setInitialProperties(instance, 'link', stylesheetProps);
         resource.instance = instance;
       }
