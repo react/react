@@ -298,6 +298,7 @@ function collectTemporariesSidemapImpl(
           const property = getProperty(
             value.object,
             value.property,
+            value.computed,
             false,
             value.loc,
             temporaries,
@@ -341,6 +342,7 @@ function collectTemporariesSidemapImpl(
 function getProperty(
   object: Place,
   propertyName: PropertyLiteral,
+  computed: boolean,
   optional: boolean,
   loc: SourceLocation,
   temporaries: ReadonlyMap<IdentifierId, ReactiveScopeDependency>,
@@ -375,7 +377,7 @@ function getProperty(
     property = {
       identifier: object.identifier,
       reactive: object.reactive,
-      path: [{property: propertyName, optional, loc}],
+      path: [{property: propertyName, computed, optional, loc}],
       loc,
     };
   } else {
@@ -384,7 +386,7 @@ function getProperty(
       reactive: resolvedDependency.reactive,
       path: [
         ...resolvedDependency.path,
-        {property: propertyName, optional, loc},
+        {property: propertyName, computed, optional, loc},
       ],
       loc,
     };
@@ -554,12 +556,14 @@ export class DependencyCollectionContext {
   visitProperty(
     object: Place,
     property: PropertyLiteral,
+    computed: boolean,
     optional: boolean,
     loc: SourceLocation,
   ): void {
     const nextDependency = getProperty(
       object,
       property,
+      computed,
       optional,
       loc,
       this.#temporaries,
@@ -693,7 +697,13 @@ export function handleInstruction(
     return;
   }
   if (value.kind === 'PropertyLoad') {
-    context.visitProperty(value.object, value.property, false, value.loc);
+    context.visitProperty(
+      value.object,
+      value.property,
+      value.computed,
+      false,
+      value.loc,
+    );
   } else if (value.kind === 'StoreLocal') {
     context.visitOperand(value.value);
     if (value.lvalue.kind === InstructionKind.Reassign) {

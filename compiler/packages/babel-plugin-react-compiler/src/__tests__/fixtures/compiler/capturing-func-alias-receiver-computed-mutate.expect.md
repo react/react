@@ -39,7 +39,7 @@ function Component(t0) {
     y = {};
     const f0 = function () {
       const a_0 = y;
-      a_0.x = x;
+      a_0["x"] = x;
     };
 
     f0();

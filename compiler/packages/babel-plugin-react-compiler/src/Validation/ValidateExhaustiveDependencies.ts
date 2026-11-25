@@ -754,6 +754,7 @@ function collectDependencies(
                 {
                   optional,
                   property: value.property,
+                  computed: value.computed,
                   loc: value.loc,
                 },
               ],

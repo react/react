@@ -250,6 +250,7 @@ function evaluateInstruction(
           loc: value.loc,
           property: makePropertyLiteral(property.value),
           object: value.object,
+          computed: true,
         };
         instr.value = nextValue;
       }
@@ -269,6 +270,7 @@ function evaluateInstruction(
           loc: value.loc,
           property: makePropertyLiteral(property.value),
           object: value.object,
+          computed: true,
           value: value.value,
         };
         instr.value = nextValue;
