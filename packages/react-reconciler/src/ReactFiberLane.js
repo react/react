@@ -904,6 +904,8 @@ export function markRootFinished(
   suspendedRetryLanes: Lanes,
 ) {
   const previouslyPendingLanes = root.pendingLanes;
+  const previouslySuspendedLanes = root.suspendedLanes;
+  const previouslyPingedLanes = root.pingedLanes;
   const noLongerPendingLanes = previouslyPendingLanes & ~remainingLanes;
 
   root.pendingLanes = remainingLanes;
@@ -994,6 +996,21 @@ export function markRootFinished(
       // attempt, and also wasn't included in that attempt.
       ~(previouslyPendingLanes & ~finishedLanes);
     root.suspendedLanes |= freshlySpawnedRetryLanes;
+
+    if (finishedLanes !== NoLanes && includesOnlyRetries(finishedLanes)) {
+      // If this commit only flushed retry lanes and still spawned another
+      // immediate retry, preserve any other retry lanes that were already
+      // suspended and unpinged. Otherwise clearing `root.suspendedLanes` above
+      // drops those sibling retries back to normal mode, where each claims a
+      // new retry lane and clears the previous one in a loop instead of
+      // coalescing into a single prerender pass.
+      root.suspendedLanes |=
+        previouslySuspendedLanes &
+        ~previouslyPingedLanes &
+        remainingLanes &
+        ~finishedLanes &
+        RetryLanes;
+    }
   }
 }
 
