@@ -25,7 +25,6 @@ import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
 import type {Flags} from './ReactFiberFlags';
 import type {Lane, Lanes, LaneMap} from './ReactFiberLane';
-import type {RootTag} from './ReactRootTags';
 import type {
   Container,
   Instance,
@@ -211,9 +210,6 @@ export type Fiber = {
 };
 
 type BaseFiberRootProperties = {
-  // The type of root (legacy, batched, concurrent, etc.)
-  tag: RootTag,
-
   // Any additional information from the host associated with this root.
   containerInfo: Container,
   // Used only by persistent updates.
