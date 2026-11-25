@@ -524,8 +524,125 @@ function createBoundServerReference(metaData, callServer) {
   registerBoundServerReference(action, id, bound);
   return action;
 }
-var hasOwnProperty = Object.prototype.hasOwnProperty,
-  ObjectPrototype = Object.prototype,
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+function createLedgerCell(type) {
+  switch (type.kind) {
+    case 0:
+      return { kind: 0, state: !1 };
+    case 1:
+      return { kind: 1, state: 0 };
+    case 2:
+      return { kind: 2, state: null };
+    case 3:
+      return { kind: 3, state: null };
+    default:
+      return { kind: 4, state: new Set() };
+  }
+}
+function readLedgerTotal(total) {
+  var graph = total.graph;
+  if (null !== graph) {
+    var dirty = graph.dirtyUnits;
+    if (null !== dirty) {
+      graph.totals.forEach(function (record) {
+        updateLedgerTotal(record, dirty);
+      });
+      for (var unit = dirty; null !== unit; ) {
+        var next = unit.nextDirty;
+        unit.isQueued = !1;
+        unit.nextDirty = null;
+        unit.newEntries = null;
+        unit = next;
+      }
+      graph.dirtyUnits = null;
+    }
+  }
+  unit = total.cell;
+  null === unit &&
+    ((total.cell = unit = createLedgerCell(total.type)),
+    (total.visitedUnits = new WeakSet()),
+    updateLedgerTotal(total, null));
+  null !== graph &&
+    (graph.closed
+      ? ((total.graph = null), (total.visitedUnits = null))
+      : graph.isTracking || (graph.isTracking = !0));
+  return unit;
+}
+function updateLedgerTotal(total, dirty) {
+  var acc = total.cell,
+    visitedUnits = total.visitedUnits;
+  if (null !== acc && null !== visitedUnits) {
+    for (var type = total.type, queue = []; null !== dirty; )
+      visitedUnits.has(dirty) && queue.push(dirty), (dirty = dirty.nextDirty);
+    dirty = queue.length;
+    for (
+      var pendingCaptureUnits = total.pendingCaptureUnits, i = 0;
+      i < pendingCaptureUnits.length;
+      i++
+    ) {
+      var unit = pendingCaptureUnits[i];
+      visitedUnits.has(unit) || (visitedUnits.add(unit), queue.push(unit));
+    }
+    i = function (entry) {
+      var accumulated = acc.state,
+        log = total.entries;
+      null === log
+        ? accumulated.add(entry)
+        : accumulated.has(entry) || (accumulated.add(entry), log.push(entry));
+    };
+    for (unit = 0; unit < queue.length; unit++) {
+      var unit$25 = queue[unit],
+        cells = unit$25.cells;
+      cells = null === cells ? void 0 : cells.get(type);
+      if (void 0 !== cells)
+        switch (acc.kind) {
+          case 0:
+            acc.state = acc.state || cells.state;
+            break;
+          case 1:
+            acc.state = (acc.state | cells.state) >>> 0;
+            break;
+          case 2:
+            cells = cells.state;
+            var previous = acc.state;
+            null !== cells &&
+              (null === previous || cells < previous) &&
+              (acc.state = cells);
+            break;
+          case 3:
+            cells = cells.state;
+            previous = acc.state;
+            null !== cells &&
+              (null === previous || cells > previous) &&
+              (acc.state = cells);
+            break;
+          case 4:
+            unit < dirty
+              ? ((cells = unit$25.newEntries),
+                (cells = null === cells ? void 0 : cells.get(type)),
+                void 0 !== cells && cells.forEach(i))
+              : cells.state.forEach(i);
+        }
+      cells = unit$25.references;
+      if (null !== cells)
+        for (previous = 0; previous < cells.length; previous++) {
+          var target = cells[previous];
+          visitedUnits.has(target) ||
+            (visitedUnits.add(target), queue.push(target));
+        }
+      unit$25 = unit$25.children;
+      if (null !== unit$25)
+        for (cells = 0; cells < unit$25.length; cells++)
+          (previous = unit$25[cells]),
+            (target = previous.capturedLedgers),
+            (null !== target && -1 !== target.indexOf(type)) ||
+              visitedUnits.has(previous) ||
+              (visitedUnits.add(previous), queue.push(previous));
+    }
+    pendingCaptureUnits.length = 0;
+  }
+}
+var ObjectPrototype = Object.prototype,
   ArrayPrototype = Array.prototype,
   RESPONSE_SYMBOL = Symbol();
 function ReactPromise(status, value, reason) {
@@ -942,19 +1059,19 @@ function fulfillReference(response, reference, value) {
       value.$$typeof === REACT_LAZY_TYPE;
 
     ) {
-      var referencedChunk$28 = value._payload;
-      if (referencedChunk$28 === handler.chunk) value = handler.value;
+      var referencedChunk$33 = value._payload;
+      if (referencedChunk$33 === handler.chunk) value = handler.value;
       else {
-        switch (referencedChunk$28.status) {
+        switch (referencedChunk$33.status) {
           case "resolved_model":
-            initializeModelChunk(referencedChunk$28);
+            initializeModelChunk(referencedChunk$33);
             break;
           case "resolved_module":
-            initializeModuleChunk(referencedChunk$28);
+            initializeModuleChunk(referencedChunk$33);
         }
-        switch (referencedChunk$28.status) {
+        switch (referencedChunk$33.status) {
           case "fulfilled":
-            value = referencedChunk$28.value;
+            value = referencedChunk$33.value;
             continue;
         }
         break;
@@ -1442,8 +1559,8 @@ function startReadableStream(response, id, type) {
             (previousBlockedChunk = chunk));
       } else {
         chunk = previousBlockedChunk;
-        var chunk$40 = new ReactPromise("pending", null, null);
-        chunk$40.then(
+        var chunk$45 = new ReactPromise("pending", null, null);
+        chunk$45.then(
           function (v) {
             return controller.enqueue(v);
           },
@@ -1451,10 +1568,10 @@ function startReadableStream(response, id, type) {
             return controller.error(e);
           }
         );
-        previousBlockedChunk = chunk$40;
+        previousBlockedChunk = chunk$45;
         chunk.then(function () {
-          previousBlockedChunk === chunk$40 && (previousBlockedChunk = null);
-          resolveModelChunk(response, chunk$40, json);
+          previousBlockedChunk === chunk$45 && (previousBlockedChunk = null);
+          resolveModelChunk(response, chunk$45, json);
         });
       }
     },
@@ -1612,44 +1729,22 @@ function resolveErrorProd() {
   return error;
 }
 function initializeLedgerChunk(chunk) {
-  var record = chunk.value,
-    type = record.type,
-    JSCompiler_object_inline_state_196 = 0,
-    units = record.graph.units;
-  record = record.roots.slice();
-  for (var visited = new Set(), i = 0; i < record.length; i++) {
-    var unit = record[i];
-    if (!visited.has(unit)) {
-      visited.add(unit);
-      var cells = unit.cells;
-      cells = null === cells ? void 0 : cells.get(type);
-      void 0 !== cells &&
-        (JSCompiler_object_inline_state_196 =
-          (JSCompiler_object_inline_state_196 | cells.state) >>> 0);
-      cells = unit.references;
-      if (null !== cells)
-        for (var j = 0; j < cells.length; j++) {
-          var target = units.get(cells[j]);
-          void 0 !== target && record.push(target);
-        }
-      unit = unit.children;
-      if (null !== unit)
-        for (cells = 0; cells < unit.length; cells++)
-          (j = unit[cells]),
-            (target = j.capturedLedgers),
-            (null !== target && -1 !== target.indexOf(type)) || record.push(j);
-    }
-  }
+  var JSCompiler_inline_result = readLedgerTotal(chunk.value);
+  JSCompiler_inline_result =
+    4 === JSCompiler_inline_result.kind
+      ? new Set(JSCompiler_inline_result.state)
+      : JSCompiler_inline_result.state;
   chunk.status = "fulfilled";
-  chunk.value = JSCompiler_object_inline_state_196;
+  chunk.value =
+    null === JSCompiler_inline_result ? void 0 : JSCompiler_inline_result;
   chunk.reason = null;
 }
 function mergeBuffer(buffer, lastChunk) {
   for (var l = buffer.length, byteLength = lastChunk.length, i = 0; i < l; i++)
     byteLength += buffer[i].byteLength;
   byteLength = new Uint8Array(byteLength);
-  for (var i$41 = (i = 0); i$41 < l; i$41++) {
-    var chunk = buffer[i$41];
+  for (var i$46 = (i = 0); i$46 < l; i$46++) {
+    var chunk = buffer[i$46];
     byteLength.set(chunk, i);
     i += chunk.byteLength;
   }

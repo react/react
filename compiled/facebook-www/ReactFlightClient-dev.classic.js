@@ -1475,6 +1475,125 @@ __DEV__ &&
           );
       }
     }
+    function createLedgerCell(type) {
+      switch (type.kind) {
+        case 0:
+          return { kind: 0, state: !1 };
+        case 1:
+          return { kind: 1, state: 0 };
+        case 2:
+          return { kind: 2, state: null };
+        case 3:
+          return { kind: 3, state: null };
+        default:
+          return { kind: 4, state: new Set() };
+      }
+    }
+    function readLedgerTotal(total) {
+      var graph = total.graph;
+      if (null !== graph) {
+        var dirty = graph.dirtyUnits;
+        if (null !== dirty) {
+          graph.totals.forEach(function (record) {
+            updateLedgerTotal(record, dirty);
+          });
+          for (var unit = dirty; null !== unit; ) {
+            var next = unit.nextDirty;
+            unit.isQueued = !1;
+            unit.nextDirty = null;
+            unit.newEntries = null;
+            unit = next;
+          }
+          graph.dirtyUnits = null;
+        }
+      }
+      unit = total.cell;
+      null === unit &&
+        ((total.cell = unit = createLedgerCell(total.type)),
+        (total.visitedUnits = new WeakSet()),
+        updateLedgerTotal(total, null));
+      null !== graph &&
+        (graph.closed
+          ? ((total.graph = null), (total.visitedUnits = null))
+          : graph.isTracking || (graph.isTracking = !0));
+      return unit;
+    }
+    function updateLedgerTotal(total, dirty) {
+      var acc = total.cell,
+        visitedUnits = total.visitedUnits;
+      if (null !== acc && null !== visitedUnits) {
+        for (var type = total.type, queue = []; null !== dirty; )
+          visitedUnits.has(dirty) && queue.push(dirty),
+            (dirty = dirty.nextDirty);
+        dirty = queue.length;
+        for (
+          var pendingCaptureUnits = total.pendingCaptureUnits, i = 0;
+          i < pendingCaptureUnits.length;
+          i++
+        ) {
+          var unit = pendingCaptureUnits[i];
+          visitedUnits.has(unit) || (visitedUnits.add(unit), queue.push(unit));
+        }
+        i = function (entry) {
+          var accumulated = acc.state,
+            log = total.entries;
+          null === log
+            ? accumulated.add(entry)
+            : accumulated.has(entry) ||
+              (accumulated.add(entry), log.push(entry));
+        };
+        for (unit = 0; unit < queue.length; unit++) {
+          var _unit = queue[unit],
+            cells = _unit.cells;
+          cells = null === cells ? void 0 : cells.get(type);
+          if (void 0 !== cells)
+            switch (acc.kind) {
+              case 0:
+                acc.state = acc.state || cells.state;
+                break;
+              case 1:
+                acc.state = (acc.state | cells.state) >>> 0;
+                break;
+              case 2:
+                cells = cells.state;
+                var previous = acc.state;
+                null !== cells &&
+                  (null === previous || cells < previous) &&
+                  (acc.state = cells);
+                break;
+              case 3:
+                cells = cells.state;
+                previous = acc.state;
+                null !== cells &&
+                  (null === previous || cells > previous) &&
+                  (acc.state = cells);
+                break;
+              case 4:
+                unit < dirty
+                  ? ((cells = _unit.newEntries),
+                    (cells = null === cells ? void 0 : cells.get(type)),
+                    void 0 !== cells && cells.forEach(i))
+                  : cells.state.forEach(i);
+            }
+          cells = _unit.references;
+          if (null !== cells)
+            for (previous = 0; previous < cells.length; previous++) {
+              var target = cells[previous];
+              visitedUnits.has(target) ||
+                (visitedUnits.add(target), queue.push(target));
+            }
+          _unit = _unit.children;
+          if (null !== _unit)
+            for (cells = 0; cells < _unit.length; cells++)
+              (previous = _unit[cells]),
+                (target = previous.capturedLedgers),
+                (null !== target && -1 !== target.indexOf(type)) ||
+                  visitedUnits.has(previous) ||
+                  (visitedUnits.add(previous), queue.push(previous));
+        }
+        pendingCaptureUnits.length = 0;
+      }
+    }
     function ReactPromise(status, value, reason) {
       this.status = status;
       this.value = value;
@@ -3340,43 +3459,16 @@ __DEV__ &&
       return response;
     }
     function initializeLedgerChunk(chunk) {
-      var response = chunk.reason,
-        total = chunk.value,
-        type = total.type,
-        JSCompiler_object_inline_state_350 = 0,
-        units = total.graph.units;
-      total = total.roots.slice();
-      for (var visited = new Set(), i = 0; i < total.length; i++) {
-        var unit = total[i];
-        if (!visited.has(unit)) {
-          visited.add(unit);
-          var cells = unit.cells;
-          cells = null === cells ? void 0 : cells.get(type);
-          void 0 !== cells &&
-            (JSCompiler_object_inline_state_350 =
-              (JSCompiler_object_inline_state_350 | cells.state) >>> 0);
-          cells = unit.references;
-          if (null !== cells)
-            for (var j = 0; j < cells.length; j++) {
-              var target = units.get(cells[j]);
-              void 0 !== target && total.push(target);
-            }
-          unit = unit.children;
-          if (null !== unit)
-            for (cells = 0; cells < unit.length; cells++)
-              (j = unit[cells]),
-                (target = j.capturedLedgers),
-                (null !== target && -1 !== target.indexOf(type)) ||
-                  total.push(j);
-        }
-      }
-      type = JSCompiler_object_inline_state_350;
+      var response = chunk.reason;
+      var state = readLedgerTotal(chunk.value);
+      state = 4 === state.kind ? new Set(state.state) : state.state;
+      state = null === state ? void 0 : state;
       chunk.status = "fulfilled";
-      chunk.value = type;
+      chunk.value = state;
       chunk.reason = null;
       null !== response &&
         (filterDebugInfo(response, chunk),
-        moveDebugInfoFromChunkToInnerValue(chunk, type));
+        moveDebugInfoFromChunkToInnerValue(chunk, state));
     }
     function createFakeFunction(
       name,
@@ -5280,10 +5372,10 @@ __DEV__ &&
       return hook.checkDCE ? !0 : !1;
     })({
       bundleType: 1,
-      version: "19.3.0-www-classic-92bb0678-20261124",
+      version: "19.3.0-www-classic-edae846a-20261125",
       rendererPackageName: "react-flight-server-fb",
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-classic-92bb0678-20261124",
+      reconcilerVersion: "19.3.0-www-classic-edae846a-20261125",
       getCurrentComponentInfo: function () {
         return currentOwnerInDEV;
       }
