@@ -76,6 +76,75 @@ let currentlyRenderingRequest: Request | null = null;
 let currentlyRenderingKeyPath: KeyNode | null = null;
 let firstWorkInProgressHook: Hook | null = null;
 let workInProgressHook: Hook | null = null;
+
+type HooksDispatcherSnapshot = {
+  currentlyRenderingComponent: Object | null,
+  currentlyRenderingTask: Task | null,
+  currentlyRenderingRequest: Request | null,
+  currentlyRenderingKeyPath: KeyNode | null,
+  firstWorkInProgressHook: Hook | null,
+  workInProgressHook: Hook | null,
+  isReRender: boolean,
+  didScheduleRenderPhaseUpdate: boolean,
+  renderPhaseUpdates: Map<UpdateQueue<any>, Update<any>> | null,
+  numberOfReRenders: number,
+  isInHookUserCodeInDev: boolean,
+};
+
+// Lazily allocated only if a render is ever nested inside another one that
+// hasn't finished yet, e.g. a component that synchronously calls
+// `renderToString`/`renderToStaticMarkup` from within its own render (or
+// from a hook like `useMemo`). This lets the outer render's hooks
+// dispatcher state be restored once the inner one finishes, instead of the
+// inner render's cleanup permanently wiping it out from under the outer
+// render, which is still using it.
+let reentrantHooksDispatcherStack: Array<HooksDispatcherSnapshot> | null = null;
+
+function pushHooksDispatcher(): void {
+  const snapshot: HooksDispatcherSnapshot = {
+    currentlyRenderingComponent,
+    currentlyRenderingTask,
+    currentlyRenderingRequest,
+    currentlyRenderingKeyPath,
+    firstWorkInProgressHook,
+    workInProgressHook,
+    isReRender,
+    didScheduleRenderPhaseUpdate,
+    renderPhaseUpdates,
+    numberOfReRenders,
+    isInHookUserCodeInDev: __DEV__ ? isInHookUserCodeInDev : false,
+  };
+  if (reentrantHooksDispatcherStack === null) {
+    reentrantHooksDispatcherStack = [snapshot];
+  } else {
+    reentrantHooksDispatcherStack.push(snapshot);
+  }
+}
+
+// Returns true if an enclosing render's state was restored, false if there
+// was nothing to restore (the common case).
+function popHooksDispatcherIfNested(): boolean {
+  const stack = reentrantHooksDispatcherStack;
+  const snapshot = stack === null ? undefined : stack.pop();
+  if (snapshot === undefined) {
+    return false;
+  }
+  currentlyRenderingComponent = snapshot.currentlyRenderingComponent;
+  currentlyRenderingTask = snapshot.currentlyRenderingTask;
+  currentlyRenderingRequest = snapshot.currentlyRenderingRequest;
+  currentlyRenderingKeyPath = snapshot.currentlyRenderingKeyPath;
+  firstWorkInProgressHook = snapshot.firstWorkInProgressHook;
+  workInProgressHook = snapshot.workInProgressHook;
+  isReRender = snapshot.isReRender;
+  didScheduleRenderPhaseUpdate = snapshot.didScheduleRenderPhaseUpdate;
+  renderPhaseUpdates = snapshot.renderPhaseUpdates;
+  numberOfReRenders = snapshot.numberOfReRenders;
+  if (__DEV__) {
+    isInHookUserCodeInDev = snapshot.isInHookUserCodeInDev;
+  }
+  return true;
+}
+
 // Whether the work-in-progress hook is a re-rendered hook
 let isReRender: boolean = false;
 // Whether an update was scheduled during the currently executing render pass.
@@ -277,6 +346,22 @@ export function prepareToUseHooks(
   componentIdentity: Object,
   prevThenableState: ThenableState | null,
 ): void {
+  if (currentlyRenderingComponent !== null) {
+    // An enclosing render is still active on the same synchronous call
+    // stack (see the note on reentrantHooksDispatcherStack above). Save its
+    // hooks dispatcher state before resetting below, so it isn't lost.
+    pushHooksDispatcher();
+    // Unlike the common case below, these actually need to be reset here:
+    // they aren't left over from the enclosing render's own last hook (that
+    // was just saved), and the enclosing render isn't done yet, so its own
+    // finishHooks/resetHooksState call hasn't reset them itself.
+    didScheduleRenderPhaseUpdate = false;
+    firstWorkInProgressHook = null;
+    numberOfReRenders = 0;
+    renderPhaseUpdates = null;
+    workInProgressHook = null;
+  }
+
   currentlyRenderingComponent = componentIdentity;
   currentlyRenderingTask = task;
   currentlyRenderingRequest = request;
@@ -370,15 +455,17 @@ export function resetHooksState(): void {
     isInHookUserCodeInDev = false;
   }
 
-  currentlyRenderingComponent = null;
-  currentlyRenderingTask = null;
-  currentlyRenderingRequest = null;
-  currentlyRenderingKeyPath = null;
-  didScheduleRenderPhaseUpdate = false;
-  firstWorkInProgressHook = null;
-  numberOfReRenders = 0;
-  renderPhaseUpdates = null;
-  workInProgressHook = null;
+  if (!popHooksDispatcherIfNested()) {
+    currentlyRenderingComponent = null;
+    currentlyRenderingTask = null;
+    currentlyRenderingRequest = null;
+    currentlyRenderingKeyPath = null;
+    didScheduleRenderPhaseUpdate = false;
+    firstWorkInProgressHook = null;
+    numberOfReRenders = 0;
+    renderPhaseUpdates = null;
+    workInProgressHook = null;
+  }
 }
 
 function readContext<T>(context: ReactContext<T>): T {
