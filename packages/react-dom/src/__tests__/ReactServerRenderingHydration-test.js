@@ -707,6 +707,35 @@ describe('ReactDOMServerHydration', () => {
     expect(customElement.obj).toBe(undefined);
   });
 
+  it('should hydrate aria and data boolean attributes on custom elements', async () => {
+    const container = document.createElement('div');
+
+    const jsx = (
+      <my-custom-element
+        aria-hidden={true}
+        aria-disabled={false}
+        data-active={true}
+        data-enabled={false}
+      />
+    );
+
+    container.innerHTML = ReactDOMServer.renderToString(jsx);
+    const customElement = container.querySelector('my-custom-element');
+    expect(customElement.getAttribute('aria-hidden')).toBe('true');
+    expect(customElement.getAttribute('aria-disabled')).toBe('false');
+    expect(customElement.getAttribute('data-active')).toBe('true');
+    expect(customElement.getAttribute('data-enabled')).toBe('false');
+
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, jsx);
+    });
+
+    expect(customElement.getAttribute('aria-hidden')).toBe('true');
+    expect(customElement.getAttribute('aria-disabled')).toBe('false');
+    expect(customElement.getAttribute('data-active')).toBe('true');
+    expect(customElement.getAttribute('data-enabled')).toBe('false');
+  });
+
   it('refers users to apis that support Suspense when something suspends', async () => {
     const theInfinitePromise = new Promise(() => {});
     function InfiniteSuspend() {
