@@ -1417,6 +1417,40 @@ body {
     );
   });
 
+  it('preserves text siblings when a title is hoisted during server rendering', async () => {
+    function Title() {
+      return <title>Inbox</title>;
+    }
+
+    const content = (
+      <html>
+        <head />
+        <body>
+          <p>
+            {'Hello'}
+            <Title />
+            {' world'}
+          </p>
+        </body>
+      </html>
+    );
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(content);
+      pipe(writable);
+    });
+
+    const paragraph = document.querySelector('p');
+    const onRecoverableError = jest.fn();
+    ReactDOMClient.hydrateRoot(document, content, {onRecoverableError});
+    await waitForAll([]);
+
+    expect(onRecoverableError).not.toHaveBeenCalled();
+    expect(document.querySelector('p')).toBe(paragraph);
+    expect(paragraph.textContent).toBe('Hello world');
+    expect(document.title).toBe('Inbox');
+  });
+
   it('hoists late stylesheets the correct precedence', async () => {
     function PresetPrecedence() {
       ReactDOM.preinit('preset', {as: 'style', precedence: 'preset'});

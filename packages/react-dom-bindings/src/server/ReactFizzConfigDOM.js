@@ -3609,6 +3609,7 @@ function pushTitle(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
   renderState: RenderState,
+  textEmbedded: boolean,
   formatContext: FormatContext,
 ): ReactNodeList {
   const noscriptTagInScope = formatContext.tagScope & NOSCRIPT_SCOPE;
@@ -3668,6 +3669,10 @@ function pushTitle(
     !noscriptTagInScope &&
     props.itemProp == null
   ) {
+    if (textEmbedded) {
+      target.push(textSeparator);
+    }
+
     if (isFallback) {
       // Hoistable Elements for fallbacks are simply omitted. we don't want to emit them early
       // because they are likely superceded by primary content and we want to avoid needing to clean
@@ -4327,7 +4332,7 @@ export function pushStartInstance(
     case 'object':
       return pushStartObject(target, props, formatContext);
     case 'title':
-      return pushTitle(target, props, renderState, formatContext);
+      return pushTitle(target, props, renderState, textEmbedded, formatContext);
     case 'link':
       return pushLink(
         target,
