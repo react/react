@@ -162,6 +162,60 @@ describe('ReactFlightTurbopackDOMNode', () => {
     );
   });
 
+  it('should add integrity from moduleLoading to Flight preinitialized scripts', async () => {
+    function ClientComponent() {
+      return <span>Client Component</span>;
+    }
+    const ClientComponentOnTheClient = clientExports(
+      ClientComponent,
+      'path/to/chunk.js',
+    );
+    const ClientComponentOnTheServer = clientExports(ClientComponent);
+
+    const clientId = turbopackMap[ClientComponentOnTheClient.$$id].id;
+    delete turbopackModules[clientId];
+
+    const ssrMetadata = turbopackMap[ClientComponentOnTheServer.$$id];
+    const translationMap = {
+      [clientId]: {
+        '*': ssrMetadata,
+      },
+    };
+
+    function App() {
+      return <ClientComponentOnTheClient />;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(<App />, turbopackMap),
+    );
+    const readable = new Stream.PassThrough();
+
+    stream.pipe(readable);
+
+    let response;
+    function ClientRoot() {
+      if (!response) {
+        response = ReactServerDOMClient.createFromNodeStream(readable, {
+          moduleMap: translationMap,
+          moduleLoading: {
+            ...turbopackModuleLoading,
+            integrity: {'path/to/chunk.js': 'sha384-abc'},
+          },
+        });
+      }
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToPipeableStream(<ClientRoot />),
+    );
+    const result = await readResult(ssrStream);
+    expect(result).toEqual(
+      '<script src="/prefix/path/to/chunk.js" async="" integrity="sha384-abc"></script><span>Client Component</span>',
+    );
+  });
+
   it.each([false, true])(
     'can render a lazy subtree after close without its debug channel (partial: %s)',
     async allowPartialStream => {
