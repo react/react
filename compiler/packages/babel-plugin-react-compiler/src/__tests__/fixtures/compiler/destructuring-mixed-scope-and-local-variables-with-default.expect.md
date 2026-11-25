@@ -96,14 +96,14 @@ function Component(props) {
     }
     const urls = t5;
     let t6;
-    if ($[6] !== comments.length) {
+    if ($[6] !== comments) {
       t6 = (e) => {
         if (!comments.length) {
           return;
         }
         console.log(comments.length);
       };
-      $[6] = comments.length;
+      $[6] = comments;
       $[7] = t6;
     } else {
       t6 = $[7];

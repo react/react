@@ -41,10 +41,10 @@ function useFoo(t0) {
     local = $[1];
   }
   let t1;
-  if ($[2] !== local.b.c) {
+  if ($[2] !== local) {
     const fn = () => local.b.c;
     t1 = <Stringify fn={fn} shouldInvokeFns={true} />;
-    $[2] = local.b.c;
+    $[2] = local;
     $[3] = t1;
   } else {
     t1 = $[3];

@@ -21,8 +21,8 @@ use react_compiler_hir::visitors::{ScopeBlockInfo, ScopeBlockTraversal};
 use react_compiler_hir::{
     BasicBlock, BlockId, DeclarationId, DependencyPathEntry, EvaluationOrder, FunctionId,
     GotoVariant, HirFunction, IdentifierId, Instruction, InstructionId, InstructionKind,
-    InstructionValue, MutableRange, ParamPattern, Place, PlaceOrSpread, PropertyLiteral,
-    ReactFunctionType, ReactiveScopeDependency, ScopeId, Terminal, Type, visitors,
+    InstructionValue, MutableRange, ParamPattern, Place, PropertyLiteral, ReactFunctionType,
+    ReactiveScopeDependency, ScopeId, Terminal, Type, visitors,
 };
 
 // =============================================================================
@@ -1125,48 +1125,14 @@ fn get_assumed_invoked_functions_impl(
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
             match &instr.value {
-                InstructionValue::CallExpression { callee, args, .. } => {
-                    let callee_ty =
-                        &env.types[env.identifiers[callee.identifier.0 as usize].type_.0 as usize];
-                    let maybe_hook = env.get_hook_kind_for_type(callee_ty).ok().flatten();
+                InstructionValue::CallExpression { callee, .. } => {
+                    // Only functions that are called directly are known to run during
+                    // render. Functions passed as JSX attributes or children, passed to
+                    // hooks, or returned may run later or never, so their property loads
+                    // must not be evaluated during render: the object may not be ready
+                    // yet and a getter may have side effects.
                     if let Some(entry) = temporaries.get(&callee.identifier) {
-                        // Direct calls
                         hoistable.insert(entry.0);
-                    } else if maybe_hook.is_some() {
-                        // Assume arguments to all hooks are safe to invoke
-                        for arg in args {
-                            if let PlaceOrSpread::Place(p) = arg {
-                                if let Some(entry) = temporaries.get(&p.identifier) {
-                                    hoistable.insert(entry.0);
-                                }
-                            }
-                        }
-                    }
-                }
-                InstructionValue::JsxExpression {
-                    props, children, ..
-                } => {
-                    // Assume JSX attributes and children are safe to invoke
-                    for prop in props {
-                        if let react_compiler_hir::JsxAttribute::Attribute { place, .. } = prop {
-                            if let Some(entry) = temporaries.get(&place.identifier) {
-                                hoistable.insert(entry.0);
-                            }
-                        }
-                    }
-                    if let Some(children) = children {
-                        for child in children {
-                            if let Some(entry) = temporaries.get(&child.identifier) {
-                                hoistable.insert(entry.0);
-                            }
-                        }
-                    }
-                }
-                InstructionValue::JsxFragment { children, .. } => {
-                    for child in children {
-                        if let Some(entry) = temporaries.get(&child.identifier) {
-                            hoistable.insert(entry.0);
-                        }
                     }
                 }
                 InstructionValue::FunctionExpression { lowered_func, .. } => {
@@ -1182,13 +1148,6 @@ fn get_assumed_invoked_functions_impl(
                     }
                 }
                 _ => {}
-            }
-        }
-
-        // Assume directly returned functions are safe to call
-        if let Terminal::Return { value, .. } = &block.terminal {
-            if let Some(entry) = temporaries.get(&value.identifier) {
-                hoistable.insert(entry.0);
             }
         }
     }

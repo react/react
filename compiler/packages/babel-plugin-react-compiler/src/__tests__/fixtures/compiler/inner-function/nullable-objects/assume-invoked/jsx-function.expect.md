@@ -6,8 +6,8 @@
 import {Stringify} from 'shared-runtime';
 
 /**
- * Assume that functions captured directly as jsx attributes are invoked and
- * that their property loads are hoistable.
+ * Functions captured directly as jsx attributes (e.g. event handlers) do not run
+ * during render, so their property loads are not hoistable.
  */
 function useMakeCallback({
   obj,
@@ -44,9 +44,9 @@ function useMakeCallback(t0) {
   const $ = _c(3);
   const { obj, setState } = t0;
   let t1;
-  if ($[0] !== obj.value || $[1] !== setState) {
+  if ($[0] !== obj || $[1] !== setState) {
     t1 = <Stringify cb={() => setState(obj.value)} shouldInvokeFns={true} />;
-    $[0] = obj.value;
+    $[0] = obj;
     $[1] = setState;
     $[2] = t1;
   } else {

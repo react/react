@@ -5,8 +5,8 @@
 import {createHookWrapper, useIdentity} from 'shared-runtime';
 
 /**
- * Assume that functions passed hook arguments are invoked and that their
- * property loads are hoistable.
+ * Functions passed as hook arguments may not run during render (e.g. effects),
+ * so their property loads are not hoistable.
  */
 function useMakeCallback({
   obj,
@@ -41,16 +41,16 @@ import { c as _c } from "react/compiler-runtime";
 import { createHookWrapper, useIdentity } from "shared-runtime";
 
 /**
- * Assume that functions passed hook arguments are invoked and that their
- * property loads are hoistable.
+ * Functions passed as hook arguments may not run during render (e.g. effects),
+ * so their property loads are not hoistable.
  */
 function useMakeCallback(t0) {
   const $ = _c(3);
   const { obj, setState } = t0;
   let t1;
-  if ($[0] !== obj.value || $[1] !== setState) {
+  if ($[0] !== obj || $[1] !== setState) {
     t1 = () => setState(obj.value);
-    $[0] = obj.value;
+    $[0] = obj;
     $[1] = setState;
     $[2] = t1;
   } else {

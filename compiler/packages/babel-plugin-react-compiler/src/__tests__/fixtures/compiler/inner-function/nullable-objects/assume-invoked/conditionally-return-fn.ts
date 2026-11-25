@@ -1,8 +1,8 @@
 import {createHookWrapper} from 'shared-runtime';
 
 /**
- * Assume that conditionally returned functions can be invoked and that their
- * property loads are hoistable to the function declaration site.
+ * Conditionally returned functions do not run during render, so their property
+ * loads are not hoistable to the function declaration site.
  */
 function useMakeCallback({
   obj,

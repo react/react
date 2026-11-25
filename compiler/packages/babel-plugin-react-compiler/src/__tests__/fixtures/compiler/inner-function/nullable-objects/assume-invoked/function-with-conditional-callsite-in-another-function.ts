@@ -1,8 +1,8 @@
 import {createHookWrapper} from 'shared-runtime';
 
 /**
- * (Given that the returned lambda is assumed to be invoked, see
- * return-function)
+ * The returned lambda is not assumed to be invoked (see return-function), so
+ * neither lambda below has hoistable property loads.
  *
  * If lambda A conditionally calls lambda B, optimistically assume that property
  * loads from lambda B has the same hoistability of ones from lambda A. This
@@ -33,7 +33,6 @@ function useMakeCallback({
   setState: (newState: number) => void;
 }) {
   const cb = () => setState(obj.value);
-  // cb's property loads are assumed to be hoistable to the start of this lambda
   return () => (cond ? cb() : undefined);
 }
 
