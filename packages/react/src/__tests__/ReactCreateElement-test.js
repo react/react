@@ -92,6 +92,17 @@ describe('ReactCreateElement', () => {
     ]);
   });
 
+  it('should warn when an empty `key` is being accessed', () => {
+    const element = React.createElement('div', {key: ''});
+    void element.props.key;
+    assertConsoleErrorDev([
+      'div: `key` is not a prop. Trying to access it will result ' +
+        'in `undefined` being returned. If you need to access the same ' +
+        'value within the child component, you should pass it as a different ' +
+        'prop. (https://react.dev/link/special-props)',
+    ]);
+  });
+
   it('allows a string to be passed as the type', () => {
     const element = React.createElement('div');
     expect(element.type).toBe('div');
