@@ -432,6 +432,7 @@ const skipFilter = new Set([
   'loop-unused-let',
   'reanimated-no-memo-arg',
   'reanimated-shared-value-writes',
+  'reanimated-use-frame-callback-memoized',
 
   'userspace-use-memo-cache',
   'transitive-freeze-function-expressions',
