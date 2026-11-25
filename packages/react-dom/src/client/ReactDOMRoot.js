@@ -363,18 +363,11 @@ export function hydrateRoot(
 function warnIfReactDOMContainerInDEV(container: any) {
   if (__DEV__) {
     if (isContainerMarkedAsRoot(container)) {
-      if (container._reactRootContainer) {
-        console.error(
-          'You are calling ReactDOMClient.createRoot() on a container that was previously ' +
-            'passed to ReactDOM.render(). This is not supported.',
-        );
-      } else {
-        console.error(
-          'You are calling ReactDOMClient.createRoot() on a container that ' +
-            'has already been passed to createRoot() before. Instead, call ' +
-            'root.render() on the existing root instead if you want to update it.',
-        );
-      }
+      console.error(
+        'You are calling ReactDOMClient.createRoot() on a container that ' +
+          'has already been passed to createRoot() before. Instead, call ' +
+          'root.render() on the existing root instead if you want to update it.',
+      );
     }
   }
 }
