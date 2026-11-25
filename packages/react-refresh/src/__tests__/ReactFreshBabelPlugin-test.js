@@ -432,6 +432,22 @@ describe('ReactFreshBabelPlugin', () => {
     ).toMatchSnapshot();
   });
 
+  it('includes custom hooks with a digit after use into the signatures', () => {
+    expect(
+      transform(`
+        function use100vh() {
+          const [height, setHeight] = React.useState(0);
+          return height;
+        }
+
+        export default function App() {
+          const height = use100vh();
+          return <h1>{height}</h1>;
+        }
+    `),
+    ).toMatchSnapshot();
+  });
+
   it('generates valid signature for exotic ways to call Hooks', () => {
     expect(
       transform(`
