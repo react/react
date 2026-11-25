@@ -36,6 +36,9 @@ import is from 'shared/objectIs';
 import {getHostTransitionProvider} from './ReactFiberHostContext';
 
 const valueCursor: StackCursor<mixed> = createCursor(null);
+// Number of ContextProvider fibers on the stack whose value differs from their
+// committed value. While it is zero, no bailout can find a changed parent.
+const changedProviderCountCursor: StackCursor<number> = createCursor(0);
 
 let rendererCursorDEV: StackCursor<Object | null>;
 if (__DEV__) {
@@ -84,6 +87,17 @@ export function pushProvider<T>(
   context: ReactContext<T>,
   nextValue: T,
 ): void {
+  const currentProvider = providerFiber.alternate;
+  push(
+    changedProviderCountCursor,
+    providerFiber.tag === ContextProvider &&
+      currentProvider !== null &&
+      currentProvider.memoizedProps !== null &&
+      !is(nextValue, currentProvider.memoizedProps.value)
+      ? changedProviderCountCursor.current + 1
+      : changedProviderCountCursor.current,
+    providerFiber,
+  );
   // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     push(valueCursor, context._currentValue, providerFiber);
@@ -150,6 +164,7 @@ export function popProvider(
   }
 
   pop(valueCursor, providerFiber);
+  pop(changedProviderCountCursor, providerFiber);
 }
 
 export function scheduleContextWorkOnParentPath(
@@ -414,6 +429,16 @@ function propagateParentContextChanges(
   renderLanes: Lanes,
   forcePropagateEntireTree: boolean,
 ): boolean {
+  if (
+    changedProviderCountCursor.current === 0 &&
+    getHostTransitionProvider() === null
+  ) {
+    // Every ancestor provider is on the stack and none of them changed, so the
+    // walk below would collect nothing. Skip it so bailouts stay O(1) instead
+    // of O(depth).
+    workInProgress.flags |= DidPropagateContext;
+    return false;
+  }
   // Collect all the parent providers that changed. Since this is usually small
   // number, we use an Array instead of Set.
   let contexts = null;
