@@ -178,6 +178,11 @@ export function updateInput(
     }
   }
 
+  // TODO: This 'function' or 'symbol' check isn't replicated in other places
+  // so this semantic is inconsistent.
+  const nextChecked =
+    typeof checked !== 'function' && typeof checked !== 'symbol' && !!checked;
+
   if (disableInputAttributeSyncing) {
     // When not syncing the checked attribute, the attribute is directly
     // controllable from the defaultValue React property. It needs to be
@@ -188,10 +193,20 @@ export function updateInput(
       node.defaultChecked = !!defaultChecked;
     }
   } else {
-    // When syncing the checked attribute, it only changes when it needs
-    // to be removed, such as transitioning from a checkbox into a text input
-    if (checked == null && defaultChecked != null) {
-      node.defaultChecked = !!defaultChecked;
+    // When syncing the checked attribute, the attribute comes from the same
+    // cascade as the checked property below:
+    //
+    //   1. The checked React property
+    //   2. The defaultChecked React property
+    //   3. Otherwise there should be no change
+    //
+    // Resetting a form restores the checkedness from the checked attribute,
+    // so keeping the two in sync is what makes a reset restore the
+    // checkedness React last rendered rather than the initial one.
+    if (checked != null) {
+      setDefaultChecked(node, nextChecked);
+    } else if (defaultChecked != null) {
+      setDefaultChecked(node, !!defaultChecked);
     }
   }
 
@@ -200,8 +215,7 @@ export function updateInput(
     // value tracking with radio buttons
     // TODO: Should really update input value tracking for the whole radio
     // button group in an effect or something (similar to #27024)
-    node.checked =
-      checked && typeof checked !== 'function' && typeof checked !== 'symbol';
+    node.checked = nextChecked;
   }
 
   if (
@@ -480,5 +494,11 @@ export function restoreControlledInputState(element: Element, props: Object) {
 function setDefaultValue(node: HTMLInputElement, value: ToStringValue) {
   if (node.defaultValue !== toString(value)) {
     node.defaultValue = toString(value);
+  }
+}
+
+function setDefaultChecked(node: HTMLInputElement, checked: boolean) {
+  if (node.defaultChecked !== checked) {
+    node.defaultChecked = checked;
   }
 }
