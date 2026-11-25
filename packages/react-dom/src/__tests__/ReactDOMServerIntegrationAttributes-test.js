@@ -197,6 +197,17 @@ describe('ReactDOMServerIntegration', () => {
         const e = await render(<iframe credentialless={false} />);
         expect(e.hasAttribute('credentialless')).toBe(false);
       });
+      itRenders('credentialless prop with empty string value', async render => {
+        const e = await render(
+          <iframe credentialless="" />,
+          // Warns since an empty string is ambiguous, but the attribute
+          // is rendered (treated as true) so the iframe is not left
+          // with more privileges than intended.
+          1,
+        );
+
+        expect(e.hasAttribute('credentialless')).toBe(true);
+      });
     });
 
     describe('download property (combined boolean/string attribute)', function () {
