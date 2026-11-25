@@ -426,7 +426,7 @@ function startServer(
     );
   });
 
-  httpServer.listen(port, () => {
+  httpServer.listen(port, host, () => {
     statusListener(
       'The server is listening on the port ' + port + '.',
       'server-connected',
