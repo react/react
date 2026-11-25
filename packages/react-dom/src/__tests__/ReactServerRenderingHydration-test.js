@@ -852,4 +852,52 @@ describe('ReactDOMServerHydration', () => {
 
     expect(ref.current).toBe(button);
   });
+
+  it('should hydrate Invoker Commands API attributes and onCommand', async () => {
+    const onCommand = jest.fn();
+    const jsx = (
+      <>
+        <button commandFor="target" command="show-popover">
+          Show
+        </button>
+        <div id="target" onCommand={onCommand} />
+      </>
+    );
+
+    const markup = ReactDOMServer.renderToString(jsx);
+    expect(markup).toContain('commandfor="target"');
+    expect(markup).toContain('command="show-popover"');
+    expect(markup).not.toContain('commandFor=');
+
+    const element = document.createElement('div');
+    element.innerHTML = markup;
+
+    const button = element.querySelector('button');
+    const target = element.querySelector('#target');
+    expect(button.getAttribute('commandfor')).toBe('target');
+    expect(button.getAttribute('command')).toBe('show-popover');
+
+    const recoverableErrors = [];
+    await act(() => {
+      ReactDOMClient.hydrateRoot(element, jsx, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error);
+        },
+      });
+    });
+    expect(recoverableErrors).toEqual([]);
+
+    expect(button.getAttribute('commandfor')).toBe('target');
+    expect(button.getAttribute('command')).toBe('show-popover');
+
+    await act(() => {
+      target.dispatchEvent(
+        new window.Event('command', {
+          bubbles: false,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(onCommand).toHaveBeenCalledTimes(1);
+  });
 });
