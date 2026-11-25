@@ -46,6 +46,7 @@ describe('ReactFreshIntegration', () => {
       root.unmount();
       // Ensure we don't leak memory by holding onto dead roots.
       expect(ReactFreshRuntime._getMountedRootCount()).toBe(0);
+      expect(ReactFreshRuntime._getRootEntriesCount()).toBe(0);
       document.body.removeChild(container);
     }
   });
@@ -2277,4 +2278,16 @@ describe('ReactFreshIntegration', () => {
       }
     });
   }
+
+  it('does not retain a root that unmounts before its first render commits', async () => {
+    if (__DEV__) {
+      const el = document.createElement('div');
+      const earlyRoot = ReactDOMClient.createRoot(el);
+      earlyRoot.render(<h1>Hi</h1>);
+      earlyRoot.unmount();
+
+      expect(ReactFreshRuntime._getMountedRootCount()).toBe(0);
+      expect(ReactFreshRuntime._getRootEntriesCount()).toBe(0);
+    }
+  });
 });

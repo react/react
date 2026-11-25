@@ -571,6 +571,8 @@ export function injectIntoGlobalHook(globalObject: any): void {
             if (didError) {
               // We'll remount it on future edits.
               failedRoots.add(root);
+            } else {
+              helpersByRoot.delete(root);
             }
           }
         } else {
@@ -598,6 +600,17 @@ export function hasUnrecoverableErrors(): boolean {
 export function _getMountedRootCount(): number {
   if (__DEV__) {
     return mountedRoots.size;
+  } else {
+    throw new Error(
+      'Unexpected call to React Refresh in a production environment.',
+    );
+  }
+}
+
+// Exposed for testing.
+export function _getRootEntriesCount(): number {
+  if (__DEV__) {
+    return helpersByRoot.size;
   } else {
     throw new Error(
       'Unexpected call to React Refresh in a production environment.',
