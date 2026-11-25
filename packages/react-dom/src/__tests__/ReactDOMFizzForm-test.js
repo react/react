@@ -484,6 +484,81 @@ describe('ReactDOMFizzForm', () => {
     expect(foo).toBe('bar');
   });
 
+  it('should replay a form action when a button is named "action"', async () => {
+    let actionValue = null;
+    function action(formData) {
+      actionValue = formData.get('action');
+    }
+    function App() {
+      return (
+        <form action={action}>
+          <button name="action" value="delete">
+            Delete
+          </button>
+        </form>
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<App />),
+    );
+    await readIntoContainer(stream);
+
+    const form = container.getElementsByTagName('form')[0];
+    const button = container.getElementsByTagName('button')[0];
+
+    // In a browser, a form control named "action" shadows the form's action property.
+    Object.defineProperty(form, 'action', {
+      value: button,
+      configurable: true,
+    });
+
+    submit(button);
+
+    await act(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />);
+    });
+
+    expect(actionValue).toBe('delete');
+  });
+
+  it('should replay a form action when an input is named "action"', async () => {
+    let actionValue = null;
+    function action(formData) {
+      actionValue = formData.get('action');
+    }
+    function App() {
+      return (
+        <form action={action}>
+          <input type="text" name="action" defaultValue="delete" />
+          <input type="submit" value="Submit" />
+        </form>
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<App />),
+    );
+    await readIntoContainer(stream);
+
+    const form = container.getElementsByTagName('form')[0];
+    const input = container.getElementsByTagName('input')[0];
+
+    // In a browser, a form control named "action" shadows the form's action property.
+    Object.defineProperty(form, 'action', {
+      value: input,
+      configurable: true,
+    });
+
+    submit(form);
+
+    await act(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />);
+    });
+
+    expect(actionValue).toBe('delete');
+  });
+
   it('should replay input/button formAction', async () => {
     let rootActionCalled = false;
     let savedTitle = null;
