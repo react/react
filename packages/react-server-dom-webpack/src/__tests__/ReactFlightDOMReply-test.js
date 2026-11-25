@@ -465,6 +465,71 @@ describe('ReactFlightDOMReply', () => {
     await expect(response.promise).resolves.toBe(jsx);
   });
 
+  it('errors when passing a null prototype object', async () => {
+    const attrs = Object.create(null);
+    attrs.src = 'https://example.com/a.jpg';
+
+    await expect(ReactServerDOMClient.encodeReply({attrs})).rejects.toThrow(
+      'Classes or null prototypes are not supported.',
+    );
+  });
+
+  it('errors when passing a null prototype object even with temporary references', async () => {
+    const attrs = Object.create(null);
+    attrs.src = 'https://example.com/a.jpg';
+
+    await expect(
+      ReactServerDOMClient.encodeReply(
+        {attrs},
+        {
+          temporaryReferences:
+            ReactServerDOMClient.createTemporaryReferenceSet(),
+        },
+      ),
+    ).rejects.toThrow('Classes or null prototypes are not supported.');
+
+    await expect(
+      ReactServerDOMClient.encodeReply(
+        {content: [{attrs}]},
+        {
+          temporaryReferences:
+            ReactServerDOMClient.createTemporaryReferenceSet(),
+        },
+      ),
+    ).rejects.toThrow('Classes or null prototypes are not supported.');
+  });
+
+  it('can return a class instance through a round trip using temporary references', async () => {
+    class Opaque {}
+    const instance = new Opaque();
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+    const body = await ReactServerDOMClient.encodeReply(
+      {instance},
+      {temporaryReferences},
+    );
+
+    const temporaryReferencesServer =
+      ReactServerDOMServer.createTemporaryReferenceSet();
+    const serverPayload = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+      {temporaryReferences: temporaryReferencesServer},
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(serverPayload, null, {
+        temporaryReferences: temporaryReferencesServer,
+      }),
+    );
+    const response = await ReactServerDOMClient.createFromReadableStream(
+      stream,
+      {temporaryReferences},
+    );
+
+    expect(response.instance).toBe(instance);
+  });
+
   it('can return the same object using temporary references', async () => {
     const obj = {
       this: {is: 'a large object'},
