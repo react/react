@@ -487,7 +487,6 @@ const skipFilter = new Set([
   'bug-ref-prefix-postfix-operator',
 
   // 'react-compiler-runtime' not yet supported
-  'flag-enable-emit-hook-guards',
   'fast-refresh-refresh-on-const-changes-dev',
   'useState-pruned-dependency-change-detect',
   'useState-unpruned-dependency',
