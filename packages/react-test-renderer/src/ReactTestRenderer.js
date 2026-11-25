@@ -54,7 +54,7 @@ import ReactVersion from 'shared/ReactVersion';
 import {checkPropStringCoercion} from 'shared/CheckStringCoercion';
 
 import {getPublicInstance} from './ReactFiberConfigTestHost';
-import {ConcurrentRoot, LegacyRoot} from 'react-reconciler/src/ReactRootTags';
+import {ConcurrentRoot} from 'react-reconciler/src/ReactRootTags';
 import {enableReactTestRendererWarning} from 'shared/ReactFeatureFlags';
 
 import noop from 'shared/noop';
@@ -485,17 +485,12 @@ function create(
   }
 
   let createNodeMock = defaultTestOptions.createNodeMock;
-  const isConcurrentOnly = global.IS_REACT_NATIVE_TEST_ENVIRONMENT !== true;
-  let isConcurrent = isConcurrentOnly;
   let isStrictMode = false;
   // $FlowFixMe[invalid-compare]
   if (typeof options === 'object' && options !== null) {
     if (typeof options.createNodeMock === 'function') {
       // $FlowFixMe[incompatible-type] found when upgrading Flow
       createNodeMock = options.createNodeMock;
-    }
-    if (isConcurrentOnly === false) {
-      isConcurrent = options.unstable_isConcurrent;
     }
     if (options.unstable_strictMode === true) {
       isStrictMode = true;
@@ -508,7 +503,7 @@ function create(
   };
   let root: FiberRoot | null = createContainer(
     container,
-    isConcurrent ? ConcurrentRoot : LegacyRoot,
+    ConcurrentRoot,
     null,
     isStrictMode,
     false,
