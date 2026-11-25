@@ -468,6 +468,7 @@ describe('ReactDOMFizzServer', () => {
         <span>Fallback</span>
       </div>,
     );
+    const serverFallback = container.getElementsByTagName('span')[0];
     const recoverableErrors = [];
     ReactDOMClient.hydrateRoot(container, <App />, {
       onRecoverableError(error) {
@@ -481,6 +482,8 @@ describe('ReactDOMFizzServer', () => {
         <span>Fallback</span>
       </div>,
     );
+    const clientFallback = container.getElementsByTagName('span')[0];
+    expect(clientFallback).toBe(serverFallback);
 
     await clientAct(() => {
       resolveBrowserText('Browser');
