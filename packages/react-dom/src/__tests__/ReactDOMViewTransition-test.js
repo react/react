@@ -1423,5 +1423,67 @@ describe('ReactDOMViewTransition', () => {
         }
       });
     });
+
+    // @gate enableViewTransition
+    it('does not drop input events while a View Transition is starting', async () => {
+      let pendingUpdate = null;
+      document.startViewTransition = function ({update}) {
+        // Hold the mutation phase like a browser does until the old state
+        // has been captured.
+        pendingUpdate = update;
+        return {
+          ready: Promise.resolve(),
+          finished: Promise.resolve(),
+          skipTransition() {},
+        };
+      };
+
+      const onChange = jest.fn();
+      let setItems;
+      function App() {
+        const [items, _setItems] = React.useState(['a']);
+        setItems = _setItems;
+        return (
+          <>
+            <input type="text" value="" onChange={onChange} />
+            {items.map(item => (
+              <ViewTransition key={item}>
+                <div>{item}</div>
+              </ViewTransition>
+            ))}
+          </>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<App />);
+      });
+
+      await act(() => {
+        startTransition(() => {
+          setItems(['a', 'b']);
+        });
+      });
+      // The commit is now waiting for the browser to start the transition.
+      expect(pendingUpdate).not.toBe(null);
+
+      const input = container.querySelector('input');
+      input.focus();
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      ).set;
+      setter.call(input, 'x');
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+
+      // The keystroke must not be swallowed by the event system being
+      // disabled while we wait for the View Transition.
+      expect(onChange).toHaveBeenCalledTimes(1);
+
+      await act(() => {
+        pendingUpdate();
+      });
+    });
   });
 });
