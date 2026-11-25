@@ -50,6 +50,16 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"flex:0;opacity:0.5"');
   });
 
+  it('should not append `px` to shapeImageThreshold and mathDepth', () => {
+    const styles = {
+      shapeImageThreshold: 0.5,
+      mathDepth: 1,
+    };
+    const div = <div style={styles} />;
+    const html = ReactDOMServer.renderToString(div);
+    expect(html).toContain('"shape-image-threshold:0.5;math-depth:1"');
+  });
+
   it('should create vendor-prefixed markup correctly', () => {
     const styles = {
       msTransition: 'none',
