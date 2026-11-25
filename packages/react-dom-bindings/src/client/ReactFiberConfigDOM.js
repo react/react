@@ -6335,7 +6335,12 @@ export function mountHoistable(
 }
 
 export function unmountHoistable(instance: Instance): void {
-  (instance.parentNode as any).removeChild(instance);
+  // The instance may have already been removed from the document by a
+  // third-party script, so there may be nothing left to remove.
+  const parentNode = instance.parentNode;
+  if (parentNode !== null) {
+    (parentNode as any).removeChild(instance);
+  }
 }
 
 export function isHostHoistableType(
