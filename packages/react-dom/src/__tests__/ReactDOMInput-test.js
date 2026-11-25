@@ -994,6 +994,257 @@ describe('ReactDOMInput', () => {
     expect(nodeValueSetter).toHaveBeenCalledTimes(0);
   });
 
+  describe('DOM mutation minimization', () => {
+    function spyOnInputProperty(node, property) {
+      const ownDescriptor = Object.getOwnPropertyDescriptor(node, property);
+      const descriptor =
+        ownDescriptor ||
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, property);
+      const spy = jest.fn();
+      Object.defineProperty(node, property, {
+        configurable: true,
+        enumerable: descriptor.enumerable,
+        get: function () {
+          return descriptor.get.call(this);
+        },
+        set: function (value) {
+          spy(value);
+          descriptor.set.call(this, value);
+        },
+      });
+      return spy;
+    }
+
+    it('should not write the name or type attributes when they are unchanged', async () => {
+      const renderInput = value => (
+        <input type="text" name="foo" value={value} onChange={emptyFunction} />
+      );
+      await act(() => {
+        root.render(renderInput('a'));
+      });
+      const node = container.firstChild;
+      const nameSpy = spyOnInputProperty(node, 'name');
+      const typeSpy = spyOnInputProperty(node, 'type');
+
+      await act(() => {
+        root.render(renderInput('a'));
+      });
+      expect(nameSpy).toHaveBeenCalledTimes(0);
+      expect(typeSpy).toHaveBeenCalledTimes(0);
+
+      await act(() => {
+        root.render(renderInput('b'));
+      });
+      expect(nameSpy).toHaveBeenCalledTimes(0);
+      expect(typeSpy).toHaveBeenCalledTimes(0);
+
+      await act(() => {
+        root.render(
+          <input type="text" name="bar" value="b" onChange={emptyFunction} />,
+        );
+      });
+      expect(nameSpy.mock.calls).toEqual([[''], ['bar']]);
+      expect(typeSpy).toHaveBeenCalledTimes(0);
+
+      await act(() => {
+        root.render(
+          <input
+            type="checkbox"
+            name="bar"
+            value="b"
+            checked={false}
+            onChange={emptyFunction}
+          />,
+        );
+      });
+      expect(nameSpy.mock.calls).toEqual([[''], ['bar'], [''], ['bar']]);
+      expect(typeSpy).toHaveBeenCalledTimes(1);
+      expect(typeSpy).toHaveBeenLastCalledWith('checkbox');
+    });
+
+    it('should not remove absent name or type attributes on update', async () => {
+      await act(() => {
+        root.render(<input />);
+      });
+      const node = container.firstChild;
+      const removeAttributeSpy = jest.spyOn(node, 'removeAttribute');
+
+      await act(() => {
+        root.render(<input />);
+      });
+      expect(removeAttributeSpy).toHaveBeenCalledTimes(0);
+
+      await act(() => {
+        root.render(<input type="text" />);
+      });
+      expect(node.getAttribute('type')).toBe('text');
+      removeAttributeSpy.mockClear();
+
+      await act(() => {
+        root.render(<input type="text" />);
+      });
+      expect(removeAttributeSpy).toHaveBeenCalledTimes(0);
+    });
+
+    it('should disconnect the name while updating a radio group', async () => {
+      const renderGroup = (selected, disabled) => (
+        <div>
+          <input
+            type="radio"
+            name="fruit"
+            checked={selected === 'one'}
+            disabled={disabled}
+            onChange={emptyFunction}
+          />
+          <input
+            type="radio"
+            name="fruit"
+            checked={selected === 'two'}
+            disabled={disabled}
+            onChange={emptyFunction}
+          />
+        </div>
+      );
+      await act(() => {
+        root.render(renderGroup('one', false));
+      });
+      const [one, two] = container.querySelectorAll('input');
+      const oneNameSpy = spyOnInputProperty(one, 'name');
+      const twoNameSpy = spyOnInputProperty(two, 'name');
+      const oneTypeSpy = spyOnInputProperty(one, 'type');
+      const twoTypeSpy = spyOnInputProperty(two, 'type');
+      const oneCheckedSpy = spyOnInputProperty(one, 'checked');
+      const twoCheckedSpy = spyOnInputProperty(two, 'checked');
+
+      await act(() => {
+        root.render(renderGroup('two', false));
+      });
+      expect(oneNameSpy.mock.calls).toEqual([[''], ['fruit']]);
+      expect(twoNameSpy.mock.calls).toEqual([[''], ['fruit']]);
+      expect(oneTypeSpy).toHaveBeenCalledTimes(0);
+      expect(twoTypeSpy).toHaveBeenCalledTimes(0);
+      expect(oneCheckedSpy).toHaveBeenLastCalledWith(false);
+      expect(twoCheckedSpy).toHaveBeenLastCalledWith(true);
+      expect(one.checked).toBe(false);
+      expect(two.checked).toBe(true);
+      assertInputTrackingIsCurrent(container);
+
+      // #27443: checked is written whenever the input is updated, even when
+      // the prop itself didn't change, so that radio siblings and the value
+      // tracker stay in sync. Force an update via an unrelated prop.
+      oneCheckedSpy.mockClear();
+      twoCheckedSpy.mockClear();
+      await act(() => {
+        root.render(renderGroup('two', true));
+      });
+      expect(oneCheckedSpy).toHaveBeenCalledTimes(1);
+      expect(twoCheckedSpy).toHaveBeenCalledTimes(1);
+      assertInputTrackingIsCurrent(container);
+    });
+
+    it('should re-apply type and name when the DOM has diverged from props', async () => {
+      const renderInput = disabled => (
+        <input
+          type="text"
+          name="foo"
+          disabled={disabled}
+          onChange={emptyFunction}
+        />
+      );
+      await act(() => {
+        root.render(renderInput(false));
+      });
+      const node = container.firstChild;
+
+      node.type = 'number';
+      node.name = 'bar';
+      // An unrelated prop change forces React to update this input, which
+      // lets updateInput repair the diverged attributes.
+      await act(() => {
+        root.render(renderInput(true));
+      });
+      expect(node.getAttribute('type')).toBe('text');
+      expect(node.getAttribute('name')).toBe('foo');
+
+      node.removeAttribute('type');
+      await act(() => {
+        root.render(renderInput(false));
+      });
+      expect(node.getAttribute('type')).toBe('text');
+    });
+
+    it('should skip the input update when no props changed', async () => {
+      const renderInput = () => (
+        <input type="checkbox" checked={false} onChange={emptyFunction} />
+      );
+      await act(() => {
+        root.render(renderInput());
+      });
+      const node = container.firstChild;
+      const checkedSpy = spyOnInputProperty(node, 'checked');
+
+      await act(() => {
+        root.render(renderInput());
+      });
+      expect(checkedSpy).toHaveBeenCalledTimes(0);
+    });
+
+    it('should still update the input when a non-input prop changes', async () => {
+      const renderInput = disabled => (
+        <input
+          type="checkbox"
+          checked={false}
+          disabled={disabled}
+          onChange={emptyFunction}
+        />
+      );
+      await act(() => {
+        root.render(renderInput(false));
+      });
+      const node = container.firstChild;
+      const checkedSpy = spyOnInputProperty(node, 'checked');
+
+      await act(() => {
+        root.render(renderInput(true));
+      });
+      expect(checkedSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not write defaultChecked when it is unchanged', async () => {
+      const renderInput = () => <input defaultChecked={false} />;
+      await act(() => {
+        root.render(renderInput());
+      });
+      const node = container.firstChild;
+      const defaultCheckedSpy = spyOnInputProperty(node, 'defaultChecked');
+
+      await act(() => {
+        root.render(renderInput());
+      });
+      expect(defaultCheckedSpy).toHaveBeenCalledTimes(0);
+    });
+
+    it('should not write name or type when restoring a controlled input', async () => {
+      await act(() => {
+        root.render(
+          <input type="text" name="foo" value="a" onChange={emptyFunction} />,
+        );
+      });
+      const node = container.firstChild;
+      const nameSpy = spyOnInputProperty(node, 'name');
+      const typeSpy = spyOnInputProperty(node, 'type');
+
+      setUntrackedValue.call(node, 'b');
+      await act(() => {
+        dispatchEventOnNode(node, 'input');
+      });
+
+      expect(node.value).toBe('a');
+      expect(nameSpy).toHaveBeenCalledTimes(0);
+      expect(typeSpy).toHaveBeenCalledTimes(0);
+    });
+  });
+
   it('should properly control a value of number `0`', async () => {
     await act(() => {
       root.render(<input type="text" value={0} onChange={emptyFunction} />);

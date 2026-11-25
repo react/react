@@ -97,24 +97,77 @@ export function updateInput(
 ) {
   const node: HTMLInputElement = element as any;
 
-  // Temporarily disconnect the input from any radio buttons.
-  // Changing the type or name as the same time as changing the checked value
-  // needs to be atomically applied. We can only ensure that by disconnecting
-  // the name while do the mutations and then reapply the name after that's done.
-  node.name = '';
-
-  if (
+  // Compare against the current DOM instead of the previous props. The DOM can
+  // diverge from props (user input, radio auto-unchecking, script mutations),
+  // and some callers pass props that were already applied (the autoFocus mount
+  // update calls updateInput with oldProps === newProps, and the restore path
+  // passes the committed props). Every write below still re-asserts the prop
+  // value; these flags only skip writes that are provably no-ops.
+  const typeIsStringish =
     type != null &&
     typeof type !== 'function' &&
     typeof type !== 'symbol' &&
-    typeof type !== 'boolean'
-  ) {
-    if (__DEV__) {
-      checkAttributeStringCoercion(type, 'type');
-    }
-    node.type = type;
+    typeof type !== 'boolean';
+  // Compare the raw attribute, not node.type: the type getter normalizes
+  // invalid or mixed-case values to 'text' and would hide a pending write.
+  const typeChanged = typeIsStringish
+    ? node.getAttribute('type') !== type
+    : node.hasAttribute('type');
+
+  const nameIsStringish =
+    name != null &&
+    typeof name !== 'function' &&
+    typeof name !== 'symbol' &&
+    typeof name !== 'boolean';
+  // Coerce the name exactly like the assignment below so numeric names don't
+  // rewrite on every update.
+  const nameChanged = nameIsStringish
+    ? node.getAttribute('name') !== toString(getToStringValue(name))
+    : node.hasAttribute('name');
+
+  let defaultCheckedWillMutate: boolean;
+  if (disableInputAttributeSyncing) {
+    defaultCheckedWillMutate =
+      defaultChecked == null
+        ? node.hasAttribute('checked')
+        : node.defaultChecked !== !!defaultChecked;
   } else {
-    node.removeAttribute('type');
+    defaultCheckedWillMutate =
+      checked == null &&
+      defaultChecked != null &&
+      node.defaultChecked !== !!defaultChecked;
+  }
+
+  // type/name/checked/defaultChecked mutations can change the checkedness of
+  // sibling radios, so they must be applied while the input is disconnected
+  // from its group. `checked` is always written when non-null (see #27443),
+  // even if the value didn't change, to refresh input value tracking.
+  const needsNameDisconnect =
+    typeChanged || nameChanged || checked != null || defaultCheckedWillMutate;
+
+  if (needsNameDisconnect) {
+    // Temporarily disconnect the input from any radio buttons.
+    // Changing the type or name at the same time as changing the checked value
+    // needs to be atomically applied. We can only ensure that by disconnecting
+    // the name while we do the mutations and then reapplying the name after
+    // that's done.
+    node.name = '';
+  }
+
+  if (typeChanged) {
+    if (
+      type != null &&
+      typeof type !== 'function' &&
+      typeof type !== 'symbol' &&
+      typeof type !== 'boolean'
+    ) {
+      if (__DEV__) {
+        checkAttributeStringCoercion(type, 'type');
+      }
+      node.type = type;
+    } else {
+      node.removeAttribute('type');
+    }
   }
 
   if (value != null) {
@@ -178,19 +231,19 @@ export function updateInput(
     }
   }
 
-  if (disableInputAttributeSyncing) {
-    // When not syncing the checked attribute, the attribute is directly
-    // controllable from the defaultValue React property. It needs to be
-    // updated as new props come in.
-    if (defaultChecked == null) {
-      node.removeAttribute('checked');
+  if (defaultCheckedWillMutate) {
+    if (disableInputAttributeSyncing) {
+      // When not syncing the checked attribute, the attribute is directly
+      // controllable from the defaultChecked React property. It needs to be
+      // updated as new props come in.
+      if (defaultChecked == null) {
+        node.removeAttribute('checked');
+      } else {
+        node.defaultChecked = !!defaultChecked;
+      }
     } else {
-      node.defaultChecked = !!defaultChecked;
-    }
-  } else {
-    // When syncing the checked attribute, it only changes when it needs
-    // to be removed, such as transitioning from a checkbox into a text input
-    if (checked == null && defaultChecked != null) {
+      // When syncing the checked attribute, it only changes when it needs
+      // to be removed, such as transitioning from a checkbox into a text input
       node.defaultChecked = !!defaultChecked;
     }
   }
@@ -204,18 +257,21 @@ export function updateInput(
       checked && typeof checked !== 'function' && typeof checked !== 'symbol';
   }
 
-  if (
-    name != null &&
-    typeof name !== 'function' &&
-    typeof name !== 'symbol' &&
-    typeof name !== 'boolean'
-  ) {
-    if (__DEV__) {
-      checkAttributeStringCoercion(name, 'name');
+  if (needsNameDisconnect) {
+    // Reapply the name last so it applies atomically to connected radios.
+    if (
+      name != null &&
+      typeof name !== 'function' &&
+      typeof name !== 'symbol' &&
+      typeof name !== 'boolean'
+    ) {
+      if (__DEV__) {
+        checkAttributeStringCoercion(name, 'name');
+      }
+      node.name = toString(getToStringValue(name));
+    } else {
+      node.removeAttribute('name');
     }
-    node.name = toString(getToStringValue(name));
-  } else {
-    node.removeAttribute('name');
   }
 }
 

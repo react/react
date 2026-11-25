@@ -1529,9 +1529,13 @@ export function updateProperties(
       let lastDefaultValue = null;
       let checked = null;
       let defaultChecked = null;
+      let didChange = false;
       for (const propKey in lastProps) {
         const lastProp = lastProps[propKey];
         if (lastProps.hasOwnProperty(propKey) && lastProp != null) {
+          if (!nextProps.hasOwnProperty(propKey)) {
+            didChange = true;
+          }
           switch (propKey) {
             case 'checked': {
               break;
@@ -1559,6 +1563,9 @@ export function updateProperties(
           nextProps.hasOwnProperty(propKey) &&
           (nextProp != null || lastProp != null)
         ) {
+          if (nextProp !== lastProp) {
+            didChange = true;
+          }
           switch (propKey) {
             case 'type': {
               if (nextProp !== lastProp) {
@@ -1667,19 +1674,25 @@ export function updateProperties(
         }
       }
 
-      // Update the wrapper around inputs *after* updating props. This has to
-      // happen after updating the rest of props. Otherwise HTML5 input validations
-      // raise warnings and prevent the new value from being assigned.
-      updateInput(
-        domElement,
-        value,
-        defaultValue,
-        lastDefaultValue,
-        checked,
-        defaultChecked,
-        type,
-        name,
-      );
+      // Skip the controlled-input update when no props changed. React 18
+      // computed a props diff before marking the host update, so unchanged
+      // inputs never reached updateInput. This restores that gate and avoids
+      // input-specific work and redundant DOM writes on every re-render.
+      if (didChange) {
+        // Update the wrapper around inputs *after* updating props. This has to
+        // happen after updating the rest of props. Otherwise HTML5 input validations
+        // raise warnings and prevent the new value from being assigned.
+        updateInput(
+          domElement,
+          value,
+          defaultValue,
+          lastDefaultValue,
+          checked,
+          defaultChecked,
+          type,
+          name,
+        );
+      }
       return;
     }
     case 'select': {
