@@ -43,6 +43,7 @@ Uses a Union-Find (Disjoint Set) data structure to group identifiers that mutate
      - For StoreLocal/StoreContext: Include lvalue if it has extended mutable range, include value if mutable
      - For Destructure: Include each pattern operand with extended range, include source if mutable
      - For MethodCall: Include all mutable operands plus the computed property (to keep method resolution in same scope)
+     - For TaggedTemplateExpression with a member expression tag: Same as MethodCall, with the tag as the property
      - For other instructions: Include all mutable operands
    - Exclude global variables (mutableRange.start === 0) since they cannot be recreated
    - Union all collected operands together

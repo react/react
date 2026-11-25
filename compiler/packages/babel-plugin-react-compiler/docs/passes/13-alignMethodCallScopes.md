@@ -4,7 +4,7 @@
 `src/ReactiveScopes/AlignMethodCallScopes.ts`
 
 ## Purpose
-Ensures that `MethodCall` instructions and their associated `PropertyLoad` instructions (which load the method being called) have consistent scope assignments. The pass enforces one of two invariants:
+Ensures that `MethodCall` instructions and their associated `PropertyLoad` instructions (which load the method being called) have consistent scope assignments. Tagged templates with a member expression tag are treated the same way, with the tag as the property. The pass enforces one of two invariants:
 1. Both the MethodCall lvalue and the property have the **same** reactive scope
 2. **Neither** has a reactive scope
 

@@ -25,9 +25,15 @@ export function alignMethodCallScopes(fn: HIRFunction): void {
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       const {lvalue, value} = instr;
-      if (value.kind === 'MethodCall') {
+      const property =
+        value.kind === 'MethodCall'
+          ? value.property
+          : value.kind === 'TaggedTemplateExpression' && value.receiver !== null
+            ? value.tag
+            : null;
+      if (property !== null) {
         const lvalueScope = lvalue.identifier.scope;
-        const propertyScope = value.property.identifier.scope;
+        const propertyScope = property.identifier.scope;
         if (lvalueScope !== null) {
           if (propertyScope !== null) {
             // Both have a scope: merge the scopes
@@ -37,11 +43,11 @@ export function alignMethodCallScopes(fn: HIRFunction): void {
              * Else the call itself has a scope but not the property,
              * record that this property should be in this scope
              */
-            scopeMapping.set(value.property.identifier.id, lvalueScope);
+            scopeMapping.set(property.identifier.id, lvalueScope);
           }
         } else if (propertyScope !== null) {
           // else this property does not need a scope
-          scopeMapping.set(value.property.identifier.id, null);
+          scopeMapping.set(property.identifier.id, null);
         }
       } else if (
         value.kind === 'FunctionExpression' ||

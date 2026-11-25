@@ -134,7 +134,7 @@ The pass tracks const identifiers specially - they don't need promotion for orde
 Values loaded from globals (and their property loads) are treated as const-like for promotion purposes.
 
 ### Method Call Properties
-The property identifier in a method call is treated as const-like to avoid unnecessary promotion.
+The property identifier in a method call is treated as const-like to avoid unnecessary promotion, as is a member expression tag of a tagged template (so `this` is preserved).
 
 ## TODOs
 None in the source file.

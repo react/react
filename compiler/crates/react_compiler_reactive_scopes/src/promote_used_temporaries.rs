@@ -623,6 +623,7 @@ fn promote_interposed_instruction(
             match iv {
                 InstructionValue::CallExpression { .. }
                 | InstructionValue::MethodCall { .. }
+                | InstructionValue::TaggedTemplateExpression { .. }
                 | InstructionValue::Await { .. }
                 | InstructionValue::PropertyStore { .. }
                 | InstructionValue::PropertyDelete { .. }
