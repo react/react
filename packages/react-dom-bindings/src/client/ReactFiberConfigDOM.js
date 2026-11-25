@@ -7006,6 +7006,9 @@ export const HostTransitionContext: ReactContext<TransitionStatus> = {
 export type FormInstance = HTMLFormElement;
 export function resetFormInstance(form: FormInstance): void {
   ReactBrowserEventEmitterSetEnabled(true);
-  form.reset();
+  // A form control named "reset" shadows form.reset, so call the method from
+  // the prototype.
+  // $FlowFixMe[method-unbinding]
+  HTMLFormElement.prototype.reset.call(form);
   ReactBrowserEventEmitterSetEnabled(false);
 }
