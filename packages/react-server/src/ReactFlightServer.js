@@ -5994,13 +5994,21 @@ function emitTypedArrayChunk(
   typedArray: $ArrayBufferView,
   debug: boolean,
 ): void {
+  // Read the view once. The taint check and the bytes both use this read, so
+  // a `buffer` or `byteLength` getter can't answer differently for one of them.
+  let view = new Uint8Array(
+    typedArray.buffer,
+    typedArray.byteOffset,
+    typedArray.byteLength,
+  );
   if (enableTaint) {
-    if (TaintRegistryByteLengths.has(typedArray.byteLength)) {
+    if (TaintRegistryByteLengths.has(view.byteLength)) {
       // If we have had any tainted values of this length, we check
-      // to see if these bytes matches any entries in the registry.
-      const tainted = TaintRegistryValues.get(
-        binaryToComparableString(typedArray),
-      );
+      // to see if these bytes matches any entries in the registry. Check a
+      // copy, and write the copy, so that nothing that runs after the check,
+      // like an accessor on the buffer, can change the bytes.
+      view = view.slice();
+      const tainted = TaintRegistryValues.get(binaryToComparableString(view));
       if (tainted !== undefined) {
         throwTaintViolation(tainted.message);
       }
@@ -6012,7 +6020,7 @@ function emitTypedArrayChunk(
     request.pendingChunks++; // Extra chunk for the header.
   }
   // TODO: Convert to little endian if that's not the server default.
-  const binaryChunk = typedArrayToBinaryChunk(typedArray);
+  const binaryChunk = typedArrayToBinaryChunk(view);
   const binaryLength = byteLengthOfBinaryChunk(binaryChunk);
   const row = id.toString(16) + ':' + tag + binaryLength.toString(16) + ',';
   const headerChunk = stringToChunk(row);

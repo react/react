@@ -3078,4 +3078,91 @@ describe('ReactFlightDOMNode', () => {
       "TypeError: The argument 'chunk' must not be backed by a SharedArrayBuffer.",
     );
   });
+
+  async function readTypedArray(bytes, options) {
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({bytes}, webpackMap, options),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const promise = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+    const result = await promise;
+    return result.bytes;
+  }
+
+  // @gate enableTaint
+  it('checks the bytes of a typed array whose byteLength getter lies', async () => {
+    const secret = new Uint32Array([0x5ec2e7, 0x70ce4, 0x5ec2e7, 0x70ce4]);
+    ReactServer.experimental_taintUniqueValue(
+      'Cannot pass a secret to the client',
+      process,
+      secret,
+    );
+    const bytes = new Uint32Array(secret);
+    Object.defineProperty(bytes, 'byteLength', {get: () => undefined});
+    const errors = [];
+    await expect(
+      readTypedArray(bytes, {
+        onError(x) {
+          errors.push(x.message);
+        },
+      }),
+    ).rejects.toThrow();
+    expect(errors).toEqual(['Cannot pass a secret to the client']);
+  });
+
+  // @gate enableTaint
+  it('checks and writes the same bytes when a typed array’s buffer changes', async () => {
+    const secret = new Uint32Array([0x5ec2e7, 0x70ce4, 0x5ec2e7, 0x70ce4]);
+    ReactServer.experimental_taintUniqueValue(
+      'Cannot pass a secret to the client',
+      process,
+      secret,
+    );
+    const bytes = new Uint32Array([1, 2, 3, 4]);
+    const publicBuffer = bytes.buffer;
+    let reads = 0;
+    // Answers with the public bytes on the first read only.
+    Object.defineProperty(bytes, 'buffer', {
+      get() {
+        return reads++ === 0 ? publicBuffer : secret.buffer;
+      },
+    });
+    const result = await readTypedArray(bytes);
+    expect(Array.from(result)).toEqual([1, 2, 3, 4]);
+  });
+
+  // @gate enableTaint
+  it('writes the bytes it checked when the buffer changes after the check', async () => {
+    // Larger than a view, so writing it reads the buffer's `resizable`.
+    const length = 1250;
+    const secret = new Uint32Array(length).fill(0x5ec2e7);
+    ReactServer.experimental_taintUniqueValue(
+      'Cannot pass a secret to the client',
+      process,
+      secret,
+    );
+    const bytes = new Uint32Array(length).fill(1);
+    const buffer = bytes.buffer;
+    // Overwrites the bytes with the secret when it's read.
+    Object.defineProperty(buffer, 'resizable', {
+      get() {
+        new Uint32Array(buffer).set(secret);
+        return false;
+      },
+    });
+    const result = await readTypedArray(bytes);
+    if (!ArrayBuffer.prototype.hasOwnProperty('detached')) {
+      assertConsoleErrorDev([
+        'React copied a partial view into a fresh buffer as a safety precaution because the environment does not implement ArrayBuffer.prototype.detached. ' +
+          'This negatively impacts performance. ' +
+          'Please upgrade to a modern Node.js version.',
+      ]);
+    }
+    expect(result[0]).toBe(1);
+    expect(result[length - 1]).toBe(1);
+  });
 });
