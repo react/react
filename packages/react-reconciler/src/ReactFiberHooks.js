@@ -35,6 +35,7 @@ import {
   getCurrentUpdatePriority,
 } from './ReactFiberConfig';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
+import hasOwnProperty from 'shared/hasOwnProperty';
 import {
   enableSchedulingProfiler,
   enableTransitionTracing,
@@ -2821,7 +2822,7 @@ function imperativeHandleEffect<T>(
   } else if (ref !== null && ref !== undefined) {
     const refObject = ref;
     if (__DEV__) {
-      if (!refObject.hasOwnProperty('current')) {
+      if (!hasOwnProperty.call(refObject, 'current')) {
         console.error(
           'Expected useImperativeHandle() first argument to either be a ' +
             'ref callback or React.createRef() object. Instead received: %s.',
