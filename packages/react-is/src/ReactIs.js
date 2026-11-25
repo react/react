@@ -23,6 +23,7 @@ import {
   REACT_SUSPENSE_TYPE,
   REACT_SUSPENSE_LIST_TYPE,
   REACT_VIEW_TRANSITION_TYPE,
+  REACT_ACTIVITY_TYPE,
   REACT_SCOPE_TYPE,
   REACT_LEGACY_HIDDEN_TYPE,
   REACT_TRACING_MARKER_TYPE,
@@ -102,6 +103,7 @@ export function isValidElementType(type: mixed): boolean {
     type === REACT_SUSPENSE_TYPE ||
     type === REACT_SUSPENSE_LIST_TYPE ||
     (enableLegacyHidden && type === REACT_LEGACY_HIDDEN_TYPE) ||
+    type === REACT_ACTIVITY_TYPE ||
     (enableScopeAPI && type === REACT_SCOPE_TYPE) ||
     (enableTransitionTracing && type === REACT_TRACING_MARKER_TYPE) ||
     (enableViewTransition && type === REACT_VIEW_TRANSITION_TYPE)

@@ -70,6 +70,7 @@ describe('ReactIs', () => {
     expect(ReactIs.isValidElementType(React.Fragment)).toEqual(true);
     expect(ReactIs.isValidElementType(React.StrictMode)).toEqual(true);
     expect(ReactIs.isValidElementType(React.Suspense)).toEqual(true);
+    expect(ReactIs.isValidElementType(React.Activity)).toEqual(true);
 
     expect(ReactIs.isValidElementType(true)).toEqual(false);
     expect(ReactIs.isValidElementType(123)).toEqual(false);
