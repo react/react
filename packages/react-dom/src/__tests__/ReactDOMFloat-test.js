@@ -5753,6 +5753,54 @@ body {
         </html>,
       );
     });
+
+    it('does not throw when options is null or a prototype-less object', async () => {
+      function App({url}) {
+        ReactDOM.prefetchDNS(url, null);
+        ReactDOM.prefetchDNS(url, Object.create(null));
+        const protoLessWithCrossOrigin = Object.create(null);
+        protoLessWithCrossOrigin.crossOrigin = 'anonymous';
+        ReactDOM.prefetchDNS(url, protoLessWithCrossOrigin);
+        return (
+          <html>
+            <body>hello world</body>
+          </html>
+        );
+      }
+
+      await act(() => {
+        renderToPipeableStream(<App url="foo" />).pipe(writable);
+      });
+      assertConsoleErrorDev([
+        'ReactDOM.prefetchDNS(): Expected only one argument, `href`, ' +
+          'but encountered `null` as a second argument instead. ' +
+          'This argument is reserved for future options and is currently disallowed. ' +
+          'Try calling ReactDOM.prefetchDNS() with just a single string argument, `href`.\n' +
+          '    in App (at **)',
+        'ReactDOM.prefetchDNS(): Expected only one argument, `href`, ' +
+          'but encountered something with type "object" as a second argument instead. ' +
+          'This argument is reserved for future options and is currently disallowed. ' +
+          'Try calling ReactDOM.prefetchDNS() with just a single string argument, `href`.\n' +
+          '    in App (at **)',
+        'ReactDOM.prefetchDNS(): Expected only one argument, `href`, ' +
+          'but encountered something with type "object" as a second argument instead. ' +
+          'This argument is reserved for future options and is currently disallowed. ' +
+          'It looks like the you are attempting to set a crossOrigin property for this DNS lookup hint. ' +
+          'Browsers do not perform DNS queries using CORS and setting this attribute ' +
+          'on the resource hint has no effect. Try calling ReactDOM.prefetchDNS() with just ' +
+          'a single string argument, `href`.\n' +
+          '    in App (at **)',
+      ]);
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link rel="dns-prefetch" href="foo" />
+          </head>
+          <body>hello world</body>
+        </html>,
+      );
+    });
   });
 
   it('does not wait for stylesheets of completed fallbacks', async () => {
