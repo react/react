@@ -65,6 +65,7 @@ import {
   rendererVersion,
   rendererPackageName,
   checkEvalAvailabilityOnceDev,
+  usedWithSSR,
 } from './ReactFlightClientConfig';
 
 import {
@@ -1180,13 +1181,14 @@ function initializeDebugChunk(
   }
 }
 
-function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
-  const prevHandler = initializingHandler;
-  const prevChunk = initializingChunk;
+// Moves a chunk to BLOCKED and makes it the chunk being initialized, before its
+// model is parsed or built. The caller saves `initializingHandler` and
+// `initializingChunk` before this and restores them once the chunk is complete.
+function beginChunkInitialization<T>(
+  response: Response,
+  chunk: ResolvedModelChunk<T> | PendingChunk<T> | PendingWeakChunk<T>,
+): BlockedChunk<T> {
   initializingHandler = null;
-
-  const resolvedModel = chunk.value;
-  const response = chunk.reason[RESPONSE_SYMBOL];
 
   // We go to the BLOCKED state until we've fully resolved this.
   // We do this before parsing in case we try to initialize the same chunk
@@ -1207,107 +1209,129 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
     // TODO: The chunk might have transitioned to ERRORED now.
     // Should we return early if that happens?
   }
+  return cyclicChunk;
+}
+
+// Completes a chunk once its model's value exists. The chunk is initialized now,
+// or stays BLOCKED until the references the value is waiting on resolve, or
+// errors if the value's handler errored.
+function completeChunkInitialization<T>(
+  response: Response,
+  cyclicChunk: BlockedChunk<T>,
+  value: T,
+): void {
+  const handler = initializingHandler;
+  if (handler !== null) {
+    if (handler.errored) {
+      // The handler errored during the parse, so `cyclicChunk` errors with
+      // the same reason. `triggerErrorOnChunk` also rejects the references
+      // that nested parses queued on `cyclicChunk` during the parse. No value
+      // will arrive for them. `initializeDebugChunk` can have errored
+      // `cyclicChunk` before the parse. That error stays.
+      if ((cyclicChunk as any).status === BLOCKED) {
+        triggerErrorOnChunk(response, cyclicChunk, handler.reason);
+      }
+      return;
+    }
+    // Record on the handler which chunk it completes, and with what value,
+    // before the listeners below are examined. `resolveBlockedCycle` walks
+    // from a reference to its handler and on to that handler's chunk. A cycle
+    // that closes through `cyclicChunk` is only found once `handler.chunk` is
+    // `cyclicChunk`.
+    handler.value = value;
+    handler.chunk = cyclicChunk;
+  }
+
+  const listeners = cyclicChunk.value;
+  const rejectListeners = cyclicChunk.reason;
+  cyclicChunk.value = null;
+  cyclicChunk.reason = null;
+  if (listeners !== null) {
+    // These listeners were added to `cyclicChunk` while its model was
+    // parsing. They come from models that were parsed nested inside that
+    // parse and that pointed back at `cyclicChunk`. They fall in two groups.
+    //
+    // A reference whose handler is transitively waiting on `cyclicChunk` is a
+    // cycle. Neither side can complete before the other, so one of them has
+    // to accept the value as it is now. The reference receives the current
+    // object, and the outstanding references fill it in place.
+    //
+    // Every other listener waits. Its handler is not waiting on
+    // `cyclicChunk`, so it can receive the value once the model has resolved
+    // its own references, like any reference into a blocked chunk does.
+    // Handing it the value now would complete that handler with an object
+    // that still has references outstanding. Function listeners have no
+    // handler and always wait.
+    let cyclic: null | Array<InitializationReference> = null;
+    let deferred: null | Array<InitializationReference | (T => mixed)> = null;
+    for (let i = 0; i < listeners.length; i++) {
+      const listener = listeners[i];
+      if (
+        typeof listener !== 'function' &&
+        resolveBlockedCycle(cyclicChunk, listener) !== null
+      ) {
+        if (cyclic === null) {
+          cyclic = [];
+        }
+        cyclic.push(listener);
+        // A reference is queued for rejection as the same object that is
+        // queued for resolution. It is fulfilled below, so its rejection
+        // entry goes.
+        if (rejectListeners !== null) {
+          const rejectionIdx = rejectListeners.indexOf(listener);
+          if (rejectionIdx !== -1) {
+            rejectListeners.splice(rejectionIdx, 1);
+          }
+        }
+      } else {
+        if (deferred === null) {
+          deferred = [];
+        }
+        deferred.push(listener);
+      }
+    }
+    // Put the deferred listeners back on `cyclicChunk` before any cyclic
+    // reference is fulfilled. Fulfilling one can complete `cyclicChunk`, and
+    // completion wakes what is queued on it at that moment.
+    if (deferred !== null) {
+      cyclicChunk.value = deferred;
+      cyclicChunk.reason = rejectListeners;
+    }
+    if (cyclic !== null) {
+      for (let i = 0; i < cyclic.length; i++) {
+        fulfillReference(response, cyclic[i], value, cyclicChunk);
+      }
+    }
+  }
+
+  if ((cyclicChunk as any).status !== BLOCKED) {
+    // Fulfilling a cyclic reference completed `cyclicChunk`, or failed and
+    // errored it. A failure rejects the reference's handler. The rejection
+    // reaches `cyclicChunk`, directly or through the cycle, because
+    // `handler.chunk` is set.
+    return;
+  }
+  if (handler !== null && handler.deps > 0) {
+    // The model references chunks that have not resolved yet. `cyclicChunk`
+    // stays BLOCKED, with the deferred listeners queued on it, until the last
+    // of those resolves.
+    return;
+  }
+  initializeBlockedChunk(response, cyclicChunk, value, null);
+}
+
+function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
+  const prevHandler = initializingHandler;
+  const prevChunk = initializingChunk;
+
+  const resolvedModel = chunk.value;
+  const response = chunk.reason[RESPONSE_SYMBOL];
+
+  const cyclicChunk = beginChunkInitialization(response, chunk);
 
   try {
     const value: T = parseModel(response, resolvedModel);
-    const handler = initializingHandler;
-    if (handler !== null) {
-      if (handler.errored) {
-        // The handler errored during the parse, so `cyclicChunk` errors with
-        // the same reason. `triggerErrorOnChunk` also rejects the references
-        // that nested parses queued on `cyclicChunk` during the parse. No value
-        // will arrive for them. `initializeDebugChunk` can have errored
-        // `cyclicChunk` before the parse. That error stays.
-        if ((cyclicChunk as any).status === BLOCKED) {
-          triggerErrorOnChunk(response, cyclicChunk, handler.reason);
-        }
-        return;
-      }
-      // Record on the handler which chunk it completes, and with what value,
-      // before the listeners below are examined. `resolveBlockedCycle` walks
-      // from a reference to its handler and on to that handler's chunk. A cycle
-      // that closes through `cyclicChunk` is only found once `handler.chunk` is
-      // `cyclicChunk`.
-      handler.value = value;
-      handler.chunk = cyclicChunk;
-    }
-
-    const listeners = cyclicChunk.value;
-    const rejectListeners = cyclicChunk.reason;
-    cyclicChunk.value = null;
-    cyclicChunk.reason = null;
-    if (listeners !== null) {
-      // These listeners were added to `cyclicChunk` while its model was
-      // parsing. They come from models that were parsed nested inside that
-      // parse and that pointed back at `cyclicChunk`. They fall in two groups.
-      //
-      // A reference whose handler is transitively waiting on `cyclicChunk` is a
-      // cycle. Neither side can complete before the other, so one of them has
-      // to accept the value as it is now. The reference receives the current
-      // object, and the outstanding references fill it in place.
-      //
-      // Every other listener waits. Its handler is not waiting on
-      // `cyclicChunk`, so it can receive the value once the model has resolved
-      // its own references, like any reference into a blocked chunk does.
-      // Handing it the value now would complete that handler with an object
-      // that still has references outstanding. Function listeners have no
-      // handler and always wait.
-      let cyclic: null | Array<InitializationReference> = null;
-      let deferred: null | Array<InitializationReference | (T => mixed)> = null;
-      for (let i = 0; i < listeners.length; i++) {
-        const listener = listeners[i];
-        if (
-          typeof listener !== 'function' &&
-          resolveBlockedCycle(cyclicChunk, listener) !== null
-        ) {
-          if (cyclic === null) {
-            cyclic = [];
-          }
-          cyclic.push(listener);
-          // A reference is queued for rejection as the same object that is
-          // queued for resolution. It is fulfilled below, so its rejection
-          // entry goes.
-          if (rejectListeners !== null) {
-            const rejectionIdx = rejectListeners.indexOf(listener);
-            if (rejectionIdx !== -1) {
-              rejectListeners.splice(rejectionIdx, 1);
-            }
-          }
-        } else {
-          if (deferred === null) {
-            deferred = [];
-          }
-          deferred.push(listener);
-        }
-      }
-      // Put the deferred listeners back on `cyclicChunk` before any cyclic
-      // reference is fulfilled. Fulfilling one can complete `cyclicChunk`, and
-      // completion wakes what is queued on it at that moment.
-      if (deferred !== null) {
-        cyclicChunk.value = deferred;
-        cyclicChunk.reason = rejectListeners;
-      }
-      if (cyclic !== null) {
-        for (let i = 0; i < cyclic.length; i++) {
-          fulfillReference(response, cyclic[i], value, cyclicChunk);
-        }
-      }
-    }
-
-    if ((cyclicChunk as any).status !== BLOCKED) {
-      // Fulfilling a cyclic reference completed `cyclicChunk`, or failed and
-      // errored it. A failure rejects the reference's handler. The rejection
-      // reaches `cyclicChunk`, directly or through the cycle, because
-      // `handler.chunk` is set.
-      return;
-    }
-    if (handler !== null && handler.deps > 0) {
-      // The model references chunks that have not resolved yet. `cyclicChunk`
-      // stays BLOCKED, with the deferred listeners queued on it, until the last
-      // of those resolves.
-      return;
-    }
-    initializeBlockedChunk(response, cyclicChunk, value, null);
+    completeChunkInitialization(response, cyclicChunk, value);
   } catch (error) {
     const erroredChunk: ErroredChunk<T> = chunk as any;
     erroredChunk.status = ERRORED;
@@ -1317,6 +1341,76 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
     if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
       initializingChunk = prevChunk;
     }
+  }
+}
+
+// A model row whose value a caller outside the client builds directly, instead
+// of the client parsing it from JSON. See `beginRow`.
+export type RowInitialization = {
+  chunk: BlockedChunk<any>,
+  resolveListeners: null | Array<InitializationReference | (any => mixed)>,
+  rejectListeners: null | Array<InitializationReference | (mixed => mixed)>,
+  prevHandler: null | InitializationHandler,
+  prevChunk: null | BlockedChunk<any>,
+};
+
+// Begins initializing the model row `id`, whose value the caller builds by
+// calling `parseModelString`, `beginElement` and `completeElement` before it
+// calls `endRow`. This does what `resolveModelChunk` and `initializeModelChunk`
+// do together, with the build in place of the parse. The row must not have
+// resolved yet. Rows can nest: each `beginRow` is paired with its own `endRow`.
+export function beginRow(
+  weakResponse: WeakResponse,
+  id: number,
+): RowInitialization {
+  const response = unwrapWeakResponse(weakResponse);
+  const chunk: PendingChunk<any> | PendingWeakChunk<any> = getChunk(
+    response,
+    id,
+  ) as any;
+  releasePendingChunk(response, chunk);
+  const resolveListeners = chunk.value;
+  const rejectListeners = chunk.reason;
+  const prevHandler = initializingHandler;
+  const prevChunk = initializingChunk;
+  return {
+    chunk: beginChunkInitialization(response, chunk),
+    resolveListeners,
+    rejectListeners,
+    prevHandler,
+    prevChunk,
+  };
+}
+
+// Ends a row begun with `beginRow`, given the value the caller built. Listeners
+// that were waiting on the row before it began are woken the way
+// `resolveModelChunk` wakes them.
+export function endRow(
+  weakResponse: WeakResponse,
+  row: RowInitialization,
+  value: mixed,
+): void {
+  const response = unwrapWeakResponse(weakResponse);
+  const chunk = row.chunk;
+  try {
+    completeChunkInitialization(response, chunk, value);
+  } catch (error) {
+    const erroredChunk: ErroredChunk<any> = chunk as any;
+    erroredChunk.status = ERRORED;
+    erroredChunk.reason = error;
+  } finally {
+    initializingHandler = row.prevHandler;
+    if ((enableProfilerTimer && enableComponentPerformanceTrack) || __DEV__) {
+      initializingChunk = row.prevChunk;
+    }
+  }
+  if (row.resolveListeners !== null) {
+    wakeChunkIfInitialized(
+      response,
+      chunk,
+      row.resolveListeners,
+      row.rejectListeners,
+    );
   }
 }
 
@@ -1530,6 +1624,50 @@ function initializeElement(
   // TODO: We should be freezing the element but currently, we might write into
   // _debugInfo later. We could move it into _store which remains mutable.
   Object.freeze(element.props);
+}
+
+// Enters the scope of an element whose props are about to be parsed or built.
+// `createElement` leaves it. A caller building an element from its parts calls
+// this before decoding any of the element's props, owner or debug stack, and
+// `completeElement` after.
+export function beginElement(): void {
+  if (initializingHandler !== null) {
+    // We we already have an initializing handler and we're abound to enter
+    // a new element, we need to shadow it because we're now in a new scope.
+    // This is effectively the "begin" or "push" phase of Element parsing.
+    initializingHandler = {
+      parent: initializingHandler,
+      chunk: null,
+      value: null,
+      reason: null,
+      deps: 0,
+      errored: false,
+    };
+  }
+}
+
+// Creates an element from its parts, and leaves the scope `beginElement`
+// entered. This is the same code that creates an element from a wire tuple.
+export function completeElement(
+  weakResponse: WeakResponse,
+  type: mixed,
+  key: mixed,
+  props: mixed,
+  owner: ?ReactComponentInfo, // DEV-only
+  stack: ?ReactStackTrace, // DEV-only
+  validated: 0 | 1 | 2, // DEV-only
+):
+  | React$Element<any>
+  | LazyComponent<React$Element<any>, SomeChunk<React$Element<any>>> {
+  return createElement(
+    unwrapWeakResponse(weakResponse),
+    type,
+    key,
+    props,
+    owner,
+    stack,
+    validated,
+  );
 }
 
 function createElement(
@@ -1807,6 +1945,25 @@ function initializeChunkIfUnblocked(
   initializeBlockedChunk(response, chunk, handler.value, handler.reason);
 }
 
+// The parent to decode an element's own fields against when there is no wire
+// tuple: the props ('3'), owner ('4') and debug stack ('5'), keyed by the slot
+// each has in the tuple. A reference into one of these fields fills in the
+// element created by `completeElement`, and nothing else. It is frozen, so
+// writing to it throws instead of retaining a value. Only a reader in the same
+// process as the server builds elements from their parts, and only builds used
+// with SSR have one, so the checks for it are behind `usedWithSSR`.
+export const ELEMENT_FIELDS: {+[key: string]: empty} = Object.freeze({});
+
+// Whether `parentObject` holds the fields of an element: the element's wire
+// tuple, or `ELEMENT_FIELDS`.
+function isElementFields(parentObject: Object): boolean {
+  return (
+    // $FlowFixMe[constant-condition]
+    (usedWithSSR && parentObject === ELEMENT_FIELDS) ||
+    parentObject[0] === REACT_ELEMENT_TYPE
+  );
+}
+
 function fulfillReference(
   response: Response,
   reference: InitializationReference,
@@ -1940,7 +2097,11 @@ function fulfillReference(
     }
 
     const mappedValue = map(response, value, parentObject, key);
-    if (key !== __PROTO__) {
+    if (
+      key !== __PROTO__ &&
+      // $FlowFixMe[constant-condition]
+      (!usedWithSSR || parentObject !== ELEMENT_FIELDS)
+    ) {
       parentObject[key] = mappedValue;
     }
 
@@ -1950,11 +2111,11 @@ function fulfillReference(
       handler.value = mappedValue;
     }
 
-    // If the parent object is an unparsed React element tuple, we also need to
-    // update the props and owner of the parsed element object (i.e.
-    // handler.value).
+    // If the parent object is an unparsed React element tuple, or stands for
+    // the fields of an element built from its parts, we also need to update the
+    // props and owner of the parsed element object (i.e. handler.value).
     if (
-      parentObject[0] === REACT_ELEMENT_TYPE &&
+      isElementFields(parentObject) &&
       typeof handler.value === 'object' &&
       handler.value !== null &&
       handler.value.$$typeof === REACT_ELEMENT_TYPE
@@ -2064,7 +2225,7 @@ function waitForReference<T>(
   ) {
     if (
       referencedChunk.status === PENDING &&
-      parentObject[0] === REACT_ELEMENT_TYPE &&
+      isElementFields(parentObject) &&
       (key === '4' || key === '5')
     ) {
       // If the parent object is an unparsed React element tuple, and this is a reference
@@ -2210,7 +2371,11 @@ function loadServerReference<A: Iterable<any>, T>(
       response._encodeFormAction,
     );
 
-    if (key !== __PROTO__) {
+    if (
+      key !== __PROTO__ &&
+      // $FlowFixMe[constant-condition]
+      (!usedWithSSR || parentObject !== ELEMENT_FIELDS)
+    ) {
       parentObject[key] = resolvedValue;
     }
 
@@ -2220,11 +2385,11 @@ function loadServerReference<A: Iterable<any>, T>(
       handler.value = resolvedValue;
     }
 
-    // If the parent object is an unparsed React element tuple, we also need to
-    // update the props and owner of the parsed element object (i.e.
-    // handler.value).
+    // If the parent object is an unparsed React element tuple, or stands for
+    // the fields of an element built from its parts, we also need to update the
+    // props and owner of the parsed element object (i.e. handler.value).
     if (
-      parentObject[0] === REACT_ELEMENT_TYPE &&
+      isElementFields(parentObject) &&
       typeof handler.value === 'object' &&
       handler.value !== null &&
       handler.value.$$typeof === REACT_ELEMENT_TYPE
@@ -2395,7 +2560,7 @@ function getOutlinedModel<T>(
   if (
     __DEV__ &&
     response._closed &&
-    parentObject[0] === REACT_ELEMENT_TYPE &&
+    isElementFields(parentObject) &&
     // Slots 4 and 5 hold the element's owner and debug stack.
     (key === '4' || key === '5')
   ) {
@@ -2539,10 +2704,7 @@ function getOutlinedModel<T>(
 
       const chunkValue = map(response, value, parentObject, key);
       if (__DEV__) {
-        if (
-          parentObject[0] === REACT_ELEMENT_TYPE &&
-          (key === '4' || key === '5')
-        ) {
+        if (isElementFields(parentObject) && (key === '4' || key === '5')) {
           // If we're resolving the "owner" or "stack" slot of an Element array,
           // we don't call transferReferencedDebugInfo because this reference is
           // to a debug chunk.
@@ -2745,6 +2907,25 @@ function getInferredFunctionApproximate(code: string): () => void {
   return function () {};
 }
 
+// Decodes a `$` string in a model that a caller outside the client builds, inside
+// `beginRow` and `endRow`. `parentObject` and `key` say where the value goes, so
+// a reference that hasn't resolved yet can fill it in later. For an element's
+// props, owner and debug stack, pass `ELEMENT_FIELDS` as the parent, with the
+// key of the matching wire tuple slot ('3', '4' or '5').
+export function decodeModelString(
+  weakResponse: WeakResponse,
+  parentObject: Object,
+  key: string,
+  value: string,
+): any {
+  return parseModelString(
+    unwrapWeakResponse(weakResponse),
+    parentObject,
+    key,
+    value,
+  );
+}
+
 function parseModelString(
   response: Response,
   parentObject: Object,
@@ -2754,19 +2935,10 @@ function parseModelString(
   if (value[0] === '$') {
     if (value === '$') {
       // A very common symbol.
-      if (initializingHandler !== null && key === '0') {
-        // We we already have an initializing handler and we're abound to enter
-        // a new element, we need to shadow it because we're now in a new scope.
-        // This is effectively the "begin" or "push" phase of Element parsing.
-        // We'll pop later when we parse the array itself.
-        initializingHandler = {
-          parent: initializingHandler,
-          chunk: null,
-          value: null,
-          reason: null,
-          deps: 0,
-          errored: false,
-        };
+      if (key === '0') {
+        // This is the first slot of an element tuple. We'll pop later when we
+        // parse the array itself.
+        beginElement();
       }
       return REACT_ELEMENT_TYPE;
     }
