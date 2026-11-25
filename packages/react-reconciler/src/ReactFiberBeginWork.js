@@ -239,6 +239,7 @@ import {
   claimNextHydratableSuspenseInstance,
   warnIfHydrating,
   queueHydrationError,
+  upgradeHydrationErrorsToRecoverable,
 } from './ReactFiberHydrationContext';
 import {
   constructClassInstance,
@@ -2195,6 +2196,7 @@ const SUSPENDED_MARKER: SuspenseState = {
   treeContext: null,
   retryLane: NoLane,
   hydrationErrors: null,
+  keptServerFallback: false,
 };
 
 function mountSuspenseOffscreenState(renderLanes: Lanes): OffscreenState {
@@ -2828,9 +2830,12 @@ function updateDehydratedSuspenseComponent(
         ({digest} = getSuspenseInstanceFallbackErrorDetails(suspenseInstance));
       }
 
-      // This is unreachable in renderers that do not support hydration.
-      // $FlowFixMe[invalid-compare]
-      if (digest !== REACT_RECOVERABLE_DIGEST) {
+      if (
+        // This is unreachable in renderers that do not support hydration.
+        // $FlowFixMe[invalid-compare]
+        digest !== REACT_RECOVERABLE_DIGEST &&
+        !suspenseState.keptServerFallback
+      ) {
         let error: Error;
         if (__DEV__ && message) {
           // eslint-disable-next-line react-internal/prod-error-codes
@@ -2850,6 +2855,15 @@ function updateDehydratedSuspenseComponent(
           componentStack === undefined ? null : componentStack,
         );
         queueHydrationError(capturedValue);
+      }
+      if (!didReceiveUpdate) {
+        // Propagate context changes now, so that if the client render
+        // suspends, we can tell whether the server fallback is still current.
+        lazilyPropagateParentContextChanges(
+          current,
+          workInProgress,
+          renderLanes,
+        );
       }
       return retrySuspenseComponentWithoutHydrating(
         current,
@@ -3006,6 +3020,31 @@ function updateDehydratedSuspenseComponent(
       // The dehydrated completion pass expects this flag to be there
       // but the normal suspense pass doesn't.
       workInProgress.flags |= DidCapture;
+      return null;
+    } else if (
+      isSuspenseInstanceFallback(suspenseInstance) &&
+      !didReceiveUpdate &&
+      !includesSomeLane(renderLanes, current.childLanes) &&
+      workInProgress.updateQueue !== null
+    ) {
+      // The server left this boundary in its fallback state, and the client
+      // render suspended on data. Nothing changed since the server render, so
+      // keep the server-rendered fallback in the DOM instead of remounting it.
+      pushFallbackTreeSuspenseHandler(workInProgress);
+      upgradeHydrationErrorsToRecoverable();
+
+      workInProgress.child = current.child;
+      workInProgress.deletions = null;
+      workInProgress.flags &= ~ChildDeletion;
+      workInProgress.flags |= DidCapture;
+      const nextState: SuspenseState = {
+        dehydrated: suspenseState.dehydrated,
+        treeContext: suspenseState.treeContext,
+        retryLane: NoLane,
+        hydrationErrors: suspenseState.hydrationErrors,
+        keptServerFallback: true,
+      };
+      workInProgress.memoizedState = nextState;
       return null;
     } else {
       // Suspended but we should no longer be in dehydrated mode.
