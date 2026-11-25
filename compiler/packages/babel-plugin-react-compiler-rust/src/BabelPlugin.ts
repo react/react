@@ -14,7 +14,6 @@ import {resolveOptions, type PluginOptions} from './options';
 export default function BabelPluginReactCompilerRust(
   _babel: typeof BabelCore,
 ): BabelCore.PluginObj {
-  let compiledProgram = false;
   return {
     name: 'react-compiler-rust',
     visitor: {
@@ -23,10 +22,10 @@ export default function BabelPluginReactCompilerRust(
           // Guard against re-entry: replaceWith() below causes Babel
           // to re-traverse the new Program, which would re-trigger this
           // handler. Skip if we've already compiled.
-          if (compiledProgram) {
+          if (pass.get('compiledProgram')) {
             return;
           }
-          compiledProgram = true;
+          pass.set('compiledProgram', true);
           const filename = pass.filename ?? null;
 
           // Step 1: Resolve options (pre-resolve JS-only values)
