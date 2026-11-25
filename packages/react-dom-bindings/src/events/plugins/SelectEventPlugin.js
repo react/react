@@ -105,7 +105,11 @@ function constructSelectEvent(
   if (
     mouseDown ||
     activeElement == null ||
-    activeElement !== getActiveElement(doc)
+    (activeElement !== getActiveElement(doc) &&
+      activeElement !==
+        (doc.activeElement &&
+          doc.activeElement.shadowRoot &&
+          doc.activeElement.shadowRoot.activeElement))
   ) {
     return;
   }
