@@ -842,7 +842,7 @@ export function processReply(
         proto !== ObjectPrototype &&
         (proto === null || getPrototypeOf(proto) !== null)
       ) {
-        if (temporaryReferences === undefined) {
+        if (temporaryReferences === undefined || proto === null) {
           throw new Error(
             'Only plain objects, and a few built-ins, can be passed to Server Functions. ' +
               'Classes or null prototypes are not supported.' +
