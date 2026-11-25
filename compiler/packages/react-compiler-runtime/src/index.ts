@@ -223,6 +223,9 @@ function removeRenderCounter(name: string, val: {count: number}): void {
     return;
   }
   counters.delete(val);
+  if (counters.size === 0) {
+    renderCounterRegistry.delete(name);
+  }
 }
 
 export function useRenderCounter(name: string): void {
@@ -235,16 +238,15 @@ export function useRenderCounter(name: string): void {
     // Not counting initial render shouldn't be a problem
     if (val.current == null) {
       const counter = {count: 0};
-      registerRenderCounter(name, counter);
       // @ts-ignore
       val.current = counter;
     }
+    const counter = val.current;
+    registerRenderCounter(name, counter);
     return () => {
-      if (val.current !== null) {
-        removeRenderCounter(name, val.current);
-      }
+      removeRenderCounter(name, counter);
     };
-  });
+  }, [name]);
 }
 
 const seenErrors = new Set();
