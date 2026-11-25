@@ -83,6 +83,36 @@ pub trait Visitor<'ast> {
         _scope_stack: &[ScopeId],
     ) {
     }
+    fn leave_assignment_expression(
+        &mut self,
+        _node: &'ast AssignmentExpression,
+        _scope_stack: &[ScopeId],
+    ) {
+    }
+    fn enter_object_property(
+        &mut self,
+        _node: &'ast ObjectProperty,
+        _scope_stack: &[ScopeId],
+    ) {
+    }
+    fn leave_object_property(
+        &mut self,
+        _node: &'ast ObjectProperty,
+        _scope_stack: &[ScopeId],
+    ) {
+    }
+    fn enter_assignment_pattern(
+        &mut self,
+        _node: &'ast AssignmentPattern,
+        _scope_stack: &[ScopeId],
+    ) {
+    }
+    fn leave_assignment_pattern(
+        &mut self,
+        _node: &'ast AssignmentPattern,
+        _scope_stack: &[ScopeId],
+    ) {
+    }
     fn enter_update_expression(&mut self, _node: &'ast UpdateExpression, _scope_stack: &[ScopeId]) {
     }
     fn enter_identifier(&mut self, _node: &'ast Identifier, _scope_stack: &[ScopeId]) {}
@@ -429,6 +459,7 @@ impl<'a> AstWalker<'a> {
                 v.enter_assignment_expression(node, &self.scope_stack);
                 self.walk_pattern(v, &node.left);
                 self.walk_expression(v, &node.right);
+                v.leave_assignment_expression(node, &self.scope_stack);
             }
             Expression::SequenceExpression(node) => {
                 for expr in &node.expressions {
@@ -514,8 +545,10 @@ impl<'a> AstWalker<'a> {
                 self.walk_expression(v, &node.expression);
             }
             Expression::AssignmentPattern(node) => {
+                v.enter_assignment_pattern(node, &self.scope_stack);
                 self.walk_pattern(v, &node.left);
                 self.walk_expression(v, &node.right);
+                v.leave_assignment_pattern(node, &self.scope_stack);
             }
             Expression::ClassExpression(node) => {
                 // Call the visitor hook so consumers can index the class name,
@@ -577,8 +610,10 @@ impl<'a> AstWalker<'a> {
                 }
             }
             PatternLike::AssignmentPattern(node) => {
+                v.enter_assignment_pattern(node, &self.scope_stack);
                 self.walk_pattern(v, &node.left);
                 self.walk_expression(v, &node.right);
+                v.leave_assignment_pattern(node, &self.scope_stack);
             }
             PatternLike::RestElement(node) => {
                 self.walk_pattern(v, &node.argument);
@@ -647,10 +682,12 @@ impl<'a> AstWalker<'a> {
     ) {
         match prop {
             ObjectExpressionProperty::ObjectProperty(p) => {
+                v.enter_object_property(p, &self.scope_stack);
                 if p.computed {
                     self.walk_expression(v, &p.key);
                 }
                 self.walk_expression(v, &p.value);
+                v.leave_object_property(p, &self.scope_stack);
             }
             ObjectExpressionProperty::ObjectMethod(node) => {
                 let pushed = self.try_push_scope(node.base.start, node.base.node_id);
