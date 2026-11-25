@@ -64,7 +64,6 @@ export const scheduleTimeout = $$$config.scheduleTimeout;
 export const cancelTimeout = $$$config.cancelTimeout;
 export const noTimeout = $$$config.noTimeout;
 export const isPrimaryRenderer = $$$config.isPrimaryRenderer;
-export const warnsIfNotActing = $$$config.warnsIfNotActing;
 export const supportsMutation = $$$config.supportsMutation;
 export const supportsPersistence = $$$config.supportsPersistence;
 export const supportsHydration = $$$config.supportsHydration;

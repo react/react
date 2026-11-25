@@ -589,7 +589,6 @@ function createReactNoop(
     },
 
     isPrimaryRenderer: true,
-    warnsIfNotActing: true,
 
     getInstanceFromNode() {
       throw new Error('Not yet implemented.');

@@ -264,7 +264,6 @@ export function shouldAttemptEagerTransition(): boolean {
 }
 
 export const isPrimaryRenderer = false;
-export const warnsIfNotActing = true;
 
 export const scheduleTimeout = setTimeout;
 export const cancelTimeout = clearTimeout;
