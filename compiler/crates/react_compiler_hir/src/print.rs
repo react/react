@@ -296,7 +296,8 @@ impl<'a> PrintFormatter<'a> {
                     value.identifier.0
                 )
             }
-            AliasingEffect::Capture { from, into } => {
+            AliasingEffect::Capture { from, into }
+            | AliasingEffect::ObjectSpreadCapture { from, into } => {
                 format!(
                     "Capture {{ into: {}, from: {} }}",
                     into.identifier.0, from.identifier.0
