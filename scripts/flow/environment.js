@@ -255,9 +255,14 @@ declare module 'async_hooks' {
     getStore(): T | void;
     run<R>(store: T, callback: (...args: any[]) => R, ...args: any[]): R;
     enterWith(store: T): void;
+    static snapshot(): <R>(
+      callback: (...args: any[]) => R,
+      ...args: any[]
+    ) => R;
   }
   declare class AsyncResource {
     asyncId(): number;
+    static bind<F: (...args: any[]) => mixed>(fn: F): F;
   }
   declare function executionAsyncId(): number;
   declare function executionAsyncResource(): AsyncResource;
@@ -287,6 +292,7 @@ declare class AsyncLocalStorage<T> {
   getStore(): T | void;
   run<R>(store: T, callback: (...args: any[]) => R, ...args: any[]): R;
   enterWith(store: T): void;
+  static snapshot(): <R>(callback: (...args: any[]) => R, ...args: any[]) => R;
 }
 
 declare const async_hooks: {

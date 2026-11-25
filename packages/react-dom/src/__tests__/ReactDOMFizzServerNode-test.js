@@ -775,6 +775,129 @@ describe('ReactDOMFizzServerNode', () => {
     expect(isComplete).toBe(true);
   });
 
+  it('retries pinged work in the async context the request was created in', async () => {
+    const {AsyncLocalStorage} = require('async_hooks');
+    const storage = new AsyncLocalStorage();
+
+    // Unlike a native promise, a custom thenable calls its listeners in the
+    // context of whoever resolves it.
+    const listeners = [];
+    const thenable = {
+      then(resolve) {
+        listeners.push(resolve);
+      },
+    };
+
+    function Component() {
+      React.use(thenable);
+      return <span>{storage.getStore()}</span>;
+    }
+
+    const {writable, output, completed} = getTestWritable();
+    storage.run('request', () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
+        <div>
+          <Suspense fallback="Loading">
+            <Component />
+          </Suspense>
+        </div>,
+      );
+      pipe(writable);
+    });
+
+    await new Promise(resolve => setImmediate(resolve));
+    expect(listeners.length).toBeGreaterThan(0);
+    storage.run('other', () => {
+      thenable.status = 'fulfilled';
+      thenable.value = undefined;
+      listeners.forEach(listener => listener());
+    });
+
+    await completed;
+    expect(output.error).toBe(undefined);
+    expect(output.result).toContain('<span>request</span>');
+    expect(output.result).not.toContain('other');
+  });
+
+  it('reports abort errors in the async context the request was created in', async () => {
+    const {AsyncLocalStorage} = require('async_hooks');
+    const storage = new AsyncLocalStorage();
+
+    const stores = [];
+    const {writable, completed} = getTestWritable();
+    let abort;
+    storage.run('request', () => {
+      const result = ReactDOMFizzServer.renderToPipeableStream(
+        <div>
+          <Suspense fallback="Loading">
+            <InfiniteSuspend />
+          </Suspense>
+        </div>,
+        {
+          onError() {
+            stores.push(storage.getStore());
+          },
+        },
+      );
+      abort = result.abort;
+      result.pipe(writable);
+    });
+
+    await new Promise(resolve => setImmediate(resolve));
+    storage.run('other', () => abort());
+
+    await completed;
+    expect(stores).toEqual(['request']);
+  });
+
+  it('retries pinged work in the async context the request was created in without AsyncLocalStorage.snapshot', async () => {
+    const {AsyncLocalStorage} = require('async_hooks');
+    const storage = new AsyncLocalStorage();
+
+    const listeners = [];
+    const thenable = {
+      then(resolve) {
+        listeners.push(resolve);
+      },
+    };
+
+    function Component() {
+      React.use(thenable);
+      return <span>{storage.getStore()}</span>;
+    }
+
+    const snapshot = AsyncLocalStorage.snapshot;
+    AsyncLocalStorage.snapshot = undefined;
+    try {
+      const {writable, output, completed} = getTestWritable();
+      storage.run('request', () => {
+        const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
+          <div>
+            <Suspense fallback="Loading">
+              <Component />
+            </Suspense>
+          </div>,
+        );
+        pipe(writable);
+      });
+
+      await new Promise(resolve => setImmediate(resolve));
+      expect(listeners.length).toBeGreaterThan(0);
+      storage.run('other', () => {
+        thenable.status = 'fulfilled';
+        thenable.value = undefined;
+        listeners.forEach(listener => listener());
+      });
+
+      await completed;
+      expect(output.error).toBe(undefined);
+      expect(output.result).toContain('<span>request</span>');
+      expect(output.result).not.toContain('other');
+    } finally {
+      AsyncLocalStorage.snapshot = snapshot;
+    }
+  });
+
   it('should encode multibyte characters correctly without nulls (#24985)', async () => {
     const {writable, output} = getTestWritable();
     await act(() => {
