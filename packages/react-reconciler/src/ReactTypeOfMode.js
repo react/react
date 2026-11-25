@@ -14,8 +14,8 @@ export const NoMode = /*                         */ 0b0000000;
 export const ConcurrentMode = /*                 */ 0b0000001;
 export const ProfileMode = /*                    */ 0b0000010;
 //export const DebugTracingMode = /*             */ 0b0000100; // Removed
-export const StrictLegacyMode = /*               */ 0b0001000;
-export const StrictEffectsMode = /*              */ 0b0010000;
+export const StrictMode = /*                     */ 0b0001000;
+//export const StrictEffectsMode = /*            */ 0b0010000; // Removed
 // Keep track of if we're in a SuspenseyImages eligible subtree.
 // TODO: Remove this when enableSuspenseyImages ship where it's always on.
 export const SuspenseyImagesMode = /*            */ 0b0100000;
