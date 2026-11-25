@@ -4119,6 +4119,44 @@ function escapeStringValue(value: string): string {
   }
 }
 
+const surrogateCodeUnit = /[\uD800-\uDFFF]/;
+
+// Strings that are written as text chunks are encoded as UTF-8 bytes, and that
+// encoding can't represent an unpaired surrogate: it replaces it with U+FFFD,
+// which silently changes the value. Those strings have to be written to the
+// JSON payload instead, since JSON.stringify escapes unpaired surrogates as
+// \ud800-style sequences and JSON.parse restores them.
+function isWellFormedString(value: string): boolean {
+  if (typeof (value as any).isWellFormed === 'function') {
+    // Native in Node 20+ and other current runtimes, and much faster.
+    return (value as any).isWellFormed();
+  }
+  const start = value.search(surrogateCodeUnit);
+  if (start === -1) {
+    // Fast path: the overwhelming majority of strings don't contain any
+    // surrogate code units at all.
+    return true;
+  }
+  for (let i = start; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0xd800 || code > 0xdfff) {
+      continue;
+    }
+    if (code > 0xdbff) {
+      // A low surrogate that isn't preceded by a high surrogate.
+      return false;
+    }
+    const next = i + 1 < value.length ? value.charCodeAt(i + 1) : 0;
+    if (next < 0xdc00 || next > 0xdfff) {
+      // A high surrogate that isn't followed by a low surrogate.
+      return false;
+    }
+    // Skip the low surrogate of a valid pair.
+    i++;
+  }
+  return true;
+}
+
 function serializeImportString(request: Request, value: string): string {
   // No maximum length because import strings are short and repeat often.
   // Deduping model strings too would need one to skip very long strings.
@@ -4800,7 +4838,10 @@ function renderModelDestructive(
       }
     }
     // $FlowFixMe[invalid-compare]
-    if (value.length >= 1024 && byteLengthOfChunk !== null) {
+    const isLargeString = value.length >= 1024 && byteLengthOfChunk !== null;
+    // Unpaired surrogates don't survive the UTF-8 encoding of a text chunk, so
+    // those strings stay in the JSON payload where they can be escaped.
+    if (isLargeString && isWellFormedString(value)) {
       // For large strings, we encode them outside the JSON payload so that we
       // don't have to double encode and double parse the strings. This can also
       // be more compact in case the string has a lot of escaped characters.
@@ -6490,10 +6531,14 @@ function renderDebugModel(
         return serializeDeferredObject(request, value);
       }
       counter.objectLimit--;
-      // For large strings, we encode them outside the JSON payload so that we
-      // don't have to double encode and double parse the strings. This can also
-      // be more compact in case the string has a lot of escaped characters.
-      return serializeDebugLargeTextString(request, value);
+      // Unpaired surrogates don't survive the UTF-8 encoding of a text chunk,
+      // so those strings stay in the JSON payload where they can be escaped.
+      if (isWellFormedString(value)) {
+        // For large strings, we encode them outside the JSON payload so that we
+        // don't have to double encode and double parse the strings. This can also
+        // be more compact in case the string has a lot of escaped characters.
+        return serializeDebugLargeTextString(request, value);
+      }
     }
     return escapeStringValue(value);
   }
@@ -7035,8 +7080,13 @@ function emitChunk(
     if (enableTaint) {
       throwIfTaintedValue(value);
     }
-    emitTextChunk(request, id, value, false);
-    return;
+    if (isWellFormedString(value)) {
+      // Strings are written as text chunks so that we don't have to JSON encode
+      // them. An unpaired surrogate can't be encoded as UTF-8, so those fall
+      // through to the JSON payload, which escapes them instead.
+      emitTextChunk(request, id, value, false);
+      return;
+    }
   }
   if (
     enableFlightObjectReferences &&
