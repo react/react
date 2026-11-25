@@ -55,6 +55,39 @@ describe('ReactDOMFiber', () => {
     jest.restoreAllMocks();
   });
 
+  it('preserves a mounting portal and its surrounding context when replayed', async () => {
+    const portalContainer = document.createElement('div');
+    const Context = React.createContext('default');
+
+    function ReadContext() {
+      return React.useContext(Context);
+    }
+
+    function App({children}) {
+      return (
+        <>
+          <Context.Provider value="outer">
+            <Context.Provider value="inner">
+              {children && ReactDOM.createPortal(children, portalContainer)}
+            </Context.Provider>
+          </Context.Provider>
+          <ReadContext />
+        </>
+      );
+    }
+
+    await act(() => root.render(<App />));
+    expect(container.textContent).toBe('default');
+
+    await act(() => {
+      React.startTransition(() => {
+        root.render(<App>{Promise.resolve(<ReadContext />)}</App>);
+      });
+    });
+    expect(portalContainer.textContent).toBe('inner');
+    expect(container.textContent).toBe('default');
+  });
+
   it('should render strings as children', async () => {
     const Box = ({value}) => <div>{value}</div>;
     await act(async () => {

@@ -466,7 +466,10 @@ export function resetWorkInProgress(
 
     workInProgress.dependencies = null;
 
-    workInProgress.stateNode = null;
+    // A portal's container is set when the fiber is created, before beginWork.
+    if (workInProgress.tag !== HostPortal) {
+      workInProgress.stateNode = null;
+    }
 
     if (enableProfilerTimer) {
       // Note: We don't reset the actualTime counts. It's useful to accumulate
