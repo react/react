@@ -22,6 +22,7 @@ After this pass runs:
   - If the lvalue has a scope AND the property has a scope, they point to the **same merged scope**
   - If only the lvalue has a scope, the property's scope is set to match the lvalue's scope
   - If only the property has a scope, the property's scope is set to `null` (so neither has a scope)
+  - If the lvalue has no scope but the property is loaded within another scope that ends before the call, that scope's range is extended to include the call
 - Merged scopes have their `range` extended to cover the union of the original scopes' ranges
 - Nested functions (FunctionExpression, ObjectMethod) are recursively processed
 

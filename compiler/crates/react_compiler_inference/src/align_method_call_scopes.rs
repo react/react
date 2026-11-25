@@ -15,6 +15,8 @@ use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{EvaluationOrder, HirFunction, IdentifierId, InstructionValue, ScopeId};
 use react_compiler_utils::DisjointSet;
 
+use crate::build_reactive_scope_terminals_hir::get_scopes;
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -27,11 +29,14 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     // Maps an identifier to the scope it should be assigned to (or None to remove scope)
     let mut scope_mapping: FxHashMap<IdentifierId, Option<ScopeId>> = FxHashMap::default();
     let mut merged_scopes = DisjointSet::<ScopeId>::new();
+    let mut definitions: FxHashMap<IdentifierId, EvaluationOrder> = FxHashMap::default();
+    let scopes = get_scopes(func, env);
 
     // Phase 1: Walk instructions and collect scope relationships
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
+            definitions.insert(instr.lvalue.identifier, instr.id);
             match &instr.value {
                 InstructionValue::MethodCall { property, .. } => {
                     let lvalue_scope = env.identifiers[instr.lvalue.identifier.0 as usize].scope;
@@ -54,6 +59,20 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
                         }
                         (None, None) => {
                             // Neither has a scope, nothing to do
+                        }
+                    }
+                    // The property may still be loaded within a scope that ends
+                    // before the call, e.g. when an argument mutates an earlier
+                    // value as in `Math.floor(Math.abs(x))`. Extend that scope over
+                    // the call so the property does not become one of its outputs.
+                    if let (None, Some(&property_load)) =
+                        (lvalue_scope, definitions.get(&property.identifier))
+                    {
+                        for &scope_id in &scopes {
+                            let range = &mut env.scopes[scope_id.0 as usize].range;
+                            if range.contains(property_load) {
+                                range.end = EvaluationOrder(range.end.0.max(instr.id.0 + 1));
+                            }
                         }
                     }
                 }
@@ -96,6 +115,7 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     // Save original scope range IDs before updating
     let original_range_ids: FxHashMap<ScopeId, react_compiler_hir::MutableRangeId> = range_updates
         .keys()
+        .chain(scopes.iter())
         .map(|&root_id| {
             let range_id = env.scopes[root_id.0 as usize].range.id;
             (root_id, range_id)
