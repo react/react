@@ -12,6 +12,7 @@
 declare const __PROFILE__: boolean;
 declare const __EXPERIMENTAL__: boolean;
 declare const __VARIANT__: boolean;
+declare const __REACT_VERSION__: string;
 
 declare const __REACT_DEVTOOLS_GLOBAL_HOOK__: any; /*?{
   inject: ?((stuff: Object) => void)
