@@ -44,7 +44,7 @@ import { useState, useEffect } from "react";
 import { invoke, Stringify } from "shared-runtime";
 
 function Content() {
-  const $ = _c(8);
+  const $ = _c(7);
   const [announcement, setAnnouncement] = useState("");
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
@@ -55,7 +55,8 @@ function Content() {
   }
   const [users, setUsers] = useState(t0);
   let t1;
-  if ($[1] !== users.length) {
+  let t2;
+  if ($[1] !== users) {
     t1 = () => {
       if (users.length === 2) {
         let removedUserName = "";
@@ -65,32 +66,26 @@ function Content() {
           newUsers.pop();
           return newUsers;
         });
-
         setAnnouncement(`Removed user (${removedUserName})`);
       }
     };
-    $[1] = users.length;
+    t2 = [users];
+    $[1] = users;
     $[2] = t1;
+    $[3] = t2;
   } else {
     t1 = $[2];
-  }
-  let t2;
-  if ($[3] !== users) {
-    t2 = [users];
-    $[3] = users;
-    $[4] = t2;
-  } else {
-    t2 = $[4];
+    t2 = $[3];
   }
   useEffect(t1, t2);
   let t3;
-  if ($[5] !== announcement || $[6] !== users) {
+  if ($[4] !== announcement || $[5] !== users) {
     t3 = <Stringify users={users} announcement={announcement} />;
-    $[5] = announcement;
-    $[6] = users;
-    $[7] = t3;
+    $[4] = announcement;
+    $[5] = users;
+    $[6] = t3;
   } else {
-    t3 = $[7];
+    t3 = $[6];
   }
   return t3;
 }

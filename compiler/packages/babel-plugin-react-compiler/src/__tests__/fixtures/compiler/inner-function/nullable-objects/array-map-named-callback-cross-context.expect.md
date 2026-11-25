@@ -60,9 +60,9 @@ function useFoo(t0) {
   const $ = _c(13);
   const { arr1, arr2 } = t0;
   let t1;
-  if ($[0] !== arr1[0]) {
+  if ($[0] !== arr1) {
     t1 = (e) => arr1[0].value + e.value;
-    $[0] = arr1[0];
+    $[0] = arr1;
     $[1] = t1;
   } else {
     t1 = $[1];

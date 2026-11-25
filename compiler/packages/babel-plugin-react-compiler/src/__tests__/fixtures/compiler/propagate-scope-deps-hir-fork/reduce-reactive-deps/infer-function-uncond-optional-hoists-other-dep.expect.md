@@ -50,12 +50,12 @@ function Foo(t0) {
   const fn = t1;
   useIdentity(null);
   let arr;
-  if ($[2] !== a.b?.c.e || $[3] !== cond) {
+  if ($[2] !== a || $[3] !== cond) {
     arr = makeArray();
     if (cond) {
       arr.push(identity(a.b?.c.e));
     }
-    $[2] = a.b?.c.e;
+    $[2] = a;
     $[3] = cond;
     $[4] = arr;
   } else {

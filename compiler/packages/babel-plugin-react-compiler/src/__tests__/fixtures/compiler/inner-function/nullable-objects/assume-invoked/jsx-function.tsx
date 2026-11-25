@@ -2,8 +2,8 @@
 import {Stringify} from 'shared-runtime';
 
 /**
- * Assume that functions captured directly as jsx attributes are invoked and
- * that their property loads are hoistable.
+ * Functions captured directly as jsx attributes (e.g. event handlers) do not run
+ * during render, so their property loads are not hoistable.
  */
 function useMakeCallback({
   obj,

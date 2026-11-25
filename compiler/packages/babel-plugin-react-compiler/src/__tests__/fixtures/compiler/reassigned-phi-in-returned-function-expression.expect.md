@@ -21,10 +21,10 @@ function Component(props, ...args) {
 ```javascript
 import { c as _c } from "react/compiler-runtime";
 function Component(props, ...t0) {
-  const $ = _c(4);
+  const $ = _c(3);
   const args = t0;
   let t1;
-  if ($[0] !== args[0] || $[1] !== args.length || $[2] !== props) {
+  if ($[0] !== args || $[1] !== props) {
     t1 = () => {
       let str;
       if (args.length) {
@@ -35,12 +35,11 @@ function Component(props, ...t0) {
 
       global.log(str);
     };
-    $[0] = args[0];
-    $[1] = args.length;
-    $[2] = props;
-    $[3] = t1;
+    $[0] = args;
+    $[1] = props;
+    $[2] = t1;
   } else {
-    t1 = $[3];
+    t1 = $[2];
   }
   return t1;
 }

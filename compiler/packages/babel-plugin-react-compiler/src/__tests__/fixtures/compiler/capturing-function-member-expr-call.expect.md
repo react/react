@@ -35,11 +35,11 @@ function component(t0) {
   }
   const poke = t1;
   let t2;
-  if ($[2] !== mutator.user) {
+  if ($[2] !== mutator) {
     t2 = () => {
       mutator.user.hide();
     };
-    $[2] = mutator.user;
+    $[2] = mutator;
     $[3] = t2;
   } else {
     t2 = $[3];

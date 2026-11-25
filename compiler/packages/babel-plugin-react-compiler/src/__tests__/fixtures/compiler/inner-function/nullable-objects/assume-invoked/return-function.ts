@@ -1,8 +1,8 @@
 import {createHookWrapper} from 'shared-runtime';
 
 /**
- * Assume that directly returned functions are invoked and that their property
- * loads are hoistable.
+ * Directly returned functions do not run during render, so their property
+ * loads are not hoistable.
  */
 function useMakeCallback({
   obj,

@@ -21,7 +21,6 @@ import {
   DependencyPathEntry,
   FunctionExpression,
   GeneratedSource,
-  getHookKind,
   HIRFunction,
   Identifier,
   IdentifierId,
@@ -734,43 +733,16 @@ function getAssumedInvokedFunctions(
   for (const block of fn.body.blocks.values()) {
     for (const {lvalue, value} of block.instructions) {
       if (value.kind === 'CallExpression') {
-        const callee = value.callee;
-        const maybeHook = getHookKind(fn.env, callee.identifier);
-        const maybeLoweredFunc = temporaries.get(callee.identifier.id);
-        if (maybeLoweredFunc != null) {
-          // Direct calls
-          hoistableFunctions.add(maybeLoweredFunc.fn);
-        } else if (maybeHook != null) {
-          /**
-           * Assume arguments to all hooks are safe to invoke
-           */
-          for (const arg of value.args) {
-            if (arg.kind === 'Identifier') {
-              const maybeLoweredFunc = temporaries.get(arg.identifier.id);
-              if (maybeLoweredFunc != null) {
-                hoistableFunctions.add(maybeLoweredFunc.fn);
-              }
-            }
-          }
-        }
-      } else if (value.kind === 'JsxExpression') {
         /**
-         * Assume JSX attributes and children are safe to invoke
+         * Only functions that are called directly are known to run during
+         * render. Functions passed as JSX attributes or children, passed to
+         * hooks, or returned may run later or never, so their property loads
+         * must not be evaluated during render: the object may not be ready yet
+         * and a getter may have side effects.
          */
-        for (const attr of value.props) {
-          if (attr.kind === 'JsxSpreadAttribute') {
-            continue;
-          }
-          const maybeLoweredFunc = temporaries.get(attr.place.identifier.id);
-          if (maybeLoweredFunc != null) {
-            hoistableFunctions.add(maybeLoweredFunc.fn);
-          }
-        }
-        for (const child of value.children ?? []) {
-          const maybeLoweredFunc = temporaries.get(child.identifier.id);
-          if (maybeLoweredFunc != null) {
-            hoistableFunctions.add(maybeLoweredFunc.fn);
-          }
+        const maybeLoweredFunc = temporaries.get(value.callee.identifier.id);
+        if (maybeLoweredFunc != null) {
+          hoistableFunctions.add(maybeLoweredFunc.fn);
         }
       } else if (value.kind === 'FunctionExpression') {
         /**
@@ -792,17 +764,6 @@ function getAssumedInvokedFunctions(
             maybeLoweredFunc.mayInvoke.add(called);
           }
         }
-      }
-    }
-    if (block.terminal.kind === 'return') {
-      /**
-       * Assume directly returned functions are safe to call
-       */
-      const maybeLoweredFunc = temporaries.get(
-        block.terminal.value.identifier.id,
-      );
-      if (maybeLoweredFunc != null) {
-        hoistableFunctions.add(maybeLoweredFunc.fn);
       }
     }
   }

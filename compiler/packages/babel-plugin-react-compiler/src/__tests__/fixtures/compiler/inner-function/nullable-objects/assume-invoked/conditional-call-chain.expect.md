@@ -45,22 +45,22 @@ function Component(t0) {
   const $ = _c(7);
   const { a, b } = t0;
   let t1;
-  if ($[0] !== a.value) {
+  if ($[0] !== a) {
     t1 = () => {
       console.log(a.value);
     };
-    $[0] = a.value;
+    $[0] = a;
     $[1] = t1;
   } else {
     t1 = $[1];
   }
   const logA = t1;
   let t2;
-  if ($[2] !== b.value) {
+  if ($[2] !== b) {
     t2 = () => {
       console.log(b.value);
     };
-    $[2] = b.value;
+    $[2] = b;
     $[3] = t2;
   } else {
     t2 = $[3];

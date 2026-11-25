@@ -37,9 +37,9 @@ import { useCallback } from "react";
 function useHook(x) {
   const $ = _c(2);
   let t0;
-  if ($[0] !== x.y.z) {
+  if ($[0] !== x) {
     t0 = () => [x.y.z];
-    $[0] = x.y.z;
+    $[0] = x;
     $[1] = t0;
   } else {
     t0 = $[1];

@@ -5,8 +5,8 @@
 import {createHookWrapper} from 'shared-runtime';
 
 /**
- * Assume that directly returned functions are invoked and that their property
- * loads are hoistable.
+ * Directly returned functions do not run during render, so their property
+ * loads are not hoistable.
  */
 function useMakeCallback({
   obj,
@@ -40,16 +40,16 @@ import { c as _c } from "react/compiler-runtime";
 import { createHookWrapper } from "shared-runtime";
 
 /**
- * Assume that directly returned functions are invoked and that their property
- * loads are hoistable.
+ * Directly returned functions do not run during render, so their property
+ * loads are not hoistable.
  */
 function useMakeCallback(t0) {
   const $ = _c(3);
   const { obj, setState } = t0;
   let t1;
-  if ($[0] !== obj.value || $[1] !== setState) {
+  if ($[0] !== obj || $[1] !== setState) {
     t1 = () => setState(obj.value);
-    $[0] = obj.value;
+    $[0] = obj;
     $[1] = setState;
     $[2] = t1;
   } else {

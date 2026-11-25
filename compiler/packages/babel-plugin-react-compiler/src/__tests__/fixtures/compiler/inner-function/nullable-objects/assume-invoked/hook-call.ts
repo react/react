@@ -1,8 +1,8 @@
 import {createHookWrapper, useIdentity} from 'shared-runtime';
 
 /**
- * Assume that functions passed hook arguments are invoked and that their
- * property loads are hoistable.
+ * Functions passed as hook arguments may not run during render (e.g. effects),
+ * so their property loads are not hoistable.
  */
 function useMakeCallback({
   obj,
