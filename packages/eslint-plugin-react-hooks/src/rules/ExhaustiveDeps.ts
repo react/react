@@ -1762,6 +1762,43 @@ function getConstructionExpressionType(node: Node): string | null {
   return null;
 }
 
+/**
+ * Function parameters can contain assignment (to set
+ * the default value).
+ * This function scans the parameters, and returns
+ * the identifer's default value, if it has one.
+ */
+function findIdentifierAssignmentInArguments(
+  params: Array<Pattern>,
+  identifierName: string,
+): Expression | null {
+  for (const param of params) {
+    // an object argument like `function ({ x = …, y = … }) {}`
+    if (param.type === 'ObjectPattern') {
+      for (const prop of param.properties) {
+        if (
+          prop.type === 'Property' &&
+          prop.key.type === 'Identifier' &&
+          prop.key.name === identifierName &&
+          prop.value.type === 'AssignmentPattern'
+        ) {
+          return prop.value.right;
+        }
+      }
+    }
+
+    // a normal argument like `function (x = …, y = …) {}`
+    if (
+      param.type === 'AssignmentPattern' &&
+      param.left.type === 'Identifier' &&
+      param.left.name === identifierName
+    ) {
+      return param.right;
+    }
+  }
+  return null;
+}
+
 // Finds variables declared as dependencies
 // that would invalidate on every render.
 function scanForConstructions({
@@ -1816,6 +1853,23 @@ function scanForConstructions({
       if (node.type === 'ClassName' && node.node.type === 'ClassDeclaration') {
         return [ref, 'class'];
       }
+
+      // function ({ x = [] }) {}
+      // or
+      // function (x = []) {}
+      if (node.type === 'Parameter') {
+        const value = findIdentifierAssignmentInArguments(
+          node.node.params,
+          key,
+        );
+        if (value) {
+          const constantExpressionType = getConstructionExpressionType(value);
+          if (constantExpressionType) {
+            return [ref, constantExpressionType];
+          }
+        }
+      }
+
       return null;
     })
     .filter(Boolean) as Array<[Scope.Variable, string]>;
