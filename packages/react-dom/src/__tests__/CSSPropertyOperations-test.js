@@ -50,6 +50,38 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"flex:0;opacity:0.5"');
   });
 
+  it('should not append `px` to hyphenateLimitLines on the server', () => {
+    const html = ReactDOMServer.renderToString(
+      <div style={{hyphenateLimitLines: 2, margin: 16}} />,
+    );
+    expect(html).toContain('"hyphenate-limit-lines:2;margin:16px"');
+  });
+
+  it('should update hyphenateLimitLines without adding units', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<div style={{hyphenateLimitLines: 2}} />);
+    });
+    const style = container.firstChild.style;
+    expect(String(style.hyphenateLimitLines)).toBe('2');
+
+    await act(() => {
+      root.render(<div style={{hyphenateLimitLines: 3}} />);
+    });
+    expect(String(style.hyphenateLimitLines)).toBe('3');
+
+    await act(() => {
+      root.render(<div style={{hyphenateLimitLines: 'no-limit'}} />);
+    });
+    expect(String(style.hyphenateLimitLines)).toBe('no-limit');
+
+    await act(() => {
+      root.render(<div style={{hyphenateLimitLines: null}} />);
+    });
+    expect(style.hyphenateLimitLines).toBe('');
+  });
+
   it('should create vendor-prefixed markup correctly', () => {
     const styles = {
       msTransition: 'none',
