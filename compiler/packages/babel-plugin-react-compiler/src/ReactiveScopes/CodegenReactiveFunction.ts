@@ -1497,7 +1497,7 @@ function codegenInstructionValue(
         if (element.kind === 'Identifier') {
           return codegenPlaceToExpression(cx, element);
         } else if (element.kind === 'Spread') {
-          return t.spreadElement(codegenPlaceToExpression(cx, element.place));
+          return codegenArraySpreadElement(cx, element.place);
         } else {
           return null;
         }
@@ -2410,6 +2410,26 @@ function codegenArgument(
   } else {
     return t.spreadElement(codegenPlaceToExpression(cx, arg.place));
   }
+}
+
+/**
+ * Emit `...place`, flattening an inlined single-spread array snapshot
+ * (`...[...x]` → `...x`) to avoid a redundant allocate+iterate when the
+ * materialization temp was inlined into the same expression.
+ */
+function codegenArraySpreadElement(
+  cx: Context,
+  place: Place,
+): t.SpreadElement {
+  const expr = codegenPlaceToExpression(cx, place);
+  if (
+    t.isArrayExpression(expr) &&
+    expr.elements.length === 1 &&
+    t.isSpreadElement(expr.elements[0])
+  ) {
+    return expr.elements[0];
+  }
+  return t.spreadElement(expr);
 }
 
 function codegenPlaceToExpression(cx: Context, place: Place): t.Expression {

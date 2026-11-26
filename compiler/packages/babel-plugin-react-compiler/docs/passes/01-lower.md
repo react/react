@@ -101,11 +101,13 @@ The lowering algorithm uses a recursive descent pattern with a `HIRBuilder` help
 
 5. **Logical Expressions**: Create branching structures where left side stores to temporary, right side only evaluated if needed
 
-6. **Try/Catch**: Adds `MaybeThrowTerminal` after each instruction in try block, modeling potential control flow to handler
+6. **Array spreads before effectful elements**: Materialize `...expr` into a temporary array immediately when a later element may have side effects (calls, assignments, etc.), so later evaluation cannot observe mutations to the spread argument. Pure subsequent elements (literals, identifiers, member loads, further spreads of pure args) leave the spread deferred as before
 
-7. **JSX in fbt**: Tracks `fbtDepth` counter to handle whitespace differently in fbt/fbs tags
+7. **Try/Catch**: Adds `MaybeThrowTerminal` after each instruction in try block, modeling potential control flow to handler
 
-8. **Unsupported Syntax**: `var` declarations, `with` statements, inline `class` declarations, `eval` - emit appropriate errors
+8. **JSX in fbt**: Tracks `fbtDepth` counter to handle whitespace differently in fbt/fbs tags
+
+9. **Unsupported Syntax**: `var` declarations, `with` statements, inline `class` declarations, `eval` - emit appropriate errors
 
 ## TODOs
 - `returnTypeAnnotation: null, // TODO: extract the actual return type node if present`

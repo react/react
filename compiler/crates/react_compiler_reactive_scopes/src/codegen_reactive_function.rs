@@ -2372,11 +2372,7 @@ fn codegen_base_instruction_value(
                 .map(|el| match el {
                     ArrayElement::Place(place) => Ok(Some(codegen_place_to_expression(cx, place)?)),
                     ArrayElement::Spread(spread) => {
-                        let arg = codegen_place_to_expression(cx, &spread.place)?;
-                        Ok(Some(Expression::SpreadElement(ast_expr::SpreadElement {
-                            base: BaseNode::typed("SpreadElement"),
-                            argument: Box::new(arg),
-                        })))
+                        Ok(Some(codegen_array_spread_element(cx, &spread.place)?))
                     }
                     ArrayElement::Hole => Ok(None),
                 })
@@ -3518,6 +3514,27 @@ fn convert_identifier(
         }
     };
     Ok(make_identifier_with_loc(&name, ident.loc))
+}
+
+/// Emit `...place`, flattening an inlined single-spread array snapshot
+/// (`...[...x]` → `...x`) to avoid a redundant allocate+iterate when the
+/// materialization temp was inlined into the same expression.
+fn codegen_array_spread_element(
+    cx: &mut Context,
+    place: &Place,
+) -> Result<Expression, CompilerError> {
+    let expr = codegen_place_to_expression(cx, place)?;
+    if let Expression::ArrayExpression(arr) = &expr {
+        if arr.elements.len() == 1 {
+            if let Some(Expression::SpreadElement(inner)) = &arr.elements[0] {
+                return Ok(Expression::SpreadElement(inner.clone()));
+            }
+        }
+    }
+    Ok(Expression::SpreadElement(ast_expr::SpreadElement {
+        base: BaseNode::typed("SpreadElement"),
+        argument: Box::new(expr),
+    }))
 }
 
 fn codegen_argument(cx: &mut Context, arg: &PlaceOrSpread) -> Result<Expression, CompilerError> {
