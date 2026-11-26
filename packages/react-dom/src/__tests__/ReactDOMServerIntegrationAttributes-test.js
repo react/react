@@ -199,6 +199,38 @@ describe('ReactDOMServerIntegration', () => {
       });
     });
 
+    describe('popover property (combined boolean/string attribute)', function () {
+      itRenders('popover prop with true value', async render => {
+        const e = await render(<div popover={true} />);
+        expect(e.getAttribute('popover')).toBe('');
+      });
+
+      itRenders('popover prop with false value', async render => {
+        const e = await render(<div popover={false} />);
+        expect(e.getAttribute('popover')).toBe(null);
+      });
+
+      itRenders('popover prop with string "auto" value', async render => {
+        const e = await render(<div popover="auto" />);
+        expect(e.getAttribute('popover')).toBe('auto');
+      });
+
+      itRenders('popover prop with string "manual" value', async render => {
+        const e = await render(<div popover="manual" />);
+        expect(e.getAttribute('popover')).toBe('manual');
+      });
+
+      itRenders('no popover prop with null value', async render => {
+        const e = await render(<div popover={null} />);
+        expect(e.hasAttribute('popover')).toBe(false);
+      });
+
+      itRenders('no popover prop with undefined value', async render => {
+        const e = await render(<div popover={undefined} />);
+        expect(e.hasAttribute('popover')).toBe(false);
+      });
+    });
+
     describe('download property (combined boolean/string attribute)', function () {
       itRenders('download prop with true value', async render => {
         const e = await render(<a download={true} />);
