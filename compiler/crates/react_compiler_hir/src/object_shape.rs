@@ -27,6 +27,7 @@ pub const BUILT_IN_WEAK_MAP_ID: &str = "BuiltInWeakMap";
 pub const BUILT_IN_FUNCTION_ID: &str = "BuiltInFunction";
 pub const BUILT_IN_JSX_ID: &str = "BuiltInJsx";
 pub const BUILT_IN_OBJECT_ID: &str = "BuiltInObject";
+pub const BUILT_IN_OBJECT_FROM_ENTRIES_ID: &str = "BuiltInObjectFromEntries";
 pub const BUILT_IN_USE_STATE_ID: &str = "BuiltInUseState";
 pub const BUILT_IN_SET_STATE_ID: &str = "BuiltInSetState";
 pub const BUILT_IN_USE_ACTION_STATE_ID: &str = "BuiltInUseActionState";
