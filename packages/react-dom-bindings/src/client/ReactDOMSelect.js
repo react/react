@@ -190,14 +190,22 @@ export function hydrateSelect(
       }
     }
   } else {
-    let selectedValue =
+    const selectedValue =
       propValue == null ? null : toString(getToStringValue(propValue));
+    let expectedSelectedIndex = -1;
     for (let i = 0; i < options.length; i++) {
-      if (selectedValue == null && !options[i].disabled) {
-        // We expect the first non-disabled option to be selected if the selected is null.
-        selectedValue = options[i].value;
+      if (selectedValue == null) {
+        if (!options[i].disabled) {
+          expectedSelectedIndex = i;
+          break;
+        }
+      } else if (options[i].value === selectedValue) {
+        // The server marks all matches selected, so the browser keeps the last.
+        expectedSelectedIndex = i;
       }
-      const expectedSelected = options[i].value === selectedValue;
+    }
+    for (let i = 0; i < options.length; i++) {
+      const expectedSelected = i === expectedSelectedIndex;
       if (options[i].selected !== expectedSelected) {
         changed = true;
         break;
