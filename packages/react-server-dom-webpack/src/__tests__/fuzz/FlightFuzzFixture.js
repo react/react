@@ -13,9 +13,19 @@ const {
   specialValueFactories,
 } = require('./FlightFuzzGraph');
 
-async function createFixture(graph, {WebpackMock}) {
+async function createFixture(
+  graph,
+  {React, ReactServer, WebpackMock, observeProps},
+) {
   checkReachability(graph);
   const {nodes} = graph;
+  const serializedNodes = getReachableNodes(graph, {
+    // All Promises are also sent through model.outcomes below.
+    roots: Object.values(graph.roots).concat(
+      Object.keys(nodes).filter(name => getNodeType(nodes[name]) === 'promise'),
+    ),
+    includeErrorProperties: __DEV__,
+  });
   const events = [];
   const requiredEvents = new Map();
   const valueMetadata = new Map();
@@ -48,6 +58,13 @@ async function createFixture(graph, {WebpackMock}) {
         break;
       case 'special':
         values[name] = specialValueFactories[node.special]();
+        break;
+      case 'host':
+        values[name] = createHostElement(
+          'span',
+          {title: node.host},
+          '<span title="' + node.host + '"></span>',
+        );
         break;
       case 'module': {
         const load = createResolvablePromise();
@@ -100,7 +117,9 @@ async function createFixture(graph, {WebpackMock}) {
         break;
       }
       case 'error':
-        values[name] = createError(node.error);
+        if (node.errors === undefined) {
+          values[name] = createError(node.error);
+        }
         break;
       case 'array':
         values[name] = [];
@@ -125,6 +144,93 @@ async function createFixture(graph, {WebpackMock}) {
         break;
     }
   }
+  // Build values that need existing arguments or props.
+  const buildingValues = new Set();
+  const buildValue = name => {
+    if (Object.prototype.hasOwnProperty.call(values, name)) {
+      return values[name];
+    }
+    if (!Object.prototype.hasOwnProperty.call(nodes, name)) {
+      return getValue(name);
+    }
+    if (buildingValues.has(name)) {
+      throw new Error(
+        name + ' must be constructed before its own dependencies',
+      );
+    }
+    buildingValues.add(name);
+    const node = nodes[name];
+    switch (getNodeType(node)) {
+      case 'error':
+        values[name] = createAggregateError(
+          node.error,
+          node.errors.map(buildValue),
+        );
+        break;
+      case 'fragment':
+        values[name] = createFragment(node.fragment.map(buildValue), {
+          key: name,
+        });
+        break;
+      case 'bound':
+        values[name] = createServerFunction((...args) => args, {
+          bound: node.bound.map(buildValue),
+          label: name,
+          loaded: node.loaded === true,
+        });
+        break;
+      case 'element': {
+        // Give generated elements keys to avoid array-key warnings.
+        const props = Array.isArray(node.element)
+          ? {
+              value: buildValue(node.element[0]),
+              other: buildValue(node.element[1]),
+            }
+          : {value: buildValue(node.element)};
+        values[name] = createClientElement(props, {name, key: name});
+        break;
+      }
+      case 'component': {
+        if (node.throw) {
+          const error = getError(node.component);
+          values[name] = createServerElement(
+            undefined,
+            () => {
+              throw error;
+            },
+            {label: name, failure: error, key: name},
+          );
+        } else {
+          const renderedElement = createClientElement(
+            {value: buildValue(node.component)},
+            {name: name + ' body'},
+          );
+          values[name] = createServerElement(
+            valueMetadata.get(renderedElement).html,
+            () => renderedElement,
+            {label: name, key: name, renderedElement},
+          );
+        }
+        break;
+      }
+      case 'props': {
+        const element = buildValue(node.props);
+        const metadata = valueMetadata.get(element);
+        if (metadata === undefined || metadata.type !== 'element') {
+          throw new Error(node.props + ' is not an element node');
+        }
+        values[name] = element.props;
+        break;
+      }
+      default:
+        break;
+    }
+    buildingValues.delete(name);
+    return values[name];
+  };
+  for (const name in nodes) {
+    buildValue(name);
+  }
   for (const name in nodes) {
     const node = nodes[name];
     switch (getNodeType(node)) {
@@ -148,6 +254,16 @@ async function createFixture(graph, {WebpackMock}) {
           }
           values[name].set(getValue(key), getValue(item));
         });
+        break;
+      case 'error':
+        if (node.cause !== undefined) {
+          values[name].cause = getValue(node.cause);
+        }
+        break;
+      case 'component':
+        if (node.throw && serializedNodes.has(name)) {
+          expectedErrors.set(getError(node.component), 'thrown by ' + name);
+        }
         break;
       case 'promise': {
         const deferred = deferredPromises.get(name);
@@ -232,6 +348,114 @@ async function createFixture(graph, {WebpackMock}) {
     );
   }
 
+  function createServerFunction(
+    implementation,
+    {bound = [], label, loaded = false} = {},
+  ) {
+    const ready = loaded ? null : createResolvablePromise();
+    const exported = WebpackMock.serverExports(
+      {fn: implementation},
+      ready === null ? undefined : ready.promise,
+    );
+    const fn = bound.length ? exported.fn.bind(null, ...bound) : exported.fn;
+    const result = implementation(...bound);
+    valueMetadata.set(fn, {type: 'function', bound, args: [], result});
+    if (ready === null) {
+      return fn;
+    }
+    const event = createEvent(
+      'load ' + (label || 'server function'),
+      () => ready.resolve(),
+      {isClient: true},
+    );
+    events.push(event);
+    requiredEvents.set(fn, [event]);
+    return fn;
+  }
+
+  function createClientElement(props, {name, key} = {}) {
+    const id = name || 'component-' + valueMetadata.size;
+    const load = createResolvablePromise();
+    const Component = receivedProps => {
+      observeProps(element, receivedProps);
+      return React.createElement('span', null, id);
+    };
+    const {Component: Type} = WebpackMock.clientExports(
+      {Component},
+      id,
+      id + '.js',
+      load.promise,
+    );
+    const element = ReactServer.createElement(
+      Type,
+      key === undefined ? props : {key, ...props},
+    );
+    valueMetadata.set(element, {
+      type: 'element',
+      html: '<span>' + id + '</span>',
+    });
+    const loadEvent = createEvent('load ' + id, () => load.resolve(), {
+      isClient: true,
+    });
+    events.push(loadEvent);
+    requiredEvents.set(element, [loadEvent]);
+    return element;
+  }
+
+  // Suspend the Server Component until the test releases its render event.
+  function createServerElement(
+    html,
+    render,
+    {label = 'server component', failure, key, renderedElement} = {},
+  ) {
+    const deferred = createResolvablePromise();
+    async function Body() {
+      await deferred.promise;
+      return render();
+    }
+    const element = ReactServer.createElement(
+      Body,
+      key === undefined ? null : {key},
+    );
+    const renderEvent = createEvent('render ' + label, () =>
+      deferred.resolve(),
+    );
+    events.push(renderEvent);
+    valueMetadata.set(element, {
+      type: 'element',
+      html,
+      failure,
+      renderEvent,
+      renderedElement,
+    });
+    requiredEvents.set(element, [
+      renderEvent,
+      ...(renderedElement === undefined
+        ? []
+        : requiredEvents.get(renderedElement) || []),
+    ]);
+    return element;
+  }
+
+  function createHostElement(type, props, html) {
+    const element = ReactServer.createElement(type, props);
+    valueMetadata.set(element, {type: 'element', html});
+    return element;
+  }
+
+  function createFragment(children, {key}) {
+    const element = ReactServer.createElement(
+      ReactServer.Fragment,
+      {key},
+      ...children,
+    );
+    valueMetadata.set(element, {
+      type: 'element',
+      html: children.map(child => valueMetadata.get(child).html).join(''),
+    });
+    return element;
+  }
+
   function createError(message) {
     const error = new Error(message);
     // Server rejections are matched by digest in both modes.
@@ -240,11 +464,21 @@ async function createFixture(graph, {WebpackMock}) {
     return error;
   }
 
+  function createAggregateError(message, errors) {
+    const error = new AggregateError(errors, message);
+    valueMetadata.set(error, {
+      type: 'error',
+      digest: 'digest:' + message,
+    });
+    return error;
+  }
+
   return fixture;
 }
 
 function checkReachability(graph) {
   const {nodes} = graph;
+  // Keep source references valid even when production omits Error properties.
   const reached = getReachableNodes(graph);
   Object.keys(nodes).forEach(name => {
     if (!reached.has(name)) {

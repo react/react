@@ -47,9 +47,11 @@ if (!Number.isSafeInteger(caseCount) || caseCount < 1) {
 if (!Number.isSafeInteger(shrinkBudget) || shrinkBudget < 0) {
   throw new Error('FLIGHT_FUZZ_SHRINK must be a nonnegative replay budget.');
 }
-// TODO: Some generated cases take longer than the default timeout on CI. It
-// would be better to find out why than to raise it. Finding a smaller case
-// runs the failed case many times, so that needs much longer.
+// The largest generated cases, a chain of 2048 bound functions, take longer
+// than the default timeout on a slow machine. The client reads such a response
+// in about 20ms. The rest is this test rendering it and checking it after
+// every event. Finding a smaller case runs the failed case many times, so that
+// needs much longer.
 jest.setTimeout(shrinkBudget > 0 ? 600000 : 15000);
 // Keep the first seed unchanged so the printed command replays that case.
 const seeds = Array.from({length: caseCount}, (_, i) =>
@@ -213,6 +215,16 @@ describe('ReactFlightFuzz oracle', () => {
     expectMismatch({value: 1}, Object.assign(Object.create(null), {value: 1}));
   });
 
+  it('rejects an element with a different key', () => {
+    const type = Symbol.for('react.transitional.element');
+    const source = {$$typeof: type, key: 'a'};
+    expectMismatch(
+      source,
+      {$$typeof: type, key: 'b'},
+      {valueMetadata: new Map([[source, {type: 'element'}]])},
+    );
+  });
+
   it('rejects a wrong value nested inside containers', () => {
     expectMismatch({list: [new Set([1])]}, {list: [new Set([2])]});
   });
@@ -294,6 +306,9 @@ describe('ReactFlightFuzz oracle', () => {
 });
 
 describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
+  let React;
+  let ReactServer;
+  let ReactDOMServer;
   let ReactServerDOMServer;
   let ReactServerDOMClient;
   let WebpackMock;
@@ -309,9 +324,12 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
     );
     WebpackMock = require('./utils/WebpackMock');
     ReactServerDOMServer = require('react-server-dom-webpack/server.' + host);
+    ReactServer = require('react');
     jest.resetModules();
     __unmockReact();
+    React = require('react');
     ReactServerDOMClient = require('react-server-dom-webpack/client.' + host);
+    ReactDOMServer = require('react-dom/server.edge');
   }
 
   it.each([null, true, false, 0, 42, 'hello'])(
@@ -529,6 +547,12 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
     return result.value;
   }
 
+  function render(element) {
+    return ReactDOMServer.renderToReadableStream(element, {
+      onError() {},
+    }).then(stream => new Response(stream).text());
+  }
+
   async function withResponse(model, read) {
     const transport = startFlightResponse({
       ReactServerDOMServer,
@@ -597,8 +621,15 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
     let replayGraph;
     try {
       await withFlightModules(async () => {
-        const fixture = await createFixture(graph, {WebpackMock});
-        const oracle = createOracle(fixture);
+        const fixture = await createFixture(graph, {
+          React,
+          ReactServer,
+          WebpackMock,
+          observeProps(element, props) {
+            oracle.observeProps(element, props);
+          },
+        });
+        const oracle = createOracle(fixture, {render});
         const schedule = createSchedule(fixture, graph, seed, scheduleIndex);
         replayGraph = {
           ...graph,
@@ -769,7 +800,7 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       await checkProgress('after all events');
       await transport.drain(
         () => oracle.isComplete(),
-        () => 'every outcome',
+        () => 'every outcome and render',
       );
       fixture.expectedErrors.forEach((thrower, error) => {
         if (!reported.includes(error)) {
@@ -995,6 +1026,311 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
       }));
   });
 
+  describe('bound Server Functions', () => {
+    it('calls a delivered Server Function with bound and supplied arguments', () =>
+      withFlightModules(async () => {
+        const {fn} = WebpackMock.serverExports({fn: (...args) => args});
+        const received = await roundTrip(fn.bind(null, 'bound'));
+        const first = received('argument');
+        expect(first).toEqual(['bound', 'argument']);
+        expect(received('argument')).toEqual(['bound', 'argument']);
+        expect(received('argument')).not.toBe(first);
+      }));
+
+    it('a bound object finishes loading before the function is delivered', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          argument: {object: {value: 'ready'}},
+          fn: {bound: ['argument']},
+        },
+        roots: {entry: 'fn', other: 'fn'},
+        events: ['load fn', 'load ready'],
+      }));
+
+    // @gate FIXME
+    it('function bound to its array', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['container']},
+          container: {array: ['fn', 'container', 'ready']},
+        },
+        roots: {entry: 'container', other: 'container'},
+      }));
+
+    // @gate FIXME
+    it('function bound to its Map', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['container']},
+          container: {
+            map: [
+              ['fn', 'ready'],
+              ['container', 'container'],
+            ],
+          },
+        },
+        roots: {entry: 'container', other: 'container'},
+      }));
+
+    // @gate FIXME
+    it('cycle first exposed through a bound function', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['region']},
+          region: {set: ['fn', 'region', 'ready']},
+        },
+        roots: {entry: 'fn', other: 'fn'},
+      }));
+
+    // @gate FIXME
+    it('cycle first exposed through a Promise of a bound function', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          fn: {bound: ['region']},
+          region: {object: {field0: 'fn', field1: 'region', field2: 'ready'}},
+          exposure: {promise: 'fn'},
+        },
+        roots: {entry: 'exposure', other: 'exposure'},
+      }));
+
+    // @gate FIXME
+    it('a repeated Server Function bound to its loading container', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'loaded'},
+          argument: {object: {value: 'ready', fn: 'fn'}},
+          fn: {bound: ['argument']},
+          first: {promise: 'argument'},
+          result: {promise: 'fn'},
+        },
+        roots: {entry: 'first', other: 'result'},
+        events: [
+          'load fn',
+          'resolve first to argument',
+          'resolve result to fn',
+          'load ready',
+        ],
+        packetSizes: [1, 25, 2091],
+        yieldBetweenPackets: true,
+      }));
+  });
+
+  describe('elements and observed props', () => {
+    it('delivers an element before its client props finish loading', () =>
+      withFlightModules(async () => {
+        let load;
+        const ready = new Promise(resolve => (load = resolve));
+        const {value} = WebpackMock.clientExports(
+          {value: 'ready'},
+          'held prop',
+          'held-prop.js',
+          ready,
+        );
+        const seen = [];
+        const {Client} = WebpackMock.clientExports({
+          Client(props) {
+            seen.push(props.value);
+            return React.createElement('span', null, props.value);
+          },
+        });
+        const element = ReactServer.createElement(Client, {value});
+        await withResponse(
+          {element, unrelated: new Promise(() => {})},
+          async ({response, transport}) => {
+            const received = await readRoot(transport);
+            await flushAction(transport, () => {});
+            expect(received).toBeDefined();
+            let html;
+            const rendered = render(received.element).then(
+              result => (html = result),
+            );
+            rendered.catch(() => {});
+            await flushAction(transport, () => {});
+            expect(seen).toEqual([]);
+            expect(html).toBe(undefined);
+            await flushAction(transport, load);
+            expect(await rendered).toBe('<span>ready</span>');
+            expect(seen).toEqual(['ready']);
+            expect(transport.isClosed).toBe(false);
+            expect(transport.isServerDone).toBe(false);
+          },
+        );
+      }));
+
+    it('an element first written inside another loading value', () =>
+      runGraph({
+        nodes: {
+          element: {host: 'atom'},
+          ready: {module: 'loaded'},
+          array: {array: ['element', 'ready']},
+          first: {promise: 'array'},
+          second: {promise: 'element'},
+          root: {array: ['first', 'second']},
+        },
+        roots: {entry: 'root', other: 'root'},
+        events: [
+          'resolve first to array',
+          'resolve second to element',
+          'load ready',
+        ],
+      }));
+
+    // @gate FIXME
+    it('props object referenced again while a prop is loading', () =>
+      runGraph({
+        nodes: {
+          payload: {module: 'export-0'},
+          data: {object: {field0: 'props'}},
+          value: {array: ['payload', 'data']},
+          element: {element: 'value'},
+          props: {props: 'element'},
+        },
+        roots: {entry: 'element', other: 'props'},
+      }));
+
+    it('props sub-object referenced while a sibling prop is loading', () =>
+      runGraph({
+        nodes: {
+          payload: {module: 'export-0'},
+          sibling: {module: 'export-1'},
+          selected: {object: {field0: 'payload'}},
+          value: {array: ['selected', 'sibling']},
+          element: {element: 'value'},
+        },
+        roots: {entry: 'element', other: 'selected'},
+      }));
+
+    // This fails on most runs until references are fulfilled early.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('element reaching itself through its props', () =>
+      runGraph({
+        nodes: {
+          payload: {module: 'export-0'},
+          data: {object: {field0: 'element'}},
+          value: {array: ['payload', 'data']},
+          element: {element: 'value'},
+        },
+        roots: {entry: 'element', other: 'data'},
+      }));
+  });
+
+  describe('Server Component output', () => {
+    it('component output shares an object with a result whose module fails', () =>
+      runGraph({
+        nodes: {
+          shared: {object: {}},
+          broken: {module: 'failed', fail: 'load'},
+          pending: {module: 'pending'},
+          owner: {object: {shared: 'shared', broken: 'broken'}},
+          result: {promise: 'owner'},
+          output: {object: {shared: 'shared', pending: 'pending'}},
+          component: {component: 'output'},
+        },
+        roots: {entry: 'component', other: 'result'},
+        events: [
+          'load component body',
+          'resolve result to owner',
+          'reject broken',
+          'render component',
+          'load pending',
+        ],
+      }));
+
+    it('server component rendering after the rest of the response', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          body: {value: 'body'},
+          component: {component: 'body'},
+          data: {object: {field0: 'ready'}},
+        },
+        roots: {entry: 'component', other: 'data'},
+      }));
+
+    it('failing server component', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          error: {error: 'component failed'},
+          component: {component: 'error', throw: true},
+          data: {object: {field0: 'ready'}},
+        },
+        roots: {entry: 'component', other: 'data'},
+      }));
+
+    // @gate FIXME || !__DEV__
+    it('suspended server component element used twice', () =>
+      runGraph({
+        nodes: {
+          body: {value: 'shared'},
+          component: {component: 'body'},
+          pair: {array: ['component', 'component']},
+        },
+        roots: {entry: 'pair', other: 'pair'},
+      }));
+  });
+
+  describe('Error properties and mixed graph values', () => {
+    it('exposes Error causes and AggregateError members in DEV', () =>
+      withFlightModules(async () => {
+        const cause = {detail: 'source'};
+        const received = await roundTrip({
+          error: new Error('single', {cause}),
+          aggregate: new AggregateError([cause], 'several', {cause}),
+        });
+        expect(received.error).toBeInstanceOf(Error);
+        expect(received.aggregate).toBeInstanceOf(Error);
+        if (__DEV__) {
+          expect(received.error.message).toBe('single');
+          expect(received.error.cause).toEqual({detail: 'source'});
+          expect(received.aggregate).toBeInstanceOf(AggregateError);
+          expect(received.aggregate.message).toBe('several');
+          expect(received.aggregate.cause).toEqual({detail: 'source'});
+          expect(received.aggregate.errors).toEqual([{detail: 'source'}]);
+        } else {
+          expect('cause' in received.error).toBe(false);
+          expect('cause' in received.aggregate).toBe(false);
+          expect('errors' in received.aggregate).toBe(false);
+        }
+      }));
+
+    // This hangs in DEV until an Error's cause refers to the row it was
+    // written to.
+    // eslint-disable-next-line jest/no-disabled-tests
+    it.skip('an Error that is its own cause', () =>
+      runGraph({
+        nodes: {error: {error: 'self cause', cause: 'error'}},
+        roots: {entry: 'error', other: 'error'},
+      }));
+
+    // @gate FIXME || !__DEV__
+    it('Error whose cause is still loading', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          error: {error: 'cause loading', cause: 'ready'},
+          set: {set: ['error']},
+        },
+        roots: {entry: 'set', other: 'set'},
+      }));
+
+    // @gate FIXME || !__DEV__
+    it('Error with cyclic cause', () =>
+      runGraph({
+        nodes: {
+          ready: {module: 'export-0'},
+          cell: {object: {field0: 'ready', field1: 'error'}},
+          error: {error: 'cyclic cause', cause: 'cell'},
+        },
+        roots: {entry: 'error', other: 'cell'},
+      }));
+  });
+
   describe('other graphs', () => {
     // This hangs until colons in reference paths are escaped.
     // eslint-disable-next-line jest/no-disabled-tests
@@ -1079,6 +1415,14 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
                   'duplicate',
                   'map key',
                   'promise',
+                  'element',
+                  'props',
+                  'component',
+                  'failing component',
+                  'bound function',
+                  'error',
+                  'aggregate error',
+                  'fragment',
                   'undefined',
                   'colon',
                 ],

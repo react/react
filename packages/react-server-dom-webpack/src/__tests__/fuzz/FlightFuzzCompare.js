@@ -23,6 +23,8 @@ function describeValue(value) {
       return JSON.stringify(value);
     case 'number':
       return Object.is(value, -0) ? '-0' : String(value);
+    case 'function':
+      return 'function ' + (value.name || '(anonymous)');
     case 'object':
       if (value === null) {
         return 'null';
@@ -108,8 +110,19 @@ function compareValue(fixture, {expectedValue, received, path}) {
   assertKind(isObject(received), 'an object', received);
   if (metadata !== undefined) {
     switch (metadata.type) {
+      case 'function':
+        assertKind(typeof received === 'function', 'a function', received);
+        return [];
       case 'promise':
         assertKind(typeof received.then === 'function', 'a thenable', received);
+        return [];
+      case 'element':
+        // Flight may deliver a lazy element before its props are ready.
+        // Rendering and the component's props callback check its contents.
+        // The key can only be read from an element that is not lazy.
+        if (received.$$typeof === Symbol.for('react.transitional.element')) {
+          assertSame(received.key, expectedValue.key);
+        }
         return [];
       case 'error':
         return compareError(expectedValue, received, path);
@@ -173,15 +186,36 @@ function compareValue(fixture, {expectedValue, received, path}) {
   }));
 }
 
-// Production omits an Error's message.
+// Production omits an Error's message, cause and aggregated errors.
 function compareError(expectedValue, received, path) {
   assertKind(received instanceof Error, 'an Error', received);
   if (!__DEV__) {
     return [];
   }
+  const children = [];
   assertSame(received.name, expectedValue.name);
   assertSame(received.message, expectedValue.message);
-  return [];
+  assertSame('cause' in received, 'cause' in expectedValue);
+  if ('cause' in expectedValue) {
+    children.push({
+      expectedValue: expectedValue.cause,
+      received: received.cause,
+      path: path + '.cause',
+    });
+  }
+  if (expectedValue instanceof AggregateError) {
+    assertKind(
+      received instanceof AggregateError,
+      'an AggregateError',
+      received,
+    );
+    children.push({
+      expectedValue: expectedValue.errors,
+      received: received.errors,
+      path: path + '.errors',
+    });
+  }
+  return children;
 }
 
 function throwAtPath(error, path) {
