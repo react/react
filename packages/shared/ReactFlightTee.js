@@ -24,11 +24,45 @@ export const FLIGHT_TEE_VERSION: string = ReactVersion;
 // arrive in the order the server emits them, which isn't the order they're
 // written to the destination.
 //
-// None of the methods throw. An error on the client errors the client's
-// response, but never the server's render.
+// None of the methods throw. An error on the client errors the row it was
+// building, or the client's response, but never the server's render.
+//
+// A model row is built by value: the server calls `beginRow`, builds the row's
+// value with `decode`, `beginElement` and `completeElement` while it walks the
+// row, and calls `endRow` with the value. Every other row is passed as wire
+// text and parsed: rows that aren't models, a model row whose value is a
+// string or other primitive, stream entries, and a model row that `beginRow`
+// declines.
 export type FlightTeeDispatcher = {
   // Returns false if the tee is already connected to another request.
   +c /* connect */: (tee: FlightTee) => boolean,
+  // Begins building model row `id`. Returns null if the row can't be built by
+  // value, in which case the server sends it as wire text instead.
+  +b /* beginRow */: (tee: FlightTee, id: number) => null | FlightTeeRow,
+  // Ends a row with the value built for it.
+  +f /* endRow */: (tee: FlightTee, row: FlightTeeRow, value: mixed) => void,
+  // Abandons a row whose walk threw. The row stays pending.
+  +a /* abortRow */: (tee: FlightTee, row: FlightTeeRow) => void,
+  // Enters an element, before any of its fields are decoded.
+  +e /* beginElement */: (tee: FlightTee) => void,
+  // Creates the element and leaves it.
+  +m /* completeElement */: (
+    tee: FlightTee,
+    type: mixed,
+    key: mixed,
+    props: mixed,
+    owner: mixed,
+    stack: mixed,
+    validated: number,
+  ) => mixed,
+  // Decodes a `$` string. `parent` is the value it goes in, and `key` its key
+  // there, so that a reference that hasn't resolved yet can fill it in later.
+  +d /* decode */: (
+    tee: FlightTee,
+    parent: Object,
+    key: string,
+    value: string,
+  ) => mixed,
   // A complete row, including its header and trailing newline.
   +w /* row */: (tee: FlightTee, row: string) => void,
   // A length-prefixed text row. The text is passed by reference.
@@ -51,5 +85,11 @@ export type FlightTeeDispatcher = {
 export type FlightTee = {
   +_version: string,
   +_dispatcher: FlightTeeDispatcher,
+  // Stands for an element's own fields when decoding them, keyed by their
+  // slot in the wire tuple: props ('3'), owner ('4') and debug stack ('5').
+  +_elementFields: Object,
   ...
 };
+
+// Opaque to the server.
+export type FlightTeeRow = {...};
