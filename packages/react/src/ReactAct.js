@@ -12,8 +12,6 @@ import type {RendererTask} from './ReactSharedInternalsClient';
 import ReactSharedInternals from './ReactSharedInternalsClient';
 import queueMacrotask from 'shared/enqueueTask';
 
-import {disableLegacyMode} from 'shared/ReactFeatureFlags';
-
 // `act` calls can be nested, so we track the depth. This represents the
 // number of `act` scopes on the stack.
 let actScopeDepth = 0;
@@ -39,62 +37,22 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
     // `act` calls can be nested.
     //
     // If we're already inside an `act` scope, reuse the existing queue.
-    const prevIsBatchingLegacy = !disableLegacyMode
-      ? ReactSharedInternals.isBatchingLegacy
-      : false;
     const prevActQueue = ReactSharedInternals.actQueue;
     const prevActScopeDepth = actScopeDepth;
     actScopeDepth++;
     const queue = (ReactSharedInternals.actQueue =
       prevActQueue !== null ? prevActQueue : []);
-    // Used to reproduce behavior of `batchedUpdates` in legacy mode. Only
-    // set to `true` while the given callback is executed, not for updates
-    // triggered during an async event, because this is how the legacy
-    // implementation of `act` behaved.
-    if (!disableLegacyMode) {
-      ReactSharedInternals.isBatchingLegacy = true;
-    }
 
     let result;
     // This tracks whether the `act` call is awaited. In certain cases, not
     // awaiting it is a mistake, so we will detect that and warn.
     let didAwaitActCall = false;
     try {
-      // Reset this to `false` right before entering the React work loop. The
-      // only place we ever read this fields is just below, right after running
-      // the callback. So we don't need to reset after the callback runs.
-      if (!disableLegacyMode) {
-        ReactSharedInternals.didScheduleLegacyUpdate = false;
-      }
       result = callback();
-      const didScheduleLegacyUpdate = !disableLegacyMode
-        ? ReactSharedInternals.didScheduleLegacyUpdate
-        : false;
-
-      // Replicate behavior of original `act` implementation in legacy mode,
-      // which flushed updates immediately after the scope function exits, even
-      // if it's an async function.
-      if (!prevIsBatchingLegacy && didScheduleLegacyUpdate) {
-        flushActQueue(queue);
-      }
-      // `isBatchingLegacy` gets reset using the regular stack, not the async
-      // one used to track `act` scopes. Why, you may be wondering? Because
-      // that's how it worked before version 18. Yes, it's confusing! We should
-      // delete legacy mode!!
-      if (!disableLegacyMode) {
-        ReactSharedInternals.isBatchingLegacy = prevIsBatchingLegacy;
-      }
     } catch (error) {
-      // `isBatchingLegacy` gets reset using the regular stack, not the async
-      // one used to track `act` scopes. Why, you may be wondering? Because
-      // that's how it worked before version 18. Yes, it's confusing! We should
-      // delete legacy mode!!
       ReactSharedInternals.thrownErrors.push(error);
     }
     if (ReactSharedInternals.thrownErrors.length > 0) {
-      if (!disableLegacyMode) {
-        ReactSharedInternals.isBatchingLegacy = prevIsBatchingLegacy;
-      }
       popActScope(prevActQueue, prevActScopeDepth);
       const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
       ReactSharedInternals.thrownErrors.length = 0;

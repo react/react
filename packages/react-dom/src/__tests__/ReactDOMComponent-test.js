@@ -3891,17 +3891,5 @@ describe('ReactDOMComponent', () => {
       });
       expect(typeof portalContainer.onclick).toBe('function');
     });
-
-    // @gate !disableLegacyMode
-    it('does not add onclick handler to the React root in legacy mode', () => {
-      const container = document.createElement('div');
-
-      function Component() {
-        return <div onClick={() => {}} />;
-      }
-
-      ReactDOM.render(<Component />, container);
-      expect(typeof container.onclick).not.toBe('function');
-    });
   });
 });

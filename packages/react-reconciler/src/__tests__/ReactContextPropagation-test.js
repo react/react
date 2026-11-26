@@ -498,67 +498,6 @@ describe('ReactLazyContextPropagation', () => {
     expect(root).toMatchRenderedOutput('BBB');
   });
 
-  // @gate enableLegacyCache && !disableLegacyMode
-  it('context is propagated across retries (legacy)', async () => {
-    const root = ReactNoop.createLegacyRoot();
-
-    const Context = React.createContext('A');
-
-    let setContext;
-    function App() {
-      const [value, setValue] = useState('A');
-      setContext = setValue;
-      return (
-        <Context.Provider value={value}>
-          <Suspense fallback={<Text text="Loading..." />}>
-            <Async />
-          </Suspense>
-          <Text text={value} />
-        </Context.Provider>
-      );
-    }
-
-    function Async() {
-      const value = useContext(Context);
-      readText(value);
-
-      // When `readText` suspends, we haven't yet visited Indirection and all
-      // of its children. They won't get rendered until a later retry.
-      return <Indirection />;
-    }
-
-    const Indirection = React.memo(() => {
-      // This child must always be consistent with the sibling Text component.
-      return <DeepChild />;
-    });
-
-    function DeepChild() {
-      const value = useContext(Context);
-      return <Text text={value} />;
-    }
-
-    await seedNextTextCache('A');
-    await act(() => {
-      root.render(<App />);
-    });
-    assertLog(['A', 'A']);
-    expect(root).toMatchRenderedOutput('AA');
-
-    await act(() => {
-      // Intentionally not wrapping in startTransition, so that the fallback
-      // the fallback displays despite this being a refresh.
-      setContext('B');
-    });
-    assertLog(['Suspend! [B]', 'Loading...', 'B']);
-    expect(root).toMatchRenderedOutput('Loading...B');
-
-    await act(async () => {
-      await resolveText('B');
-    });
-    assertLog(['B']);
-    expect(root).toMatchRenderedOutput('BB');
-  });
-
   // @gate enableLegacyCache && enableLegacyHidden
   it('context is propagated through offscreen trees', async () => {
     const LegacyHidden = React.unstable_LegacyHidden;

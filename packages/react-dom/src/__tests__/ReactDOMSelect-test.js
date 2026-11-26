@@ -18,7 +18,6 @@ Element.prototype.setAttribute = function (name, value) {
 
 describe('ReactDOMSelect', () => {
   let React;
-  let ReactDOM;
   let ReactDOMClient;
   let ReactDOMServer;
   let act;
@@ -29,7 +28,6 @@ describe('ReactDOMSelect', () => {
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
-    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
     act = require('internal-test-utils').act;
@@ -967,8 +965,7 @@ describe('ReactDOMSelect', () => {
     expect(node.options[2].selected).toBe(false); // c
   });
 
-  // @gate !disableLegacyMode
-  it('should allow controlling `value` in a nested legacy render', async () => {
+  it('should allow controlling `value` in a nested root', async () => {
     let selectNode;
 
     class Parent extends React.Component {
@@ -977,6 +974,7 @@ describe('ReactDOMSelect', () => {
       };
 
       componentDidMount() {
+        this._nestedRoot = ReactDOMClient.createRoot(this._nestingContainer);
         this._renderNested();
       }
 
@@ -989,7 +987,7 @@ describe('ReactDOMSelect', () => {
       }
 
       _renderNested() {
-        ReactDOM.render(
+        this._nestedRoot.render(
           <select
             onChange={this._handleChange.bind(this)}
             ref={n => (selectNode = n)}
@@ -998,7 +996,6 @@ describe('ReactDOMSelect', () => {
             <option value="giraffe">A giraffe!</option>
             <option value="gorilla">A gorilla!</option>
           </select>,
-          this._nestingContainer,
         );
       }
 
@@ -1011,21 +1008,32 @@ describe('ReactDOMSelect', () => {
 
     document.body.appendChild(container);
 
-    ReactDOM.render(<Parent />, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<Parent />);
+    });
 
     expect(selectNode.value).toBe('giraffe');
 
     selectNode.value = 'gorilla';
 
+    // Check the value right after each event, not only once act has flushed:
+    // the nested update must commit before the controlled value is restored.
     let nativeEvent = document.createEvent('Event');
     nativeEvent.initEvent('input', true, true);
-    selectNode.dispatchEvent(nativeEvent);
+    await act(() => {
+      selectNode.dispatchEvent(nativeEvent);
+      expect(selectNode.value).toEqual('gorilla');
+    });
 
     expect(selectNode.value).toEqual('gorilla');
 
     nativeEvent = document.createEvent('Event');
     nativeEvent.initEvent('change', true, true);
-    selectNode.dispatchEvent(nativeEvent);
+    await act(() => {
+      selectNode.dispatchEvent(nativeEvent);
+      expect(selectNode.value).toEqual('gorilla');
+    });
 
     expect(selectNode.value).toEqual('gorilla');
 
