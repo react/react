@@ -18,18 +18,32 @@ const webpackErroredModules = {};
 const webpackServerMap = {};
 const webpackClientMap = {};
 const webpackChunkMap = {};
-global.__webpack_chunk_load__ = function (id) {
+// Jest retains every value assigned to a property of `global` across tests,
+// which can balloon in large suites. Work around this by using accessors.
+// Ideally, this would be fixed in Jest itself.
+function setMockGlobal(name, value) {
+  Object.defineProperty(global, name, {
+    configurable: true,
+    enumerable: true,
+    get: () => value,
+    set: nextValue => {
+      value = nextValue;
+    },
+  });
+}
+
+setMockGlobal('__webpack_chunk_load__', function (id) {
   return webpackChunkMap[id];
-};
-global.__webpack_require__ = function (id) {
+});
+setMockGlobal('__webpack_require__', function (id) {
   if (webpackErroredModules[id]) {
     throw webpackErroredModules[id];
   }
   return webpackClientModules[id] || webpackServerModules[id];
-};
-global.__webpack_get_script_filename__ = function (id) {
+});
+setMockGlobal('__webpack_get_script_filename__', function (id) {
   return id;
-};
+});
 
 const previousCompile = Module.prototype._compile;
 
