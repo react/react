@@ -9,6 +9,7 @@
 
 import semver from 'semver';
 
+import {TREE_OPERATION_REMOVE} from '../constants';
 import {getVersionedRenderImplementation} from './utils';
 import {ReactVersion} from '../../../../ReactVersions';
 
@@ -197,6 +198,54 @@ describe('Store', () => {
 
     parent.children.splice(firstChildIndex, 0, firstChildID);
     store.removeListener('error', errorListener);
+  });
+
+  // @reactVersion >= 18.0
+  it('ignores removals for missing nodes and continues applying operations', () => {
+    function Component() {
+      return null;
+    }
+
+    act(() => render(<Component />));
+
+    const rootID = store.roots[0];
+    const root = store.getElementByID(rootID);
+    if (root === null) {
+      throw Error('Expected the root to exist in the Store.');
+    }
+    const childID = root.children[0];
+    const missingID = 0;
+    const errorListener = jest.fn();
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    store.addListener('error', errorListener);
+
+    try {
+      // The first removal is stale. The valid child removal after it must still
+      // be applied from the same operations payload.
+      (bridge.wall: any).send('operations', [
+        getRendererID(),
+        rootID,
+        0,
+        TREE_OPERATION_REMOVE,
+        2,
+        missingID,
+        childID,
+      ]);
+
+      expect(store.containsElement(childID)).toBe(false);
+      const updatedRoot = store.getElementByID(rootID);
+      if (updatedRoot === null) {
+        throw Error('Expected the root to remain in the Store.');
+      }
+      expect(updatedRoot.children).toEqual([]);
+      expect(errorListener).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        `Ignoring removal for node "${missingID}" because no matching node was found in the Store.`,
+      );
+    } finally {
+      store.removeListener('error', errorListener);
+      warnSpy.mockRestore();
+    }
   });
 
   // @reactVersion >= 18.0
