@@ -1319,7 +1319,6 @@ describe.each(['node', 'edge'])('ReactFlightFuzz (%s)', host => {
         roots: {entry: 'set', other: 'set'},
       }));
 
-    // @gate FIXME || !__DEV__
     it('Error with cyclic cause', () =>
       runGraph({
         nodes: {
