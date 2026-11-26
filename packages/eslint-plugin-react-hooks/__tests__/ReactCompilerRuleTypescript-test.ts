@@ -318,3 +318,139 @@ const eslintTester = new ESLintTesterV8({
 });
 eslintTester.run('react-compiler', allRules['immutability'].rule, tests);
 eslintTester.run('react-compiler refs', allRules['refs'].rule, refsTests);
+
+const purityTests: CompilerTestCases = {
+  valid: [
+    {
+      name: 'Impure call in a function only called from a handler created inside .map()',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useState} from 'react';
+
+        export function List({items}) {
+          const [last, setLast] = useState(0);
+          function open(item) {
+            setLast(Date.now() + item.length);
+          }
+          return (
+            <div>
+              {items.map(item => (
+                <button key={item} type="button" onClick={() => open(item)}>
+                  {last}
+                </button>
+              ))}
+            </div>
+          );
+        }
+      `,
+    },
+    {
+      name: 'Impure call in a function that calls a later-declared function',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useState} from 'react';
+
+        export function Poll() {
+          const [state, setState] = useState('idle');
+          const arm = () => {
+            setState(String(Date.now()));
+            later();
+          };
+          const later = () => {
+            setState('done');
+          };
+          return (
+            <button type="button" onClick={arm}>
+              {state}
+            </button>
+          );
+        }
+      `,
+    },
+    {
+      name: 'Impure call in a later-declared function scheduled by an earlier one',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useState} from 'react';
+
+        export function Poll() {
+          const [state, setState] = useState('idle');
+          const arm = () => {
+            setTimeout(tick, 1000);
+          };
+          const tick = () => {
+            setState(String(Date.now()));
+            arm();
+          };
+          return (
+            <button type="button" onClick={arm}>
+              {state}
+            </button>
+          );
+        }
+      `,
+    },
+    {
+      name: 'Impure call in a self-referencing function',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useState} from 'react';
+
+        export function Poll() {
+          const [state, setState] = useState('idle');
+          const tick = () => {
+            setState(String(Date.now()));
+            setTimeout(tick, 1000);
+          };
+          return (
+            <button type="button" onClick={tick}>
+              {state}
+            </button>
+          );
+        }
+      `,
+    },
+  ],
+  invalid: [
+    {
+      name: 'Still rejects impure calls directly during render',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        export function Component() {
+          const now = Date.now();
+          return <div>{now}</div>;
+        }
+      `,
+      errors: [{message: /Cannot call impure function during render/}],
+    },
+    {
+      name: 'Still rejects impure function called during render via a helper',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        export function Component() {
+          const read = () => Date.now();
+          const now = read();
+          return <div>{now}</div>;
+        }
+      `,
+      errors: [{message: /Cannot call impure function during render/}],
+    },
+    {
+      name: 'Still rejects impure function called during render inside .map()',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        export function List({items}) {
+          return (
+            <div>
+              {items.map(item => (
+                <span key={item}>{Date.now() + item.length}</span>
+              ))}
+            </div>
+          );
+        }
+      `,
+      errors: [{message: /Cannot call impure function during render/}],
+    },
+  ],
+};
+eslintTester.run('react-compiler purity', allRules['purity'].rule, purityTests);
