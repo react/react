@@ -4781,6 +4781,14 @@ function renderModelDestructive(
       }
     }
 
+    if (value === null) {
+      // $FlowFixMe[incompatible-use]
+      const originalValue = parent[parentPropertyName];
+      if (originalValue instanceof Date) {
+        return '$Dnull';
+      }
+    }
+
     // $FlowFixMe[incompatible-type]
     return value;
   }
@@ -6464,6 +6472,14 @@ function renderDebugModel(
         }
       }
       return instanceDescription;
+    }
+
+    if (value === null) {
+      // $FlowFixMe[incompatible-use]
+      const originalValue = parent[parentPropertyName];
+      if (originalValue instanceof Date) {
+        return '$Dnull';
+      }
     }
 
     // $FlowFixMe[incompatible-type]
