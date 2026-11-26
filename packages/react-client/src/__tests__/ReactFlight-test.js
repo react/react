@@ -1618,6 +1618,8 @@ describe('ReactFlight', () => {
         '    at file:///testing.js:42:3',
         // async anon function (https://github.com/ChromeDevTools/devtools-frontend/blob/831be28facb4e85de5ee8c1acc4d98dfeda7a73b/test/unittests/front_end/panels/console/ErrorStackParser_test.ts#L130C9-L130C41)
         '    at async file:///testing.js:42:3',
+        // Windows file system path
+        '    at WindowsComponent (C:\\code\\App.js:10:5)',
         // third-party RSC frame
         // Ideally this would be a real frame produced by React not a mocked one.
         '    at ThirdParty (about://React/ThirdParty/file:///code/%5Broot%2520of%2520the%2520server%5D.js?42:1:1)',
@@ -1711,6 +1713,7 @@ describe('ReactFlight', () => {
                 '    at ServerComponentError (file://~/(some)(really)(exotic-directory)/ReactFlight-test.js:1166:19)\n' +
                 '    at <anonymous> (file:///testing.js:42:3)\n' +
                 '    at <anonymous> (file:///testing.js:42:3)\n' +
+                '    at WindowsComponent (file:///C:/code/App.js:10:5)\n' +
                 '    at div (<anonymous>',
             ),
             digest: 'a dev digest',
