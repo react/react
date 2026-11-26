@@ -2841,7 +2841,10 @@ function pushStartTextArea(
     value = '' + children;
   }
 
-  if (typeof value === 'string' && value[0] === '\n') {
+  if (
+    typeof value === 'string' &&
+    (value[0] === '\n' || value[0] === '\r')
+  ) {
     // text/html ignores the first character in these tags if it's a newline
     // Prefer to break application/xml over text/html (for now) by adding
     // a newline specifically to get eaten by the parser. (Alternately for
