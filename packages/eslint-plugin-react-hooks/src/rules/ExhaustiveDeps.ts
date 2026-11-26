@@ -285,6 +285,8 @@ const rule = {
         }
         // Detect primitive constants
         // const foo = 42
+        // const bar = -1
+        // const baz = 2 / 3
         let declaration = defNode.parent;
         if (declaration == null && componentScope != null) {
           // This might happen if variable is declared after the callback.
@@ -300,10 +302,7 @@ const rule = {
           declaration != null &&
           'kind' in declaration &&
           declaration.kind === 'const' &&
-          init.type === 'Literal' &&
-          (typeof init.value === 'string' ||
-            typeof init.value === 'number' ||
-            init.value === null)
+          isStaticPrimitiveConstant(init)
         ) {
           // Definitely stable
           return true;
@@ -1530,6 +1529,34 @@ const rule = {
     };
   },
 } satisfies Rule.RuleModule;
+
+// A primitive constant is as stable as a literal: it cannot change between
+// renders. This doesn't fold the value, it only proves that the initializer
+// is composed exclusively of primitive literals, so it covers expressions
+// like `-1`, `2 / 3`, `!0` or `'a' + 'b'` in addition to bare literals.
+// Object-like literals (`/regex/`, `{}`, `[]`, template literals, ...) are
+// deliberately excluded because they produce a new value on every render.
+function isStaticPrimitiveConstant(node: Node): boolean {
+  switch (node.type) {
+    case 'Literal':
+      return (
+        typeof node.value === 'string' ||
+        typeof node.value === 'number' ||
+        typeof node.value === 'boolean' ||
+        typeof node.value === 'bigint' ||
+        node.value === null
+      );
+    case 'UnaryExpression':
+      return isStaticPrimitiveConstant(node.argument);
+    case 'BinaryExpression':
+      return (
+        isStaticPrimitiveConstant(node.left) &&
+        isStaticPrimitiveConstant(node.right)
+      );
+    default:
+      return false;
+  }
+}
 
 // The meat of the logic.
 function collectRecommendations({
