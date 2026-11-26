@@ -1107,6 +1107,42 @@ function lowerStatement(
       });
       const id = stmt.get('id') as NodePath<t.Identifier>;
 
+      /**
+       * Function declarations are instantiated at function entry, overriding a
+       * parameter or earlier function declaration of the same name. Babel records
+       * such a redeclaration as a constant violation of the existing binding
+       * (not as a new binding), and we lower it as a reassignment at its source
+       * position. That is only equivalent if nothing reads or writes the binding
+       * before this point — otherwise those accesses would observe the parameter
+       * or the earlier function instead of this one. Bail out in that case.
+       */
+      const binding = stmt.parentPath.scope.getBinding(id.node.name);
+      if (binding != null && binding.path.node !== stmt.node) {
+        const declarationStart = stmt.node.start;
+        const isObservedBeforeDeclaration = [
+          ...binding.referencePaths,
+          ...binding.constantViolations,
+        ].some(
+          path =>
+            path.node !== stmt.node &&
+            (declarationStart == null ||
+              path.node.start == null ||
+              path.node.start < declarationStart),
+        );
+        if (isObservedBeforeDeclaration) {
+          builder.recordError(
+            new CompilerErrorDetail({
+              reason: `(BuildHIR::lowerStatement) Handle function declarations that redeclare a binding referenced earlier in the function`,
+              description: `\`${id.node.name}\` is already declared as a ${binding.kind === 'hoisted' ? 'function' : binding.kind} and is referenced before this declaration`,
+              category: ErrorCategory.Todo,
+              loc: stmt.node.loc ?? null,
+              suggestions: null,
+            }),
+          );
+          return;
+        }
+      }
+
       const fn = lowerValueToTemporary(
         builder,
         lowerFunctionToValue(builder, stmt),
