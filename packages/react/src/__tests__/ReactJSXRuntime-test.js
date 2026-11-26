@@ -376,4 +376,32 @@ describe('ReactJSXRuntime', () => {
     ]);
     expect(elementWithSpreadKey.props).not.toBe(configWithKey);
   });
+
+  // @gate enableOptimisticKey
+  it('uses an optimistic key that is spread onto the element', () => {
+    if (React.optimisticKey === undefined) {
+      throw new Error('optimisticKey missing');
+    }
+
+    const configWithOptimisticKey = {
+      foo: 'foo',
+      // This only happens when the key is spread onto the element. A statically
+      // defined key is passed as a separate argument to the jsx() runtime.
+      key: React.optimisticKey,
+    };
+
+    const element = __DEV__
+      ? JSXDEVRuntime.jsxDEV('div', configWithOptimisticKey)
+      : JSXRuntime.jsx('div', configWithOptimisticKey);
+
+    assertConsoleErrorDev([
+      'A props object containing a "key" prop is being spread into JSX:\n' +
+        '  let props = {key: someKey, foo: ...};\n' +
+        '  <div {...props} />\n' +
+        'React keys must be passed directly to JSX without using spread:\n' +
+        '  let props = {foo: ...};\n' +
+        '  <div key={someKey} {...props} />',
+    ]);
+    expect(element.key).toBe(React.optimisticKey);
+  });
 });
