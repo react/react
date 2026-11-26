@@ -4019,7 +4019,10 @@ function clearContainerSparingly(container: Node) {
       }
       // Stylesheet tags are retained because they may likely come from 3rd party scripts and extensions
       case 'LINK': {
+        // Some non-standard DOMs (e.g. embedded browsers) may expose a
+        // non-string `rel`, so guard before calling toLowerCase().
         if (
+          typeof (node as any as HTMLLinkElement).rel === 'string' &&
           (node as any as HTMLLinkElement).rel.toLowerCase() === 'stylesheet'
         ) {
           continue;
@@ -4041,6 +4044,7 @@ function clearHead(head: Element): void {
       nodeName === 'SCRIPT' ||
       nodeName === 'STYLE' ||
       (nodeName === 'LINK' &&
+        typeof (node as any as HTMLLinkElement).rel === 'string' &&
         (node as any as HTMLLinkElement).rel.toLowerCase() === 'stylesheet')
     ) {
       // retain these nodes

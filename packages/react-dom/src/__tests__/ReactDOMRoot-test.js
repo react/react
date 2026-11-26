@@ -191,6 +191,22 @@ describe('ReactDOMRoot', () => {
     expect(container.textContent).toEqual('dc');
   });
 
+  it('does not assume link rel is a string when clearing a head container', async () => {
+    // Some non-standard DOMs (e.g. embedded browsers) expose a non-string
+    // `rel` on <link> elements.
+    const link = document.createElement('link');
+    Object.defineProperty(link, 'rel', {get: () => undefined});
+    const head = document.createElement('head');
+    head.appendChild(link);
+    const root = ReactDOMClient.createRoot(head);
+    root.render(<template>hello</template>);
+    await waitForAll([]);
+    // The non-stylesheet link with a non-string rel should have been removed
+    // while clearing the container, without throwing.
+    expect(head.innerHTML).toBe('<template></template>');
+    expect(link.isConnected).toBe(false);
+  });
+
   it('throws a good message on invalid containers', () => {
     expect(() => {
       ReactDOMClient.createRoot(<div>Hi</div>);
