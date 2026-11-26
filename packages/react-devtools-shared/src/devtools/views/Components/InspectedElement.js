@@ -7,8 +7,6 @@
  * @flow
  */
 
-import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
-
 import * as React from 'react';
 import {useCallback, useContext, useSyncExternalStore} from 'react';
 import {TreeStateContext} from './TreeContext';
@@ -25,8 +23,9 @@ import InspectedElementView from './InspectedElementView';
 import {InspectedElementContext} from './InspectedElementContext';
 import {getAlwaysOpenInEditor} from '../../../utils';
 import {LOCAL_STORAGE_ALWAYS_OPEN_IN_EDITOR} from '../../../constants';
-import FetchFileWithCachingContext from './FetchFileWithCachingContext';
-import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
+import useSymbolicatedSource from './useSymbolicatedSource';
+import SourceParsingStatus from './SourceParsingStatus';
+import getInspectedElementSource from './getInspectedElementSource';
 import OpenInEditorButton from './OpenInEditorButton';
 import InspectedElementViewSourceButton from './InspectedElementViewSourceButton';
 import useEditorURL from '../useEditorURL';
@@ -41,8 +40,6 @@ export type Props = {
 };
 
 // TODO Make edits and deletes also use transition API!
-
-const noSourcePromise = Promise.resolve(null);
 
 export default function InspectedElementWrapper({
   actionButtons,
@@ -61,31 +58,10 @@ export default function InspectedElementWrapper({
   const {hookNames, inspectedElement, parseHookNames, toggleParseHookNames} =
     useContext(InspectedElementContext);
 
-  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+  const {source, elementID: sourceElementID} =
+    getInspectedElementSource(inspectedElement);
 
-  const source =
-    inspectedElement == null
-      ? null
-      : inspectedElement.source != null
-        ? inspectedElement.source
-        : inspectedElement.stack != null && inspectedElement.stack.length > 0
-          ? inspectedElement.stack[0]
-          : null;
-
-  const symbolicatedSourcePromise: Promise<SourceMappedLocation | null> =
-    React.useMemo(() => {
-      if (fetchFileWithCaching == null) return noSourcePromise;
-
-      if (source == null) return noSourcePromise;
-
-      const [, sourceURL, line, column] = source;
-      return symbolicateSourceWithCache(
-        fetchFileWithCaching,
-        sourceURL,
-        line,
-        column,
-      );
-    }, [source]);
+  const symbolicatedSource = useSymbolicatedSource(source, true);
 
   const element =
     inspectedElementID !== null
@@ -254,16 +230,13 @@ export default function InspectedElementWrapper({
           </div>
         </div>
 
-        {!alwaysOpenInEditor &&
-          !!editorURL &&
-          source != null &&
-          symbolicatedSourcePromise != null && (
-            <OpenInEditorButton
-              editorURL={editorURL}
-              source={source}
-              symbolicatedSourcePromise={symbolicatedSourcePromise}
-            />
-          )}
+        {!alwaysOpenInEditor && !!editorURL && source != null && (
+          <OpenInEditorButton
+            editorURL={editorURL}
+            source={source}
+            symbolicatedSource={symbolicatedSource}
+          />
+        )}
 
         {canToggleError && (
           <Toggle
@@ -309,8 +282,9 @@ export default function InspectedElementWrapper({
 
         {!hideViewSourceAction && (
           <InspectedElementViewSourceButton
+            elementID={sourceElementID}
             source={source}
-            symbolicatedSourcePromise={symbolicatedSourcePromise}
+            symbolicatedSource={symbolicatedSource}
           />
         )}
 
@@ -321,6 +295,8 @@ export default function InspectedElementWrapper({
           </>
         )}
       </div>
+
+      {inspectedElement !== null && <SourceParsingStatus />}
 
       {inspectedElement === null && (
         <div className={styles.Loading}>Loading...</div>
@@ -333,7 +309,7 @@ export default function InspectedElementWrapper({
           inspectedElement={inspectedElement}
           parseHookNames={parseHookNames}
           toggleParseHookNames={toggleParseHookNames}
-          symbolicatedSourcePromise={symbolicatedSourcePromise}
+          symbolicatedSource={symbolicatedSource}
         />
       )}
     </div>

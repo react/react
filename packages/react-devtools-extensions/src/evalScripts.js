@@ -103,7 +103,7 @@ export const evalScripts: {[key: EvalScriptIds]: EvalScriptEntry} = {
       '  const value = renderer.getElementSourceFunctionById(' +
       JSON.stringify(elementID) +
       ');' +
-      '  if (value) {' +
+      "  if (typeof value === 'function') {" +
       '    inspect(value);' +
       '    true;' +
       '  } else {' +
