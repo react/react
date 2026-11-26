@@ -58,6 +58,7 @@ import {
   ContextConsumer,
   ForwardRef,
   Fragment,
+  DehydratedFragment,
   Mode,
   Profiler,
   SuspenseComponent,
@@ -1077,6 +1078,7 @@ function completeWork(
     case FunctionComponent:
     case ForwardRef:
     case Fragment:
+    case DehydratedFragment:
     case Mode:
     case Profiler:
     case ContextConsumer:
