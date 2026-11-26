@@ -21,6 +21,7 @@ const Stats = require('./stats');
 const Sync = require('./sync');
 const sizes = require('./plugins/sizes-plugin');
 const useForks = require('./plugins/use-forks-plugin');
+const {ReactVersion} = require('../../ReactVersions');
 const dynamicImports = require('./plugins/dynamic-imports');
 const externalRuntime = require('./plugins/external-runtime-plugin');
 const Packaging = require('./packaging');
@@ -379,6 +380,17 @@ function getPlugins(
       bundle.tsconfig == null;
 
     return [
+      // Inject the runtime version without modifying the source file.
+      replace({
+        include: require.resolve('../../packages/shared/ReactVersion'),
+        preventAssignment: true,
+        delimiters: ['', ''],
+        values: {
+          "'%REACT_VERSION%'": JSON.stringify(
+            process.env.REACT_BUILD_VERSION || ReactVersion
+          ),
+        },
+      }),
       // Keep dynamic imports as externals
       dynamicImports(),
       bundle.tsconfig != null ? typescript({tsconfig: bundle.tsconfig}) : false,

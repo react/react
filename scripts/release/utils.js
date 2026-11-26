@@ -3,14 +3,18 @@
 const {exec} = require('child-process-promise');
 const {createPatch} = require('diff');
 const {hashElement} = require('folder-hash');
-const {existsSync, readFileSync, writeFileSync} = require('fs');
+const {existsSync} = require('fs');
 const {readJson, writeJson} = require('fs-extra');
 const logUpdate = require('log-update');
 const {join} = require('path');
 const createLogger = require('progress-estimator');
 const prompt = require('prompt-promise');
 const theme = require('./theme');
-const {stablePackages, experimentalPackages} = require('../../ReactVersions');
+const {
+  ReactVersion,
+  stablePackages,
+  experimentalPackages,
+} = require('../../ReactVersions');
 
 // https://www.npmjs.com/package/progress-estimator#configuration
 const logger = createLogger({
@@ -76,12 +80,9 @@ const getBuildInfo = async () => {
 
   // React version is stored explicitly, separately for DevTools support.
   // See updateVersionsForNext() below for more info.
-  const packageJSON = await readJson(
-    join(cwd, 'packages', 'react', 'package.json')
-  );
   const reactVersion = isExperimental
-    ? `${packageJSON.version}-experimental-${commit}-${dateString}`
-    : `${packageJSON.version}-${commit}-${dateString}`;
+    ? `${ReactVersion}-experimental-${commit}-${dateString}`
+    : `${ReactVersion}-${commit}-${dateString}`;
 
   return {branch, checksum, commit, reactVersion, version};
 };
@@ -197,27 +198,16 @@ const splitCommaParams = array => {
 };
 
 // This method is used by both local Node release scripts and Circle CI bash scripts.
-// It updates version numbers in package JSONs (both the version field and dependencies),
-// As well as the embedded renderer version in "packages/shared/ReactVersion".
+// It updates version numbers in package JSONs (both the version field and dependencies).
 // Canaries version numbers use the format of 0.0.0-<sha>-<date> to be easily recognized (e.g. 0.0.0-01974a867-20200129).
 // A separate "React version" is used for the embedded renderer version to support DevTools,
 // since it needs to distinguish between different version ranges of React.
-// It is based on the version of React in the local package.json (e.g. 16.12.0-01974a867-20200129).
+// It is based on ReactVersion in ReactVersions.js (e.g. 16.12.0-01974a867-20200129).
 // Both numbers will be replaced if the "next" release is promoted to a stable release.
 const updateVersionsForNext = async (cwd, reactVersion, version) => {
   const isExperimental = reactVersion.includes('experimental');
   const packages = getPublicPackages(isExperimental);
   const packagesDir = join(cwd, 'packages');
-
-  // Update the shared React version source file.
-  // This is bundled into built renderers.
-  // The promote script will replace this with a final version later.
-  const sourceReactVersionPath = join(cwd, 'packages/shared/ReactVersion.js');
-  const sourceReactVersion = readFileSync(
-    sourceReactVersionPath,
-    'utf8'
-  ).replace(/export default '[^']+';/, `export default '${reactVersion}';`);
-  writeFileSync(sourceReactVersionPath, sourceReactVersion);
 
   // Update the root package.json.
   // This is required to pass a later version check script.
