@@ -2401,4 +2401,64 @@ describe('ReactDOMForm', () => {
 
     assertLog(['[unrelated form] pending: false, state: 1']);
   });
+
+  it('handles forms with elements named "reset" or "method" without crashing', async () => {
+    const formRef = React.createRef();
+    const inputRef = React.createRef();
+
+    function Status() {
+      const {pending, method} = useFormStatus();
+      return `pending: ${pending}, method: ${method}`;
+    }
+
+    let resolveAction;
+    function action() {
+      return new Promise(resolve => {
+        resolveAction = resolve;
+      });
+    }
+
+    function App() {
+      return (
+        <form action={action} ref={formRef}>
+          <input name="username" defaultValue="hello" ref={inputRef} />
+          <input type="reset" name="reset" value="Reset" />
+          <input type="hidden" name="method" value="DELETE" />
+          <input type="submit" />
+          <Status />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    const form = formRef.current;
+    // jsdom does not implement named property access on forms, so install the
+    // browser shadowing manually: controls named "reset"/"method" become own
+    // properties that hide HTMLFormElement.prototype.reset / .method.
+    Object.defineProperty(form, 'reset', {
+      configurable: true,
+      value: form.elements.reset,
+    });
+    Object.defineProperty(form, 'method', {
+      configurable: true,
+      value: form.elements.method,
+    });
+
+    expect(container.textContent).toContain('pending: false');
+
+    inputRef.current.value = 'edited';
+    await submit(form);
+
+    // While the action is pending, useFormStatus must expose a string method
+    // even though form.method is shadowed by the hidden input.
+    expect(container.textContent).toContain('pending: true, method: get');
+
+    await act(() => resolveAction());
+
+    // Resetting after the action must work despite form.reset being shadowed.
+    expect(inputRef.current.value).toBe('hello');
+    expect(container.textContent).toContain('pending: false, method: null');
+  });
 });
