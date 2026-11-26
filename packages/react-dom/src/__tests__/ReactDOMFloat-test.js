@@ -7096,6 +7096,160 @@ body {
       );
     });
 
+    it('accepts a `dataAttributes` option for `as: "script"`', async () => {
+      function Component({src}) {
+        ReactDOM.preinit(src, {
+          as: 'script',
+          dataAttributes: {
+            'data-framework': src,
+            'data-next-turbopack': '',
+          },
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <Component src="foo" />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <script
+              async=""
+              src="foo"
+              data-framework="foo"
+              data-next-turbopack=""
+            />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+
+      await clientAct(() => {
+        ReactDOMClient.hydrateRoot(
+          document,
+          <html>
+            <body>
+              <Component src="bar" />
+            </body>
+          </html>,
+        );
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <script
+              async=""
+              src="foo"
+              data-framework="foo"
+              data-next-turbopack=""
+            />
+            <script
+              async=""
+              src="bar"
+              data-framework="bar"
+              data-next-turbopack=""
+            />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+    });
+
+    it('warns and ignores invalid `dataAttributes` entries', async () => {
+      function App() {
+        ReactDOM.preinit('foo', {
+          as: 'script',
+          dataAttributes: {
+            'data-ok': 'yes',
+            // Not a data-* attribute name
+            framework: 'x',
+            'data-': 'x',
+            // Not a valid attribute name
+            'data-bad name': 'x',
+            // Not a string
+            'data-number': 1,
+          },
+        });
+        ReactDOM.preinit('bar', {as: 'script', dataAttributes: 'data-foo'});
+        ReactDOM.preinit('baz', {
+          as: 'style',
+          dataAttributes: {'data-ok': 'yes'},
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <App />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+      assertConsoleErrorDev([
+        'ReactDOM.preinit(): Expected the keys of the `dataAttributes` option to be `data-*` attribute names ' +
+          'but encountered "framework" instead for `href` "foo". This attribute will be omitted.\n' +
+          '    in App (at **)',
+        'ReactDOM.preinit(): Expected the keys of the `dataAttributes` option to be `data-*` attribute names ' +
+          'but encountered "data-" instead for `href` "foo". This attribute will be omitted.\n' +
+          '    in App (at **)',
+        'Invalid attribute name: `data-bad name`\n    in App (at **)',
+        'ReactDOM.preinit(): Expected the `dataAttributes` option to map "data-number" to a string ' +
+          'but encountered `1` instead for `href` "foo". This attribute will be omitted.\n' +
+          '    in App (at **)',
+        'ReactDOM.preinit(): Expected the `dataAttributes` option to be an object mapping `data-*` attribute names ' +
+          'to string values but encountered something with type "string" instead. This was passed for `href` "bar".\n' +
+          '    in App (at **)',
+        'ReactDOM.preinit(): The `dataAttributes` option is only supported when `as` is "script" ' +
+          'but it was passed with `as` "style" for `href` "baz". The `dataAttributes` option will be ignored.\n' +
+          '    in App (at **)',
+      ]);
+
+      expect(getMeaningfulChildren(document.head)).toEqual([
+        <link rel="stylesheet" href="baz" data-precedence="default" />,
+        <script async="" src="foo" data-ok="yes" />,
+        <script async="" src="bar" />,
+      ]);
+    });
+
+    it('uses the `dataAttributes` from the first preinit of a script', async () => {
+      function App() {
+        // Like the other options, only the first call for a src is used.
+        ReactDOM.preinit('foo', {
+          as: 'script',
+          dataAttributes: {'data-order': 'first'},
+        });
+        ReactDOM.preinit('foo', {
+          as: 'script',
+          dataAttributes: {'data-order': 'second'},
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <App />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <script async="" src="foo" data-order="first" />,
+      );
+    });
+
     it('accepts an `integrity` option for `as: "style"`', async () => {
       function Component({src, hash}) {
         ReactDOM.preinit(src, {as: 'style', integrity: hash});
@@ -7445,6 +7599,41 @@ body {
           </head>
           <body>hello</body>
         </html>,
+      );
+    });
+
+    it('accepts a `dataAttributes` option', async () => {
+      function App({ssr}) {
+        const prefix = ssr ? 'ssr ' : 'browser ';
+        ReactDOM.preinitModule(prefix + 'module', {
+          dataAttributes: {'data-framework': 'next'},
+        });
+        return <div>hello</div>;
+      }
+      await act(() => {
+        renderToPipeableStream(<App ssr={true} />).pipe(writable);
+      });
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <script
+            type="module"
+            src="ssr module"
+            data-framework="next"
+            async=""
+          />
+          <div>hello</div>
+        </div>,
+      );
+
+      ReactDOMClient.hydrateRoot(container, <App />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <script
+          type="module"
+          src="browser module"
+          data-framework="next"
+          async=""
+        />,
       );
     });
 

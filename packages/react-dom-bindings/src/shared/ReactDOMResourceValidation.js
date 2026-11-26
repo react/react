@@ -83,5 +83,7 @@ export function getValueDescriptorExpectingEnumForWarning(thing: any): string {
         ? 'an empty string'
         : typeof thing === 'string'
           ? JSON.stringify(thing)
-          : `something with type "${typeof thing}"`;
+          : typeof thing === 'number'
+            ? '`' + thing + '`'
+            : `something with type "${typeof thing}"`;
 }

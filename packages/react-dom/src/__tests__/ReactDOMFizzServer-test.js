@@ -5309,6 +5309,68 @@ describe('ReactDOMFizzServer', () => {
     ]);
   });
 
+  it('accepts a dataAttributes property for bootstrapScripts and bootstrapModules', async () => {
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <html>
+          <head />
+          <body>
+            <div>hello world</div>
+          </body>
+        </html>,
+        {
+          bootstrapScripts: [
+            'foo',
+            {
+              src: 'bar',
+              dataAttributes: {
+                'data-framework': 'next',
+                'data-next-turbopack': '',
+              },
+            },
+            {
+              src: 'baz',
+              // Values are escaped like any other attribute.
+              dataAttributes: {'data-value': '"<&'},
+            },
+          ],
+          bootstrapModules: [
+            {
+              src: 'qux',
+              crossOrigin: 'use-credentials',
+              dataAttributes: {'data-chunk': 'main'},
+            },
+          ],
+        },
+      );
+      pipe(writable);
+    });
+
+    // The early preloads are unchanged. Only the script tags get the attributes.
+    expect(getVisibleChildren(document.head)).toEqual([
+      <link rel="preload" fetchpriority="low" href="foo" as="script" />,
+      <link rel="preload" fetchpriority="low" href="bar" as="script" />,
+      <link rel="preload" fetchpriority="low" href="baz" as="script" />,
+      <link
+        rel="modulepreload"
+        fetchpriority="low"
+        href="qux"
+        crossorigin="use-credentials"
+      />,
+    ]);
+    expect(
+      stripExternalRuntimeInNodes(
+        document.getElementsByTagName('script'),
+        renderOptions.unstable_externalRuntimeSrc,
+      ).map(n => n.outerHTML),
+    ).toEqual([
+      '<script src="foo" id="_R_" async=""></script>',
+      '<script src="bar" data-framework="next" data-next-turbopack="" async=""></script>',
+      '<script src="baz" data-value="&quot;<&amp;" async=""></script>',
+      '<script type="module" src="qux" crossorigin="use-credentials" data-chunk="main" async=""></script>',
+    ]);
+  });
+
   describe('inline script escaping', () => {
     describe('bootstrapScriptContent', () => {
       it('the "S" in "</?[Ss]cript" strings are replaced with unicode escaped lowercase s or S depending on case, preserving case sensitivity of nearby characters', async () => {
