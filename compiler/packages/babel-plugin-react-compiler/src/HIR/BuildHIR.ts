@@ -1828,8 +1828,9 @@ function lowerExpression(
         );
         return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
       }
-      if (calleePath.isMemberExpression()) {
-        const memberExpr = lowerMemberExpression(builder, calleePath);
+      const calleeReference = unwrapNonNullExpression(calleePath);
+      if (calleeReference.isMemberExpression()) {
+        const memberExpr = lowerMemberExpression(builder, calleeReference);
         const propertyPlace = lowerValueToTemporary(builder, memberExpr.value);
         const args = lowerArguments(builder, expr.get('arguments'));
         return {
@@ -2493,9 +2494,14 @@ function lowerExpression(
         return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
       }
 
+      const tag = expr.get('tag');
+      const tagReference = unwrapNonNullExpression(tag);
       return {
         kind: 'TaggedTemplateExpression',
-        tag: lowerExpressionToTemporary(builder, expr.get('tag')),
+        tag: lowerExpressionToTemporary(
+          builder,
+          tagReference.isMemberExpression() ? tagReference : tag,
+        ),
         value,
         loc: exprLoc,
       };
@@ -2774,8 +2780,16 @@ function lowerExpression(
         loc: getSourceLocation(expr.node),
       };
     }
-    case 'TSInstantiationExpression':
     case 'TSNonNullExpression': {
+      let expr = exprPath as NodePath<t.TSNonNullExpression>;
+      const value = lowerExpressionToTemporary(builder, expr.get('expression'));
+      return {
+        kind: 'NonNullExpression',
+        value,
+        loc: exprLoc,
+      };
+    }
+    case 'TSInstantiationExpression': {
       let expr = exprPath as NodePath<t.TSNonNullExpression>;
       return lowerExpression(builder, expr.get('expression'));
     }
@@ -2934,7 +2948,7 @@ function lowerOptionalCallExpression(
   loc: SourceLocation = getSourceLocation(expr.node),
 ): InstructionValue {
   const optional = expr.node.optional;
-  const calleePath = expr.get('callee');
+  const calleePath = unwrapNonNullExpression(expr.get('callee'));
   const place = buildTemporaryPlace(builder, loc);
   const continuationBlock = builder.reserve(builder.currentBlockKind());
   const consequent = builder.reserve('value');
@@ -3007,7 +3021,7 @@ function lowerOptionalCallExpression(
     } else {
       callee = {
         kind: 'CallExpression',
-        callee: lowerExpressionToTemporary(builder, calleePath),
+        callee: lowerExpressionToTemporary(builder, expr.get('callee')),
       };
     }
     const testPlace =
@@ -3338,6 +3352,16 @@ type LoweredMemberExpression = {
   property: Place | string | number;
   value: InstructionValue;
 };
+/** Preserve member references in callee and tag positions across assertions. */
+function unwrapNonNullExpression(
+  expression: NodePath<t.Expression>,
+): NodePath<t.Expression> {
+  while (expression.isTSNonNullExpression()) {
+    expression = expression.get('expression');
+  }
+  return expression;
+}
+
 function lowerMemberExpression(
   builder: HIRBuilder,
   expr: NodePath<t.MemberExpression | t.OptionalMemberExpression>,

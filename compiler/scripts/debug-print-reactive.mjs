@@ -354,6 +354,11 @@ function printInstructionValueFields(value, depth) {
       lines.push(`${ind(d + 1)}value: $${value.value.identifier.id}`);
       lines.push(`${ind(d)}}`);
       break;
+    case "NonNullExpression":
+      lines.push(`${ind(d)}NonNullExpression {`);
+      lines.push(`${ind(d + 1)}value: $${value.value.identifier.id}`);
+      lines.push(`${ind(d)}}`);
+      break;
     case "TypeCastExpression":
       lines.push(`${ind(d)}TypeCastExpression {`);
       lines.push(`${ind(d + 1)}value: $${value.value.identifier.id}`);

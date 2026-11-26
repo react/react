@@ -71,6 +71,14 @@ function validateNoSetStateInRenderImpl(
           }
           break;
         }
+        case 'NonNullExpression': {
+          if (
+            unconditionalSetStateFunctions.has(instr.value.value.identifier.id)
+          ) {
+            unconditionalSetStateFunctions.add(instr.lvalue.identifier.id);
+          }
+          break;
+        }
         case 'StoreLocal': {
           if (
             unconditionalSetStateFunctions.has(instr.value.value.identifier.id)
