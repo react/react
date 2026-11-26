@@ -10,8 +10,10 @@
 import type {Writable} from 'stream';
 
 import {TextEncoder} from 'util';
-import {createHash} from 'crypto';
+import {createHash, getFips} from 'crypto';
 import hasOwnProperty from 'shared/hasOwnProperty';
+
+const fastHashAlgorithm = getFips() ? 'sha256' : 'md5';
 
 interface MightBeFlushable {
   flush?: () => void;
@@ -319,7 +321,7 @@ export function closeWithError(destination: Destination, error: mixed): void {
 }
 
 export function createFastHash(input: string): string | number {
-  const hash = createHash('md5');
+  const hash = createHash(fastHashAlgorithm);
   hash.update(input);
   return hash.digest('hex');
 }
