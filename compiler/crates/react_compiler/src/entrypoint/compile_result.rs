@@ -2,7 +2,7 @@ use react_compiler_ast::File;
 use react_compiler_ast::expressions::Identifier as AstIdentifier;
 use react_compiler_ast::patterns::PatternLike;
 use react_compiler_ast::statements::BlockStatement;
-use react_compiler_diagnostics::SourceLocation;
+use react_compiler_diagnostics::{ErrorCategory, ErrorSeverity, SourceLocation};
 use react_compiler_hir::ReactFunctionType;
 use serde::Serialize;
 
@@ -151,12 +151,17 @@ pub struct CompilerErrorInfo {
 
 /// Serializable error detail — flat plain object matching the TS
 /// `formatDetailForLogging()` output. All fields are direct properties.
+///
+/// `category` and `severity` are kept as their enums so in-process consumers
+/// (oxc, swc, Biome, ...) can match on them directly instead of comparing
+/// strings. Both serialize to their variant name, which is the same string
+/// the TS compiler emits in logger events (e.g. `"Hooks"`, `"Error"`).
 #[derive(Debug, Clone, Serialize)]
 pub struct CompilerErrorDetailInfo {
-    pub category: String,
+    pub category: ErrorCategory,
     pub reason: String,
     pub description: Option<String>,
-    pub severity: String,
+    pub severity: ErrorSeverity,
     pub suggestions: Option<Vec<LoggerSuggestionInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<Vec<CompilerErrorItemInfo>>,
@@ -293,4 +298,81 @@ pub enum LoggerEvent {
         fn_loc: Option<LoggerSourceLocation>,
         data: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_CATEGORIES: [ErrorCategory; 26] = [
+        ErrorCategory::Hooks,
+        ErrorCategory::CapitalizedCalls,
+        ErrorCategory::StaticComponents,
+        ErrorCategory::UseMemo,
+        ErrorCategory::VoidUseMemo,
+        ErrorCategory::PreserveManualMemo,
+        ErrorCategory::MemoDependencies,
+        ErrorCategory::IncompatibleLibrary,
+        ErrorCategory::Immutability,
+        ErrorCategory::Globals,
+        ErrorCategory::Refs,
+        ErrorCategory::EffectDependencies,
+        ErrorCategory::EffectExhaustiveDependencies,
+        ErrorCategory::EffectSetState,
+        ErrorCategory::EffectDerivationsOfState,
+        ErrorCategory::ErrorBoundaries,
+        ErrorCategory::Purity,
+        ErrorCategory::RenderSetState,
+        ErrorCategory::Invariant,
+        ErrorCategory::Todo,
+        ErrorCategory::Syntax,
+        ErrorCategory::UnsupportedSyntax,
+        ErrorCategory::Config,
+        ErrorCategory::Gating,
+        ErrorCategory::Suppression,
+        ErrorCategory::FBT,
+    ];
+
+    /// The logger event wire format must not change: `category` and
+    /// `severity` used to be `format!("{:?}", ..)` strings, and the JS shim
+    /// and the TS parity tests compare against those exact values.
+    #[test]
+    fn error_detail_info_serializes_category_and_severity_as_variant_names() {
+        for category in ALL_CATEGORIES {
+            let detail = CompilerErrorDetailInfo {
+                category,
+                reason: "reason".to_string(),
+                description: None,
+                severity: category.logged_severity(),
+                suggestions: None,
+                details: None,
+                loc: None,
+            };
+            let json = serde_json::to_value(&detail).unwrap();
+            assert_eq!(json["category"], format!("{:?}", category));
+            assert_eq!(
+                json["severity"],
+                format!("{:?}", category.logged_severity())
+            );
+        }
+    }
+
+    #[test]
+    fn error_detail_info_exposes_typed_category_and_severity() {
+        let detail = CompilerErrorDetailInfo {
+            category: ErrorCategory::EffectDependencies,
+            reason: "reason".to_string(),
+            description: None,
+            severity: ErrorCategory::EffectDependencies.logged_severity(),
+            suggestions: None,
+            details: None,
+            loc: None,
+        };
+        // Consumers can match on the enums without string comparisons.
+        assert!(matches!(detail.category, ErrorCategory::EffectDependencies));
+        assert!(matches!(detail.severity, ErrorSeverity::Warning));
+        let json = serde_json::to_value(&detail).unwrap();
+        assert_eq!(json["category"], "EffectDependencies");
+        assert_eq!(json["severity"], "Warning");
+    }
 }
