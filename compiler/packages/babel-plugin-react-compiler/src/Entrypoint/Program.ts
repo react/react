@@ -742,6 +742,17 @@ function tryCompileFunction(
     };
   }
 
+  /*
+   * A function that fails to compile is left as is. Its errors are only
+   * reported in lint mode, through the logger (one CompileError event per
+   * error), or by throwing when `panicThreshold` allows it. Otherwise they are
+   * discarded, so compilation can stop at the first one.
+   */
+  const stopAtFirstError =
+    outputMode !== 'lint' &&
+    programContext.opts.logger == null &&
+    programContext.opts.panicThreshold === 'none';
+
   try {
     const result = compileFn(
       fn,
@@ -752,6 +763,7 @@ function tryCompileFunction(
       programContext.opts.logger,
       programContext.filename,
       programContext.code,
+      stopAtFirstError,
     );
     if (result.isOk()) {
       return {kind: 'compile', compiledFn: result.unwrap()};
