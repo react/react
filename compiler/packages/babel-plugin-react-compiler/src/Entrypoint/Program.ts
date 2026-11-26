@@ -702,7 +702,7 @@ function processFn(
 
   if (programContext.hasModuleScopeOptOut) {
     return null;
-  } else if (programContext.opts.outputMode === 'lint') {
+  } else if (outputMode === 'lint') {
     return null;
   } else if (
     programContext.opts.compilationMode === 'annotation' &&
