@@ -218,4 +218,23 @@ describe('SelectEventPlugin', () => {
 
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
+
+  it('should fire `onSelect` for an input inside a shadow root', async () => {
+    const onSelect = jest.fn();
+    const shadowRoot = container.attachShadow({mode: 'open'});
+
+    const root = ReactDOMClient.createRoot(shadowRoot);
+    await act(() => {
+      root.render(<input type="text" onSelect={onSelect} />);
+    });
+    const node = shadowRoot.firstChild;
+
+    node.focus();
+    expect(onSelect).toHaveBeenCalledTimes(0);
+
+    node.dispatchEvent(
+      new KeyboardEvent('keydown', {bubbles: true, cancelable: true}),
+    );
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
 });
