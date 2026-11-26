@@ -3165,4 +3165,88 @@ describe('ReactFlightDOMNode', () => {
     expect(result[0]).toBe(1);
     expect(result[length - 1]).toBe(1);
   });
+
+  it('retries pinged work in the async context the request was created in', async () => {
+    const {AsyncLocalStorage} = require('async_hooks');
+    const storage = new AsyncLocalStorage();
+
+    // Unlike a native promise, a custom thenable calls its listeners in the
+    // context of whoever resolves it.
+    const listeners = [];
+    const thenable = {
+      then(resolve) {
+        listeners.push(resolve);
+      },
+    };
+
+    function Component() {
+      ReactServer.use(thenable);
+      return {store: storage.getStore()};
+    }
+
+    const stream = await serverAct(() =>
+      storage.run('request', () =>
+        ReactServerDOMServer.renderToPipeableStream(<Component />),
+      ),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const stringResult = readResult(readable);
+    stream.pipe(readable);
+
+    expect(listeners.length).toBeGreaterThan(0);
+    await serverAct(() =>
+      storage.run('other', () => {
+        thenable.status = 'fulfilled';
+        thenable.value = undefined;
+        listeners.forEach(listener => listener());
+      }),
+    );
+
+    const result = await stringResult;
+    expect(result).toContain('"store":"request"');
+  });
+
+  it('retries pinged work in the async context the request was created in without AsyncLocalStorage.snapshot', async () => {
+    const {AsyncLocalStorage} = require('async_hooks');
+    const storage = new AsyncLocalStorage();
+
+    const listeners = [];
+    const thenable = {
+      then(resolve) {
+        listeners.push(resolve);
+      },
+    };
+
+    function Component() {
+      ReactServer.use(thenable);
+      return {store: storage.getStore()};
+    }
+
+    const snapshot = AsyncLocalStorage.snapshot;
+    AsyncLocalStorage.snapshot = undefined;
+    try {
+      const stream = await serverAct(() =>
+        storage.run('request', () =>
+          ReactServerDOMServer.renderToPipeableStream(<Component />),
+        ),
+      );
+      const readable = new Stream.PassThrough(streamOptions);
+      const stringResult = readResult(readable);
+      stream.pipe(readable);
+
+      expect(listeners.length).toBeGreaterThan(0);
+      await serverAct(() =>
+        storage.run('other', () => {
+          thenable.status = 'fulfilled';
+          thenable.value = undefined;
+          listeners.forEach(listener => listener());
+        }),
+      );
+
+      const result = await stringResult;
+      expect(result).toContain('"store":"request"');
+    } finally {
+      AsyncLocalStorage.snapshot = snapshot;
+    }
+  });
 });

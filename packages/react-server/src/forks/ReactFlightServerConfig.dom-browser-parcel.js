@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {Request} from 'react-server/src/ReactFlightServer';
+import type {Request, RequestContext} from 'react-server/src/ReactFlightServer';
 import type {ReactComponentInfo} from 'shared/ReactTypes';
 
 export * from 'react-server-dom-parcel/src/server/ReactFlightServerConfigParcelBundler';
@@ -15,6 +15,8 @@ export * from 'react-dom-bindings/src/server/ReactFlightServerConfigDOM';
 
 export const supportsRequestStorage = false;
 export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
+export const captureRequestContext: (request: Request) => RequestContext =
+  null as any;
 
 export const supportsComponentStorage = false;
 export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =
