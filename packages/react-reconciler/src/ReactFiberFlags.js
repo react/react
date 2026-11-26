@@ -47,9 +47,6 @@ export const DidDefer = ContentReset;
 export const FormReset = Snapshot;
 export const AffectedParentLayout = ContentReset;
 
-export const LifecycleEffectMask =
-  Passive | Update | Callback | Ref | Snapshot | StoreConsistency;
-
 // Union of all commit flags (flags with the lifetime of a particular commit)
 export const HostEffectMask = /*               */ 0b0000000000000000111111111111111;
 
