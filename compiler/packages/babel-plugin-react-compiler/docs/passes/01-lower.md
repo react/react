@@ -91,7 +91,7 @@ The lowering algorithm uses a recursive descent pattern with a `HIRBuilder` help
 
 ## Edge Cases
 
-1. **Hoisting**: Forward references to `let`/`const`/`function` declarations emit `DeclareContext` before the reference, enabling correct temporal dead zone handling
+1. **Hoisting**: Forward references to `let`/`const`/`function` declarations emit `DeclareContext` before the reference, enabling correct temporal dead zone handling. Function params and type-only declarations (Flow `type`/`opaque type`/`interface`, and their TypeScript equivalents) are never hoisted: params are initialized before the body runs, and type-only declarations have no runtime binding at all
 
 2. **Context Variables**: Variables captured by nested functions use `LoadContext`/`StoreContext` instead of `LoadLocal`/`StoreLocal`
 

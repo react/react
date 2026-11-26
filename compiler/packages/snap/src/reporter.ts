@@ -184,8 +184,6 @@ export async function update(results: TestResults): Promise<void> {
 // Fixtures where TS and Rust produce different output. Snapshots reflect Rust
 // output (source of truth). Skipped when running the TS compiler.
 const TS_SKIP_FIXTURES: Set<string> = new Set([
-  // Rust compiles successfully, TS would error. Renamed from error.todo-/error.bug-.
-  'todo-hoist-type-alias-before-declaration',
   // Error message/format divergences
   'fbt/error.todo-locally-require-fbt',
   // Minor output difference (TS adds unused runtime import)
