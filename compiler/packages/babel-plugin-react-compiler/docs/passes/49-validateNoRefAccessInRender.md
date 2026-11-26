@@ -29,6 +29,16 @@ if (ref.current == null) {
 }
 ```
 
+The equivalent nullish assignment is also allowed:
+
+```javascript
+ref.current ??= expensiveComputation();
+```
+
+Its nullish test must guard a write to the same ref. Initializers may contain
+value blocks, but additional writes and render-time reads remain invalid.
+Logical OR and AND assignments do not qualify as null-guard initialization.
+
 Error messages produced:
 - Category: `Refs`
 - Reason: "Cannot access refs during render"

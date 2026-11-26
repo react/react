@@ -63,6 +63,19 @@ export function findContextIdentifiers(
         state: FindContextIdentifierState,
       ): void {
         const left = path.get('left');
+        if (
+          (path.node.operator === '??=' ||
+            path.node.operator === '||=' ||
+            path.node.operator === '&&=') &&
+          left.isIdentifier() &&
+          left.scope.getBinding(left.node.name)?.kind === 'const'
+        ) {
+          /*
+           * BuildHIR records a Todo for this conditional store. Do not mark
+           * the const as reassigned and reject its declaration first.
+           */
+          return;
+        }
         if (left.isLVal()) {
           const currentFn = state.currentFn.at(-1) ?? null;
           handleAssignment(currentFn, state.identifiers, left);

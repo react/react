@@ -324,6 +324,7 @@ function validateNoRefAccessInRenderImpl(
   }
 
   const interpolatedAsJsx = new Set<IdentifierId>();
+  const nullishRefInitializations = collectNullishRefInitializations(fn);
   for (const block of fn.body.blocks.values()) {
     for (const instr of block.instructions) {
       const {value} = instr;
@@ -823,7 +824,25 @@ function validateNoRefAccessInRenderImpl(
         }
       }
 
+      const initializedRef = getNullishRefInitializationRefId(
+        nullishRefInitializations.get(block.id),
+        env,
+      );
+      if (
+        initializedRef != null &&
+        block.terminal.kind === 'branch' &&
+        safeBlocks.every(entry => entry.ref !== initializedRef)
+      ) {
+        safeBlocks.push({
+          block: block.terminal.fallthrough,
+          ref: initializedRef,
+        });
+      }
+
       for (const operand of eachTerminalOperand(block.terminal)) {
+        if (initializedRef != null) {
+          continue;
+        }
         if (block.terminal.kind !== 'return') {
           validateNoRefValueAccess(errors, env, operand);
           if (block.terminal.kind !== 'if') {
@@ -851,6 +870,82 @@ function validateNoRefAccessInRenderImpl(
   return joinRefAccessTypes(
     ...returnValues.filter((env): env is RefAccessType => env !== undefined),
   );
+}
+
+type NullishRefInitialization = {
+  object: IdentifierId;
+  stores: Array<IdentifierId>;
+};
+
+function collectNullishRefInitializations(
+  fn: HIRFunction,
+): Map<BlockId, NullishRefInitialization> {
+  const tests: Array<BlockId> = [];
+  for (const block of fn.body.blocks.values()) {
+    const terminal = block.terminal;
+    if (terminal.kind === 'logical' && terminal.operator === '??') {
+      tests.push(terminal.test);
+    }
+  }
+  const result = new Map<BlockId, NullishRefInitialization>();
+  if (tests.length === 0) {
+    return result;
+  }
+  const currentLoads = new Map<IdentifierId, IdentifierId>();
+  const stores = new Map<BlockId, Array<IdentifierId>>();
+  for (const block of fn.body.blocks.values()) {
+    const terminal = block.terminal;
+    for (const {lvalue, value} of block.instructions) {
+      if (value.kind === 'PropertyLoad' && value.property === 'current') {
+        currentLoads.set(lvalue.identifier.id, value.object.identifier.id);
+      } else if (value.kind === 'LoadLocal') {
+        const object = currentLoads.get(value.place.identifier.id);
+        if (object != null) {
+          currentLoads.set(lvalue.identifier.id, object);
+        }
+      } else if (
+        value.kind === 'PropertyStore' &&
+        value.property === 'current' &&
+        terminal.kind === 'goto'
+      ) {
+        const targets = stores.get(terminal.block) ?? [];
+        targets.push(value.object.identifier.id);
+        stores.set(terminal.block, targets);
+      }
+    }
+  }
+  for (const test of tests) {
+    const terminal = fn.body.blocks.get(test)?.terminal;
+    if (terminal?.kind !== 'branch') {
+      continue;
+    }
+    const object = currentLoads.get(terminal.test.identifier.id);
+    const targets = stores.get(terminal.fallthrough);
+    if (object != null && targets != null) {
+      // Stores reach the logical join even when the initializer has value blocks.
+      result.set(test, {object, stores: targets});
+    }
+  }
+  return result;
+}
+
+function getNullishRefInitializationRefId(
+  initialization: NullishRefInitialization | undefined,
+  env: Env,
+): RefId | null {
+  if (initialization == null) {
+    return null;
+  }
+  const target = env.get(initialization.object);
+  if (target?.kind !== 'Ref') {
+    return null;
+  }
+  return initialization.stores.some(object => {
+    const stored = env.get(object);
+    return stored?.kind === 'Ref' && stored.refId === target.refId;
+  })
+    ? target.refId
+    : null;
 }
 
 function destructure(
