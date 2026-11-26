@@ -16,6 +16,7 @@ import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
   enableFlightWeakThenables,
+  enableFlightTee,
   enableFlightObjectReferences,
   enableFlightLedgers,
 } from 'shared/ReactFeatureFlags';
@@ -69,6 +70,8 @@ import type {
   ReactErrorInfoDev,
   ReactKey,
 } from 'shared/ReactTypes';
+import type {FlightTee, FlightTeeDispatcher} from 'shared/ReactFlightTee';
+import {FLIGHT_TEE_VERSION} from 'shared/ReactFlightTee';
 import type {ReactElement} from 'shared/ReactElementType';
 import type {LazyComponent} from 'react/src/ReactLazy';
 import type {
@@ -683,6 +686,10 @@ export type Request = {
     Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
   >,
   completedErrorChunks: Array<Chunk>,
+  // The number of NEXT_TWO_CHUNKS_ARE_ATOMIC sentinels in
+  // completedRegularChunks, so the tee can count the queued chunks without
+  // scanning the queue on every flush.
+  completedRegularChunkPairs: number,
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
@@ -699,6 +706,11 @@ export type Request = {
   onError: (error: mixed) => ?string,
   onAllReady: () => void,
   onFatalError: mixed => void,
+  // A Flight Client in the same process that also receives every row as it's
+  // emitted. Null when there's no tee, or once it's closed.
+  tee: null | FlightTee,
+  // The tee's methods, read once when it connects.
+  teeDispatcher: null | FlightTeeDispatcher,
   // Profiling-only
   timeOrigin: number,
   abortTime: number,
@@ -709,6 +721,8 @@ export type Request = {
   completedDebugChunks: Array<
     Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
   >,
+  // See completedRegularChunkPairs.
+  completedDebugChunkPairs: number,
   debugDestination: null | Destination,
   environmentName: () => string,
   filterStackFrame: (
@@ -836,6 +850,7 @@ function RequestInstance(
     Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
   >;
   this.completedErrorChunks = [] as Array<Chunk>;
+  this.completedRegularChunkPairs = 0;
   this.writtenSymbols = new Map();
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
@@ -851,12 +866,15 @@ function RequestInstance(
   this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.onAllReady = onAllReady;
   this.onFatalError = onFatalError;
+  this.tee = null;
+  this.teeDispatcher = null;
 
   if (__DEV__) {
     this.pendingDebugChunks = 0;
     this.completedDebugChunks = [] as Array<
       Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
     >;
+    this.completedDebugChunkPairs = 0;
     this.debugDestination = null;
     this.environmentName =
       environmentName === undefined
@@ -919,6 +937,91 @@ function RequestInstance(
     null,
   );
   pingedTasks.push(rootTask);
+}
+
+// Connects a tee created by a Flight Client in the same process. It has to be
+// called right after the request is created, before any work starts.
+export function attachTee(request: Request, tee: FlightTee): void {
+  if (!enableFlightTee) {
+    return;
+  }
+  if (tee._version !== FLIGHT_TEE_VERSION) {
+    throw new Error(
+      'The tee was created by a different version of React than the one ' +
+        'rendering. The Flight Client and Server must be the same version.',
+    );
+  }
+  const teeDispatcher = tee._dispatcher;
+  if (!teeDispatcher.c(tee)) {
+    throw new Error(
+      'The tee is already being written to by another render. A tee can ' +
+        'only be passed to one render.',
+    );
+  }
+  request.tee = tee;
+  request.teeDispatcher = teeDispatcher;
+  if (__DEV__ && enableProfilerTimer) {
+    // The time origin row was emitted when the request was created.
+    teeDispatcher.w(
+      tee,
+      serializeTimeOriginRow(
+        request.timeOrigin +
+          // $FlowFixMe[prop-missing]
+          performance.timeOrigin,
+      ),
+    );
+  }
+}
+
+function teeWireRow(request: Request, row: string): void {
+  if (!enableFlightTee) {
+    return;
+  }
+  const tee = request.tee;
+  const teeDispatcher = request.teeDispatcher;
+  if (tee !== null && teeDispatcher !== null) {
+    teeDispatcher.w(tee, row);
+  }
+}
+
+// The tee gets every row when it's emitted, so it closes once nothing is left
+// to emit, even if the rows haven't been written yet. A prerender's rows wait
+// until its prelude is read, or a destination can stop flowing.
+function closeTeeIfComplete(request: Request): void {
+  if (!enableFlightTee) {
+    return;
+  }
+  const tee = request.tee;
+  const teeDispatcher = request.teeDispatcher;
+  if (tee === null || teeDispatcher === null) {
+    return;
+  }
+  // Every chunk that counts as pending and is still queued. The pair
+  // sentinels don't count.
+  const queued =
+    request.completedImportChunks.length +
+    request.completedRegularChunks.length -
+    request.completedRegularChunkPairs +
+    request.completedErrorChunks.length;
+  if (request.pendingChunks !== queued) {
+    return;
+  }
+  if (__DEV__) {
+    // What the server holds back for a debug channel also counts as pending,
+    // but the tee has no debug channel to ask for it through, so it doesn't
+    // wait for it.
+    const deferredDebugObjects = request.deferredDebugObjects;
+    const queuedDebug =
+      request.completedDebugChunks.length -
+      request.completedDebugChunkPairs +
+      (deferredDebugObjects !== null ? deferredDebugObjects.retained.size : 0);
+    if (request.pendingDebugChunks !== queuedDebug) {
+      return;
+    }
+  }
+  request.tee = null;
+  request.teeDispatcher = null;
+  teeDispatcher.C(tee);
 }
 
 export function createRequest(
@@ -4980,6 +5083,15 @@ function fatalError(request: Request, error: mixed): void {
     request.status = CLOSING;
     request.fatalError = error;
   }
+  if (enableFlightTee) {
+    const tee = request.tee;
+    const teeDispatcher = request.teeDispatcher;
+    if (tee !== null && teeDispatcher !== null) {
+      request.tee = null;
+      request.teeDispatcher = null;
+      teeDispatcher.X(tee, error);
+    }
+  }
   const abortReason = new Error(
     'The render was aborted due to a fatal error.',
     {
@@ -5091,22 +5203,27 @@ function serializeDebugErrorValue(
   }
 }
 
-// Each queue has one function that queues a row on it.
+// Each queue has one function that queues a row on it, which also hands the
+// row to the tee.
 
 function queueRegularRow(request: Request, row: string): void {
   request.completedRegularChunks.push(stringToChunk(row));
+  teeWireRow(request, row);
 }
 
 function queueImportRow(request: Request, row: string): void {
   request.completedImportChunks.push(stringToChunk(row));
+  teeWireRow(request, row);
 }
 
 function queueErrorRow(request: Request, row: string): void {
   request.completedErrorChunks.push(stringToChunk(row));
+  teeWireRow(request, row);
 }
 
 function queueDebugRow(request: Request, row: string): void {
   request.completedDebugChunks.push(stringToChunk(row));
+  teeWireRow(request, row);
 }
 
 // Queues a row whose header and content are separate chunks, behind a
@@ -5123,12 +5240,18 @@ function queueAtomicPair(
   contentChunk: Chunk | BinaryChunk,
 ): void {
   if (__DEV__ && debug) {
+    if (enableFlightTee) {
+      request.completedDebugChunkPairs++;
+    }
     request.completedDebugChunks.push(
       NEXT_TWO_CHUNKS_ARE_ATOMIC,
       headerChunk,
       contentChunk,
     );
   } else {
+    if (enableFlightTee) {
+      request.completedRegularChunkPairs++;
+    }
     request.completedRegularChunks.push(
       NEXT_TWO_CHUNKS_ARE_ATOMIC,
       headerChunk,
@@ -5364,10 +5487,12 @@ function emitHintChunk<Code: HintCode>(
   const json: string = stringify(model);
   const row = ':H' + code + json + '\n';
   request.completedHintChunks.push(stringToChunk(row));
+  teeWireRow(request, row);
 }
 
 function emitLedgerChunk(request: Request, row: string): void {
   request.completedLedgerChunks.push(stringToChunk(row));
+  teeWireRow(request, row);
 }
 
 function ensureLedgerDeclared(
@@ -6030,13 +6155,24 @@ function emitTypedArrayChunk(
     typedArray.byteOffset,
     typedArray.byteLength,
   );
+  let copied = false;
+  if (enableFlightTee && request.tee !== null) {
+    // The tee reads the bytes now, but the destination reads them when they're
+    // flushed, so write a copy to both. The render can't change the bytes in
+    // between. The copy also fixes the length, which `view` tracks if
+    // `byteLength` didn't answer with a number and the buffer is resizable.
+    view = view.slice();
+    copied = true;
+  }
   if (enableTaint) {
     if (TaintRegistryByteLengths.has(view.byteLength)) {
       // If we have had any tainted values of this length, we check
       // to see if these bytes matches any entries in the registry. Check a
       // copy, and write the copy, so that nothing that runs after the check,
       // like an accessor on the buffer, can change the bytes.
-      view = view.slice();
+      if (!copied) {
+        view = view.slice();
+      }
       const tainted = TaintRegistryValues.get(binaryToComparableString(view));
       if (tainted !== undefined) {
         throwTaintViolation(tainted.message);
@@ -6054,6 +6190,13 @@ function emitTypedArrayChunk(
   const row = id.toString(16) + ':' + tag + binaryLength.toString(16) + ',';
   const headerChunk = stringToChunk(row);
   queueAtomicPair(request, debug, headerChunk, binaryChunk);
+  if (enableFlightTee) {
+    const tee = request.tee;
+    const teeDispatcher = request.teeDispatcher;
+    if (tee !== null && teeDispatcher !== null) {
+      teeDispatcher.y(tee, id, tag.charCodeAt(0), view);
+    }
+  }
 }
 
 function emitTextChunk(
@@ -6079,6 +6222,13 @@ function emitTextChunk(
   const row = id.toString(16) + ':T' + binaryLength.toString(16) + ',';
   const headerChunk = stringToChunk(row);
   queueAtomicPair(request, debug, headerChunk, textChunk);
+  if (enableFlightTee) {
+    const tee = request.tee;
+    const teeDispatcher = request.teeDispatcher;
+    if (tee !== null && teeDispatcher !== null) {
+      teeDispatcher.t(tee, id, text);
+    }
+  }
 }
 
 function serializeEval(source: string): string {
@@ -6768,7 +6918,11 @@ function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
   // and lower precision loss.
   request.pendingDebugChunks++;
   // TODO: Move to its own priority queue.
-  queueDebugRow(request, ':N' + timeOrigin + '\n');
+  queueDebugRow(request, serializeTimeOriginRow(timeOrigin));
+}
+
+function serializeTimeOriginRow(timeOrigin: number): string {
+  return ':N' + timeOrigin + '\n';
 }
 
 function forwardDebugInfo(
@@ -7432,6 +7586,10 @@ function finishHaltedTask(task: Task, request: Request): void {
 }
 
 function flushCompletedChunks(request: Request): void {
+  // Writing doesn't change whether the tee is complete, so check before
+  // writing. The tee doesn't wait on the destination, and the ledger queue
+  // below can return early on backpressure.
+  closeTeeIfComplete(request);
   if (__DEV__ && request.debugDestination !== null) {
     const debugDestination = request.debugDestination;
     beginWriting(debugDestination);
@@ -7447,6 +7605,9 @@ function flushCompletedChunks(request: Request): void {
             );
           }
           request.pendingDebugChunks -= 2;
+          if (enableFlightTee) {
+            request.completedDebugChunkPairs--;
+          }
           writeChunk(
             debugDestination,
             debugChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -7502,9 +7663,14 @@ function flushCompletedChunks(request: Request): void {
       hintChunks.splice(0, i);
 
       if (enableFlightLedgers) {
-        // Ledger rows must precede the model data they describe so a partial
-        // response cannot include data without its corresponding ledger entries.
-        // If backpressure interrupts this queue, stop before writing model rows.
+        // A render phase's ledger rows are emitted before anything can observe
+        // that the phase ended. Here, they're written before the model rows
+        // queued with them, so a partial response cannot include data without
+        // its corresponding ledger entries. If backpressure interrupts this
+        // queue, stop before writing model rows. A tee gets model rows as
+        // tasks complete and this phase's ledger rows once it ends, which is
+        // still before it closes: it only closes from a flush or a request
+        // for one, and work is completed before either.
         const ledgerChunks = request.completedLedgerChunks;
         i = 0;
         for (; i < ledgerChunks.length; i++) {
@@ -7538,6 +7704,9 @@ function flushCompletedChunks(request: Request): void {
               );
             }
             request.pendingDebugChunks -= 2;
+            if (enableFlightTee) {
+              request.completedDebugChunkPairs--;
+            }
             writeChunk(
               destination,
               debugChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -7576,6 +7745,9 @@ function flushCompletedChunks(request: Request): void {
             );
           }
           request.pendingChunks -= 2;
+          if (enableFlightTee) {
+            request.completedRegularChunkPairs--;
+          }
           writeChunk(
             destination,
             regularChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -7714,6 +7886,9 @@ export function startWork(request: Request): void {
 }
 
 function enqueueFlush(request: Request): void {
+  // The tee doesn't wait on a destination, so it can close even when there's
+  // nothing to flush to.
+  closeTeeIfComplete(request);
   if (
     request.flushScheduled === false &&
     // If there are pinged tasks we are going to flush anyway after work completes
