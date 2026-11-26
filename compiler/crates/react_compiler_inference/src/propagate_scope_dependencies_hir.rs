@@ -2164,6 +2164,21 @@ fn handle_instruction(
                 env,
             );
         }
+        InstructionValue::PrefixUpdateLocal {
+            lvalue, value: val, ..
+        }
+        | InstructionValue::PostfixUpdateLocal {
+            lvalue, value: val, ..
+        } => {
+            // Update expressions reassign the variable just like a `StoreLocal`
+            // with `InstructionKind::Reassign`, so they must be recorded as
+            // reassignments too. Otherwise a value that is only updated via
+            // `++`/`--` inside a scope is not saved/restored by that scope, and
+            // a later render that skips the memoized scope observes a stale
+            // value.
+            ctx.visit_operand(val, env);
+            ctx.visit_reassignment(lvalue, env);
+        }
         InstructionValue::DeclareLocal { lvalue, .. }
         | InstructionValue::DeclareContext { lvalue, .. } => {
             if convert_hoisted_lvalue_kind(lvalue.kind).is_none() {

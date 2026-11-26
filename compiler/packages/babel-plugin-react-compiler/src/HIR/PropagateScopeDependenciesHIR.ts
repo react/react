@@ -703,6 +703,19 @@ export function handleInstruction(
       id,
       scope: context.currentScope,
     });
+  } else if (
+    value.kind === 'PrefixUpdateLocal' ||
+    value.kind === 'PostfixUpdateLocal'
+  ) {
+    /*
+     * Update expressions (`x++`, `--y`) reassign the variable just like a
+     * `StoreLocal` with `InstructionKind.Reassign`, so they must be recorded
+     * as reassignments too. Otherwise a value that is only updated via `++`/
+     * `--` inside a scope is not saved/restored by that scope, and a later
+     * render that skips the memoized scope observes a stale value.
+     */
+    context.visitOperand(value.value);
+    context.visitReassignment(value.lvalue);
   } else if (value.kind === 'DeclareLocal' || value.kind === 'DeclareContext') {
     /*
      * Some variables may be declared and never initialized. We need to retain
