@@ -28,6 +28,9 @@ type ServerConsumerManifest = {
 };
 
 import type {Readable} from 'stream';
+import type {FlightTee} from 'shared/ReactFlightTee';
+
+import {AsyncLocalStorage, AsyncResource} from 'async_hooks';
 
 import {
   createResponse,
@@ -39,6 +42,11 @@ import {
   close,
   resolveLedgerTotals,
 } from 'react-client/src/ReactFlightClient';
+
+import {
+  createTee as createTeeImpl,
+  createFromTee as createFromTeeImpl,
+} from 'react-client/src/ReactFlightClientTee';
 
 export * from './ReactFlightDOMClientEdge';
 
@@ -147,4 +155,67 @@ function createFromNodeStream<T>(
   return getRoot(response);
 }
 
-export {createFromNodeStream};
+export type TeeOptions = {
+  nonce?: string,
+  encodeFormAction?: EncodeFormActionCallback,
+  unstable_allowPartialStream?: boolean,
+  findSourceMapURL?: FindSourceMapURLCallback,
+  replayConsoleLogs?: boolean,
+  environmentName?: string,
+  unstable_requestId?: string,
+  startTime?: number,
+  endTime?: number,
+};
+
+// Creates a tee for a Flight render in the same process. Pass it to the
+// server's `tee` option before the render starts, then read it with
+// `createFromTee`. The render still writes its bytes to its destination.
+function createTee(
+  serverConsumerManifest: ServerConsumerManifest,
+  options?: TeeOptions,
+): FlightTee {
+  const response: Response = createResponse(
+    serverConsumerManifest.moduleMap,
+    serverConsumerManifest.serverModuleMap,
+    serverConsumerManifest.moduleLoading,
+    noServerCall,
+    options ? options.encodeFormAction : undefined,
+    options && typeof options.nonce === 'string' ? options.nonce : undefined,
+    undefined, // TODO: If encodeReply is supported, this should support temporaryReferences
+    options && options.unstable_allowPartialStream
+      ? options.unstable_allowPartialStream
+      : false,
+    __DEV__ && options && options.findSourceMapURL
+      ? options.findSourceMapURL
+      : undefined,
+    __DEV__ && options ? options.replayConsoleLogs === true : false, // defaults to false
+    __DEV__ && options && options.environmentName
+      ? options.environmentName
+      : undefined,
+    __DEV__ && options && options.startTime != null
+      ? options.startTime
+      : undefined,
+    __DEV__ && options && options.endTime != null ? options.endTime : undefined,
+    // The tee gets the debug rows in the same order as the others, even if the
+    // server writes them to a separate debug channel.
+    undefined,
+    __DEV__ && options ? options.unstable_requestId : undefined,
+  );
+  return createTeeImpl(response);
+}
+
+// Reads the root of a tee. Call it after the render has started, from the
+// context that reads it (for SSR, inside the Fizz render), because hints and
+// module preinits are dispatched there. A tee can be read once; any other
+// reader reads the bytes.
+function createFromTee<T>(tee: FlightTee): Thenable<T> {
+  if (typeof AsyncLocalStorage.snapshot === 'function') {
+    const snapshot = AsyncLocalStorage.snapshot();
+    return createFromTeeImpl(tee, task => snapshot(task));
+  }
+  // Where snapshot() isn't available, a bound resource captures the context.
+  const runInReaderContext = AsyncResource.bind((task: () => void) => task());
+  return createFromTeeImpl(tee, runInReaderContext);
+}
+
+export {createFromNodeStream, createTee, createFromTee};
