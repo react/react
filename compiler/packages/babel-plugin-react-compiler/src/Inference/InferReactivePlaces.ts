@@ -13,6 +13,7 @@ import {
   Identifier,
   IdentifierId,
   Instruction,
+  InstructionKind,
   Place,
   evaluatesToStableTypeOrContainer,
   getHookKind,
@@ -137,6 +138,11 @@ class StableSidemap {
  * ## Hooks
  *
  * Hooks may access state or context, which can change so they're reactive.
+ *
+ * ## Catch bindings
+ *
+ * The value caught by a `catch` clause may differ from render to render, so
+ * catch bindings are reactive.
  *
  * ## Mutation with reactive operands
  *
@@ -272,6 +278,17 @@ export function inferReactivePlaces(fn: HIRFunction): void {
           (getHookKind(fn.env, value.property.identifier) != null ||
             isUseOperator(value.property.identifier))
         ) {
+          hasReactiveInput = true;
+        } else if (
+          value.kind === 'DeclareLocal' &&
+          value.lvalue.kind === InstructionKind.Catch
+        ) {
+          /**
+           * Catch bindings are also a source of reactivity: the caught value
+           * can differ from one render to the next (eg a property load on a
+           * reactive value throwing), and not every throw site is visible as
+           * an alias of the binding, so we conservatively treat it as reactive.
+           */
           hasReactiveInput = true;
         }
 

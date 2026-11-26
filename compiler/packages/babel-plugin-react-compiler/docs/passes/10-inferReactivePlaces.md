@@ -10,8 +10,9 @@ A place is reactive if it derives from any source of reactivity:
 1. **Props** - Component parameters may change between renders
 2. **Hooks** - Hooks can access state or context which can change
 3. **`use` operator** - Can access context which may change
-4. **Mutation with reactive operands** - Values mutated in instructions that have reactive operands become reactive themselves
-5. **Conditional assignment based on reactive control flow** - Values assigned in branches controlled by reactive conditions become reactive
+4. **Catch bindings** - The value caught by a `catch` clause may differ between renders, and not every throw site is visible as an alias of the binding (only calls are), so the binding is conservatively reactive
+5. **Mutation with reactive operands** - Values mutated in instructions that have reactive operands become reactive themselves
+6. **Conditional assignment based on reactive control flow** - Values assigned in branches controlled by reactive conditions become reactive
 
 ## Input Invariants
 - HIR is in SSA form with phi nodes at join points
@@ -46,7 +47,7 @@ For each block:
 2. **Instructions**: For each instruction:
    - Track stable identifier sources (for hooks like `useRef`, `useState` dispatch)
    - Check if any operand is reactive
-   - Hook calls and `use` operator are sources of reactivity
+   - Hook calls, `use` operator, and catch bindings (`DeclareLocal Catch`) are sources of reactivity
    - If instruction has reactive input:
      - Mark lvalues reactive (unless they are known-stable like `setState` functions)
    - If instruction has reactive input OR is in reactive-controlled block:
