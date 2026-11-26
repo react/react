@@ -188,6 +188,7 @@ import {
   enableViewTransitionParentEnterExit,
   enableFizzBlockingRender,
   enableCPUSuspense,
+  enableFizzRenderDepthLimit,
 } from 'shared/ReactFeatureFlags';
 
 import assign from 'shared/assign';
@@ -399,6 +400,8 @@ export opaque type Request = {
   byteSize: number, // counts the number of bytes accumulated in the shell
   abortableTasks: Set<Task>,
   pingedTasks: Array<Task>, // High priority tasks that should be worked on first.
+  continuationTasks: Array<Task | LaterTask>, // Tasks that pick up where the current task left off, on a new stack. Worked on before the next pinged task.
+  maxRenderDepth: number, // How many nodes deep a task renders before it continues in a new task.
   currentTask: null | Task, // The task currently executing in this request.
   // Queues to flush in order of priority
   clientRenderedBoundaries: Array<SuspenseBoundary>, // Errored or client rendered but not yet flushed.
@@ -471,6 +474,19 @@ function createPreamble(): Preamble {
 // paint.
 // 500 * 1024 / 8 * .8 * 0.5 / 2
 const DEFAULT_PROGRESSIVE_CHUNK_SIZE = 12800;
+
+// We render recursively because that's the fastest way to walk the tree, which
+// means that a deep enough tree would run out of stack. We can't see how much
+// stack is left, and by the time the engine tells us it's too late to recover
+// reliably: anything running that close to the limit can fail, including our
+// own recovery and any user code. So instead we count how many nodes deep a
+// task is and once it reaches this limit we continue with the rest in a new
+// task that starts from an empty stack. This has to leave enough room for the
+// components themselves and for whatever called into us.
+const DEFAULT_MAX_RENDER_DEPTH = 64;
+// If we run out of stack anyway we lower the limit for the rest of the request.
+// If even this doesn't fit, we treat it as an error instead.
+const MIN_RENDER_DEPTH = 8;
 
 function getBlockingRenderMaxSize(request: Request): number {
   // We want to make sure that we can block the reveal of a well designed complete
@@ -577,6 +593,8 @@ function RequestInstance(
   this.byteSize = 0;
   this.abortableTasks = abortSet;
   this.pingedTasks = pingedTasks;
+  this.continuationTasks = [] as Array<Task | LaterTask>;
+  this.maxRenderDepth = DEFAULT_MAX_RENDER_DEPTH;
   this.currentTask = null;
   this.clientRenderedBoundaries = [] as Array<SuspenseBoundary>;
   this.completedBoundaries = [] as Array<SuspenseBoundary>;
@@ -831,6 +849,34 @@ export function resumeAndPrerenderRequest(
 
 let currentRequest: null | Request = null;
 
+// How many nodes deep we are in the task that is currently rendering. This
+// only counts the frames that are still on the stack, so it starts over with
+// every task.
+let currentRenderDepth: number = 0;
+
+// Whether the task that is currently rendering has handed part of its tree
+// over to a new task because it got too deep. From then on it doesn't start on
+// anything new. It only finishes what it already started and leaves the rest
+// to more new tasks, so that everything still renders in the order that it
+// appears in the tree.
+let currentTaskDidContinue: boolean = false;
+
+// An internal node that stands in for the children of an array that a task
+// didn't get to, so that a new task can pick up from there.
+const REMAINING_CHILDREN_TYPE: symbol = Symbol('react.remaining_children');
+type RemainingChildren = {
+  $$typeof: symbol,
+  children: Array<any>,
+  index: number,
+};
+
+// A task that was spawned to be worked on later, by a task that is continuing
+// in new tasks. It waits its turn among those so that it's scheduled at the
+// point where it would have been spawned if everything had fit on one stack.
+type LaterTask = {
+  laterTask: Task,
+};
+
 export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
   // $FlowFixMe[constant-condition]
@@ -946,15 +992,6 @@ function createRenderTask(
   legacyContext: LegacyContext,
   debugTask: null | ConsoleTask,
 ): RenderTask {
-  request.allPendingTasks++;
-  if (blockedBoundary === null) {
-    request.pendingRootTasks++;
-  } else {
-    blockedBoundary.pendingTasks++;
-  }
-  if (row !== null) {
-    row.pendingTasks++;
-  }
   const task: RenderTask = {
     replay: null,
     node,
@@ -983,6 +1020,17 @@ function createRenderTask(
     task.debugTask = debugTask;
   }
   abortSet.add(task);
+  // We count the task last so that if anything above throws, nothing is left
+  // waiting for a task that doesn't exist.
+  request.allPendingTasks++;
+  if (blockedBoundary === null) {
+    request.pendingRootTasks++;
+  } else {
+    blockedBoundary.pendingTasks++;
+  }
+  if (row !== null) {
+    row.pendingTasks++;
+  }
   return task;
 }
 
@@ -1004,16 +1052,6 @@ function createReplayTask(
   legacyContext: LegacyContext,
   debugTask: null | ConsoleTask,
 ): ReplayTask {
-  request.allPendingTasks++;
-  if (blockedBoundary === null) {
-    request.pendingRootTasks++;
-  } else {
-    blockedBoundary.pendingTasks++;
-  }
-  if (row !== null) {
-    row.pendingTasks++;
-  }
-  replay.pendingTasks++;
   const task: ReplayTask = {
     replay,
     node,
@@ -1042,6 +1080,18 @@ function createReplayTask(
     task.debugTask = debugTask;
   }
   abortSet.add(task);
+  // We count the task last so that if anything above throws, nothing is left
+  // waiting for a task that doesn't exist.
+  request.allPendingTasks++;
+  if (blockedBoundary === null) {
+    request.pendingRootTasks++;
+  } else {
+    blockedBoundary.pendingTasks++;
+  }
+  if (row !== null) {
+    row.pendingTasks++;
+  }
+  replay.pendingTasks++;
   return task;
 }
 
@@ -1142,12 +1192,18 @@ function rerenderStalledTask(request: Request, task: Task): void {
   switchContext(task.context);
   const prevTaskInDEV = currentTaskInDEV;
   setCurrentTaskInDEV(task);
+  const prevRenderDepth = currentRenderDepth;
+  currentRenderDepth = 0;
+  const prevTaskDidContinue = currentTaskDidContinue;
+  currentTaskDidContinue = false;
   try {
     retryNode(request, task);
   } catch (x) {
     // Suspended again.
     resetHooksState();
   } finally {
+    currentRenderDepth = prevRenderDepth;
+    currentTaskDidContinue = prevTaskDidContinue;
     setCurrentTaskInDEV(prevTaskInDEV);
     setCurrentResumableState(prevResumableState);
 
@@ -1647,7 +1703,7 @@ function renderSuspenseBoundary(
       __DEV__ ? task.debugTask : null,
     );
     pushComponentStack(suspendedPrimaryTask);
-    request.pingedTasks.push(suspendedPrimaryTask);
+    scheduleSpawnedTask(request, suspendedPrimaryTask);
   } else {
     // This is a normal render. We will attempt to synchronously render the boundary content
     // If it is successful we will elide the fallback task but if it suspends or errors we schedule
@@ -1789,7 +1845,7 @@ function renderSuspenseBoundary(
     pushComponentStack(suspendedFallbackTask);
     // TODO: This should be queued at a separate lower priority queue so that we only work
     // on preparing fallbacks if we don't have any more main content to task on.
-    request.pingedTasks.push(suspendedFallbackTask);
+    scheduleSpawnedTask(request, suspendedFallbackTask);
   }
 }
 
@@ -1953,7 +2009,7 @@ function replaySuspenseBoundary(
   pushComponentStack(suspendedFallbackTask);
   // TODO: This should be queued at a separate lower priority queue so that we only work
   // on preparing fallbacks if we don't have any more main content to task on.
-  request.pingedTasks.push(suspendedFallbackTask);
+  scheduleSpawnedTask(request, suspendedFallbackTask);
 }
 
 function finishSuspenseListRow(request: Request, row: SuspenseListRow): void {
@@ -3319,6 +3375,7 @@ function replayElement(
       const childNodes = node[2];
       const childSlots = node[3];
       const currentNode = task.node;
+      const previousRenderDepth = currentRenderDepth;
       task.replay = {nodes: childNodes, slots: childSlots, pendingTasks: 1};
       try {
         renderElement(request, task, keyPath, type, props, ref);
@@ -3352,6 +3409,9 @@ function replayElement(
           }
           throw x;
         }
+        // We carry on from here, so we need to forget about the frames that
+        // this unwound.
+        currentRenderDepth = previousRenderDepth;
         task.replay.pendingTasks--;
         // Unlike regular render, we don't terminate the siblings if we error
         // during a replay. That's because this component didn't actually error
@@ -3535,12 +3595,75 @@ function renderNodeDestructive(
 
   pushComponentStack(task);
 
-  retryNode(request, task);
+  if (enableFizzRenderDepthLimit) {
+    if (
+      currentRenderDepth >= request.maxRenderDepth &&
+      typeof node === 'object' &&
+      node !== null
+    ) {
+      // We're deep enough that we risk running out of stack. Instead of going
+      // deeper, we render this node in a new task that starts with an empty
+      // stack.
+      continueInNewTask(request, task);
+    } else {
+      currentRenderDepth++;
+      retryNode(request, task);
+      currentRenderDepth--;
+    }
+  } else {
+    retryNode(request, task);
+  }
 
   task.componentStack = previousComponentStack;
   if (__DEV__) {
     task.debugTask = previousDebugTask;
   }
+}
+
+// Leaves a hole where task.node would have rendered and spawns a task to fill
+// it in. This is the same thing that happens when a node suspends, except that
+// the new task is ready to go right away. Everything that describes where we
+// are lives on the task, so there's nothing to unwind: the callers on the
+// stack just carry on with whatever comes after this node.
+function continueInNewTask(request: Request, task: Task): void {
+  if (request.status === STALLED_DEV) {
+    // We're only rerendering this task to find out where it stalled. Nothing
+    // that we spawn here would ever run.
+    return;
+  }
+  const newTask =
+    task.blockedSegment === null
+      ? spawnNewSuspendedReplayTask(
+          request,
+          // $FlowFixMe[incompatible-type]: Refined.
+          task,
+          null,
+        )
+      : spawnNewSuspendedRenderTask(
+          request,
+          // $FlowFixMe[incompatible-type]: Refined.
+          task,
+          null,
+        );
+  request.continuationTasks.push(newTask);
+  currentTaskDidContinue = true;
+}
+
+// Same as above but for the children of an array that we haven't started on.
+function continueChildrenInNewTask(
+  request: Request,
+  task: Task,
+  children: Array<any>,
+  index: number,
+): void {
+  const remainingChildren: RemainingChildren = {
+    $$typeof: REMAINING_CHILDREN_TYPE,
+    children,
+    index,
+  };
+  task.node = remainingChildren as any;
+  task.childIndex = -1;
+  continueInNewTask(request, task);
 }
 
 function retryNode(request: Request, task: Task): void {
@@ -3633,6 +3756,16 @@ function retryNode(request: Request, task: Task): void {
           'Portals are not currently supported by the server renderer. ' +
             'Render them conditionally so that they only appear on the client render.',
         );
+      case REMAINING_CHILDREN_TYPE: {
+        const remainingChildren: RemainingChildren = node as any;
+        renderChildrenFromIndex(
+          request,
+          task,
+          remainingChildren.children,
+          remainingChildren.index,
+        );
+        return;
+      }
       case REACT_LAZY_TYPE: {
         const lazyNode: LazyComponentType<any, any> = node as any;
         let resolvedNode;
@@ -4084,7 +4217,24 @@ function renderChildrenArray(
     }
   }
 
-  for (let i = 0; i < totalChildren; i++) {
+  renderChildrenFromIndex(request, task, children, 0);
+
+  task.keyPath = prevKeyPath;
+  if (__DEV__) {
+    task.componentStack = previousComponentStack;
+    task.debugTask = previousDebugTask;
+  }
+}
+
+function renderChildrenFromIndex(
+  request: Request,
+  task: Task,
+  children: Array<any>,
+  startIndex: number,
+): void {
+  const prevTreeContext = task.treeContext;
+  const totalChildren = children.length;
+  for (let i = startIndex; i < totalChildren; i++) {
     const node = children[i];
     if (__DEV__) {
       warnForMissingKey(request, task, node);
@@ -4093,16 +4243,23 @@ function renderChildrenArray(
     // We need to use the non-destructive form so that we can safely pop back
     // up and render the sibling if something suspends.
     renderNode(request, task, node, i);
+    if (
+      enableFizzRenderDepthLimit &&
+      currentTaskDidContinue &&
+      i + 1 < totalChildren
+    ) {
+      // Something in this child is continuing in a new task. If we carried on,
+      // the next child would render before the rest of this one, so the
+      // remaining children have to wait their turn in a new task too.
+      task.treeContext = prevTreeContext;
+      continueChildrenInNewTask(request, task, children, i + 1);
+      break;
+    }
   }
 
   // Because this context is always set right before rendering every child, we
   // only need to reset it to the previous value at the very end.
   task.treeContext = prevTreeContext;
-  task.keyPath = prevKeyPath;
-  if (__DEV__) {
-    task.componentStack = previousComponentStack;
-    task.debugTask = previousDebugTask;
-  }
 }
 
 function trackPostponedBoundary(
@@ -4355,10 +4512,7 @@ function spawnNewSuspendedRenderTask(
     // Assume we are text embedded at the trailing edge
     true,
   );
-  segment.children.push(newSegment);
-  // Reset lastPushedText for current Segment since the new Segment "consumed" it
-  segment.lastPushedText = false;
-  return createRenderTask(
+  const newTask = createRenderTask(
     request,
     thenableState,
     task.node,
@@ -4377,6 +4531,12 @@ function spawnNewSuspendedRenderTask(
     !disableLegacyContext ? task.legacyContext : emptyContextObject,
     __DEV__ ? task.debugTask : null,
   );
+  // We leave the hole last. That way, if we couldn't create the task, we
+  // don't leave behind a segment that nothing will ever fill in.
+  segment.children.push(newSegment);
+  // Reset lastPushedText for current Segment since the new Segment "consumed" it
+  segment.lastPushedText = false;
+  return newTask;
 }
 
 function postponeNewSuspendedRenderTask(
@@ -4424,6 +4584,7 @@ function renderNode(
   const previousTreeContext = task.treeContext;
   const previousComponentStack = task.componentStack;
   const previousDebugTask = __DEV__ ? task.debugTask : null;
+  const previousRenderDepth = currentRenderDepth;
   let x;
   // Store how much we've pushed at this point so we can reset it in case something
   // suspended partially through writing something.
@@ -4435,6 +4596,10 @@ function renderNode(
     try {
       return renderNodeDestructive(request, task, node, childIndex);
     } catch (thrownValue) {
+      // The frames below us never got to count themselves back out.
+      const reachedRenderDepth = currentRenderDepth;
+      currentRenderDepth = previousRenderDepth;
+
       resetHooksState();
 
       x =
@@ -4486,23 +4651,36 @@ function renderNode(
           return;
         }
         if (x.message === 'Maximum call stack size exceeded') {
-          // This was a stack overflow. We do a lot of recursion in React by default for
-          // performance but it can lead to stack overflows in extremely deep trees.
-          // We do have the ability to create a trampoile if this happens which makes
-          // this kind of zero-cost.
-          const thenableState =
-            thrownValue === SuspenseException
-              ? getThenableStateAfterSuspending()
-              : null;
+          // This was a stack overflow. With enableFizzRenderDepthLimit we
+          // limit how deep a task renders, so getting here means that the
+          // limit is too high for the stack that we have, e.g. because the
+          // components themselves use a lot of it. Continue from the node we
+          // got to in a new task.
+          // TODO: Like the render path below, this should start over from this
+          // node instead of trusting that the task describes the node that
+          // overflowed. We can't do that yet because the replay nodes on the
+          // way down have already been consumed.
           const newTask = spawnNewSuspendedReplayTask(
             request,
             // $FlowFixMe[incompatible-type]: Refined.
             task,
-            thenableState,
+            null,
           );
 
           // Immediately schedule the task for retrying.
-          request.pingedTasks.push(newTask);
+          if (enableFizzRenderDepthLimit) {
+            request.continuationTasks.push(newTask);
+            currentTaskDidContinue = true;
+
+            // Render less deep from now on so that we don't end up here again.
+            const lowerRenderDepth = reachedRenderDepth >> 1;
+            request.maxRenderDepth =
+              lowerRenderDepth > MIN_RENDER_DEPTH
+                ? lowerRenderDepth
+                : MIN_RENDER_DEPTH;
+          } else {
+            request.pingedTasks.push(newTask);
+          }
 
           // Restore the context. We assume that this will be restored by the inner
           // functions in case nothing throws so we don't use "finally" here.
@@ -4533,6 +4711,10 @@ function renderNode(
     try {
       return renderNodeDestructive(request, task, node, childIndex);
     } catch (thrownValue) {
+      // The frames below us never got to count themselves back out.
+      const reachedRenderDepth = currentRenderDepth;
+      currentRenderDepth = previousRenderDepth;
+
       resetHooksState();
 
       // Reset the write pointers to where we started.
@@ -4622,20 +4804,76 @@ function renderNode(
           switchContext(previousContext);
           return;
         }
-        if (x.message === 'Maximum call stack size exceeded') {
+        if (
+          x.message === 'Maximum call stack size exceeded' &&
+          (!enableFizzRenderDepthLimit ||
+            request.maxRenderDepth > MIN_RENDER_DEPTH)
+        ) {
+          if (enableFizzRenderDepthLimit) {
+            // We ran out of stack even though we limit how deep a task renders.
+            // That means the limit is too high for the stack that we have, e.g.
+            // because the components themselves use a lot of it. We start over
+            // from this node in a new task and render less deep from now on.
+            //
+            // Unlike when something suspends, we can't pick up from the node
+            // that was rendering when this was thrown. It could have been thrown
+            // from anywhere, including from a failed attempt to recover further
+            // down, since that too runs without any stack to spare. So the task
+            // doesn't necessarily describe that node, and anything between it
+            // and us that wasn't done yet would be lost. What we had when we
+            // started on this node is the last thing we know to be right.
+            task.formatContext = previousFormatContext;
+            if (!disableLegacyContext) {
+              task.legacyContext = previousLegacyContext;
+            }
+            task.context = previousContext;
+            task.keyPath = previousKeyPath;
+            task.treeContext = previousTreeContext;
+            task.componentStack = previousComponentStack;
+            if (__DEV__) {
+              task.debugTask = previousDebugTask;
+            }
+            // Restore all active ReactContexts to what they were before.
+            switchContext(previousContext);
+
+            task.node = node;
+            task.childIndex = childIndex;
+            // A task starts out inside the stack frame of its node.
+            pushComponentStack(task);
+            const newTask = spawnNewSuspendedRenderTask(
+              request,
+              // $FlowFixMe[incompatible-type]: Refined.
+              task,
+              null,
+            );
+            task.componentStack = previousComponentStack;
+            if (__DEV__) {
+              task.debugTask = previousDebugTask;
+            }
+
+            // Immediately schedule the task for retrying.
+            request.continuationTasks.push(newTask);
+            currentTaskDidContinue = true;
+
+            // Only now that we know that we recovered do we lower the limit. If
+            // it was already as low as it goes, we don't get here and this is
+            // treated as an error instead, so we can't keep doing this forever.
+            const lowerRenderDepth = reachedRenderDepth >> 1;
+            request.maxRenderDepth =
+              lowerRenderDepth > MIN_RENDER_DEPTH
+                ? lowerRenderDepth
+                : MIN_RENDER_DEPTH;
+            return;
+          }
           // This was a stack overflow. We do a lot of recursion in React by default for
           // performance but it can lead to stack overflows in extremely deep trees.
           // We do have the ability to create a trampoile if this happens which makes
           // this kind of zero-cost.
-          const thenableState =
-            thrownValue === SuspenseException
-              ? getThenableStateAfterSuspending()
-              : null;
           const newTask = spawnNewSuspendedRenderTask(
             request,
             // $FlowFixMe[incompatible-type]: Refined.
             task,
-            thenableState,
+            null,
           );
 
           // Immediately schedule the task for retrying.
@@ -4914,11 +5152,48 @@ function abortRemainingReplayNodes(
   }
 }
 
+// When we abort while rendering, the task that is rendering isn't aborted
+// along with everything else that's pending. It carries on and aborts itself
+// once it gets to user code, which lets it keep the static children that it
+// gets to before that, and it still spawns the fallbacks of the boundaries
+// that it's inside of. If that task got too deep, the rest of it is waiting in
+// the tasks that continue it, along with the tasks that it spawned since. If
+// it had all fit on one stack, none of those would have existed yet when we
+// aborted, so we leave them alone the same way.
+function isPartOfCurrentTask(request: Request, task: Task): boolean {
+  const continuationTasks = request.continuationTasks;
+  for (let i = 0; i < continuationTasks.length; i++) {
+    const continuationTask: any = continuationTasks[i];
+    if (continuationTask === task || continuationTask.laterTask === task) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Schedules a task that the currently rendering task spawned to be worked on
+// after it.
+function scheduleSpawnedTask(request: Request, task: Task): void {
+  if (enableFizzRenderDepthLimit && currentTaskDidContinue) {
+    // The rest of the current task is going to render in new tasks. If it had
+    // all fit on one stack, we wouldn't get here until those are done.
+    const laterTask: LaterTask = {laterTask: task};
+    request.continuationTasks.push(laterTask);
+  } else {
+    request.pingedTasks.push(task);
+  }
+}
+
 function abortTask(task: Task, request: Request): void {
   // Mark pending tasks as aborted synchronously so any work that was already
   // scheduled cannot begin after abort is called.
   if (task === request.currentTask) {
     // This is a currently rendering Task. The render itself will abort the task.
+    return;
+  }
+  if (enableFizzRenderDepthLimit && isPartOfCurrentTask(request, task)) {
+    // This is the rest of the currently rendering Task. Like that Task, it
+    // will abort itself when it renders.
     return;
   }
   const boundary = task.blockedBoundary;
@@ -4977,6 +5252,9 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
   // Report and complete a task that was synchronously claimed by abortTask.
   // A currently rendering task remains responsible for unwinding itself.
   if (task === request.currentTask) {
+    return;
+  }
+  if (enableFizzRenderDepthLimit && isPartOfCurrentTask(request, task)) {
     return;
   }
   const boundary = task.blockedBoundary;
@@ -5262,9 +5540,12 @@ function completeAll(request: Request) {
 
 function queueCompletedSegment(
   boundary: SuspenseBoundary,
-  segment: Segment,
+  completedSegment: Segment,
 ): void {
-  if (
+  let segment = completedSegment;
+  // There can be a long chain of these, one inside the other, so we follow it
+  // in a loop instead of recursively.
+  while (
     segment.chunks.length === 0 &&
     segment.children.length === 1 &&
     segment.children[0].boundary === null &&
@@ -5280,12 +5561,13 @@ function queueCompletedSegment(
       childSegment.status === ABORTED ||
       childSegment.status === ERRORED
     ) {
-      queueCompletedSegment(boundary, childSegment);
+      segment = childSegment;
+    } else {
+      return;
     }
-  } else {
-    const completedSegments = boundary.completedSegments;
-    completedSegments.push(segment);
   }
+  const completedSegments = boundary.completedSegments;
+  completedSegments.push(segment);
 }
 
 function finishedSegment(
@@ -5506,8 +5788,25 @@ function retryRenderTask(
 
   const childrenLength = segment.children.length;
   const chunkLength = segment.chunks.length;
-  // Used to detect forward progress if we hit a stack overflow below.
+  // Every task starts counting its depth from the top of the stack.
+  const prevRenderDepth = currentRenderDepth;
+  currentRenderDepth = 0;
+  const prevTaskDidContinue = currentTaskDidContinue;
+  currentTaskDidContinue = false;
+  // Rendering mutates the task. We remember how it started so that we can
+  // start over if we run out of stack below.
   const startNode = task.node;
+  const startChildIndex = task.childIndex;
+  const startKeyPath = task.keyPath;
+  const startFormatContext = task.formatContext;
+  const startContext = task.context;
+  const startTreeContext = task.treeContext;
+  const startLegacyContext = !disableLegacyContext
+    ? task.legacyContext
+    : emptyContextObject;
+  const startComponentStack = task.componentStack;
+  const startDebugTask = __DEV__ ? task.debugTask : null;
+  const startThenableState = task.thenableState;
   try {
     // We call the destructive form that mutates this task. That way if something
     // suspends again, we can reuse the same task instead of spawning a new one.
@@ -5525,6 +5824,8 @@ function retryRenderTask(
     finishedSegment(request, task.blockedBoundary, segment);
     finishedTask(request, task.blockedBoundary, task.row, segment);
   } catch (thrownValue: mixed) {
+    const reachedRenderDepth = currentRenderDepth;
+
     resetHooksState();
 
     // Reset the write pointers to where we started.
@@ -5572,7 +5873,44 @@ function retryRenderTask(
         (x as any).then(ping.resolve, ping.reject);
         return;
       }
-      if (
+      if (enableFizzRenderDepthLimit) {
+        if (
+          x.message === 'Maximum call stack size exceeded' &&
+          request.maxRenderDepth > MIN_RENDER_DEPTH
+        ) {
+          // We ran out of stack even though we limit how deep a task renders.
+          // We start this task over and render less deep from now on, so that it
+          // continues in a new task before it gets this far. We can't pick up
+          // from the node that was rendering when this was thrown for the same
+          // reason that renderNode can't. If the limit is already as low as it
+          // goes, then it's something in this task that doesn't fit on the stack
+          // by itself, like a component that recurses forever, and that's an
+          // error.
+          task.node = startNode;
+          task.childIndex = startChildIndex;
+          task.keyPath = startKeyPath;
+          task.formatContext = startFormatContext;
+          task.context = startContext;
+          task.treeContext = startTreeContext;
+          if (!disableLegacyContext) {
+            task.legacyContext = startLegacyContext;
+          }
+          task.componentStack = startComponentStack;
+          if (__DEV__) {
+            task.debugTask = startDebugTask;
+          }
+          task.thenableState = startThenableState;
+          segment.status = PENDING;
+          // Immediately schedule the task for retrying.
+          request.continuationTasks.push(task);
+          const lowerRenderDepth = reachedRenderDepth >> 1;
+          request.maxRenderDepth =
+            lowerRenderDepth > MIN_RENDER_DEPTH
+              ? lowerRenderDepth
+              : MIN_RENDER_DEPTH;
+          return;
+        }
+      } else if (
         x.message === 'Maximum call stack size exceeded' &&
         task.node !== startNode
       ) {
@@ -5598,6 +5936,8 @@ function retryRenderTask(
     );
     return;
   } finally {
+    currentRenderDepth = prevRenderDepth;
+    currentTaskDidContinue = prevTaskDidContinue;
     request.currentTask = prevTask;
     if (__DEV__) {
       setCurrentTaskInDEV(prevTaskInDEV);
@@ -5624,6 +5964,11 @@ function retryReplayTask(request: Request, task: ReplayTask): void {
     setCurrentTaskInDEV(task);
   }
 
+  // Every task starts counting its depth from the top of the stack.
+  const prevRenderDepth = currentRenderDepth;
+  currentRenderDepth = 0;
+  const prevTaskDidContinue = currentTaskDidContinue;
+  currentTaskDidContinue = false;
   // Used to detect forward progress if we hit a stack overflow below.
   const startNode = task.node;
   try {
@@ -5647,6 +5992,8 @@ function retryReplayTask(request: Request, task: ReplayTask): void {
     task.abortSet.delete(task);
     finishedTask(request, task.blockedBoundary, task.row, null);
   } catch (thrownValue) {
+    const reachedRenderDepth = currentRenderDepth;
+
     resetHooksState();
 
     const x =
@@ -5697,7 +6044,17 @@ function retryReplayTask(request: Request, task: ReplayTask): void {
         // No progress (e.g. overflow inside the component itself) falls through.
         task.thenableState = null;
         // Immediately schedule the task for retrying.
-        request.pingedTasks.push(task);
+        if (enableFizzRenderDepthLimit) {
+          request.continuationTasks.push(task);
+          // Render less deep from now on so that we don't end up here again.
+          const lowerRenderDepth = reachedRenderDepth >> 1;
+          request.maxRenderDepth =
+            lowerRenderDepth > MIN_RENDER_DEPTH
+              ? lowerRenderDepth
+              : MIN_RENDER_DEPTH;
+        } else {
+          request.pingedTasks.push(task);
+        }
         return;
       }
     }
@@ -5723,11 +6080,46 @@ function retryReplayTask(request: Request, task: ReplayTask): void {
     }
     return;
   } finally {
+    currentRenderDepth = prevRenderDepth;
+    currentTaskDidContinue = prevTaskDidContinue;
     request.currentTask = prevTask;
     if (__DEV__) {
       setCurrentTaskInDEV(prevTaskInDEV);
     }
   }
+}
+
+// Works on a task and then on every task that continues it, in the order that
+// they appear in the tree. That's the order that everything would have rendered
+// in if it had all fit on one stack.
+function workOnTask(request: Request, task: Task): void {
+  retryTask(request, task);
+  const continuationTasks = request.continuationTasks;
+  if (continuationTasks.length === 0) {
+    return;
+  }
+  // The continuations of a task are added in tree order and we take the next
+  // one from the end, so we flip them around. A continuation can itself be
+  // continued. Those tasks come before the ones that are already waiting.
+  continuationTasks.reverse();
+  do {
+    const continuationTask: any = continuationTasks.pop();
+    const laterTask: void | Task = continuationTask.laterTask;
+    if (laterTask !== undefined) {
+      // Everything that had to render before this task was spawned has now
+      // rendered, so it can get in line with the other pinged tasks.
+      request.pingedTasks.push(laterTask);
+      continue;
+    }
+    const waiting = continuationTasks.length;
+    retryTask(request, continuationTask);
+    // Flip the ones that were just added.
+    for (let i = waiting, j = continuationTasks.length - 1; i < j; i++, j--) {
+      const swap = continuationTasks[i];
+      continuationTasks[i] = continuationTasks[j];
+      continuationTasks[j] = swap;
+    }
+  } while (continuationTasks.length > 0);
 }
 
 export function performWork(request: Request): void {
@@ -5755,7 +6147,11 @@ export function performWork(request: Request): void {
     let i;
     for (i = 0; i < pingedTasks.length; i++) {
       const task = pingedTasks[i];
-      retryTask(request, task);
+      if (enableFizzRenderDepthLimit) {
+        workOnTask(request, task);
+      } else {
+        retryTask(request, task);
+      }
     }
     pingedTasks.splice(0, i);
     if (request.destination !== null) {
@@ -5790,21 +6186,32 @@ export function performWork(request: Request): void {
 
 function preparePreambleFromSubtree(
   request: Request,
-  segment: Segment,
+  subtreeSegment: Segment,
   collectedPreambleSegments: Array<Array<Segment>>,
 ): boolean {
-  if (segment.preambleChildren.length) {
-    collectedPreambleSegments.push(segment.preambleChildren);
-  }
   let pendingPreambles = false;
-  for (let i = 0; i < segment.children.length; i++) {
-    const nextSegment = segment.children[i];
-    pendingPreambles =
-      preparePreambleFromSegment(
-        request,
-        nextSegment,
-        collectedPreambleSegments,
-      ) || pendingPreambles;
+  // Segments can be nested arbitrarily deep, one inside the other, so we loop
+  // over the last child instead of recursing into it.
+  let segment: null | Segment = subtreeSegment;
+  while (segment !== null) {
+    if (segment.preambleChildren.length) {
+      collectedPreambleSegments.push(segment.preambleChildren);
+    }
+    const children: Array<Segment> = segment.children;
+    segment = null;
+    for (let i = 0; i < children.length; i++) {
+      const nextSegment = children[i];
+      if (i === children.length - 1 && nextSegment.boundary === null) {
+        segment = nextSegment;
+        break;
+      }
+      pendingPreambles =
+        preparePreambleFromSegment(
+          request,
+          nextSegment,
+          collectedPreambleSegments,
+        ) || pendingPreambles;
+    }
   }
   return pendingPreambles;
 }
@@ -5929,57 +6336,80 @@ function flushPreamble(
 function flushSubtree(
   request: Request,
   destination: Destination,
-  segment: Segment,
+  subtreeSegment: Segment,
   hoistableState: null | HoistableState,
 ): boolean {
-  segment.parentFlushed = true;
-  switch (segment.status) {
-    case PENDING: {
-      // We're emitting a placeholder for this segment to be filled in later.
-      // Therefore we'll need to assign it an ID - to refer to it by.
-      segment.id = request.nextSegmentId++;
-      // Fallthrough
-    }
-    case POSTPONED: {
-      const segmentID = segment.id;
-      // When this segment finally completes it won't be embedded in text since it will flush separately
-      segment.lastPushedText = false;
-      segment.textEmbedded = false;
-      return writePlaceholder(destination, request.renderState, segmentID);
-    }
-    case COMPLETED: {
-      segment.status = FLUSHED;
-      let r = true;
-      const chunks = segment.chunks;
-      let chunkIdx = 0;
-      const children = segment.children;
+  let r = true;
+  // Segments can be nested arbitrarily deep, one inside the other. When
+  // there's nothing left to write after a child segment, we loop instead of
+  // recursing so that we don't run out of stack.
+  let nextSegment: null | Segment = subtreeSegment;
+  while (nextSegment !== null) {
+    const segment: Segment = nextSegment;
+    nextSegment = null;
+    segment.parentFlushed = true;
+    switch (segment.status) {
+      case PENDING: {
+        // We're emitting a placeholder for this segment to be filled in later.
+        // Therefore we'll need to assign it an ID - to refer to it by.
+        segment.id = request.nextSegmentId++;
+        // Fallthrough
+      }
+      case POSTPONED: {
+        const segmentID = segment.id;
+        // When this segment finally completes it won't be embedded in text since it will flush separately
+        segment.lastPushedText = false;
+        segment.textEmbedded = false;
+        r = writePlaceholder(destination, request.renderState, segmentID);
+        break;
+      }
+      case COMPLETED: {
+        segment.status = FLUSHED;
+        r = true;
+        const chunks = segment.chunks;
+        let chunkIdx = 0;
+        const children = segment.children;
 
-      for (let childIdx = 0; childIdx < children.length; childIdx++) {
-        const nextChild = children[childIdx];
-        // Write all the chunks up until the next child.
-        for (; chunkIdx < nextChild.index; chunkIdx++) {
-          writeChunk(destination, chunks[chunkIdx]);
+        for (let childIdx = 0; childIdx < children.length; childIdx++) {
+          const nextChild = children[childIdx];
+          // Write all the chunks up until the next child.
+          for (; chunkIdx < nextChild.index; chunkIdx++) {
+            writeChunk(destination, chunks[chunkIdx]);
+          }
+          if (
+            childIdx === children.length - 1 &&
+            chunkIdx === chunks.length &&
+            nextChild.boundary === null
+          ) {
+            // This child is the last thing in this segment.
+            nextSegment = nextChild;
+            break;
+          }
+          r = flushSegment(request, destination, nextChild, hoistableState);
         }
-        r = flushSegment(request, destination, nextChild, hoistableState);
+        if (nextSegment === null) {
+          // Finally just write all the remaining chunks
+          for (; chunkIdx < chunks.length - 1; chunkIdx++) {
+            writeChunk(destination, chunks[chunkIdx]);
+          }
+          if (chunkIdx < chunks.length) {
+            r = writeChunkAndReturn(destination, chunks[chunkIdx]);
+          }
+        }
+        break;
       }
-      // Finally just write all the remaining chunks
-      for (; chunkIdx < chunks.length - 1; chunkIdx++) {
-        writeChunk(destination, chunks[chunkIdx]);
+      case ABORTED: {
+        r = true;
+        break;
       }
-      if (chunkIdx < chunks.length) {
-        r = writeChunkAndReturn(destination, chunks[chunkIdx]);
+      default: {
+        throw new Error(
+          'Aborted, errored or already flushed boundaries should not be flushed again. This is a bug in React.',
+        );
       }
-      return r;
-    }
-    case ABORTED: {
-      return true;
-    }
-    default: {
-      throw new Error(
-        'Aborted, errored or already flushed boundaries should not be flushed again. This is a bug in React.',
-      );
     }
   }
+  return r;
 }
 
 // Running count for how much bytes of boundaries have flushed inlined into the currently
