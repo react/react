@@ -27,7 +27,7 @@ import {
 import {createPortal as createPortalImpl} from 'react-reconciler/src/ReactPortal';
 import {setBatchingImplementation} from './ReactGenericBatching';
 
-import {LegacyRoot, ConcurrentRoot} from 'react-reconciler/src/ReactRootTags';
+import {ConcurrentRoot} from 'react-reconciler/src/ReactRootTags';
 import {
   findHostInstance_DEPRECATED,
   findNodeHandle,
@@ -44,10 +44,7 @@ import {
   createPublicRootInstance,
   type PublicRootInstance,
 } from 'react-native/react-private-interface';
-import {
-  disableLegacyMode,
-  enableDefaultTransitionIndicator,
-} from 'shared/ReactFeatureFlags';
+import {enableDefaultTransitionIndicator} from 'shared/ReactFeatureFlags';
 
 if (typeof ReactFiberErrorDialog.showErrorDialog !== 'function') {
   throw new Error(
@@ -110,7 +107,7 @@ function render(
   concurrentRoot: ?boolean,
   options: ?RenderRootOptions,
 ): ?ElementRef<ElementType> {
-  if (disableLegacyMode && !concurrentRoot) {
+  if (!concurrentRoot) {
     throw new Error('render: Unsupported Legacy Mode API.');
   }
 
@@ -151,7 +148,7 @@ function render(
     root = createContainer(
       // $FlowFixMe[incompatible-type]
       rootInstance,
-      concurrentRoot ? ConcurrentRoot : LegacyRoot,
+      ConcurrentRoot,
       null,
       false,
       null,

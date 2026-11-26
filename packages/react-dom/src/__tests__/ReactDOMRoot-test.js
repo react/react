@@ -392,6 +392,59 @@ describe('ReactDOMRoot', () => {
     );
   });
 
+  // @gate !disableCommentsAsDOMContainers
+  it('renders at a comment node', async () => {
+    // This is an old feature used by www. Disabled in the open source build.
+    const containerDiv = document.createElement('div');
+    containerDiv.innerHTML = 'A<!-- react-mount-point-unstable -->B';
+    const mountPoint = containerDiv.childNodes[1];
+    expect(mountPoint.nodeType).toBe(Node.COMMENT_NODE);
+
+    function Char(props) {
+      return props.children;
+    }
+    function list(chars) {
+      return chars.split('').map(c => <Char key={c}>{c}</Char>);
+    }
+
+    // The trailing "B" shows that children go before the comment, not at the
+    // end of its parent.
+    const root = ReactDOMClient.createRoot(mountPoint);
+    await act(() => {
+      root.render(list('aeiou'));
+    });
+    expect(containerDiv.innerHTML).toBe(
+      'Aaeiou<!-- react-mount-point-unstable -->B',
+    );
+
+    // Inserts y before e, moves a to the end, and removes i, o and u.
+    await act(() => {
+      root.render(list('yea'));
+    });
+    expect(containerDiv.innerHTML).toBe(
+      'Ayea<!-- react-mount-point-unstable -->B',
+    );
+
+    await act(() => {
+      root.render(list(''));
+    });
+    expect(containerDiv.innerHTML).toBe(
+      'A<!-- react-mount-point-unstable -->B',
+    );
+
+    await act(() => {
+      root.render(list('ab'));
+    });
+    expect(containerDiv.innerHTML).toBe(
+      'Aab<!-- react-mount-point-unstable -->B',
+    );
+
+    root.unmount();
+    expect(containerDiv.innerHTML).toBe(
+      'A<!-- react-mount-point-unstable -->B',
+    );
+  });
+
   it('warn if no children passed to hydrateRoot', async () => {
     ReactDOMClient.hydrateRoot(container);
     assertConsoleErrorDev([

@@ -7,16 +7,15 @@
  * @flow
  */
 
-import {disableLegacyMode} from 'shared/ReactFeatureFlags';
 import {DiscreteEventPriority} from 'react-reconciler/src/ReactEventPriorities';
 
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 
 import ReactDOMSharedInternals from 'shared/ReactDOMSharedInternals';
 
-declare function flushSyncImpl<R>(fn: () => R): R;
-declare function flushSyncImpl(void): void;
-function flushSyncImpl<R>(fn: (() => R) | void): R | void {
+declare function flushSync<R>(fn: () => R): R;
+declare function flushSync(void): void;
+export function flushSync<R>(fn: (() => R) | void): R | void {
   const previousTransition = ReactSharedInternals.T;
   const previousUpdatePriority =
     ReactDOMSharedInternals.p; /* ReactDOMCurrentUpdatePriority */
@@ -48,16 +47,3 @@ function flushSyncImpl<R>(fn: (() => R) | void): R | void {
     }
   }
 }
-
-declare function flushSyncErrorInBuildsThatSupportLegacyMode<R>(fn: () => R): R;
-declare function flushSyncErrorInBuildsThatSupportLegacyMode(void): void;
-function flushSyncErrorInBuildsThatSupportLegacyMode() {
-  // eslint-disable-next-line react-internal/prod-error-codes
-  throw new Error(
-    'Expected this build of React to not support legacy mode but it does. This is a bug in React.',
-  );
-}
-
-export const flushSync: typeof flushSyncImpl = disableLegacyMode
-  ? flushSyncImpl
-  : flushSyncErrorInBuildsThatSupportLegacyMode;

@@ -10,7 +10,6 @@
 'use strict';
 
 let React;
-let ReactDOM;
 let ReactDOMClient;
 let ReactDOMServer;
 let act;
@@ -21,25 +20,11 @@ describe('ReactComponent', () => {
     jest.resetModules();
 
     React = require('react');
-    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
     act = require('internal-test-utils').act;
     assertConsoleErrorDev =
       require('internal-test-utils').assertConsoleErrorDev;
-  });
-
-  // @gate !disableLegacyMode
-  it('should throw on invalid render targets in legacy roots', () => {
-    const container = document.createElement('div');
-    // jQuery objects are basically arrays; people often pass them in by mistake
-    expect(function () {
-      ReactDOM.render(<div />, [container]);
-    }).toThrow(/Target container is not a DOM element./);
-
-    expect(function () {
-      ReactDOM.render(<div />, null);
-    }).toThrow(/Target container is not a DOM element./);
   });
 
   it('should throw (in dev) when children are mutated during render', async () => {
@@ -387,18 +372,6 @@ describe('ReactComponent', () => {
       'ref 2 got null',
       'inner 2 componentWillUnmount',
     ]);
-  });
-
-  // @gate !disableLegacyMode
-  it('fires the callback after a component is rendered in legacy roots', () => {
-    const callback = jest.fn();
-    const container = document.createElement('div');
-    ReactDOM.render(<div />, container, callback);
-    expect(callback).toHaveBeenCalledTimes(1);
-    ReactDOM.render(<div className="foo" />, container, callback);
-    expect(callback).toHaveBeenCalledTimes(2);
-    ReactDOM.render(<span />, container, callback);
-    expect(callback).toHaveBeenCalledTimes(3);
   });
 
   it('throws usefully when rendering badly-typed elements', async () => {
