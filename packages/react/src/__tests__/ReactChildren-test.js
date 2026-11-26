@@ -14,12 +14,17 @@ describe('ReactChildren', () => {
   let ReactDOMClient;
   let act;
   let assertConsoleErrorDev;
+  let assertConsoleWarnDev;
 
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
     ReactDOMClient = require('react-dom/client');
-    ({act, assertConsoleErrorDev} = require('internal-test-utils'));
+    ({
+      act,
+      assertConsoleErrorDev,
+      assertConsoleWarnDev,
+    } = require('internal-test-utils'));
   });
 
   it('should support identity for simple', () => {
@@ -1172,6 +1177,17 @@ describe('ReactChildren', () => {
             'array instead.'
           : ''),
     );
+  });
+
+  it('warns when a Map is passed to Children.map', () => {
+    // Maps are not supported as children. The reconciler warns about this too,
+    // but only when the Map is rendered; the Children helpers warn eagerly.
+    const map = new Map([['a', <div key="a" />]]);
+    React.Children.map(map, child => child);
+    assertConsoleWarnDev([
+      'Using Maps as children is not supported. ' +
+        'Use an array of keyed ReactElements instead.',
+    ]);
   });
 
   describe('with fragments enabled', () => {
