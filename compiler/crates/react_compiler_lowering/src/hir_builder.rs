@@ -1322,7 +1322,7 @@ pub fn remove_unnecessary_try_catch(hir: &mut HIR) {
     let block_ids: IndexSet<BlockId, FxBuildHasher> = hir.blocks.keys().copied().collect();
 
     // Collect the blocks that need replacement and their associated data
-    let replacements: Vec<(BlockId, BlockId, BlockId, BlockId, Option<SourceLocation>)> = hir
+    let replacements: Vec<(BlockId, BlockId, BlockId, Option<SourceLocation>)> = hir
         .blocks
         .iter()
         .filter_map(|(&block_id, block)| {
@@ -1335,14 +1335,14 @@ pub fn remove_unnecessary_try_catch(hir: &mut HIR) {
             } = &block.terminal
             {
                 if !block_ids.contains(handler) {
-                    return Some((block_id, *try_block, *handler, *fallthrough, loc.clone()));
+                    return Some((block_id, *try_block, *fallthrough, loc.clone()));
                 }
             }
             None
         })
         .collect();
 
-    for (block_id, try_block, handler_id, fallthrough_id, loc) in replacements {
+    for (block_id, try_block, fallthrough_id, loc) in replacements {
         // Replace the terminal
         if let Some(block) = hir.blocks.get_mut(&block_id) {
             block.terminal = Terminal::Goto {
@@ -1353,14 +1353,29 @@ pub fn remove_unnecessary_try_catch(hir: &mut HIR) {
             };
         }
 
-        // Clean up fallthrough predecessor info
-        if let Some(fallthrough) = hir.blocks.get_mut(&fallthrough_id) {
-            if fallthrough.preds.len() == 1 && fallthrough.preds.contains(&handler_id) {
-                // The handler was the only predecessor: remove the fallthrough block
-                hir.blocks.shift_remove(&fallthrough_id);
-            } else {
-                fallthrough.preds.shift_remove(&handler_id);
+        // Clean up fallthrough predecessor info. The handler (and nested blocks
+        // reachable only through it) may still appear in preds after RPO drops
+        // those blocks — scrub all dead preds so merge can absorb the try-exit.
+        // Only delete when preds were populated and are all now gone; an empty
+        // set can mean mark_predecessors has not run yet.
+        let should_delete_fallthrough = if let Some(fallthrough) = hir.blocks.get_mut(&fallthrough_id)
+        {
+            let had_preds = !fallthrough.preds.is_empty();
+            let dead_preds: Vec<BlockId> = fallthrough
+                .preds
+                .iter()
+                .copied()
+                .filter(|pred| !block_ids.contains(pred))
+                .collect();
+            for pred in dead_preds {
+                fallthrough.preds.shift_remove(&pred);
             }
+            had_preds && fallthrough.preds.is_empty()
+        } else {
+            false
+        };
+        if should_delete_fallthrough {
+            hir.blocks.shift_remove(&fallthrough_id);
         }
     }
 }

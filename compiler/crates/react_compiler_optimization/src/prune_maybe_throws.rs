@@ -15,10 +15,11 @@ use rustc_hash::FxHashMap;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, GENERATED_SOURCE,
 };
+use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{BlockId, HirFunction, Instruction, InstructionValue, Terminal};
 use react_compiler_lowering::{
-    get_reverse_postordered_blocks, mark_instruction_ids, remove_dead_do_while_statements,
-    remove_unnecessary_try_catch, remove_unreachable_for_updates,
+    get_reverse_postordered_blocks, mark_instruction_ids, mark_predecessors,
+    remove_dead_do_while_statements, remove_unnecessary_try_catch, remove_unreachable_for_updates,
 };
 
 use crate::merge_consecutive_blocks::merge_consecutive_blocks;
@@ -26,7 +27,7 @@ use crate::merge_consecutive_blocks::merge_consecutive_blocks;
 /// Prune `MaybeThrow` terminals for blocks that cannot throw, then clean up the CFG.
 pub fn prune_maybe_throws(
     func: &mut HirFunction,
-    functions: &mut [HirFunction],
+    env: &mut Environment,
 ) -> Result<(), CompilerDiagnostic> {
     let terminal_mapping = prune_maybe_throws_impl(func);
     if let Some(terminal_mapping) = terminal_mapping {
@@ -37,7 +38,23 @@ pub fn prune_maybe_throws(
         remove_dead_do_while_statements(&mut func.body);
         remove_unnecessary_try_catch(&mut func.body);
         mark_instruction_ids(&mut func.body, &mut func.instructions);
-        merge_consecutive_blocks(func, functions);
+        mark_predecessors(&mut func.body);
+
+        // Blocks that became unreachable (eg a catch handler whose try can no longer
+        // throw) were removed above, but phis in their successors may still name them
+        // as operands. Prune those operands now that predecessors are accurate, and
+        // eliminate any phis that became redundant as a result, before
+        // merge_consecutive_blocks (which requires single-predecessor blocks to have
+        // single-operand phis).
+        for block in func.body.blocks.values_mut() {
+            let preds = &block.preds;
+            for phi in &mut block.phis {
+                phi.operands.retain(|pred, _operand| preds.contains(pred));
+            }
+        }
+        react_compiler_ssa::eliminate_redundant_phi(func, env);
+
+        merge_consecutive_blocks(func, &mut env.functions);
 
         // Rewrite phi operands to reference the updated predecessor blocks
         for block in func.body.blocks.values_mut() {

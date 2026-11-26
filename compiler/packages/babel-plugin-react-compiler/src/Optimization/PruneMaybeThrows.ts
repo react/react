@@ -18,11 +18,13 @@ import {
 } from '../HIR';
 import {
   markInstructionIds,
+  markPredecessors,
   removeDeadDoWhileStatements,
   removeUnnecessaryTryCatch,
   removeUnreachableForUpdates,
 } from '../HIR/HIRBuilder';
 import {printPlace} from '../HIR/PrintHIR';
+import {eliminateRedundantPhi} from '../SSA';
 
 /**
  * This pass updates `maybe-throw` terminals for blocks that can provably *never* throw,
@@ -47,6 +49,27 @@ export function pruneMaybeThrows(fn: HIRFunction): void {
     removeDeadDoWhileStatements(fn.body);
     removeUnnecessaryTryCatch(fn.body);
     markInstructionIds(fn.body);
+    markPredecessors(fn.body);
+
+    /*
+     * Blocks that became unreachable (eg a catch handler whose try can no longer
+     * throw) were removed above, but phis in their successors may still name them
+     * as operands. Prune those operands now that predecessors are accurate, and
+     * eliminate any phis that became redundant as a result, before
+     * mergeConsecutiveBlocks (which requires single-predecessor blocks to have
+     * single-operand phis).
+     */
+    for (const [, block] of fn.body.blocks) {
+      for (const phi of block.phis) {
+        for (const [predecessor] of phi.operands) {
+          if (!block.preds.has(predecessor)) {
+            phi.operands.delete(predecessor);
+          }
+        }
+      }
+    }
+    eliminateRedundantPhi(fn);
+
     mergeConsecutiveBlocks(fn);
 
     // Rewrite phi operands to reference the updated predecessor blocks

@@ -84,7 +84,7 @@ pub fn compile_fn(
     }
 
     context.timing.start("PruneMaybeThrows");
-    react_compiler_optimization::prune_maybe_throws(&mut hir, &mut env.functions)?;
+    react_compiler_optimization::prune_maybe_throws(&mut hir, &mut env)?;
     context.timing.stop();
 
     if context.debug_enabled {
@@ -353,7 +353,7 @@ pub fn compile_fn(
     }
 
     context.timing.start("PruneMaybeThrows2");
-    react_compiler_optimization::prune_maybe_throws(&mut hir, &mut env.functions)?;
+    react_compiler_optimization::prune_maybe_throws(&mut hir, &mut env)?;
     context.timing.stop();
 
     if context.debug_enabled {
@@ -1649,7 +1649,7 @@ fn run_pipeline_passes(
     env: &mut Environment,
     context: &mut ProgramContext,
 ) -> Result<CodegenFunction, CompilerError> {
-    react_compiler_optimization::prune_maybe_throws(hir, &mut env.functions)?;
+    react_compiler_optimization::prune_maybe_throws(hir, env)?;
 
     react_compiler_optimization::drop_manual_memoization(hir, env)?;
 
@@ -1701,7 +1701,7 @@ fn run_pipeline_passes(
 
     react_compiler_optimization::dead_code_elimination(hir, env);
 
-    react_compiler_optimization::prune_maybe_throws(hir, &mut env.functions)?;
+    react_compiler_optimization::prune_maybe_throws(hir, env)?;
 
     react_compiler_inference::infer_mutation_aliasing_ranges(hir, env, false)?;
 
