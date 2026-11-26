@@ -106,7 +106,7 @@ function FiberRootNode(
   this.formState = formState;
 
   if (enableViewTransition) {
-    this.transitionTypes = null;
+    this.transitionTypes = createLaneMap(null);
   }
 
   if (enableGestureTransition) {
