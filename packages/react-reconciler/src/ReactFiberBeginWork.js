@@ -73,8 +73,6 @@ import {
   MemoComponent,
   SimpleMemoComponent,
   LazyComponent,
-  IncompleteClassComponent,
-  IncompleteFunctionComponent,
   ScopeComponent,
   OffscreenComponent,
   LegacyHiddenComponent,
@@ -117,7 +115,6 @@ import {
   enableTransitionTracing,
   enableLegacyHidden,
   enableCPUSuspense,
-  disableLegacyMode,
   enableViewTransition,
 } from 'shared/ReactFeatureFlags';
 import shallowEqual from 'shared/shallowEqual';
@@ -161,12 +158,7 @@ import {
   getBumpedLaneForHydration,
   pickArbitraryLane,
 } from './ReactFiberLane';
-import {
-  ConcurrentMode,
-  NoMode,
-  ProfileMode,
-  StrictLegacyMode,
-} from './ReactTypeOfMode';
+import {StrictLegacyMode} from './ReactTypeOfMode';
 import {
   shouldSetTextContent,
   isSuspenseInstancePending,
@@ -691,25 +683,7 @@ function updateOffscreenComponent(
       );
     }
 
-    if (
-      !disableLegacyMode &&
-      (workInProgress.mode & ConcurrentMode) === NoMode
-    ) {
-      // In legacy sync mode, don't defer the subtree. Render it now.
-      // TODO: Consider how Offscreen should work with transitions in the future
-      const nextState: OffscreenState = {
-        baseLanes: NoLanes,
-        cachePool: null,
-      };
-      workInProgress.memoizedState = nextState;
-      // push the cache pool even though we're going to bail out
-      // because otherwise there'd be a context mismatch
-      if (current !== null) {
-        pushTransition(workInProgress, null, null);
-      }
-      reuseHiddenContextOnStack(workInProgress);
-      pushOffscreenSuspenseHandler(workInProgress);
-    } else if (!includesSomeLane(renderLanes, OffscreenLane as Lane)) {
+    if (!includesSomeLane(renderLanes, OffscreenLane as Lane)) {
       // We're hidden, and we're not rendering at Offscreen. We will bail out
       // and resume this tree later.
 
@@ -1427,26 +1401,6 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
   }
 }
 
-function mountIncompleteFunctionComponent(
-  _current: null | Fiber,
-  workInProgress: Fiber,
-  Component: any,
-  nextProps: any,
-  renderLanes: Lanes,
-) {
-  resetSuspendedCurrentOnMountInLegacyMode(_current, workInProgress);
-
-  workInProgress.tag = FunctionComponent;
-
-  return updateFunctionComponent(
-    null,
-    workInProgress,
-    Component,
-    nextProps,
-    renderLanes,
-  );
-}
-
 function updateFunctionComponent(
   current: null | Fiber,
   workInProgress: Fiber,
@@ -1669,8 +1623,6 @@ function updateClassComponent(
   const instance = workInProgress.stateNode;
   let shouldUpdate;
   if (instance === null) {
-    resetSuspendedCurrentOnMountInLegacyMode(current, workInProgress);
-
     // In the initial pass we might need to construct the instance.
     constructClassInstance(workInProgress, Component, nextProps);
     mountClassInstance(workInProgress, Component, nextProps, renderLanes);
@@ -2107,13 +2059,10 @@ function updateHostText(current: null | Fiber, workInProgress: Fiber) {
 }
 
 function mountLazyComponent(
-  _current: null | Fiber,
   workInProgress: Fiber,
   elementType: any,
   renderLanes: Lanes,
 ) {
-  resetSuspendedCurrentOnMountInLegacyMode(_current, workInProgress);
-
   const props = workInProgress.pendingProps;
   const lazyComponent: LazyComponentType<any, any> = elementType;
   let Component = resolveLazy(lazyComponent);
@@ -2199,45 +2148,6 @@ function mountLazyComponent(
   throw new Error(
     `Element type is invalid. Received a promise that resolves to: ${loggedComponent}. ` +
       `Lazy element type must resolve to a class or function.${hint}`,
-  );
-}
-
-function mountIncompleteClassComponent(
-  _current: null | Fiber,
-  workInProgress: Fiber,
-  Component: any,
-  nextProps: any,
-  renderLanes: Lanes,
-) {
-  resetSuspendedCurrentOnMountInLegacyMode(_current, workInProgress);
-
-  // Promote the fiber to a class and try rendering again.
-  workInProgress.tag = ClassComponent;
-
-  // The rest of this function is a fork of `updateClassComponent`
-
-  // Push context providers early to prevent context stack mismatches.
-  // During mounting we don't know the child context yet as the instance doesn't exist.
-  // We will invalidate the child context in finishClassComponent() right after rendering.
-  let hasContext;
-  if (isLegacyContextProvider(Component)) {
-    hasContext = true;
-    pushLegacyContextProvider(workInProgress);
-  } else {
-    hasContext = false;
-  }
-  prepareToReadContext(workInProgress, renderLanes);
-
-  constructClassInstance(workInProgress, Component, nextProps);
-  mountClassInstance(workInProgress, Component, nextProps, renderLanes);
-
-  return finishClassComponent(
-    null,
-    workInProgress,
-    Component,
-    true,
-    hasContext,
-    renderLanes,
   );
 }
 
@@ -2411,20 +2321,11 @@ function updateSuspenseComponent(
   // boundary's children. This involves some custom reconciliation logic. Two
   // main reasons this is so complicated.
   //
-  // First, Legacy Mode has different semantics for backwards compatibility. The
-  // primary tree will commit in an inconsistent state, so when we do the
-  // second pass to render the fallback, we do some exceedingly, uh, clever
-  // hacks to make that not totally break. Like transferring effects and
-  // deletions from hidden tree. In Concurrent Mode, it's much simpler,
-  // because we bailout on the primary tree completely and leave it in its old
-  // state, no effects. Same as what we do for Offscreen (except that
-  // Offscreen doesn't have the first render pass).
-  //
-  // Second is hydration. During hydration, the Suspense fiber has a slightly
+  // First is hydration. During hydration, the Suspense fiber has a slightly
   // different layout, where the child points to a dehydrated fragment, which
   // contains the DOM rendered by the server.
   //
-  // Third, even if you set all that aside, Suspense is like error boundaries in
+  // Second, even if you set all that aside, Suspense is like error boundaries in
   // that we first we try to render one tree, and if that fails, we render again
   // and switch to a different tree. Like a try/catch block. So we have to track
   // which branch we're currently rendering. Ideally we would model this using
@@ -2669,56 +2570,23 @@ function mountSuspenseFallbackChildren(
   renderLanes: Lanes,
 ) {
   const mode = workInProgress.mode;
-  const progressedPrimaryFragment: Fiber | null = workInProgress.child;
 
   const primaryChildProps: OffscreenProps = {
     mode: 'hidden',
     children: primaryChildren,
   };
 
-  let primaryChildFragment;
-  let fallbackChildFragment;
-  if (
-    !disableLegacyMode &&
-    (mode & ConcurrentMode) === NoMode &&
-    progressedPrimaryFragment !== null
-  ) {
-    // In legacy mode, we commit the primary tree as if it successfully
-    // completed, even though it's in an inconsistent state.
-    primaryChildFragment = progressedPrimaryFragment;
-    primaryChildFragment.childLanes = NoLanes;
-    primaryChildFragment.pendingProps = primaryChildProps;
-
-    if (enableProfilerTimer && workInProgress.mode & ProfileMode) {
-      // Reset the durations from the first pass so they aren't included in the
-      // final amounts. This seems counterintuitive, since we're intentionally
-      // not measuring part of the render phase, but this makes it match what we
-      // do in Concurrent Mode.
-      primaryChildFragment.actualDuration = -0;
-      primaryChildFragment.actualStartTime = -1.1;
-      primaryChildFragment.selfBaseDuration = -0;
-      primaryChildFragment.treeBaseDuration = -0;
-    }
-
-    fallbackChildFragment = createFiberFromFragment(
-      fallbackChildren,
-      mode,
-      renderLanes,
-      null,
-    );
-  } else {
-    primaryChildFragment = mountWorkInProgressOffscreenFiber(
-      primaryChildProps,
-      mode,
-      NoLanes,
-    );
-    fallbackChildFragment = createFiberFromFragment(
-      fallbackChildren,
-      mode,
-      renderLanes,
-      null,
-    );
-  }
+  const primaryChildFragment = mountWorkInProgressOffscreenFiber(
+    primaryChildProps,
+    mode,
+    NoLanes,
+  );
+  const fallbackChildFragment = createFiberFromFragment(
+    fallbackChildren,
+    mode,
+    renderLanes,
+    null,
+  );
 
   primaryChildFragment.return = workInProgress;
   fallbackChildFragment.return = workInProgress;
@@ -2763,9 +2631,6 @@ function updateSuspensePrimaryChildren(
       children: primaryChildren,
     },
   );
-  if (!disableLegacyMode && (workInProgress.mode & ConcurrentMode) === NoMode) {
-    primaryChildFragment.lanes = renderLanes;
-  }
   primaryChildFragment.return = workInProgress;
   primaryChildFragment.sibling = null;
   if (currentFallbackChildFragment !== null) {
@@ -2800,53 +2665,13 @@ function updateSuspenseFallbackChildren(
     children: primaryChildren,
   };
 
-  let primaryChildFragment;
-  if (
-    // In legacy mode, we commit the primary tree as if it successfully
-    // completed, even though it's in an inconsistent state.
-    !disableLegacyMode &&
-    (mode & ConcurrentMode) === NoMode &&
-    // Make sure we're on the second pass, i.e. the primary child fragment was
-    // already cloned. In legacy mode, the only case where this isn't true is
-    // when DevTools forces us to display a fallback; we skip the first render
-    // pass entirely and go straight to rendering the fallback. (In Concurrent
-    // Mode, SuspenseList can also trigger this scenario, but this is a legacy-
-    // only codepath.)
-    workInProgress.child !== currentPrimaryChildFragment
-  ) {
-    const progressedPrimaryFragment: Fiber = workInProgress.child as any;
-    primaryChildFragment = progressedPrimaryFragment;
-    primaryChildFragment.childLanes = NoLanes;
-    primaryChildFragment.pendingProps = primaryChildProps;
-
-    if (enableProfilerTimer && workInProgress.mode & ProfileMode) {
-      // Reset the durations from the first pass so they aren't included in the
-      // final amounts. This seems counterintuitive, since we're intentionally
-      // not measuring part of the render phase, but this makes it match what we
-      // do in Concurrent Mode.
-      primaryChildFragment.actualDuration = -0;
-      primaryChildFragment.actualStartTime = -1.1;
-      primaryChildFragment.selfBaseDuration =
-        currentPrimaryChildFragment.selfBaseDuration;
-      primaryChildFragment.treeBaseDuration =
-        currentPrimaryChildFragment.treeBaseDuration;
-    }
-
-    // The fallback fiber was added as a deletion during the first pass.
-    // However, since we're going to remain on the fallback, we no longer want
-    // to delete it.
-    workInProgress.deletions = null;
-  } else {
-    primaryChildFragment = updateWorkInProgressOffscreenFiber(
-      currentPrimaryChildFragment,
-      primaryChildProps,
-    );
-    // Since we're reusing a current tree, we need to reuse the flags, too.
-    // (We don't do this in legacy mode, because in legacy mode we don't re-use
-    // the current tree; see previous branch.)
-    primaryChildFragment.subtreeFlags =
-      currentPrimaryChildFragment.subtreeFlags & StaticMask;
-  }
+  const primaryChildFragment = updateWorkInProgressOffscreenFiber(
+    currentPrimaryChildFragment,
+    primaryChildProps,
+  );
+  // Since we're reusing a current tree, we need to reuse the flags, too.
+  primaryChildFragment.subtreeFlags =
+    currentPrimaryChildFragment.subtreeFlags & StaticMask;
   let fallbackChildFragment;
   if (currentFallbackChildFragment !== null) {
     fallbackChildFragment = createWorkInProgress(
@@ -2933,11 +2758,9 @@ function mountSuspenseFallbackAfterRetryWithoutHydrating(
   primaryChildFragment.sibling = fallbackChildFragment;
   workInProgress.child = primaryChildFragment;
 
-  if (disableLegacyMode || (workInProgress.mode & ConcurrentMode) !== NoMode) {
-    // We will have dropped the effect list which contains the
-    // deletion. We need to reconcile to delete the current child.
-    reconcileChildFibers(workInProgress, current.child, null, renderLanes);
-  }
+  // We will have dropped the effect list which contains the
+  // deletion. We need to reconcile to delete the current child.
+  reconcileChildFibers(workInProgress, current.child, null, renderLanes);
 
   return fallbackChildFragment;
 }
@@ -3506,118 +3329,112 @@ function updateSuspenseListComponent(
     }
   }
 
-  if (!disableLegacyMode && (workInProgress.mode & ConcurrentMode) === NoMode) {
-    // In legacy mode, SuspenseList doesn't work so we just
-    // use make it a noop by treating it as the default revealOrder.
-    workInProgress.memoizedState = null;
-  } else {
-    switch (revealOrder) {
-      case 'backwards': {
-        // We're going to find the first row that has existing content.
-        // We are also going to reverse the order of anything in the existing content
-        // since we want to actually render them backwards from the reconciled set.
-        // The tail is left in order, because it'll be added to the front as we
-        // complete each item.
-        const lastContentRow = findLastContentRow(workInProgress.child);
-        let tail;
-        if (lastContentRow === null) {
-          // The whole list is part of the tail.
-          tail = workInProgress.child;
-          workInProgress.child = null;
-        } else {
-          // Disconnect the tail rows after the content row.
-          // We're going to render them separately later in reverse order.
-          tail = lastContentRow.sibling;
-          lastContentRow.sibling = null;
-          // We have to now reverse the main content so it renders backwards too.
-          reverseChildren(workInProgress);
-        }
-        // TODO: If workInProgress.child is null, we can continue on the tail immediately.
-        initSuspenseListRenderState(
-          workInProgress,
-          true, // isBackwards
-          tail,
-          null, // last
-          tailMode,
-          treeForkCount,
-        );
-        break;
-      }
-      case 'unstable_legacy-backwards': {
-        // We're going to find the first row that has existing content.
-        // At the same time we're going to reverse the list of everything
-        // we pass in the meantime. That's going to be our tail in reverse
-        // order.
-        let tail = null;
-        let row = workInProgress.child;
+  switch (revealOrder) {
+    case 'backwards': {
+      // We're going to find the first row that has existing content.
+      // We are also going to reverse the order of anything in the existing content
+      // since we want to actually render them backwards from the reconciled set.
+      // The tail is left in order, because it'll be added to the front as we
+      // complete each item.
+      const lastContentRow = findLastContentRow(workInProgress.child);
+      let tail;
+      if (lastContentRow === null) {
+        // The whole list is part of the tail.
+        tail = workInProgress.child;
         workInProgress.child = null;
-        while (row !== null) {
-          const currentRow = row.alternate;
-          // New rows can't be content rows.
-          if (currentRow !== null && findFirstSuspended(currentRow) === null) {
-            // This is the beginning of the main content.
-            workInProgress.child = row;
-            break;
-          }
-          const nextRow = row.sibling;
-          row.sibling = tail;
-          tail = row;
-          row = nextRow;
+      } else {
+        // Disconnect the tail rows after the content row.
+        // We're going to render them separately later in reverse order.
+        tail = lastContentRow.sibling;
+        lastContentRow.sibling = null;
+        // We have to now reverse the main content so it renders backwards too.
+        reverseChildren(workInProgress);
+      }
+      // TODO: If workInProgress.child is null, we can continue on the tail immediately.
+      initSuspenseListRenderState(
+        workInProgress,
+        true, // isBackwards
+        tail,
+        null, // last
+        tailMode,
+        treeForkCount,
+      );
+      break;
+    }
+    case 'unstable_legacy-backwards': {
+      // We're going to find the first row that has existing content.
+      // At the same time we're going to reverse the list of everything
+      // we pass in the meantime. That's going to be our tail in reverse
+      // order.
+      let tail = null;
+      let row = workInProgress.child;
+      workInProgress.child = null;
+      while (row !== null) {
+        const currentRow = row.alternate;
+        // New rows can't be content rows.
+        if (currentRow !== null && findFirstSuspended(currentRow) === null) {
+          // This is the beginning of the main content.
+          workInProgress.child = row;
+          break;
         }
-        // TODO: If workInProgress.child is null, we can continue on the tail immediately.
-        initSuspenseListRenderState(
-          workInProgress,
-          true, // isBackwards
-          tail,
-          null, // last
-          tailMode,
-          treeForkCount,
-        );
-        break;
+        const nextRow = row.sibling;
+        row.sibling = tail;
+        tail = row;
+        row = nextRow;
       }
-      case 'together': {
-        initSuspenseListRenderState(
-          workInProgress,
-          false, // isBackwards
-          null, // tail
-          null, // last
-          undefined,
-          treeForkCount,
-        );
-        break;
+      // TODO: If workInProgress.child is null, we can continue on the tail immediately.
+      initSuspenseListRenderState(
+        workInProgress,
+        true, // isBackwards
+        tail,
+        null, // last
+        tailMode,
+        treeForkCount,
+      );
+      break;
+    }
+    case 'together': {
+      initSuspenseListRenderState(
+        workInProgress,
+        false, // isBackwards
+        null, // tail
+        null, // last
+        undefined,
+        treeForkCount,
+      );
+      break;
+    }
+    case 'independent': {
+      // The "independent" reveal order is the same as not having
+      // a boundary.
+      workInProgress.memoizedState = null;
+      break;
+    }
+    // The default is now forwards.
+    case 'forwards':
+    default: {
+      const lastContentRow = findLastContentRow(workInProgress.child);
+      let tail;
+      if (lastContentRow === null) {
+        // The whole list is part of the tail.
+        // TODO: We could fast path by just rendering the tail now.
+        tail = workInProgress.child;
+        workInProgress.child = null;
+      } else {
+        // Disconnect the tail rows after the content row.
+        // We're going to render them separately later.
+        tail = lastContentRow.sibling;
+        lastContentRow.sibling = null;
       }
-      case 'independent': {
-        // The "independent" reveal order is the same as not having
-        // a boundary.
-        workInProgress.memoizedState = null;
-        break;
-      }
-      // The default is now forwards.
-      case 'forwards':
-      default: {
-        const lastContentRow = findLastContentRow(workInProgress.child);
-        let tail;
-        if (lastContentRow === null) {
-          // The whole list is part of the tail.
-          // TODO: We could fast path by just rendering the tail now.
-          tail = workInProgress.child;
-          workInProgress.child = null;
-        } else {
-          // Disconnect the tail rows after the content row.
-          // We're going to render them separately later.
-          tail = lastContentRow.sibling;
-          lastContentRow.sibling = null;
-        }
-        initSuspenseListRenderState(
-          workInProgress,
-          false, // isBackwards
-          tail,
-          lastContentRow,
-          tailMode,
-          treeForkCount,
-        );
-        break;
-      }
+      initSuspenseListRenderState(
+        workInProgress,
+        false, // isBackwards
+        tail,
+        lastContentRow,
+        tailMode,
+        treeForkCount,
+      );
+      break;
     }
   }
   return workInProgress.child;
@@ -3799,24 +3616,6 @@ export function markWorkInProgressReceivedUpdate() {
 
 export function checkIfWorkInProgressReceivedUpdate(): boolean {
   return didReceiveUpdate;
-}
-
-function resetSuspendedCurrentOnMountInLegacyMode(
-  current: null | Fiber,
-  workInProgress: Fiber,
-) {
-  if (!disableLegacyMode && (workInProgress.mode & ConcurrentMode) === NoMode) {
-    if (current !== null) {
-      // A lazy component only mounts if it suspended inside a non-
-      // concurrent tree, in an inconsistent state. We want to treat it like
-      // a new mount, even though an empty version of it already committed.
-      // Disconnect the alternate pointers.
-      current.alternate = null;
-      workInProgress.alternate = null;
-      // Since this is conceptually a new fiber, schedule a Placement effect
-      workInProgress.flags |= Placement;
-    }
-  }
 }
 
 function bailoutOnAlreadyFinishedWork(
@@ -4318,12 +4117,7 @@ function beginWork(
   switch (workInProgress.tag) {
     case LazyComponent: {
       const elementType = workInProgress.elementType;
-      return mountLazyComponent(
-        current,
-        workInProgress,
-        elementType,
-        renderLanes,
-      );
+      return mountLazyComponent(workInProgress, elementType, renderLanes);
     }
     case FunctionComponent: {
       const Component = workInProgress.type;
@@ -4404,42 +4198,6 @@ function beginWork(
         workInProgress,
         workInProgress.type,
         workInProgress.pendingProps,
-        renderLanes,
-      );
-    }
-    case IncompleteClassComponent: {
-      if (disableLegacyMode) {
-        break;
-      }
-      const Component = workInProgress.type;
-      const unresolvedProps = workInProgress.pendingProps;
-      const resolvedProps = resolveClassComponentProps(
-        Component,
-        unresolvedProps,
-      );
-      return mountIncompleteClassComponent(
-        current,
-        workInProgress,
-        Component,
-        resolvedProps,
-        renderLanes,
-      );
-    }
-    case IncompleteFunctionComponent: {
-      if (disableLegacyMode) {
-        break;
-      }
-      const Component = workInProgress.type;
-      const unresolvedProps = workInProgress.pendingProps;
-      const resolvedProps = resolveClassComponentProps(
-        Component,
-        unresolvedProps,
-      );
-      return mountIncompleteFunctionComponent(
-        current,
-        workInProgress,
-        Component,
-        resolvedProps,
         renderLanes,
       );
     }

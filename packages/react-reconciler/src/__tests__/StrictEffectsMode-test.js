@@ -22,35 +22,6 @@ describe('StrictEffectsMode', () => {
     ReactNoop = require('react-noop-renderer');
   });
 
-  // @gate !disableLegacyMode
-  it('should not double invoke effects in legacy mode', async () => {
-    const log = [];
-    function App({text}) {
-      React.useEffect(() => {
-        log.push('useEffect mount');
-        return () => log.push('useEffect unmount');
-      });
-
-      React.useLayoutEffect(() => {
-        log.push('useLayoutEffect mount');
-        return () => log.push('useLayoutEffect unmount');
-      });
-
-      return text;
-    }
-
-    const root = ReactNoop.createLegacyRoot();
-    await act(() => {
-      root.render(
-        <React.StrictMode>
-          <App text={'mount'} />
-        </React.StrictMode>,
-      );
-    });
-
-    expect(log).toEqual(['useLayoutEffect mount', 'useEffect mount']);
-  });
-
   it('double invoking for effects works properly', async () => {
     const log = [];
     function App({text}) {
@@ -450,39 +421,6 @@ describe('StrictEffectsMode', () => {
     });
 
     expect(log).toEqual(['componentWillUnmount']);
-  });
-
-  // @gate !disableLegacyMode
-  it('should not double invoke class lifecycles in legacy mode', async () => {
-    const log = [];
-    class App extends React.PureComponent {
-      componentDidMount() {
-        log.push('componentDidMount');
-      }
-
-      componentDidUpdate() {
-        log.push('componentDidUpdate');
-      }
-
-      componentWillUnmount() {
-        log.push('componentWillUnmount');
-      }
-
-      render() {
-        return this.props.text;
-      }
-    }
-
-    const root = ReactNoop.createLegacyRoot();
-    await act(() => {
-      root.render(
-        <React.StrictMode>
-          <App text={'mount'} />
-        </React.StrictMode>,
-      );
-    });
-
-    expect(log).toEqual(['componentDidMount']);
   });
 
   it('double flushing passive effects only results in one double invoke', async () => {

@@ -9,15 +9,12 @@
 
 import type {ReactNodeList} from 'shared/ReactTypes';
 
-import {disableLegacyMode} from 'shared/ReactFeatureFlags';
 import {isValidContainer} from 'react-dom-bindings/src/client/ReactDOMContainer';
 import {createEventHandle} from 'react-dom-bindings/src/client/ReactDOMEventHandle';
 import {runWithPriority} from 'react-dom-bindings/src/client/ReactDOMUpdatePriority';
-import {flushSync as flushSyncIsomorphic} from '../shared/ReactDOMFlushSync';
+import {flushSync} from '../shared/ReactDOMFlushSync';
 
 import {
-  flushSyncFromReconciler as flushSyncWithoutWarningIfAlreadyRendering,
-  isAlreadyRendering,
   injectIntoDevTools,
   findHostInstance,
 } from 'react-reconciler/src/ReactFiberReconciler';
@@ -86,28 +83,6 @@ function createPortal(
   // $FlowFixMe[incompatible-type] The Flow type is opaque but there's no way to actually create it.
   return createPortalImpl(children, container, null, key);
 }
-
-// Overload the definition to the two valid signatures.
-// Warning, this opts-out of checking the function body.
-declare function flushSyncFromReconciler<R>(fn: () => R): R;
-declare function flushSyncFromReconciler(): void;
-function flushSyncFromReconciler<R>(fn: (() => R) | void): R | void {
-  if (__DEV__) {
-    if (isAlreadyRendering()) {
-      console.error(
-        'flushSync was called from inside a lifecycle method. React cannot ' +
-          'flush when React is already rendering. Consider moving this call to ' +
-          'a scheduler task or micro task.',
-      );
-    }
-  }
-  // $FlowFixMe[incompatible-type]
-  return flushSyncWithoutWarningIfAlreadyRendering(fn);
-}
-
-const flushSync: typeof flushSyncIsomorphic = disableLegacyMode
-  ? flushSyncIsomorphic
-  : flushSyncFromReconciler;
 
 function findDOMNode(
   componentOrElement: component(...props: any),

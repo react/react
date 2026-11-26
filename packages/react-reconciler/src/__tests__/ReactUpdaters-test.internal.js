@@ -265,68 +265,6 @@ describe('updaters', () => {
     await waitForAll([]);
   });
 
-  // This test should be convertable to createRoot but the allScheduledTypes assertions are no longer the same
-  // So I'm leaving it in legacy mode for now and just disabling if legacy mode is turned off
-  // @gate !disableLegacyMode
-  it('should cover suspense pings', async () => {
-    let data = null;
-    let resolver = null;
-    let promise = null;
-    const fakeCacheRead = () => {
-      if (data === null) {
-        promise = new Promise(resolve => {
-          resolver = resolvedData => {
-            data = resolvedData;
-            resolve(resolvedData);
-          };
-        });
-        throw promise;
-      } else {
-        return data;
-      }
-    };
-    const Parent = () => (
-      <React.Suspense fallback={<Fallback />}>
-        <Suspender />
-      </React.Suspense>
-    );
-    const Fallback = () => null;
-    let setShouldSuspend = null;
-    const Suspender = ({suspend}) => {
-      const tuple = React.useState(false);
-      setShouldSuspend = tuple[1];
-      if (tuple[0] === true) {
-        return fakeCacheRead();
-      } else {
-        return null;
-      }
-    };
-
-    await act(() => {
-      ReactDOM.render(<Parent />, document.createElement('div'));
-      assertLog(['onCommitRoot']);
-    });
-    expect(setShouldSuspend).not.toBeNull();
-    expect(allSchedulerTypes).toEqual([[null]]);
-
-    await act(() => {
-      setShouldSuspend(true);
-    });
-    assertLog(['onCommitRoot']);
-    expect(allSchedulerTypes).toEqual([[null], [Suspender]]);
-
-    expect(resolver).not.toBeNull();
-    await act(() => {
-      resolver('abc');
-      return promise;
-    });
-    assertLog(['onCommitRoot']);
-    expect(allSchedulerTypes).toEqual([[null], [Suspender], [Suspender]]);
-
-    // Verify no outstanding flushes
-    await waitForAll([]);
-  });
-
   it('should cover error handling', async () => {
     let triggerError = null;
 

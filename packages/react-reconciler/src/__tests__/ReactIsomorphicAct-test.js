@@ -17,13 +17,10 @@ let Suspense;
 let DiscreteEventPriority;
 let startTransition;
 let waitForMicrotasks;
-let Scheduler;
-let assertLog;
 
 describe('isomorphic act()', () => {
   beforeEach(() => {
     React = require('react');
-    Scheduler = require('scheduler');
 
     ReactNoop = require('react-noop-renderer');
     DiscreteEventPriority =
@@ -34,7 +31,6 @@ describe('isomorphic act()', () => {
     startTransition = React.startTransition;
 
     waitForMicrotasks = require('internal-test-utils').waitForMicrotasks;
-    assertLog = require('internal-test-utils').assertLog;
   });
 
   beforeEach(() => {
@@ -44,11 +40,6 @@ describe('isomorphic act()', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
-
-  function Text({text}) {
-    Scheduler.log(text);
-    return text;
-  }
 
   it('behavior in production', () => {
     if (!__DEV__) {
@@ -118,103 +109,6 @@ describe('isomorphic act()', () => {
       });
     });
     expect(returnValue).toEqual('hi');
-  });
-
-  // @gate __DEV__ && !disableLegacyMode
-  it('in legacy mode, updates are batched', () => {
-    const root = ReactNoop.createLegacyRoot();
-
-    // Outside of `act`, legacy updates are flushed completely synchronously
-    root.render('A');
-    expect(root).toMatchRenderedOutput('A');
-
-    // `act` will batch the updates and flush them at the end
-    act(() => {
-      root.render('B');
-      // Hasn't flushed yet
-      expect(root).toMatchRenderedOutput('A');
-
-      // Confirm that a nested `batchedUpdates` call won't cause the updates
-      // to flush early.
-      ReactNoop.batchedUpdates(() => {
-        root.render('C');
-      });
-
-      // Still hasn't flushed
-      expect(root).toMatchRenderedOutput('A');
-    });
-
-    // Now everything renders in a single batch.
-    expect(root).toMatchRenderedOutput('C');
-  });
-
-  // @gate __DEV__ && !disableLegacyMode
-  it('in legacy mode, in an async scope, updates are batched until the first `await`', async () => {
-    const root = ReactNoop.createLegacyRoot();
-
-    await act(async () => {
-      queueMicrotask(() => {
-        Scheduler.log('Current tree in microtask: ' + root.getChildrenAsJSX());
-        root.render(<Text text="C" />);
-      });
-      root.render(<Text text="A" />);
-      root.render(<Text text="B" />);
-
-      await null;
-      assertLog([
-        // A and B should render in a single batch _before_ the microtask queue
-        // has run. This replicates the behavior of the original `act`
-        // implementation, for compatibility.
-        'B',
-        'Current tree in microtask: B',
-
-        // C isn't scheduled until a microtask, so it's rendered separately.
-        'C',
-      ]);
-
-      // Subsequent updates should also render in separate batches.
-      root.render(<Text text="D" />);
-      root.render(<Text text="E" />);
-      assertLog(['D', 'E']);
-    });
-  });
-
-  // @gate __DEV__ && !disableLegacyMode
-  it('in legacy mode, in an async scope, updates are batched until the first `await` (regression test: batchedUpdates)', async () => {
-    const root = ReactNoop.createLegacyRoot();
-
-    await act(async () => {
-      queueMicrotask(() => {
-        Scheduler.log('Current tree in microtask: ' + root.getChildrenAsJSX());
-        root.render(<Text text="C" />);
-      });
-
-      // This is a regression test. The presence of `batchedUpdates` would cause
-      // these updates to not flush until a microtask. The correct behavior is
-      // that they flush before the microtask queue, regardless of whether
-      // they are wrapped with `batchedUpdates`.
-      ReactNoop.batchedUpdates(() => {
-        root.render(<Text text="A" />);
-        root.render(<Text text="B" />);
-      });
-
-      await null;
-      assertLog([
-        // A and B should render in a single batch _before_ the microtask queue
-        // has run. This replicates the behavior of the original `act`
-        // implementation, for compatibility.
-        'B',
-        'Current tree in microtask: B',
-
-        // C isn't scheduled until a microtask, so it's rendered separately.
-        'C',
-      ]);
-
-      // Subsequent updates should also render in separate batches.
-      root.render(<Text text="D" />);
-      root.render(<Text text="E" />);
-      assertLog(['D', 'E']);
-    });
   });
 
   // @gate __DEV__

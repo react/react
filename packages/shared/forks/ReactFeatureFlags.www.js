@@ -94,8 +94,6 @@ export const disableClientCache: boolean = true;
 
 export const enableReactTestRendererWarning: boolean = false;
 
-export const disableLegacyMode: boolean = true;
-
 export const enableViewTransitionForPersistenceMode: boolean = false;
 
 export const enableGestureTransition: boolean = false;
