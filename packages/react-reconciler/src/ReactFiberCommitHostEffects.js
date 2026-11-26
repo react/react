@@ -27,7 +27,8 @@ import {
   HostPortal,
   DehydratedFragment,
 } from './ReactWorkTags';
-import {ContentReset, Placement} from './ReactFiberFlags';
+import {ContentReset, NoFlags, Placement} from './ReactFiberFlags';
+import {enablePlacementSiblingCache} from 'shared/ReactFeatureFlags';
 import {
   supportsMutation,
   supportsResources,
@@ -323,6 +324,52 @@ function getHostSibling(fiber: Fiber): ?Instance {
   }
 }
 
+// A run of consecutive placed siblings all find the same host sibling: the
+// search from one placed fiber walks past the next placed one and continues
+// exactly where that one's search would start. Placing a fiber only inserts
+// nodes to the left of its next sibling, so the result can be handed over to
+// it. The handover is keyed on the fiber, so a placement committed in between
+// can only cause a miss. recursivelyTraverseMutationEffects saves and restores
+// it around any subtree that has placements of its own, so a run is not broken
+// by placements nested inside its members.
+let placementSiblingFiber: Fiber | null = null;
+let placementSiblingInstance: ?Instance = null;
+
+export function getPlacementSiblingFiber(): Fiber | null {
+  return placementSiblingFiber;
+}
+
+export function getPlacementSiblingInstance(): ?Instance {
+  return placementSiblingInstance;
+}
+
+export function setPlacementSibling(
+  fiber: Fiber | null,
+  instance: ?Instance,
+): void {
+  placementSiblingFiber = fiber;
+  placementSiblingInstance = instance;
+}
+
+function getHostSiblingForPlacement(fiber: Fiber): ?Instance {
+  if (!enablePlacementSiblingCache) {
+    return getHostSibling(fiber);
+  }
+  const before =
+    fiber === placementSiblingFiber
+      ? placementSiblingInstance
+      : getHostSibling(fiber);
+  const next = fiber.sibling;
+  if (next !== null && (next.flags & Placement) !== NoFlags) {
+    placementSiblingFiber = next;
+    placementSiblingInstance = before;
+  } else {
+    placementSiblingFiber = null;
+    placementSiblingInstance = null;
+  }
+  return before;
+}
+
 function insertOrAppendPlacementNodeIntoContainer(
   node: Fiber,
   before: ?Instance,
@@ -469,7 +516,7 @@ function commitPlacement(finishedWork: Fiber): void {
     case HostSingleton: {
       if (supportsSingletons) {
         const parent: Instance = hostParentFiber.stateNode;
-        const before = getHostSibling(finishedWork);
+        const before = getHostSiblingForPlacement(finishedWork);
         // We only have the top Fiber that was inserted but we need to recurse down its
         // children to find all the terminal nodes.
         insertOrAppendPlacementNode(
@@ -491,7 +538,7 @@ function commitPlacement(finishedWork: Fiber): void {
         hostParentFiber.flags &= ~ContentReset;
       }
 
-      const before = getHostSibling(finishedWork);
+      const before = getHostSiblingForPlacement(finishedWork);
       // We only have the top Fiber that was inserted but we need to recurse down its
       // children to find all the terminal nodes.
       insertOrAppendPlacementNode(
@@ -505,7 +552,7 @@ function commitPlacement(finishedWork: Fiber): void {
     case HostRoot:
     case HostPortal: {
       const parent: Container = hostParentFiber.stateNode.containerInfo;
-      const before = getHostSibling(finishedWork);
+      const before = getHostSiblingForPlacement(finishedWork);
       insertOrAppendPlacementNodeIntoContainer(
         finishedWork,
         before,

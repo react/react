@@ -57,6 +57,7 @@ import {
   enableComponentPerformanceTrack,
   enableViewTransition,
   enableDefaultTransitionIndicator,
+  enablePlacementSiblingCache,
 } from 'shared/ReactFeatureFlags';
 import {
   FunctionComponent,
@@ -243,6 +244,9 @@ import {
   commitShowHideHostInstance,
   commitShowHideHostTextInstance,
   commitHostPlacement,
+  getPlacementSiblingFiber,
+  getPlacementSiblingInstance,
+  setPlacementSibling,
   commitHostRootContainerChildren,
   commitHostPortalContainerChildren,
   commitHostHydratedContainer,
@@ -1968,6 +1972,11 @@ export function commitMutationEffects(
 
   resetComponentEffectTimers();
 
+  if (enablePlacementSiblingCache) {
+    // A previous commit may have thrown in the middle of a run.
+    setPlacementSibling(null, null);
+  }
+
   commitMutationEffectsOnFiber(finishedWork, root, committedLanes);
 
   inProgressLanes = null;
@@ -1990,10 +1999,26 @@ function recursivelyTraverseMutationEffects(
   }
 
   if (parentFiber.subtreeFlags & (MutationMask | Cloned)) {
-    let child = parentFiber.child;
-    while (child !== null) {
-      commitMutationEffectsOnFiber(child, root, lanes);
-      child = child.sibling;
+    if (
+      enablePlacementSiblingCache &&
+      (parentFiber.subtreeFlags & Placement) !== NoFlags
+    ) {
+      // Placements in here may start a run of their own. Keep the host
+      // sibling that an enclosing run handed over to a fiber above us.
+      const prevFiber = getPlacementSiblingFiber();
+      const prevInstance = getPlacementSiblingInstance();
+      let child = parentFiber.child;
+      while (child !== null) {
+        commitMutationEffectsOnFiber(child, root, lanes);
+        child = child.sibling;
+      }
+      setPlacementSibling(prevFiber, prevInstance);
+    } else {
+      let child = parentFiber.child;
+      while (child !== null) {
+        commitMutationEffectsOnFiber(child, root, lanes);
+        child = child.sibling;
+      }
     }
   }
 }

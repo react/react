@@ -30,6 +30,7 @@ export const {
   transitionLaneExpirationMs,
   enableSuspenseyImages,
   enableViewTransition,
+  enablePlacementSiblingCache,
   enableScrollEndPolyfill,
   enableInternalInstanceMap,
   enableViewTransitionParentEnterExit,

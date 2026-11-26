@@ -66,6 +66,7 @@ export const transitionLaneExpirationMs = 5000;
 export const enableYieldingBeforePassive: boolean = false;
 export const enableThrottledScheduling: boolean = false;
 export const enableViewTransition: boolean = true;
+export const enablePlacementSiblingCache: boolean = false;
 export const enableViewTransitionParentEnterExit: boolean = true;
 export const enableGestureTransition: boolean = false;
 export const enableScrollEndPolyfill: boolean = true;
