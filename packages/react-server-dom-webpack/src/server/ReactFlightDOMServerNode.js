@@ -447,6 +447,16 @@ function prerenderToNodeStream(
         read() {
           startFlowing(request, writable);
         },
+        destroy(error, callback) {
+          // Destroying the prelude means that nobody will read the rest of the
+          // content, which is the Node equivalent of cancelling a Web stream.
+          // Notify the request so that it releases everything it holds,
+          // including the abort listener on the caller's signal.
+          const reason = error === null ? undefined : error;
+          stopFlowing(request);
+          abort(request, reason);
+          callback(reason);
+        },
       });
       const writable = createFakeWritableFromNodeReadable(readable);
       resolve({prelude: readable});
