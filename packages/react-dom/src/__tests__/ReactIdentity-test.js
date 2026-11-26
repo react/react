@@ -328,4 +328,25 @@ describe('ReactIdentity', () => {
         ' This value must be coerced to a string before using it here.',
     ]);
   });
+
+  it('should not crash typeName when key is a null-prototype object with throwing valueOf', async () => {
+    const nullProto = Object.create(null);
+    nullProto.valueOf = () => {
+      throw new TypeError('cannot coerce null-proto');
+    };
+
+    const el = document.createElement('div');
+    const root = ReactDOMClient.createRoot(el);
+    await expect(() => {
+      root.render(
+        <div>
+          <span key={nullProto} />
+        </div>,
+      );
+    }).toThrow(new TypeError('cannot coerce null-proto'));
+    assertConsoleErrorDev([
+      'The provided key is an unsupported type Object.' +
+        ' This value must be coerced to a string before using it here.',
+    ]);
+  });
 });
