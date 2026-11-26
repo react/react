@@ -116,6 +116,7 @@ import {
   enableLegacyHidden,
   enableCPUSuspense,
   enableViewTransition,
+  enableServerErrorBoundary,
 } from 'shared/ReactFeatureFlags';
 import shallowEqual from 'shared/shallowEqual';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
@@ -2243,6 +2244,14 @@ function shouldRemainOnFallback(
   workInProgress: Fiber,
   renderLanes: Lanes,
 ) {
+  if (
+    enableServerErrorBoundary &&
+    workInProgress.pendingProps.unstable_errorBoundary === true
+  ) {
+    // SuspenseList can hold loading fallbacks, but must not manufacture an
+    // error state for a boundary whose children have not thrown an error.
+    return false;
+  }
   // If we're already showing a fallback, there are cases where we need to
   // remain on that fallback regardless of whether the content has resolved.
   // For example, SuspenseList coordinates when nested content appears.
@@ -2712,6 +2721,12 @@ function retrySuspenseComponentWithoutHydrating(
 
   // We're now not suspended nor dehydrated.
   const nextProps = workInProgress.pendingProps;
+  if (enableServerErrorBoundary && nextProps.unstable_errorBoundary === true) {
+    // A hydration handler can preserve the server content while it suspends.
+    // Once rendering on the client, suspensions must reach explicit Suspense.
+    popSuspenseHandler(workInProgress);
+    pushPrimaryTreeSuspenseHandler(workInProgress);
+  }
   const primaryChildren = nextProps.children;
   const primaryChildFragment = mountSuspensePrimaryChildren(
     workInProgress,
@@ -2800,7 +2815,7 @@ function updateDehydratedSuspenseComponent(
 ): null | Fiber {
   if (!didSuspend) {
     // This is the first render pass. Attempt to hydrate.
-    pushPrimaryTreeSuspenseHandler(workInProgress);
+    pushPrimaryTreeSuspenseHandler(workInProgress, true);
 
     // We should never be hydrating at this point because it is the first pass,
     // but after we've already committed once.

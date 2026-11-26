@@ -43,6 +43,7 @@ export const enableProfilerCommitHooks = __PROFILE__;
 export const enableProfilerNestedUpdatePhase = __PROFILE__;
 export const enableUpdaterTracking = __PROFILE__;
 export const enableSuspenseAvoidThisFallback: boolean = true;
+export const enableServerErrorBoundary: boolean = false;
 
 export const enableCPUSuspense: boolean = true;
 export const enableMoveBefore: boolean = false;

@@ -43,6 +43,7 @@ import {
   enableViewTransition,
   enableSuspenseyImages,
   enableOptimisticKey,
+  enableServerErrorBoundary,
 } from 'shared/ReactFeatureFlags';
 import {NoFlags, Placement, StaticMask} from './ReactFiberFlags';
 import {
@@ -103,7 +104,9 @@ import {
   REACT_ELEMENT_TYPE,
   REACT_VIEW_TRANSITION_TYPE,
   REACT_ACTIVITY_TYPE,
+  REACT_SERVER_ERROR_BOUNDARY_TYPE,
 } from 'shared/ReactSymbols';
+import ServerErrorBoundary from 'shared/ReactServerErrorBoundary';
 import {TransitionTracingMarker} from './ReactFiberTracingMarkerComponent';
 import {getHostContext} from './ReactFiberHostContext';
 import type {ReactComponentInfo} from '../../shared/ReactTypes';
@@ -617,6 +620,17 @@ export function createFiberFromTypeAndProps(
       case REACT_TRACING_MARKER_TYPE:
         if (enableTransitionTracing) {
           return createFiberFromTracingMarker(pendingProps, mode, lanes, key);
+        }
+      // $FlowFixMe[invalid-compare] -- falls through
+      case REACT_SERVER_ERROR_BOUNDARY_TYPE:
+        if (
+          enableServerErrorBoundary &&
+          // $FlowFixMe[invalid-compare]
+          resolvedType === REACT_SERVER_ERROR_BOUNDARY_TYPE
+        ) {
+          fiberTag = ClassComponent;
+          resolvedType = ServerErrorBoundary;
+          break getTag;
         }
       // Fall through
       default: {
