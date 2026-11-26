@@ -101,11 +101,17 @@ function constructSelectEvent(
   // fires only on input and textarea thus if there's no focused element we
   // won't dispatch.
   const doc = getEventTargetDocument(nativeEventTarget);
+  const activeRoot =
+    nativeEventTarget && typeof (nativeEventTarget: any).getRootNode === 'function'
+      ? (nativeEventTarget: any).getRootNode()
+      : null;
+  const currentActiveElement =
+    (activeRoot && (activeRoot: any).activeElement) || getActiveElement(doc);
 
   if (
     mouseDown ||
     activeElement == null ||
-    activeElement !== getActiveElement(doc)
+    (activeElement !== getActiveElement(doc) && activeElement !== currentActiveElement)
   ) {
     return;
   }
