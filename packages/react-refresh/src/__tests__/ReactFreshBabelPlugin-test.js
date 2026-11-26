@@ -432,6 +432,33 @@ describe('ReactFreshBabelPlugin', () => {
     ).toMatchSnapshot();
   });
 
+  it('includes custom hooks into the signatures of HOC calls when commonjs target is used', () => {
+    // The signature is emitted for the function and for every HOC call around it.
+    // The commonjs transform rewrites an import reference node only once,
+    // so each of these signatures needs its own node.
+    expect(
+      transform(
+        `
+        import {forwardRef, memo} from 'react';
+        import {useFancyState} from './hooks';
+
+        export const A = memo(function A() {
+          const bar = useFancyState();
+          return <h1>{bar}</h1>;
+        });
+
+        export const B = memo(forwardRef((props, ref) => {
+          const bar = useFancyState();
+          return <h1 ref={ref}>{bar}</h1>;
+        }));
+    `,
+        {
+          plugins: ['@babel/transform-modules-commonjs'],
+        },
+      ),
+    ).toMatchSnapshot();
+  });
+
   it('generates valid signature for exotic ways to call Hooks', () => {
     expect(
       transform(`

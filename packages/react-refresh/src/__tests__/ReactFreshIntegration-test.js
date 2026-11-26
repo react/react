@@ -982,6 +982,75 @@ describe('ReactFreshIntegration', () => {
       }
     });
 
+    it('preserves state in memo() when the custom Hook is imported', async () => {
+      if (__DEV__) {
+        // useState is imported under another name, so that the Babel plugin
+        // treats it as a custom Hook that comes from an import.
+        await render(`
+          import {memo, useState as useFancyState} from 'react';
+
+          export default memo(function App() {
+            const [foo, setFoo] = useFancyState(1);
+            return <h1>A{foo}</h1>;
+          });
+        `);
+        const el = container.firstChild;
+        expect(el.textContent).toBe('A1');
+
+        await patch(`
+          import {memo, useState as useFancyState} from 'react';
+
+          export default memo(function App() {
+            const [foo, setFoo] = useFancyState(1);
+            return <h1>B{foo}</h1>;
+          });
+        `);
+        // The custom Hook is the same, so the state is preserved.
+        expect(container.firstChild).toBe(el);
+        expect(el.textContent).toBe('B1');
+      }
+    });
+
+    it('preserves state in a HOC with direct call when the custom Hook is imported', async () => {
+      if (__DEV__) {
+        // useState is imported under another name, as in the test above.
+        await render(`
+          import {useState as useFancyState} from 'react';
+
+          function hocWithDirectCall(Wrapped) {
+            return function Generated() {
+              return Wrapped();
+            };
+          }
+
+          export default hocWithDirectCall(() => {
+            const [foo, setFoo] = useFancyState(1);
+            return <h1>A{foo}</h1>;
+          });
+        `);
+        const el = container.firstChild;
+        expect(el.textContent).toBe('A1');
+
+        await patch(`
+          import {useState as useFancyState} from 'react';
+
+          function hocWithDirectCall(Wrapped) {
+            return function Generated() {
+              return Wrapped();
+            };
+          }
+
+          export default hocWithDirectCall(() => {
+            const [foo, setFoo] = useFancyState(1);
+            return <h1>B{foo}</h1>;
+          });
+        `);
+        // The custom Hook is the same, so the state is preserved.
+        expect(container.firstChild).toBe(el);
+        expect(el.textContent).toBe('B1');
+      }
+    });
+
     it('resets effects while preserving state', async () => {
       if (__DEV__) {
         await render(`
