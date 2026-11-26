@@ -45,7 +45,7 @@ export function validateOptionProps(element: Element, props: Object) {
         if (!didWarnInvalidInnerHTML) {
           didWarnInvalidInnerHTML = true;
           console.error(
-            'Pass a `value` prop if you set dangerouslyInnerHTML so React knows ' +
+            'Pass a `value` prop if you set dangerouslySetInnerHTML so React knows ' +
               'which value should be selected.',
           );
         }
