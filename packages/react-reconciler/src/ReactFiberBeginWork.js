@@ -3820,6 +3820,18 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
     case ActivityComponent: {
       const state: ActivityState | null = workInProgress.memoizedState;
       if (state !== null) {
+        // A parent context may have changed without reaching this boundary.
+        // If it changed, take the normal path, which hydrates the boundary
+        // before applying the update. See the dehydrated Suspense case below.
+        if (
+          lazilyPropagateParentContextChanges(
+            current,
+            workInProgress,
+            renderLanes,
+          )
+        ) {
+          return updateActivityComponent(current, workInProgress, renderLanes);
+        }
         // We're dehydrated so we're not going to render the children. This is just
         // to maintain push/pop symmetry.
         // We know that this component will suspend again because if it has
@@ -3835,6 +3847,24 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
       const state: SuspenseState | null = workInProgress.memoizedState;
       if (state !== null) {
         if (state.dehydrated !== null) {
+          // A parent context may have changed without reaching this boundary.
+          // The parent skips the lazy propagation when it rendered, or when
+          // another child has work in these lanes, so check here. If it
+          // changed, take the normal path, which hydrates the boundary before
+          // applying the update.
+          if (
+            lazilyPropagateParentContextChanges(
+              current,
+              workInProgress,
+              renderLanes,
+            )
+          ) {
+            return updateSuspenseComponent(
+              current,
+              workInProgress,
+              renderLanes,
+            );
+          }
           // We're not going to render the children, so this is just to maintain
           // push/pop symmetry
           pushPrimaryTreeSuspenseHandler(workInProgress);
