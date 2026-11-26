@@ -74,6 +74,10 @@ export const enableYieldingBeforePassive: boolean = false;
 // Experiment to intentionally yield less to block high framerate animations.
 export const enableThrottledScheduling: boolean = false;
 
+// Reuse the host sibling found for a placed fiber for its next sibling when
+// that one is placed in the same commit, so a run of insertions is linear.
+export const enableHostSiblingCache = __EXPERIMENTAL__;
+
 export const enableLegacyCache = __EXPERIMENTAL__;
 
 export const enableAsyncIterableChildren = __EXPERIMENTAL__;

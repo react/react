@@ -64,6 +64,7 @@ export const enableObjectFiber: boolean = false;
 export const enableYieldingBeforePassive: boolean = false;
 
 export const enableThrottledScheduling: boolean = false;
+export const enableHostSiblingCache: boolean = false;
 export const enableViewTransition: boolean = true;
 export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
 export const enableViewTransitionForPersistenceMode: boolean = false;

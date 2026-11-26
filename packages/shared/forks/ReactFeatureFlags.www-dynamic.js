@@ -35,6 +35,7 @@ export const enableViewTransition: boolean = __VARIANT__;
 export const enableViewTransitionParentEnterExit: boolean = __VARIANT__;
 export const enableScrollEndPolyfill: boolean = __VARIANT__;
 export const enableInternalInstanceMap: boolean = __VARIANT__;
+export const enableHostSiblingCache: boolean = __VARIANT__;
 
 // TODO: These flags are hard-coded to the default values used in open source.
 // Update the tests so that they pass in either mode, then set these
