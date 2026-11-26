@@ -54,7 +54,6 @@ import {
   enableUpdaterTracking,
   enableTransitionTracing,
   enableLegacyHidden,
-  disableLegacyMode,
   enableComponentPerformanceTrack,
   enableViewTransition,
   enableDefaultTransitionIndicator,
@@ -146,7 +145,7 @@ import {
   pushDeepEquality,
   popDeepEquality,
 } from './ReactFiberPerformanceTrack';
-import {ConcurrentMode, NoMode, ProfileMode} from './ReactTypeOfMode';
+import {NoMode, ProfileMode} from './ReactTypeOfMode';
 import {deferHiddenCallbacks} from './ReactFiberClassUpdateQueue';
 import {
   supportsMutation,
@@ -411,35 +410,31 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
 
     // TODO: This should really unify with the switch in commitBeforeMutationEffectsOnFiber recursively.
     if (enableViewTransition && fiber.tag === OffscreenComponent) {
-      const isModernRoot =
-        disableLegacyMode || (fiber.mode & ConcurrentMode) !== NoMode;
-      if (isModernRoot) {
-        const current = fiber.alternate;
-        const isHidden = fiber.memoizedState !== null;
-        if (isHidden) {
-          if (
-            current !== null &&
-            current.memoizedState === null &&
-            isViewTransitionEligible
-          ) {
-            // Was previously mounted as visible but is now hidden.
-            commitExitViewTransitions(current);
-          }
-          // Skip before mutation effects of the children because they're hidden.
-          commitBeforeMutationEffects_complete(isViewTransitionEligible);
-          continue;
-        } else if (current !== null && current.memoizedState !== null) {
-          // Was previously mounted as hidden but is now visible.
-          // Skip before mutation effects of the children because we don't want
-          // to trigger updates of any nested view transitions and we shouldn't
-          // have any other before mutation effects since snapshot effects are
-          // only applied to updates. TODO: Model this using only flags.
-          if (isViewTransitionEligible) {
-            trackEnterViewTransitions(fiber);
-          }
-          commitBeforeMutationEffects_complete(isViewTransitionEligible);
-          continue;
+      const current = fiber.alternate;
+      const isHidden = fiber.memoizedState !== null;
+      if (isHidden) {
+        if (
+          current !== null &&
+          current.memoizedState === null &&
+          isViewTransitionEligible
+        ) {
+          // Was previously mounted as visible but is now hidden.
+          commitExitViewTransitions(current);
         }
+        // Skip before mutation effects of the children because they're hidden.
+        commitBeforeMutationEffects_complete(isViewTransitionEligible);
+        continue;
+      } else if (current !== null && current.memoizedState !== null) {
+        // Was previously mounted as hidden but is now visible.
+        // Skip before mutation effects of the children because we don't want
+        // to trigger updates of any nested view transitions and we shouldn't
+        // have any other before mutation effects since snapshot effects are
+        // only applied to updates. TODO: Model this using only flags.
+        if (isViewTransitionEligible) {
+          trackEnterViewTransitions(fiber);
+        }
+        commitBeforeMutationEffects_complete(isViewTransitionEligible);
+        continue;
       }
     }
 
@@ -763,75 +758,64 @@ function commitLayoutEffectOnFiber(
       break;
     }
     case OffscreenComponent: {
-      const isModernRoot =
-        disableLegacyMode || (finishedWork.mode & ConcurrentMode) !== NoMode;
-      if (isModernRoot) {
-        const isHidden = finishedWork.memoizedState !== null;
-        const newOffscreenSubtreeIsHidden =
-          isHidden || offscreenSubtreeIsHidden;
-        if (newOffscreenSubtreeIsHidden) {
-          // The Offscreen tree is hidden. Skip over its layout effects.
-        } else {
-          // The Offscreen tree is visible.
+      const isHidden = finishedWork.memoizedState !== null;
+      const newOffscreenSubtreeIsHidden = isHidden || offscreenSubtreeIsHidden;
+      if (newOffscreenSubtreeIsHidden) {
+        // The Offscreen tree is hidden. Skip over its layout effects.
+      } else {
+        // The Offscreen tree is visible.
 
-          const wasHidden = current !== null && current.memoizedState !== null;
-          const newOffscreenSubtreeWasHidden =
-            wasHidden || offscreenSubtreeWasHidden;
-          const prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden;
-          const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
-          offscreenSubtreeIsHidden = newOffscreenSubtreeIsHidden;
-          offscreenSubtreeWasHidden = newOffscreenSubtreeWasHidden;
+        const wasHidden = current !== null && current.memoizedState !== null;
+        const newOffscreenSubtreeWasHidden =
+          wasHidden || offscreenSubtreeWasHidden;
+        const prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden;
+        const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
+        offscreenSubtreeIsHidden = newOffscreenSubtreeIsHidden;
+        offscreenSubtreeWasHidden = newOffscreenSubtreeWasHidden;
 
-          if (offscreenSubtreeWasHidden && !prevOffscreenSubtreeWasHidden) {
-            // This is the root of a reappearing boundary. As we continue
-            // traversing the layout effects, we must also re-mount layout
-            // effects that were unmounted when the Offscreen subtree was
-            // hidden. So this is a superset of the normal commitLayoutEffects.
-            let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
-            if (supportsSingletons) {
-              layoutEffectTraversalFlags = IncludeHostSingletons;
-            } else {
-              layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
-            }
-            if ((finishedWork.subtreeFlags & LayoutMask) !== NoFlags) {
-              layoutEffectTraversalFlags |= IncludeWorkInProgressEffects;
-            }
-            recursivelyTraverseReappearLayoutEffects(
-              finishedRoot,
-              finishedWork,
-              layoutEffectTraversalFlags,
-            );
-            if (
-              enableProfilerTimer &&
-              enableProfilerCommitHooks &&
-              enableComponentPerformanceTrack &&
-              (finishedWork.mode & ProfileMode) !== NoMode &&
-              componentEffectStartTime >= 0 &&
-              componentEffectEndTime >= 0 &&
-              componentEffectEndTime - componentEffectStartTime > 0.05
-            ) {
-              logComponentReappeared(
-                finishedWork,
-                componentEffectStartTime,
-                componentEffectEndTime,
-              );
-            }
+        if (offscreenSubtreeWasHidden && !prevOffscreenSubtreeWasHidden) {
+          // This is the root of a reappearing boundary. As we continue
+          // traversing the layout effects, we must also re-mount layout
+          // effects that were unmounted when the Offscreen subtree was
+          // hidden. So this is a superset of the normal commitLayoutEffects.
+          let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
+          if (supportsSingletons) {
+            layoutEffectTraversalFlags = IncludeHostSingletons;
           } else {
-            recursivelyTraverseLayoutEffects(
-              finishedRoot,
+            layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
+          }
+          if ((finishedWork.subtreeFlags & LayoutMask) !== NoFlags) {
+            layoutEffectTraversalFlags |= IncludeWorkInProgressEffects;
+          }
+          recursivelyTraverseReappearLayoutEffects(
+            finishedRoot,
+            finishedWork,
+            layoutEffectTraversalFlags,
+          );
+          if (
+            enableProfilerTimer &&
+            enableProfilerCommitHooks &&
+            enableComponentPerformanceTrack &&
+            (finishedWork.mode & ProfileMode) !== NoMode &&
+            componentEffectStartTime >= 0 &&
+            componentEffectEndTime >= 0 &&
+            componentEffectEndTime - componentEffectStartTime > 0.05
+          ) {
+            logComponentReappeared(
               finishedWork,
-              committedLanes,
+              componentEffectStartTime,
+              componentEffectEndTime,
             );
           }
-          offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
-          offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
+        } else {
+          recursivelyTraverseLayoutEffects(
+            finishedRoot,
+            finishedWork,
+            committedLanes,
+          );
         }
-      } else {
-        recursivelyTraverseLayoutEffects(
-          finishedRoot,
-          finishedWork,
-          committedLanes,
-        );
+        offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
+        offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
       }
       break;
     }
@@ -1720,33 +1704,25 @@ function commitDeletionEffectsOnFiber(
       break;
     }
     case OffscreenComponent: {
-      if (disableLegacyMode || deletedFiber.mode & ConcurrentMode) {
-        // If this offscreen component is hidden, we already unmounted it. Before
-        // deleting the children, track that it's already unmounted so that we
-        // don't attempt to unmount the effects again.
-        // TODO: If the tree is hidden, in most cases we should be able to skip
-        // over the nested children entirely. An exception is we haven't yet found
-        // the topmost host node to delete, which we already track on the stack.
-        // But the other case is portals, which need to be detached no matter how
-        // deeply they are nested. We should use a subtree flag to track whether a
-        // subtree includes a nested portal.
-        const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
-        offscreenSubtreeWasHidden =
-          prevOffscreenSubtreeWasHidden || deletedFiber.memoizedState !== null;
+      // If this offscreen component is hidden, we already unmounted it. Before
+      // deleting the children, track that it's already unmounted so that we
+      // don't attempt to unmount the effects again.
+      // TODO: If the tree is hidden, in most cases we should be able to skip
+      // over the nested children entirely. An exception is we haven't yet found
+      // the topmost host node to delete, which we already track on the stack.
+      // But the other case is portals, which need to be detached no matter how
+      // deeply they are nested. We should use a subtree flag to track whether a
+      // subtree includes a nested portal.
+      const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
+      offscreenSubtreeWasHidden =
+        prevOffscreenSubtreeWasHidden || deletedFiber.memoizedState !== null;
 
-        recursivelyTraverseDeletionEffects(
-          finishedRoot,
-          nearestMountedAncestor,
-          deletedFiber,
-        );
-        offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
-      } else {
-        recursivelyTraverseDeletionEffects(
-          finishedRoot,
-          nearestMountedAncestor,
-          deletedFiber,
-        );
-      }
+      recursivelyTraverseDeletionEffects(
+        finishedRoot,
+        nearestMountedAncestor,
+        deletedFiber,
+      );
+      offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
       break;
     }
     case ViewTransitionComponent: {
@@ -2511,44 +2487,40 @@ function commitMutationEffectsOnFiber(
       const isHidden = newState !== null;
       const wasHidden = current !== null && current.memoizedState !== null;
 
-      if (disableLegacyMode || finishedWork.mode & ConcurrentMode) {
-        // Before committing the children, track on the stack whether this
-        // offscreen subtree was already hidden, so that we don't unmount the
-        // effects again.
-        const prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden;
-        const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
-        const prevOffscreenDirectParentIsHidden = offscreenDirectParentIsHidden;
-        offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden || isHidden;
-        offscreenDirectParentIsHidden =
-          prevOffscreenDirectParentIsHidden || isHidden;
-        offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden || wasHidden;
-        recursivelyTraverseMutationEffects(root, finishedWork, lanes);
-        offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
-        offscreenDirectParentIsHidden = prevOffscreenDirectParentIsHidden;
-        offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
+      // Before committing the children, track on the stack whether this
+      // offscreen subtree was already hidden, so that we don't unmount the
+      // effects again.
+      const prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden;
+      const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
+      const prevOffscreenDirectParentIsHidden = offscreenDirectParentIsHidden;
+      offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden || isHidden;
+      offscreenDirectParentIsHidden =
+        prevOffscreenDirectParentIsHidden || isHidden;
+      offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden || wasHidden;
+      recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
+      offscreenDirectParentIsHidden = prevOffscreenDirectParentIsHidden;
+      offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
 
-        if (
-          // If this was the root of the reappear.
-          wasHidden &&
-          !isHidden &&
-          !prevOffscreenSubtreeIsHidden &&
-          !prevOffscreenSubtreeWasHidden &&
-          enableProfilerTimer &&
-          enableProfilerCommitHooks &&
-          enableComponentPerformanceTrack &&
-          (finishedWork.mode & ProfileMode) !== NoMode &&
-          componentEffectStartTime >= 0 &&
-          componentEffectEndTime >= 0 &&
-          componentEffectEndTime - componentEffectStartTime > 0.05
-        ) {
-          logComponentReappeared(
-            finishedWork,
-            componentEffectStartTime,
-            componentEffectEndTime,
-          );
-        }
-      } else {
-        recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      if (
+        // If this was the root of the reappear.
+        wasHidden &&
+        !isHidden &&
+        !prevOffscreenSubtreeIsHidden &&
+        !prevOffscreenSubtreeWasHidden &&
+        enableProfilerTimer &&
+        enableProfilerCommitHooks &&
+        enableComponentPerformanceTrack &&
+        (finishedWork.mode & ProfileMode) !== NoMode &&
+        componentEffectStartTime >= 0 &&
+        componentEffectEndTime >= 0 &&
+        componentEffectEndTime - componentEffectStartTime > 0.05
+      ) {
+        logComponentReappeared(
+          finishedWork,
+          componentEffectStartTime,
+          componentEffectEndTime,
+        );
       }
 
       commitReconciliationEffects(finishedWork, lanes);
@@ -2576,50 +2548,45 @@ function commitMutationEffectsOnFiber(
             !offscreenSubtreeIsHidden &&
             !offscreenSubtreeWasHidden
           ) {
-            if (
-              disableLegacyMode ||
-              (finishedWork.mode & ConcurrentMode) !== NoMode
-            ) {
-              // Disappear the layout effects of all the children
-              let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
-              if (supportsSingletons) {
-                layoutEffectTraversalFlags = IncludeHostSingletons;
-              } else {
-                layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
-              }
-              const newOffscreenSubtreeIsHidden =
-                // $FlowFixMe[constant-condition]
-                isHidden || offscreenSubtreeIsHidden;
-              const newOffscreenSubtreeWasHidden =
-                // $FlowFixMe[constant-condition]
-                wasHidden || offscreenSubtreeWasHidden;
-              const prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden;
-              const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
-              offscreenSubtreeIsHidden = newOffscreenSubtreeIsHidden;
-              offscreenSubtreeWasHidden = newOffscreenSubtreeWasHidden;
-              recursivelyTraverseDisappearLayoutEffects(
-                finishedWork,
-                layoutEffectTraversalFlags,
-              );
-
-              if (
-                enableProfilerTimer &&
-                enableProfilerCommitHooks &&
-                enableComponentPerformanceTrack &&
-                (finishedWork.mode & ProfileMode) !== NoMode &&
-                componentEffectStartTime >= 0 &&
-                componentEffectEndTime >= 0 &&
-                componentEffectEndTime - componentEffectStartTime > 0.05
-              ) {
-                logComponentDisappeared(
-                  finishedWork,
-                  componentEffectStartTime,
-                  componentEffectEndTime,
-                );
-              }
-              offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
-              offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
+            // Disappear the layout effects of all the children
+            let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
+            if (supportsSingletons) {
+              layoutEffectTraversalFlags = IncludeHostSingletons;
+            } else {
+              layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
             }
+            const newOffscreenSubtreeIsHidden =
+              // $FlowFixMe[constant-condition]
+              isHidden || offscreenSubtreeIsHidden;
+            const newOffscreenSubtreeWasHidden =
+              // $FlowFixMe[constant-condition]
+              wasHidden || offscreenSubtreeWasHidden;
+            const prevSubtreeIsHidden = offscreenSubtreeIsHidden;
+            const prevSubtreeWasHidden = offscreenSubtreeWasHidden;
+            offscreenSubtreeIsHidden = newOffscreenSubtreeIsHidden;
+            offscreenSubtreeWasHidden = newOffscreenSubtreeWasHidden;
+            recursivelyTraverseDisappearLayoutEffects(
+              finishedWork,
+              layoutEffectTraversalFlags,
+            );
+
+            if (
+              enableProfilerTimer &&
+              enableProfilerCommitHooks &&
+              enableComponentPerformanceTrack &&
+              (finishedWork.mode & ProfileMode) !== NoMode &&
+              componentEffectStartTime >= 0 &&
+              componentEffectEndTime >= 0 &&
+              componentEffectEndTime - componentEffectStartTime > 0.05
+            ) {
+              logComponentDisappeared(
+                finishedWork,
+                componentEffectStartTime,
+                componentEffectEndTime,
+              );
+            }
+            offscreenSubtreeIsHidden = prevSubtreeIsHidden;
+            offscreenSubtreeWasHidden = prevSubtreeWasHidden;
           }
         }
 
@@ -2917,25 +2884,19 @@ function commitAfterMutationEffectsOnFiber(
       break;
     }
     case OffscreenComponent: {
-      const isModernRoot =
-        disableLegacyMode || (finishedWork.mode & ConcurrentMode) !== NoMode;
-      if (isModernRoot) {
-        const isHidden = finishedWork.memoizedState !== null;
-        if (isHidden) {
-          // The Offscreen tree is hidden. Skip over its after mutation effects.
-        } else {
-          // The Offscreen tree is visible.
-          const wasHidden = current.memoizedState !== null;
-          if (wasHidden) {
-            commitEnterViewTransitions(finishedWork, false);
-            // If it was previous hidden then the children are treated as enter
-            // not updates so we don't need to visit these children.
-          } else {
-            recursivelyTraverseAfterMutationEffects(root, finishedWork, lanes);
-          }
-        }
+      const isHidden = finishedWork.memoizedState !== null;
+      if (isHidden) {
+        // The Offscreen tree is hidden. Skip over its after mutation effects.
       } else {
-        recursivelyTraverseAfterMutationEffects(root, finishedWork, lanes);
+        // The Offscreen tree is visible.
+        const wasHidden = current.memoizedState !== null;
+        if (wasHidden) {
+          commitEnterViewTransitions(finishedWork, false);
+          // If it was previous hidden then the children are treated as enter
+          // not updates so we don't need to visit these children.
+        } else {
+          recursivelyTraverseAfterMutationEffects(root, finishedWork, lanes);
+        }
       }
       break;
     }
@@ -4162,30 +4123,18 @@ function commitPassiveMountOnFiber(
             endTime,
           );
         } else {
-          if (disableLegacyMode || finishedWork.mode & ConcurrentMode) {
-            // The effects are currently disconnected. Since the tree is hidden,
-            // don't connect them. This also applies to the initial render.
-            // "Atomic" effects are ones that need to fire on every commit,
-            // even during pre-rendering. An example is updating the reference
-            // count on cache instances.
-            recursivelyTraverseAtomicPassiveEffects(
-              finishedRoot,
-              finishedWork,
-              committedLanes,
-              committedTransitions,
-              endTime,
-            );
-          } else {
-            // Legacy Mode: Fire the effects even if the tree is hidden.
-            instance._visibility |= OffscreenPassiveEffectsConnected;
-            recursivelyTraversePassiveMountEffects(
-              finishedRoot,
-              finishedWork,
-              committedLanes,
-              committedTransitions,
-              endTime,
-            );
-          }
+          // The effects are currently disconnected. Since the tree is hidden,
+          // don't connect them. This also applies to the initial render.
+          // "Atomic" effects are ones that need to fire on every commit,
+          // even during pre-rendering. An example is updating the reference
+          // count on cache instances.
+          recursivelyTraverseAtomicPassiveEffects(
+            finishedRoot,
+            finishedWork,
+            committedLanes,
+            committedTransitions,
+            endTime,
+          );
         }
       } else {
         // Tree is visible
@@ -4524,31 +4473,18 @@ export function reconnectPassiveEffects(
             endTime,
           );
         } else {
-          if (disableLegacyMode || finishedWork.mode & ConcurrentMode) {
-            // The effects are currently disconnected. Since the tree is hidden,
-            // don't connect them. This also applies to the initial render.
-            // "Atomic" effects are ones that need to fire on every commit,
-            // even during pre-rendering. An example is updating the reference
-            // count on cache instances.
-            recursivelyTraverseAtomicPassiveEffects(
-              finishedRoot,
-              finishedWork,
-              committedLanes,
-              committedTransitions,
-              endTime,
-            );
-          } else {
-            // Legacy Mode: Fire the effects even if the tree is hidden.
-            instance._visibility |= OffscreenPassiveEffectsConnected;
-            recursivelyTraverseReconnectPassiveEffects(
-              finishedRoot,
-              finishedWork,
-              committedLanes,
-              committedTransitions,
-              includeWorkInProgressEffects,
-              endTime,
-            );
-          }
+          // The effects are currently disconnected. Since the tree is hidden,
+          // don't connect them. This also applies to the initial render.
+          // "Atomic" effects are ones that need to fire on every commit,
+          // even during pre-rendering. An example is updating the reference
+          // count on cache instances.
+          recursivelyTraverseAtomicPassiveEffects(
+            finishedRoot,
+            finishedWork,
+            committedLanes,
+            committedTransitions,
+            endTime,
+          );
         }
       } else {
         // Tree is visible
@@ -5459,82 +5395,4 @@ function commitPassiveUnmountInsideDeletedTreeOnFiber(
   popComponentEffectDuration(prevEffectDuration);
   popComponentEffectDidSpawnUpdate(prevEffectDidSpawnUpdate);
   popComponentEffectErrors(prevEffectErrors);
-}
-
-export function invokeLayoutEffectMountInDEV(fiber: Fiber): void {
-  if (__DEV__) {
-    // We don't need to re-check StrictEffectsMode here.
-    // This function is only called if that check has already passed.
-    switch (fiber.tag) {
-      case FunctionComponent:
-      case ForwardRef:
-      case SimpleMemoComponent: {
-        commitHookEffectListMount(HookLayout | HookHasEffect, fiber);
-        break;
-      }
-      case ClassComponent: {
-        commitClassDidMount(fiber);
-        break;
-      }
-    }
-  }
-}
-
-export function invokePassiveEffectMountInDEV(fiber: Fiber): void {
-  if (__DEV__) {
-    // We don't need to re-check StrictEffectsMode here.
-    // This function is only called if that check has already passed.
-    switch (fiber.tag) {
-      case FunctionComponent:
-      case ForwardRef:
-      case SimpleMemoComponent: {
-        commitHookEffectListMount(HookPassive | HookHasEffect, fiber);
-        break;
-      }
-    }
-  }
-}
-
-export function invokeLayoutEffectUnmountInDEV(fiber: Fiber): void {
-  if (__DEV__) {
-    // We don't need to re-check StrictEffectsMode here.
-    // This function is only called if that check has already passed.
-    switch (fiber.tag) {
-      case FunctionComponent:
-      case ForwardRef:
-      case SimpleMemoComponent: {
-        commitHookEffectListUnmount(
-          HookLayout | HookHasEffect,
-          fiber,
-          fiber.return,
-        );
-        break;
-      }
-      case ClassComponent: {
-        const instance = fiber.stateNode;
-        if (typeof instance.componentWillUnmount === 'function') {
-          safelyCallComponentWillUnmount(fiber, fiber.return, instance);
-        }
-        break;
-      }
-    }
-  }
-}
-
-export function invokePassiveEffectUnmountInDEV(fiber: Fiber): void {
-  if (__DEV__) {
-    // We don't need to re-check StrictEffectsMode here.
-    // This function is only called if that check has already passed.
-    switch (fiber.tag) {
-      case FunctionComponent:
-      case ForwardRef:
-      case SimpleMemoComponent: {
-        commitHookEffectListUnmount(
-          HookPassive | HookHasEffect,
-          fiber,
-          fiber.return,
-        );
-      }
-    }
-  }
 }

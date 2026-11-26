@@ -29,7 +29,6 @@ import {
   Forked,
   PlacementDEV,
 } from './ReactFiberFlags';
-import {NoMode, ConcurrentMode} from './ReactTypeOfMode';
 import {
   getIteratorFn,
   ASYNC_ITERATOR,
@@ -51,7 +50,6 @@ import {
 import isArray from 'shared/isArray';
 import {
   enableAsyncIterableChildren,
-  disableLegacyMode,
   enableOptimisticKey,
 } from 'shared/ReactFeatureFlags';
 
@@ -2035,20 +2033,10 @@ function createChildReconciler(
       // set at the beginning.
       return firstChildFiber;
     } catch (x) {
-      if (
-        x === SuspenseException ||
-        x === SuspenseActionException ||
-        (!disableLegacyMode &&
-          (returnFiber.mode & ConcurrentMode) === NoMode &&
-          typeof x === 'object' &&
-          x !== null &&
-          typeof x.then === 'function')
-      ) {
+      if (x === SuspenseException || x === SuspenseActionException) {
         // Suspense exceptions need to read the current suspended state before
         // yielding and replay it using the same sequence so this trick doesn't
         // work here.
-        // Suspending in legacy mode actually mounts so if we let the child
-        // mount then we delete its state in an update.
         throw x;
       }
       // Something errored during reconciliation but it's conceptually a child that

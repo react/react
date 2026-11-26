@@ -10,7 +10,6 @@
 'use strict';
 
 let React;
-let ReactDOM;
 let ReactDOMClient;
 let ReactDOMServer;
 let PropTypes;
@@ -25,7 +24,6 @@ describe('ReactStrictMode', () => {
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
-    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
     ({
@@ -75,95 +73,6 @@ describe('ReactStrictMode', () => {
         'ARIA attributes follow the pattern aria-* and must be lowercase.\n' +
         '    in div (at **)\n' +
         '    in Foo (at **)',
-    ]);
-  });
-
-  // @gate __DEV__
-  // @gate !disableLegacyMode
-  it('should invoke only precommit lifecycle methods twice in legacy roots', async () => {
-    let log = [];
-    let shouldComponentUpdate = false;
-    class ClassComponent extends React.Component {
-      state = {};
-      static getDerivedStateFromProps() {
-        log.push('getDerivedStateFromProps');
-        return null;
-      }
-      constructor(props) {
-        super(props);
-        log.push('constructor');
-      }
-      componentDidMount() {
-        log.push('componentDidMount');
-      }
-      componentDidUpdate() {
-        log.push('componentDidUpdate');
-      }
-      componentWillUnmount() {
-        log.push('componentWillUnmount');
-      }
-      shouldComponentUpdate() {
-        log.push('shouldComponentUpdate');
-        return shouldComponentUpdate;
-      }
-      render() {
-        log.push('render');
-        return null;
-      }
-    }
-
-    const container = document.createElement('div');
-    ReactDOM.render(
-      <React.StrictMode>
-        <ClassComponent />
-      </React.StrictMode>,
-      container,
-    );
-
-    expect(log).toEqual([
-      'constructor',
-      'constructor',
-      'getDerivedStateFromProps',
-      'getDerivedStateFromProps',
-      'render',
-      'render',
-      'componentDidMount',
-    ]);
-
-    log = [];
-    shouldComponentUpdate = true;
-
-    ReactDOM.render(
-      <React.StrictMode>
-        <ClassComponent />
-      </React.StrictMode>,
-      container,
-    );
-    expect(log).toEqual([
-      'getDerivedStateFromProps',
-      'getDerivedStateFromProps',
-      'shouldComponentUpdate',
-      'shouldComponentUpdate',
-      'render',
-      'render',
-      'componentDidUpdate',
-    ]);
-
-    log = [];
-    shouldComponentUpdate = false;
-
-    ReactDOM.render(
-      <React.StrictMode>
-        <ClassComponent />
-      </React.StrictMode>,
-      container,
-    );
-
-    expect(log).toEqual([
-      'getDerivedStateFromProps',
-      'getDerivedStateFromProps',
-      'shouldComponentUpdate',
-      'shouldComponentUpdate',
     ]);
   });
 
@@ -243,114 +152,6 @@ describe('ReactStrictMode', () => {
       'Compute initial reducer count: 2',
       'Compute initial reducer count: 2',
     ]);
-  });
-
-  // @gate !disableLegacyMode
-  it('should invoke only precommit lifecycle methods twice in DEV legacy roots', async () => {
-    const {StrictMode} = React;
-
-    let log = [];
-    let shouldComponentUpdate = false;
-
-    function Root() {
-      return (
-        <StrictMode>
-          <ClassComponent />
-        </StrictMode>
-      );
-    }
-
-    class ClassComponent extends React.Component {
-      state = {};
-      static getDerivedStateFromProps() {
-        log.push('getDerivedStateFromProps');
-        return null;
-      }
-      constructor(props) {
-        super(props);
-        log.push('constructor');
-      }
-      componentDidMount() {
-        log.push('componentDidMount');
-      }
-      componentDidUpdate() {
-        log.push('componentDidUpdate');
-      }
-      componentWillUnmount() {
-        log.push('componentWillUnmount');
-      }
-      shouldComponentUpdate() {
-        log.push('shouldComponentUpdate');
-        return shouldComponentUpdate;
-      }
-      render() {
-        log.push('render');
-        return null;
-      }
-    }
-
-    const container = document.createElement('div');
-    ReactDOM.render(<Root />, container);
-
-    if (__DEV__) {
-      expect(log).toEqual([
-        'constructor',
-        'constructor',
-        'getDerivedStateFromProps',
-        'getDerivedStateFromProps',
-        'render',
-        'render',
-        'componentDidMount',
-      ]);
-    } else {
-      expect(log).toEqual([
-        'constructor',
-        'getDerivedStateFromProps',
-        'render',
-        'componentDidMount',
-      ]);
-    }
-
-    log = [];
-    shouldComponentUpdate = true;
-
-    ReactDOM.render(<Root />, container);
-    if (__DEV__) {
-      expect(log).toEqual([
-        'getDerivedStateFromProps',
-        'getDerivedStateFromProps',
-        'shouldComponentUpdate',
-        'shouldComponentUpdate',
-        'render',
-        'render',
-        'componentDidUpdate',
-      ]);
-    } else {
-      expect(log).toEqual([
-        'getDerivedStateFromProps',
-        'shouldComponentUpdate',
-        'render',
-        'componentDidUpdate',
-      ]);
-    }
-
-    log = [];
-    shouldComponentUpdate = false;
-
-    ReactDOM.render(<Root />, container);
-    if (__DEV__) {
-      expect(log).toEqual([
-        'getDerivedStateFromProps',
-        'getDerivedStateFromProps',
-        'shouldComponentUpdate',
-        'shouldComponentUpdate',
-      ]);
-    } else {
-      expect(log).toEqual([
-        'getDerivedStateFromProps',
-        'shouldComponentUpdate',
-      ]);
-    }
   });
 
   it('should invoke setState callbacks twice in DEV', async () => {

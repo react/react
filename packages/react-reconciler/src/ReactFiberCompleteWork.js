@@ -38,7 +38,6 @@ import {
   enableProfilerTimer,
   enableTransitionTracing,
   passChildrenWhenCloningPersistedNodes,
-  disableLegacyMode,
   enableViewTransition,
   enableViewTransitionParentEnterExit,
   enableSuspenseyImages,
@@ -66,23 +65,15 @@ import {
   MemoComponent,
   SimpleMemoComponent,
   LazyComponent,
-  IncompleteClassComponent,
-  IncompleteFunctionComponent,
   ScopeComponent,
   OffscreenComponent,
   LegacyHiddenComponent,
   CacheComponent,
   TracingMarkerComponent,
-  Throw,
   ViewTransitionComponent,
   ActivityComponent,
 } from './ReactWorkTags';
-import {
-  NoMode,
-  ConcurrentMode,
-  ProfileMode,
-  SuspenseyImagesMode,
-} from './ReactTypeOfMode';
+import {NoMode, ProfileMode, SuspenseyImagesMode} from './ReactTypeOfMode';
 import {
   Placement,
   Update,
@@ -1081,12 +1072,6 @@ function completeWork(
   // for hydration.
   popTreeContext(workInProgress);
   switch (workInProgress.tag) {
-    case IncompleteFunctionComponent: {
-      if (disableLegacyMode) {
-        break;
-      }
-      // Fallthrough
-    }
     case LazyComponent:
     case SimpleMemoComponent:
     case FunctionComponent:
@@ -1679,19 +1664,6 @@ function completeWork(
       popProvider(context, workInProgress);
       bubbleProperties(workInProgress);
       return null;
-    case IncompleteClassComponent: {
-      if (disableLegacyMode) {
-        break;
-      }
-      // Same as class component case. I put it down here so that the tags are
-      // sequential to ensure this switch is compiled to a jump table.
-      const Component = workInProgress.type;
-      if (isLegacyContextProvider(Component)) {
-        popLegacyContext(workInProgress);
-      }
-      bubbleProperties(workInProgress);
-      return null;
-    }
     case SuspenseListComponent: {
       popSuspenseListContext(workInProgress);
 
@@ -1975,11 +1947,7 @@ function completeWork(
         }
       }
 
-      if (
-        !nextIsHidden ||
-        (!disableLegacyMode &&
-          (workInProgress.mode & ConcurrentMode) === NoMode)
-      ) {
+      if (!nextIsHidden) {
         bubbleProperties(workInProgress);
       } else {
         // Don't bubble properties for hidden children unless we're rendering
@@ -2082,12 +2050,6 @@ function completeWork(
         bubbleProperties(workInProgress);
       }
       return null;
-    }
-    case Throw: {
-      if (!disableLegacyMode) {
-        // Only Legacy Mode completes an errored node.
-        return null;
-      }
     }
   }
 

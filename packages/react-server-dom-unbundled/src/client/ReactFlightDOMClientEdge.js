@@ -36,6 +36,7 @@ import {
   reportGlobalError,
   processBinaryChunk,
   close,
+  resolveLedgerTotals,
 } from 'react-client/src/ReactFlightClient';
 
 import {
@@ -172,8 +173,12 @@ function createFromReadableStream<T>(
         close(response);
       }
     };
+    const handleMainDone = () => {
+      resolveLedgerTotals(response);
+      handleDone();
+    };
     startReadingFromStream(response, options.debugChannel.readable, handleDone);
-    startReadingFromStream(response, stream, handleDone, stream);
+    startReadingFromStream(response, stream, handleMainDone, stream);
   } else {
     startReadingFromStream(
       response,
@@ -205,12 +210,16 @@ function createFromFetch<T>(
             close(response);
           }
         };
+        const handleMainDone = () => {
+          resolveLedgerTotals(response);
+          handleDone();
+        };
         startReadingFromStream(
           response,
           options.debugChannel.readable,
           handleDone,
         );
-        startReadingFromStream(response, r.body as any, handleDone, r);
+        startReadingFromStream(response, r.body as any, handleMainDone, r);
       } else {
         startReadingFromStream(
           response,

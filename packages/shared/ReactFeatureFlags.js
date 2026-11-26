@@ -198,11 +198,6 @@ export const disableClientCache: boolean = true;
 // Warn on any usage of ReactTestRenderer
 export const enableReactTestRendererWarning: boolean = true;
 
-// Disables legacy mode
-// This allows us to land breaking changes to remove legacy mode APIs in experimental builds
-// before removing them in stable in the next Major
-export const disableLegacyMode: boolean = true;
-
 // -----------------------------------------------------------------------------
 // Chopping Block
 //

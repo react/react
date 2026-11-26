@@ -17,7 +17,6 @@ import type {
   ReactKey,
 } from 'shared/ReactTypes';
 import type {Fiber} from './ReactInternalTypes';
-import type {RootTag} from './ReactRootTags';
 import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
 import type {Lanes} from './ReactFiberLane';
@@ -40,14 +39,12 @@ import {
   enableScopeAPI,
   enableLegacyHidden,
   enableTransitionTracing,
-  disableLegacyMode,
   enableObjectFiber,
   enableViewTransition,
   enableSuspenseyImages,
   enableOptimisticKey,
 } from 'shared/ReactFeatureFlags';
 import {NoFlags, Placement, StaticMask} from './ReactFiberFlags';
-import {ConcurrentRoot} from './ReactRootTags';
 import {
   ClassComponent,
   HostRoot,
@@ -526,18 +523,10 @@ export function resetWorkInProgress(
   return workInProgress;
 }
 
-export function createHostRootFiber(
-  tag: RootTag,
-  isStrictMode: boolean,
-): Fiber {
-  let mode: number;
-  if (disableLegacyMode || tag === ConcurrentRoot) {
-    mode = ConcurrentMode;
-    if (isStrictMode === true) {
-      mode |= StrictLegacyMode | StrictEffectsMode;
-    }
-  } else {
-    mode = NoMode;
+export function createHostRootFiber(isStrictMode: boolean): Fiber {
+  let mode: number = ConcurrentMode;
+  if (isStrictMode === true) {
+    mode |= StrictLegacyMode | StrictEffectsMode;
   }
 
   if (__DEV__ || (enableProfilerTimer && isDevToolsPresent)) {
@@ -598,11 +587,7 @@ export function createFiberFromTypeAndProps(
       // $FlowFixMe[invalid-compare]
       case REACT_STRICT_MODE_TYPE:
         fiberTag = Mode;
-        mode |= StrictLegacyMode;
-        if (disableLegacyMode || (mode & ConcurrentMode) !== NoMode) {
-          // Strict effects should never run on legacy roots
-          mode |= StrictEffectsMode;
-        }
+        mode |= StrictLegacyMode | StrictEffectsMode;
         break;
       // $FlowFixMe[invalid-compare]
       case REACT_PROFILER_TYPE:
