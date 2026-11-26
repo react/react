@@ -148,6 +148,14 @@ function collectScopeInfo(ast) {
           declarationType: binding.path.node.type,
           declarationStart: binding.identifier.start,
           declarationNodeId,
+          firstReferenceNodeId:
+            binding.referencePaths.length !== 0
+              ? getOrAssignNodeId(binding.referencePaths[0].node)
+              : undefined,
+          firstConstantViolationNodeId:
+            binding.constantViolations.length !== 0
+              ? getOrAssignNodeId(binding.constantViolations[0].node)
+              : undefined,
         };
 
         // Import bindings
