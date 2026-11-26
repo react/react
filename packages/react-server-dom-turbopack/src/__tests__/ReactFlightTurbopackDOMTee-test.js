@@ -1434,6 +1434,121 @@ describe('ReactFlightTurbopackDOMTee', () => {
     expect(tee).not.toBe(null);
   });
 
+  // A thenable that's pending weakly until the test settles it.
+  function createWeakThenable() {
+    const listeners = [];
+    const thenable = {
+      status: 'pending_weak',
+      value: undefined,
+      then(onFulfill) {
+        if (thenable.status === 'fulfilled') {
+          onFulfill(thenable.value);
+        } else {
+          listeners.push(onFulfill);
+        }
+      },
+      settle(value) {
+        thenable.status = 'fulfilled';
+        thenable.value = value;
+        listeners.forEach(listener => listener(value));
+      },
+    };
+    return thenable;
+  }
+
+  // Resolves to the weak reference's value, or 'unresolved'.
+  async function readWeak(root) {
+    let value = 'unresolved';
+    root.weak.then(v => {
+      value = v;
+    });
+    await serverAct(() => {});
+    return value;
+  }
+
+  // Once the last task completes, a weak thenable that settles is dropped,
+  // even before the bytes are written. Otherwise the bytes would carry a row
+  // that the tee, which closes once every row is emitted, never gets.
+  // @gate enableFlightTee && enableFlightWeakThenables
+  it('drops a weak thenable that settles before a late destination is attached', async () => {
+    async function read(useTee) {
+      const weak = createWeakThenable();
+      const tee = useTee
+        ? ReactServerDOMClient.createTee(manifest())
+        : undefined;
+      const readable = new Stream.PassThrough();
+      let flight;
+      let response;
+      await serverAct(() => {
+        flight = ReactServerDOMServer.renderToPipeableStream(
+          {weak, other: 'ok'},
+          turbopackMap,
+          {tee},
+        );
+        if (useTee) {
+          response = ReactServerDOMClient.createFromTee(tee);
+        }
+      });
+      weak.settle('settled');
+      await serverAct(() => {
+        flight.pipe(readable);
+        if (!useTee) {
+          response = ReactServerDOMClient.createFromNodeStream(
+            readable,
+            manifest(),
+          );
+        }
+      });
+      return readWeak(await response);
+    }
+    const fromBytes = await read(false);
+    expect(fromBytes).toBe('unresolved');
+    expect(await read(true)).toBe(fromBytes);
+  });
+
+  // @gate enableFlightTee && enableFlightWeakThenables
+  it('drops a weak thenable that settles before the last row is written', async () => {
+    async function read(useTee) {
+      const weak = createWeakThenable();
+      let rejectLast;
+      const last = new Promise((resolve, reject) => {
+        rejectLast = reject;
+      });
+      const tee = useTee
+        ? ReactServerDOMClient.createTee(manifest())
+        : undefined;
+      const readable = new Stream.PassThrough();
+      let response;
+      await serverAct(() => {
+        ReactServerDOMServer.renderToPipeableStream(
+          {weak, last},
+          turbopackMap,
+          {tee, onError() {}},
+        ).pipe(readable);
+        response = useTee
+          ? ReactServerDOMClient.createFromTee(tee)
+          : ReactServerDOMClient.createFromNodeStream(readable, manifest());
+      });
+      const root = await response;
+      root.last.then(
+        () => {},
+        () => {},
+      );
+      await serverAct(async () => {
+        // The last task errors outside a render pass, so its row is written
+        // by a flush that's scheduled for later.
+        rejectLast(new Error('last'));
+        await null;
+        await null;
+        weak.settle('settled');
+      });
+      return readWeak(root);
+    }
+    const fromBytes = await read(false);
+    expect(fromBytes).toBe('unresolved');
+    expect(await read(true)).toBe(fromBytes);
+  });
+
   // @gate enableFlightTee
   it('can only be read once', async () => {
     const flight = startFlight({hello: 'world'}, true);
@@ -2482,6 +2597,49 @@ describe('ReactFlightTurbopackDOMTee', () => {
       expect(removeRows(bytes, log)).toBe('');
       expect(log.filter(row => row === 'close')).toEqual(['close']);
       expect(log[log.length - 1]).toBe('close');
+    });
+
+    // Work that outlives the render's last task can't add rows, even while
+    // the prelude hasn't been read. Otherwise the bytes would carry rows the
+    // tee, which has already closed, never gets.
+    // @gate enableFlightTee
+    it('drops hints and logs from work that outlives the last task', async () => {
+      spyOnDevAndProd(console, 'log').mockImplementation(() => {});
+      // The server patches the console when it loads.
+      loadModules();
+      let resolveLater;
+      const later = new Promise(resolve => {
+        resolveLater = resolve;
+      });
+      function Server() {
+        later.then(() => {
+          FlightReactDOM.preload('/late.css', {as: 'style'});
+          console.log('late log');
+        });
+        FlightReactDOM.preload('/early.css', {as: 'style'});
+        console.log('early log');
+        return 'hi';
+      }
+      const {tee, log} = createRecordingTee();
+      let preludePromise;
+      await serverAct(() => {
+        preludePromise = ReactServerDOMStaticServer.prerenderToNodeStream(
+          ReactServer.createElement(Server),
+          turbopackMap,
+          {tee},
+        );
+      });
+      expect(log[log.length - 1]).toBe('close');
+      await serverAct(() => resolveLater());
+      const {prelude} = await preludePromise;
+      const bytes = await readBytes(prelude);
+      expect(bytes).toContain('/early.css');
+      expect(bytes).not.toContain('/late.css');
+      if (__DEV__) {
+        expect(bytes).toContain('early log');
+      }
+      expect(bytes).not.toContain('late log');
+      expect(removeRows(bytes, log)).toBe('');
     });
 
     // The rows of a prerender stay queued until its prelude is read. Checking
