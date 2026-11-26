@@ -341,42 +341,6 @@ describe('ReactSuspensePlaceholder', () => {
     });
 
     describe('when suspending during mount', () => {
-      // @gate !disableLegacyMode && !disableLegacyMode
-      it('properly accounts for base durations when a suspended times out in a legacy tree', async () => {
-        ReactNoop.renderLegacySyncRoot(<App shouldSuspend={true} />);
-        assertLog([
-          'App',
-          'Suspending',
-          'Suspend! [Loaded]',
-          'Text',
-          'Fallback',
-        ]);
-        expect(ReactNoop).toMatchRenderedOutput('Loading...');
-        expect(onRender).toHaveBeenCalledTimes(1);
-
-        // Initial mount only shows the "Loading..." Fallback.
-        // The treeBaseDuration then should be 10ms spent rendering Fallback,
-        // but the actualDuration should also include the 8ms spent rendering the hidden tree.
-        expect(onRender.mock.calls[0][2]).toBe(18);
-        expect(onRender.mock.calls[0][3]).toBe(10);
-
-        jest.advanceTimersByTime(1000);
-
-        assertLog(['Promise resolved [Loaded]']);
-
-        ReactNoop.flushSync();
-
-        assertLog(['Loaded']);
-        expect(ReactNoop).toMatchRenderedOutput('LoadedText');
-        expect(onRender).toHaveBeenCalledTimes(2);
-
-        // When the suspending data is resolved and our final UI is rendered,
-        // the baseDuration should only include the 1ms re-rendering AsyncText,
-        // but the treeBaseDuration should include the full 8ms spent in the tree.
-        expect(onRender.mock.calls[1][2]).toBe(1);
-        expect(onRender.mock.calls[1][3]).toBe(8);
-      });
-
       it('properly accounts for base durations when a suspended times out in a concurrent tree', async () => {
         ReactNoop.render(<App shouldSuspend={true} />);
 
@@ -423,70 +387,6 @@ describe('ReactSuspensePlaceholder', () => {
     });
 
     describe('when suspending during update', () => {
-      // @gate !disableLegacyMode && !disableLegacyMode
-      it('properly accounts for base durations when a suspended times out in a legacy tree', async () => {
-        ReactNoop.renderLegacySyncRoot(
-          <App shouldSuspend={false} textRenderDuration={5} />,
-        );
-        assertLog(['App', 'Text']);
-        expect(ReactNoop).toMatchRenderedOutput('Text');
-        expect(onRender).toHaveBeenCalledTimes(1);
-
-        // Initial mount only shows the "Text" text.
-        // It should take 5ms to render.
-        expect(onRender.mock.calls[0][2]).toBe(5);
-        expect(onRender.mock.calls[0][3]).toBe(5);
-
-        ReactNoop.render(<App shouldSuspend={true} textRenderDuration={5} />);
-        assertLog([
-          'App',
-          'Suspending',
-          'Suspend! [Loaded]',
-          'Text',
-          'Fallback',
-        ]);
-        expect(ReactNoop).toMatchRenderedOutput('Loading...');
-        expect(onRender).toHaveBeenCalledTimes(2);
-
-        // The suspense update should only show the "Loading..." Fallback.
-        // The actual duration should include 10ms spent rendering Fallback,
-        // plus the 8ms render all of the hidden, suspended subtree.
-        // But the tree base duration should only include 10ms spent rendering Fallback,
-        expect(onRender.mock.calls[1][2]).toBe(18);
-        expect(onRender.mock.calls[1][3]).toBe(10);
-
-        ReactNoop.renderLegacySyncRoot(
-          <App shouldSuspend={true} text="New" textRenderDuration={6} />,
-        );
-        assertLog([
-          'App',
-          'Suspending',
-          'Suspend! [Loaded]',
-          'New',
-          'Fallback',
-        ]);
-        expect(ReactNoop).toMatchRenderedOutput('Loading...');
-        expect(onRender).toHaveBeenCalledTimes(3);
-
-        expect(onRender.mock.calls[1][2]).toBe(18);
-        expect(onRender.mock.calls[1][3]).toBe(10);
-        jest.advanceTimersByTime(1000);
-
-        assertLog(['Promise resolved [Loaded]']);
-
-        ReactNoop.flushSync();
-
-        assertLog(['Loaded']);
-        expect(ReactNoop).toMatchRenderedOutput('LoadedNew');
-        expect(onRender).toHaveBeenCalledTimes(4);
-
-        // When the suspending data is resolved and our final UI is rendered,
-        // the baseDuration should only include the 1ms re-rendering AsyncText,
-        // but the treeBaseDuration should include the full 9ms spent in the tree.
-        expect(onRender.mock.calls[3][2]).toBe(1);
-        expect(onRender.mock.calls[3][3]).toBe(9);
-      });
-
       it('properly accounts for base durations when a suspended times out in a concurrent tree', async () => {
         const Fallback = () => {
           Scheduler.log('Fallback');

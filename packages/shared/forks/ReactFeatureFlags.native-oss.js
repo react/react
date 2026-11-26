@@ -21,7 +21,6 @@ export const disableCommentsAsDOMContainers: boolean = true;
 export const disableInputAttributeSyncing: boolean = false;
 export const disableLegacyContext: boolean = true;
 export const disableLegacyContextForFunctionComponents: boolean = true;
-export const disableLegacyMode: boolean = true;
 export const disableSchedulerTimeoutInWorkLoop: boolean = false;
 export const disableTextareaChildren: boolean = false;
 export const enableAsyncIterableChildren: boolean = false;

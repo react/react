@@ -13,7 +13,6 @@ import type {
   SuspenseHydrationCallbacks,
   TransitionTracingCallbacks,
 } from './ReactInternalTypes';
-import type {RootTag} from './ReactRootTags';
 import type {Cache} from './ReactFiberCacheComponent';
 import type {Container} from './ReactFiberConfig';
 
@@ -32,13 +31,12 @@ import {
   enableProfilerTimer,
   enableUpdaterTracking,
   enableTransitionTracing,
-  disableLegacyMode,
   enableViewTransition,
   enableGestureTransition,
   enableDefaultTransitionIndicator,
 } from 'shared/ReactFeatureFlags';
 import {initializeUpdateQueue} from './ReactFiberClassUpdateQueue';
-import {LegacyRoot, ConcurrentRoot} from './ReactRootTags';
+import {ConcurrentRoot} from './ReactRootTags';
 import {createCache, retainCache} from './ReactFiberCacheComponent';
 
 export type RootState = {
@@ -50,8 +48,6 @@ export type RootState = {
 function FiberRootNode(
   this: $FlowFixMe,
   containerInfo: any,
-  // $FlowFixMe[missing-local-annot]
-  tag,
   hydrate: any,
   identifierPrefix: any,
   onUncaughtError: any,
@@ -60,7 +56,7 @@ function FiberRootNode(
   onDefaultTransitionIndicator: any,
   formState: ReactFormState<any, any> | null,
 ) {
-  this.tag = disableLegacyMode ? ConcurrentRoot : tag;
+  this.tag = ConcurrentRoot;
   this.containerInfo = containerInfo;
   this.pendingChildren = null;
   this.current = null;
@@ -138,25 +134,13 @@ function FiberRootNode(
   }
 
   if (__DEV__) {
-    if (disableLegacyMode) {
-      // TODO: This varies by each renderer.
-      this._debugRootType = hydrate ? 'hydrateRoot()' : 'createRoot()';
-    } else {
-      switch (tag) {
-        case ConcurrentRoot:
-          this._debugRootType = hydrate ? 'hydrateRoot()' : 'createRoot()';
-          break;
-        case LegacyRoot:
-          this._debugRootType = hydrate ? 'hydrate()' : 'render()';
-          break;
-      }
-    }
+    // TODO: This varies by each renderer.
+    this._debugRootType = hydrate ? 'hydrateRoot()' : 'createRoot()';
   }
 }
 
 export function createFiberRoot(
   containerInfo: Container,
-  tag: RootTag,
   hydrate: boolean,
   initialChildren: ReactNodeList,
   hydrationCallbacks: null | SuspenseHydrationCallbacks,
@@ -188,7 +172,6 @@ export function createFiberRoot(
   // $FlowFixMe[invalid-constructor] Flow no longer supports calling new on functions
   const root: FiberRoot = new FiberRootNode(
     containerInfo,
-    tag,
     hydrate,
     identifierPrefix,
     onUncaughtError,
@@ -207,7 +190,7 @@ export function createFiberRoot(
 
   // Cyclic construction. This cheats the type system right now because
   // stateNode is any.
-  const uninitializedFiber = createHostRootFiber(tag, isStrictMode);
+  const uninitializedFiber = createHostRootFiber(isStrictMode);
   root.current = uninitializedFiber;
   uninitializedFiber.stateNode = root;
 

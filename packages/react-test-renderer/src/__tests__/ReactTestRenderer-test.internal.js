@@ -103,19 +103,12 @@ describe('ReactTestRenderer', () => {
       );
     }
 
-    // @gate disableLegacyMode
-    it('should render using concurrent root if disableLegacyMode', () => {
+    it('should render using concurrent root', () => {
       ReactTestRenderer.create(<div />);
       expectTag(ConcurrentRoot);
     });
 
-    // @gate !disableLegacyMode
-    it('should default to legacy root if not disableLegacyMode', () => {
-      ReactTestRenderer.create(<div />);
-      expectTag(LegacyRoot);
-    });
-
-    it('should allow unstable_isConcurrent if not disableLegacyMode', async () => {
+    it('should allow unstable_isConcurrent', async () => {
       ReactTestRenderer.create(<div />, {
         unstable_isConcurrent: true,
       });

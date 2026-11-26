@@ -47,11 +47,8 @@ import {
   DefaultEventPriority,
   IdleEventPriority,
   ConcurrentRoot,
-  LegacyRoot,
 } from 'react-reconciler/constants';
 import * as DefaultConfig from './ReactFiberConfigNoop';
-
-import {disableLegacyMode} from 'shared/ReactFeatureFlags';
 
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import ReactVersion from 'shared/ReactVersion';
@@ -1142,26 +1139,22 @@ function createReactNoop(
         );
       }
     }
-    if (disableLegacyMode) {
-      const previousTransition = ReactSharedInternals.T;
-      const preivousEventPriority = currentEventPriority;
-      try {
-        // $FlowFixMe[constant-condition]
-        ReactSharedInternals.T = null;
-        currentEventPriority = DiscreteEventPriority;
-        // $FlowFixMe[constant-condition]
-        if (fn) {
-          return fn();
-        } else {
-          return undefined;
-        }
-      } finally {
-        ReactSharedInternals.T = previousTransition;
-        currentEventPriority = preivousEventPriority;
-        NoopRenderer.flushSyncWork();
+    const previousTransition = ReactSharedInternals.T;
+    const preivousEventPriority = currentEventPriority;
+    try {
+      // $FlowFixMe[constant-condition]
+      ReactSharedInternals.T = null;
+      currentEventPriority = DiscreteEventPriority;
+      // $FlowFixMe[constant-condition]
+      if (fn) {
+        return fn();
+      } else {
+        return undefined;
       }
-    } else {
-      return NoopRenderer.flushSyncFromReconciler(fn);
+    } finally {
+      ReactSharedInternals.T = previousTransition;
+      currentEventPriority = preivousEventPriority;
+      NoopRenderer.flushSyncWork();
     }
   }
 
@@ -1294,42 +1287,7 @@ function createReactNoop(
     },
 
     createLegacyRoot() {
-      if (disableLegacyMode) {
-        throw new Error('createLegacyRoot: Unsupported Legacy Mode API.');
-      }
-
-      const container: Container = {
-        rootID: '' + idCounter++,
-        pendingChildren: [],
-        children: [],
-      };
-      const fiberRoot = NoopRenderer.createContainer(
-        // $FlowFixMe[incompatible-call] -- TODO: Discovered when typechecking noop-renderer
-        container,
-        LegacyRoot,
-        null,
-        false,
-        null,
-        '',
-        NoopRenderer.defaultOnUncaughtError,
-        NoopRenderer.defaultOnCaughtError,
-        onRecoverableError,
-        onDefaultTransitionIndicator,
-        null,
-      );
-      return {
-        _Scheduler: Scheduler,
-        render(children: ReactNodeList) {
-          NoopRenderer.updateContainer(children, fiberRoot, null, null);
-        },
-        getChildren() {
-          return getChildren(container);
-        },
-        getChildrenAsJSX() {
-          return getChildrenAsJSX(container);
-        },
-        legacy: true,
-      };
+      throw new Error('createLegacyRoot: Unsupported Legacy Mode API.');
     },
 
     getChildrenAsJSX(rootID: string = DEFAULT_ROOT_ID) {
@@ -1407,15 +1365,7 @@ function createReactNoop(
     },
 
     renderLegacySyncRoot(element: React$Element<any>, callback: ?Function) {
-      if (disableLegacyMode) {
-        throw new Error('createLegacyRoot: Unsupported Legacy Mode API.');
-      }
-      // $FlowFixMe[incompatible-type]
-      const rootID = DEFAULT_ROOT_ID;
-      const container = ReactNoop.getOrCreateRootContainer(rootID, LegacyRoot);
-      const root = roots.get(container.rootID);
-      // $FlowFixMe[incompatible-type]
-      NoopRenderer.updateContainer(element, root, null, callback);
+      throw new Error('createLegacyRoot: Unsupported Legacy Mode API.');
     },
 
     renderToRootWithID(

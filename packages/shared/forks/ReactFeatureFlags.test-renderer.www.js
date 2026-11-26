@@ -59,8 +59,6 @@ export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 export const enableConditionalUseWarning: boolean = false;
 
 export const enableReactTestRendererWarning: boolean = false;
-export const disableLegacyMode: boolean = true;
-
 export const enableObjectFiber: boolean = false;
 
 export const enableYieldingBeforePassive: boolean = false;

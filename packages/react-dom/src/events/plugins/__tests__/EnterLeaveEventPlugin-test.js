@@ -158,8 +158,7 @@ describe('EnterLeaveEventPlugin', () => {
   });
 
   // Test for https://github.com/react/react/issues/16763.
-  // @gate !disableLegacyMode
-  it('should call mouseEnter once from sibling rendered inside a rendered component in legacy roots', async () => {
+  it('should call mouseEnter once from sibling rendered inside a nested root', async () => {
     const mockFn = jest.fn();
 
     class Parent extends React.Component {
@@ -169,7 +168,9 @@ describe('EnterLeaveEventPlugin', () => {
       }
 
       componentDidMount() {
-        ReactDOM.render(<MouseEnterDetect />, this.parentEl.current);
+        ReactDOMClient.createRoot(this.parentEl.current).render(
+          <MouseEnterDetect />,
+        );
       }
 
       render() {
@@ -204,14 +205,14 @@ describe('EnterLeaveEventPlugin', () => {
       }
     }
 
+    const root = ReactDOMClient.createRoot(container);
     await act(() => {
-      ReactDOM.render(<Parent />, container);
+      root.render(<Parent />);
     });
     expect(mockFn.mock.calls.length).toBe(1);
   });
 
-  // @gate !disableLegacyMode
-  it('should call mouseEnter when pressing a non tracked React node in legacy root', async () => {
+  it('should call mouseEnter when pressing a non tracked React node in a nested root', async () => {
     const mockFn = jest.fn();
 
     class Parent extends React.Component {
@@ -221,7 +222,9 @@ describe('EnterLeaveEventPlugin', () => {
       }
 
       componentDidMount() {
-        ReactDOM.render(<MouseEnterDetect />, this.parentEl.current);
+        ReactDOMClient.createRoot(this.parentEl.current).render(
+          <MouseEnterDetect />,
+        );
       }
 
       render() {
@@ -257,8 +260,9 @@ describe('EnterLeaveEventPlugin', () => {
       }
     }
 
+    const root = ReactDOMClient.createRoot(container);
     await act(() => {
-      ReactDOM.render(<Parent />, container);
+      root.render(<Parent />);
     });
     expect(mockFn.mock.calls.length).toBe(1);
   });
