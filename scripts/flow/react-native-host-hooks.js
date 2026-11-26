@@ -115,6 +115,7 @@ declare module 'react-native/react-private-interface' {
   declare export function createAttributePayload(
     props: Object,
     validAttributes: __AttributeConfiguration,
+    options?: Readonly<{isInitial?: boolean}>,
   ): null | Object;
   declare export function diffAttributePayloads(
     prevProps: Object,
