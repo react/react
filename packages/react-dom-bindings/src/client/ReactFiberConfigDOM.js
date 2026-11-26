@@ -7005,7 +7005,14 @@ export const HostTransitionContext: ReactContext<TransitionStatus> = {
 
 export type FormInstance = HTMLFormElement;
 export function resetFormInstance(form: FormInstance): void {
+  // The event system is enabled so a form's onReset listeners run during reset.
   ReactBrowserEventEmitterSetEnabled(true);
-  form.reset();
-  ReactBrowserEventEmitterSetEnabled(false);
+  try {
+    // A control named "reset" is exposed as form.reset and hides this method.
+    // $FlowFixMe[method-unbinding]
+    HTMLFormElement.prototype.reset.call(form);
+  } finally {
+    // Restore the event system even if resetting the form throws.
+    ReactBrowserEventEmitterSetEnabled(false);
+  }
 }
