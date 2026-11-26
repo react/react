@@ -166,7 +166,8 @@ export function hydrateTextarea(
   // that any change event that fires will trigger onChange on the actual
   // current value.
   const stringValue = toString(getToStringValue(initialValue));
-  const changed = trackHydrated(node as any, stringValue, false);
+  const normalizedValue = stringValue.replace(/\r\n?/g, '\n');
+  const changed = trackHydrated(node as any, normalizedValue, false);
   if (changed) {
     // If the current value is different, that suggests that the user
     // changed it before hydration. Queue a replay of the change event.
