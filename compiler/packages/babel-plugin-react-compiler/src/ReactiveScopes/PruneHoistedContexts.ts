@@ -127,7 +127,7 @@ class Visitor extends ReactiveFunctionTransform<VisitorState> {
       instruction.value.lvalue.kind !== InstructionKind.Reassign
     ) {
       /**
-       * Rewrite StoreContexts let/const that will be pre-declared in
+       * Rewrite StoreContexts let/const/functions that will be pre-declared in
        * codegen to reassignments.
        */
       const lvalueId = instruction.value.lvalue.place.identifier.id;
@@ -154,6 +154,7 @@ class Visitor extends ReactiveFunctionTransform<VisitorState> {
              */
             state.uninitialized.delete(lvalueId);
           }
+          instruction.value.lvalue.kind = InstructionKind.Reassign;
         } else {
           CompilerError.throwTodo({
             reason: '[PruneHoistedContexts] Unexpected kind',

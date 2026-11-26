@@ -179,6 +179,7 @@ impl<'a> ReactiveFunctionTransform for Transform<'a> {
                             // variable assignments have finished.
                             state.uninitialized.remove(&lvalue_id);
                         }
+                        lvalue.kind = InstructionKind::Reassign;
                     } else {
                         let mut err = CompilerError::new();
                         err.push_error_detail(
