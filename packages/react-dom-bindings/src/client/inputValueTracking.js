@@ -12,6 +12,7 @@ import {checkFormFieldValueStringCoercion} from 'shared/CheckStringCoercion';
 type ValueTracker = {
   getValue(): string,
   setValue(value: string): void,
+  getBadInput(): boolean,
   stopTracking(): void,
 };
 interface ElementWithValueTracker extends HTMLInputElement {
@@ -51,10 +52,31 @@ function getValueFromNode(node: HTMLInputElement): string {
   return value;
 }
 
+function getBadInputFromNode(node: HTMLInputElement): boolean {
+  if (!node) {
+    return false;
+  }
+
+  if (isCheckable(node)) {
+    return false;
+  }
+
+  // validity may be undefined in some environments (e.g. JSDOM versions
+  // without full validity support, or non-input elements) or for
+  // textareas where badInput is always false.
+  try {
+    const validity = (node: any).validity;
+    return !!(validity && validity.badInput);
+  } catch (e) {
+    return false;
+  }
+}
+
 function trackValueOnNode(
   node: any,
   valueField: 'checked' | 'value',
   currentValue: string,
+  currentBadInput?: boolean,
 ): ?ValueTracker {
   const descriptor = Object.getOwnPropertyDescriptor(
     node.constructor.prototype,
@@ -73,6 +95,21 @@ function trackValueOnNode(
   ) {
     return;
   }
+
+  // Track validity.badInput alongside value to detect transitions
+  // between an empty number input and an invalid intermediate state
+  // (e.g. typing "e", "E", "-" or "." into a <input type="number">).
+  // In those cases the browser sanitizes node.value to "" but sets
+  // validity.badInput to true; without this the value tracker would
+  // consider the input unchanged and drop the onChange event.
+  // See https://github.com/facebook/react/issues/13499
+  let trackedBadInput =
+    currentBadInput != null
+      ? currentBadInput
+      : valueField === 'value'
+        ? getBadInputFromNode(node)
+        : false;
+
   const {get, set} = descriptor;
   Object.defineProperty(node, valueField, {
     configurable: true,
@@ -88,6 +125,8 @@ function trackValueOnNode(
       }
       currentValue = '' + value;
       set.call(this, value);
+      trackedBadInput =
+        valueField === 'value' ? getBadInputFromNode(node) : false;
     },
   });
   // We could've passed this the first time
@@ -107,6 +146,11 @@ function trackValueOnNode(
         checkFormFieldValueStringCoercion(value);
       }
       currentValue = '' + value;
+      trackedBadInput =
+        valueField === 'value' ? getBadInputFromNode(node) : false;
+    },
+    getBadInput() {
+      return trackedBadInput;
     },
     stopTracking() {
       detachTracker(node);
@@ -154,8 +198,17 @@ export function trackHydrated(
     // eslint-disable-next-line react-internal/safe-string-coercion
     '' + // $FlowFixMe[prop-missing]
     (node[valueField] as any);
-  node._valueTracker = trackValueOnNode(node, valueField, expectedValue);
-  return currentValue !== expectedValue;
+  const currentBadInput =
+    valueField === 'value' ? getBadInputFromNode(node) : false;
+  // The server render was not user input, so its badInput is always false.
+  const expectedBadInput = false;
+  node._valueTracker = trackValueOnNode(
+    node,
+    valueField,
+    expectedValue,
+    expectedBadInput,
+  );
+  return currentValue !== expectedValue || currentBadInput !== expectedBadInput;
 }
 
 export function updateValueIfChanged(node: ElementWithValueTracker): boolean {
@@ -172,7 +225,14 @@ export function updateValueIfChanged(node: ElementWithValueTracker): boolean {
 
   const lastValue = tracker.getValue();
   const nextValue = getValueFromNode(node);
-  if (nextValue !== lastValue) {
+  // For <input type="number">, an empty value can arise from either an
+  // empty input or an invalid intermediate input with validity.badInput
+  // set (e.g. "e", "E", "-", "."). Those are distinct states that
+  // consumers (e.g. floating labels) need to observe via onChange.
+  const lastBadInput =
+    typeof tracker.getBadInput === 'function' ? tracker.getBadInput() : false;
+  const nextBadInput = getBadInputFromNode(node);
+  if (nextValue !== lastValue || nextBadInput !== lastBadInput) {
     tracker.setValue(nextValue);
     return true;
   }
