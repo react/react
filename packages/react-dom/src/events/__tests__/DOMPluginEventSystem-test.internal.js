@@ -612,6 +612,95 @@ describe('DOMPluginEventSystem', () => {
           document.body.removeChild(portalElement);
         });
 
+        it('dispatches a composed click from a shadow portal once per phase', async () => {
+          const log = [];
+          const host = document.createElement('div');
+          const shadow = host.attachShadow({mode: 'open'});
+          const root = ReactDOMClient.createRoot(container);
+
+          await act(() => {
+            root.render(
+              <section
+                ref={node => {
+                  if (node !== null) {
+                    node.appendChild(host);
+                  }
+                }}
+                onClickCapture={() => log.push('parent capture')}
+                onClick={() => log.push('parent bubble')}>
+                {ReactDOM.createPortal(
+                  <button onClick={() => log.push('button bubble')} />,
+                  shadow,
+                )}
+              </section>,
+            );
+          });
+
+          shadow
+            .querySelector('button')
+            .dispatchEvent(
+              new MouseEvent('click', {bubbles: true, composed: true}),
+            );
+
+          expect(log).toEqual([
+            'parent capture',
+            'button bubble',
+            'parent bubble',
+          ]);
+        });
+
+        it('dispatches mouse events to separate roots across a shadow boundary', async () => {
+          const log = [];
+          const outerRoot = ReactDOMClient.createRoot(container);
+          const ref = React.createRef();
+          await act(() => {
+            outerRoot.render(
+              <div
+                ref={ref}
+                onMouseDownCapture={() => log.push('outer capture')}
+                onMouseDown={() => log.push('outer bubble')}
+              />,
+            );
+          });
+
+          const shadow = ref.current.attachShadow({mode: 'open'});
+          const innerRoot = ReactDOMClient.createRoot(shadow);
+          await act(() => {
+            innerRoot.render(
+              <button
+                onMouseDownCapture={() => log.push('inner capture')}
+                onMouseDown={() => log.push('inner bubble')}
+              />,
+            );
+          });
+
+          shadow
+            .querySelector('button')
+            .dispatchEvent(
+              new MouseEvent('mousedown', {bubbles: true, composed: true}),
+            );
+
+          expect(log).toEqual([
+            'outer capture',
+            'inner capture',
+            'inner bubble',
+            'outer bubble',
+          ]);
+          await act(() => innerRoot.unmount());
+        });
+
+        it('dispatches a legacy click when getRootNode is unavailable', async () => {
+          const onClick = jest.fn();
+          Object.defineProperty(container, 'getRootNode', {value: undefined});
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<button onClick={onClick} />);
+          });
+
+          dispatchClickEvent(container.firstChild);
+          expect(onClick).toHaveBeenCalledTimes(1);
+        });
+
         it('handle click events on document.body portals', async () => {
           const log = [];
 
