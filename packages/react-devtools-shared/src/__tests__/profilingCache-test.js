@@ -527,6 +527,51 @@ describe('ProfilingCache', () => {
     }
   });
 
+  // @reactVersion >= 16.9
+  it('should record change descriptions for memo(forwardRef()) components that use hooks', () => {
+    const Input = React.memo(
+      React.forwardRef(function Input({onChange, value}, ref) {
+        const isFilled = React.useMemo(() => value.length > 0, [value]);
+        return (
+          <input
+            ref={ref}
+            data-filled={isFilled}
+            onChange={onChange}
+            value={value}
+          />
+        );
+      }),
+    );
+
+    const Parent = ({value}) => <Input onChange={() => value} value={value} />;
+
+    utils.act(() => render(<Parent value="" />));
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => render(<Parent value="a" />));
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const rootID = store.roots[0];
+    const commitData = store.profilerStore.getDataForRoot(rootID).commitData;
+    expect(commitData).toHaveLength(1);
+
+    // Parent, the Memo fiber and the inner ForwardRef fiber each get a change
+    // description. The Memo fiber has no hooks of its own to inspect.
+    const changeDescriptions = Array.from(
+      commitData[0].changeDescriptions.values(),
+    );
+    expect(changeDescriptions).toHaveLength(3);
+    const inputDescriptions = changeDescriptions.filter(description =>
+      description.props.includes('onChange'),
+    );
+    expect(inputDescriptions).toHaveLength(2);
+    inputDescriptions.forEach(description => {
+      expect(description.isFirstMount).toBe(false);
+      expect(description.props).toEqual(['onChange', 'value']);
+      expect(description.didHooksChange).toBe(false);
+    });
+  });
+
   // @reactVersion >= 19.0
   it('should detect what hooks changed in a render with custom and composite hooks', () => {
     let snapshot = 0;
