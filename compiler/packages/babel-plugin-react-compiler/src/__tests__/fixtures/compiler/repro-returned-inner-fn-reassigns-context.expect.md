@@ -59,9 +59,9 @@ function Foo(t0) {
   const { b } = t0;
 
   const fnFactory = () => () => {
-    myVar = _temp;
+    myVar = () => console.log("a");
   };
-  let myVar = _temp2;
+  let myVar = _temp;
   useIdentity();
 
   const fn = fnFactory();
@@ -78,11 +78,8 @@ function Foo(t0) {
   }
   return t1;
 }
-function _temp2() {
-  return console.log("b");
-}
 function _temp() {
-  return console.log("a");
+  return console.log("b");
 }
 
 export const FIXTURE_ENTRYPOINT = {

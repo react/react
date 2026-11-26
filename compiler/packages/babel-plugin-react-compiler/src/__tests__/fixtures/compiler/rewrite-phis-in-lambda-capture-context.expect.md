@@ -23,20 +23,17 @@ function Component() {
 
 ```javascript
 function Component() {
-  const get4 = _temp2;
+  const get4 = _temp;
 
   return get4;
 }
-function _temp2() {
+function _temp() {
   while (bar()) {
     if (baz) {
       bar();
     }
   }
-  return _temp;
-}
-function _temp() {
-  return 4;
+  return () => 4;
 }
 
 ```
