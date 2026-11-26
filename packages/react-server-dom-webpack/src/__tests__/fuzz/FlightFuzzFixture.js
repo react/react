@@ -29,6 +29,7 @@ async function createFixture(
   const events = [];
   const requiredEvents = new Map();
   const valueMetadata = new Map();
+  const bytes = new Map();
   const expectedErrors = new Map();
 
   const values = {};
@@ -56,8 +57,24 @@ async function createFixture(
       case 'date':
         values[name] = new Date(node.date);
         break;
+      case 'binary':
+        values[name] = new Uint8Array([node.binary, 10, 255]);
+        saveBytes(values[name]);
+        break;
+      case 'text':
+        values[name] = node.text + '🙂'.repeat(400);
+        break;
+      case 'blob':
+        values[name] = new Blob([node.blob], {type: 'text/plain'});
+        break;
       case 'special':
         values[name] = specialValueFactories[node.special]();
+        if (
+          values[name] instanceof ArrayBuffer ||
+          ArrayBuffer.isView(values[name])
+        ) {
+          saveBytes(values[name]);
+        }
         break;
       case 'host':
         values[name] = createHostElement(
@@ -144,7 +161,7 @@ async function createFixture(
         break;
     }
   }
-  // Build values that need existing arguments or props.
+  // Build values that need existing arguments, props, or stream items.
   const buildingValues = new Set();
   const buildValue = name => {
     if (Object.prototype.hasOwnProperty.call(values, name)) {
@@ -161,6 +178,9 @@ async function createFixture(
     buildingValues.add(name);
     const node = nodes[name];
     switch (getNodeType(node)) {
+      case 'iterator':
+        values[name] = createIterator(node.iterator.map(buildValue));
+        break;
       case 'error':
         values[name] = createAggregateError(
           node.error,
@@ -190,6 +210,28 @@ async function createFixture(
         values[name] = createClientElement(props, {name, key: name});
         break;
       }
+      case 'stream':
+        values[name] = node.cancel
+          ? createCanceledStream(node.stream.map(buildValue), {label: name})
+          : createStream(node.stream.map(buildValue), {
+              label: name,
+              failure:
+                node.fail === undefined ? undefined : getError(node.fail),
+            });
+        break;
+      case 'bytes':
+        values[name] = createByteStream(
+          Array.from({length: node.bytes}, (_, i) => new Uint8Array([i, 7])),
+          {label: name},
+        );
+        break;
+      case 'iterable':
+        values[name] = createAsyncIterable(
+          node.iterable.map(buildValue),
+          node.returns === undefined ? undefined : buildValue(node.returns),
+          {label: name, single: node.single === true},
+        );
+        break;
       case 'component': {
         if (node.throw) {
           const error = getError(node.component);
@@ -260,6 +302,15 @@ async function createFixture(
           values[name].cause = getValue(node.cause);
         }
         break;
+      case 'stream':
+        if (
+          node.fail !== undefined &&
+          !node.cancel &&
+          serializedNodes.has(name)
+        ) {
+          expectedErrors.set(getError(node.fail), 'failing ' + name);
+        }
+        break;
       case 'component':
         if (node.throw && serializedNodes.has(name)) {
           expectedErrors.set(getError(node.component), 'thrown by ' + name);
@@ -321,6 +372,7 @@ async function createFixture(
     events,
     requiredEvents,
     valueMetadata,
+    bytes,
     expectedErrors,
     unrelatedEvent,
     rootPromise,
@@ -437,6 +489,49 @@ async function createFixture(
     return element;
   }
 
+  function createByteStream(chunks, {label = 'bytes'} = {}) {
+    let controller;
+    let produced = 0;
+    const stream = new ReadableStream({
+      type: 'bytes',
+      start: c => (controller = c),
+    });
+    const streamEvents = [];
+    const pump = () => {
+      while (produced < chunks.length && streamEvents[produced].released) {
+        controller.enqueue(chunks[produced++].slice());
+      }
+      if (produced === chunks.length) {
+        controller.close();
+      }
+    };
+    for (let i = 0; i < chunks.length; i++) {
+      streamEvents.push(createEvent(label + ' chunk ' + i, pump));
+    }
+    events.push(...streamEvents);
+    valueMetadata.set(stream, {type: 'bytes', chunks, events: streamEvents});
+    return stream;
+  }
+
+  // Client-side cancellation must not break later server writes.
+  function createCanceledStream(items, {label = 'canceled stream'} = {}) {
+    let controller;
+    const stream = new ReadableStream({
+      start(c) {
+        controller = c;
+        controller.enqueue(items[0]);
+      },
+    });
+    events.push(
+      createEvent('enqueue into ' + label + ' after cancellation', () => {
+        controller.enqueue({discarded: true});
+        controller.close();
+      }),
+    );
+    valueMetadata.set(stream, {type: 'canceled', first: items[0]});
+    return stream;
+  }
+
   function createHostElement(type, props, html) {
     const element = ReactServer.createElement(type, props);
     valueMetadata.set(element, {type: 'element', html});
@@ -456,6 +551,91 @@ async function createFixture(
     return element;
   }
 
+  // Events can be released out of order, but stream items must be enqueued
+  // in order. The last event closes or errors the stream.
+  function createStream(items, {label = 'stream', failure} = {}) {
+    let controller;
+    let produced = 0;
+    const stream = new ReadableStream({start: c => (controller = c)});
+    const streamEvents = [];
+    const pump = () => {
+      while (produced < items.length && streamEvents[produced].released) {
+        controller.enqueue(items[produced++]);
+      }
+      if (produced === items.length && streamEvents[items.length].released) {
+        if (failure === undefined) {
+          controller.close();
+        } else {
+          controller.error(failure);
+        }
+      }
+    };
+    for (let i = 0; i < items.length; i++) {
+      streamEvents.push(createEvent(label + ' item ' + i, pump));
+    }
+    streamEvents.push(
+      createEvent((failure === undefined ? 'close ' : 'fail ') + label, pump),
+    );
+    events.push(...streamEvents);
+    valueMetadata.set(stream, {
+      type: 'stream',
+      items,
+      events: streamEvents,
+      failure,
+    });
+    return stream;
+  }
+
+  function createAsyncIterable(
+    items,
+    returnValue,
+    {label = 'iterable', single = false} = {},
+  ) {
+    const deferredResults = Array.from({length: items.length + 1}, () =>
+      createResolvablePromise(),
+    );
+    const iterationEvents = deferredResults.map((deferred, i) =>
+      createEvent(
+        i === items.length
+          ? 'return ' + label
+          : i === 0
+            ? 'start ' + label
+            : label + ' item ' + i,
+        () => deferred.resolve(),
+      ),
+    );
+    const iterableSource = {
+      async *[Symbol.asyncIterator]() {
+        for (let i = 0; i < items.length; i++) {
+          await deferredResults[i].promise;
+          yield items[i];
+        }
+        await deferredResults[items.length].promise;
+        return returnValue;
+      },
+    };
+    const iterable = single
+      ? iterableSource[Symbol.asyncIterator]()
+      : iterableSource;
+    events.push(...iterationEvents);
+    valueMetadata.set(iterable, {
+      type: 'iterable',
+      items,
+      returnValue,
+      events: iterationEvents,
+      single,
+    });
+    return iterable;
+  }
+
+  // The writer copies a sync iterator into an array, so its return value is
+  // not transmitted.
+  function createIterator(items) {
+    const iterator = items[Symbol.iterator]();
+    valueMetadata.set(iterator, {type: 'iterator', items});
+    return iterator;
+  }
+
   function createError(message) {
     const error = new Error(message);
     // Server rejections are matched by digest in both modes.
@@ -471,6 +651,15 @@ async function createFixture(
       digest: 'digest:' + message,
     });
     return error;
+  }
+
+  function saveBytes(value) {
+    // The writer may detach ArrayBuffers. Keep a copy of their bytes.
+    const view =
+      value instanceof ArrayBuffer
+        ? new Uint8Array(value)
+        : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    bytes.set(value, Array.from(view));
   }
 
   return fixture;

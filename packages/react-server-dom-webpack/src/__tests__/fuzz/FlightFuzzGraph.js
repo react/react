@@ -19,6 +19,9 @@ const Random = require('random-seed');
 const nodeTypes = [
   'value',
   'date',
+  'binary',
+  'text',
+  'blob',
   'special',
   'host',
   'module',
@@ -27,11 +30,15 @@ const nodeTypes = [
   'object',
   'set',
   'map',
+  'iterator',
   'bound',
   'element',
   'props',
   'fragment',
   'promise',
+  'stream',
+  'bytes',
+  'iterable',
   'component',
 ];
 
@@ -47,10 +54,18 @@ function getReferencedNodes(node) {
   switch (getNodeType(node)) {
     case 'array':
     case 'set':
+    case 'iterator':
     case 'bound':
-      return node[getNodeType(node)];
+    case 'stream':
+      return node[getNodeType(node)]
+        .concat('returns' in node ? [node.returns] : [])
+        .concat(typeof node.fail === 'string' ? [node.fail] : []);
     case 'object':
       return Object.values(node.object);
+    case 'iterable':
+      return node.iterable.concat(
+        node.returns === undefined ? [] : [node.returns],
+      );
     case 'map':
       return node.map.flat();
     case 'fragment':
@@ -96,8 +111,25 @@ const specialValueFactories = {
   infinity: () => -Infinity,
   symbol: () => Symbol.for('flight-fuzz'),
   escaped: () => '$escaped\n🙂',
+  buffer: () => new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer,
+  'typed array': () => new Int16Array([1, -2, 3]),
+  'data view': () => new DataView(new ArrayBuffer(7), 1, 5),
+  'bigint array': () => new BigInt64Array([42n, -1n]),
+  'float array': () => new Float64Array([1.5, -2.25, 0]),
+  'clamped array': () => new Uint8ClampedArray([0, 128, 255]),
   undefined: () => undefined,
   'positive infinity': () => Infinity,
+  // Larger than a packet, to exercise fragmented binary data.
+  'large binary': () => Uint8Array.from({length: 6000}, (_, i) => i % 251),
+  'large blob': () => new Blob(['blob-'.repeat(1200)], {type: 'text/plain'}),
+  'form data': () => {
+    const form = new FormData();
+    form.append('repeated', 'first');
+    form.append('repeated', 'second');
+    // A response sends a File as a Blob, without its name, on purpose.
+    form.append('file', new Blob(['🙂']));
+    return form;
+  },
 };
 
 function createRandom(seed) {
@@ -116,6 +148,12 @@ const graphOperations = [
   'map key',
   'promise',
   'rejected promise',
+  'stream',
+  'failing stream',
+  'canceled stream',
+  'byte stream',
+  'iterable',
+  'iterator',
   'element',
   'props',
   'component',
@@ -138,10 +176,13 @@ function generateGraph(seed, {without = []} = {}) {
   const names = [];
   const nodes = {};
   const referenceTargets = [];
+  // Sync iterators must only be serialized once. Don't reuse them in another
+  // container or put them in stream items that may be serialized again.
+  const singleUseNodes = [];
   const containers = [];
+  const streamItemNodes = [];
   const counts = {};
-  const add = (node, {target = true} = {}) => {
-    const type = getNodeType(node);
+  const add = (node, {target = true, type = getNodeType(node)} = {}) => {
     counts[type] = (counts[type] || 0) + 1;
     const name = type + (counts[type] - 1);
     names.push(name);
@@ -176,6 +217,9 @@ function generateGraph(seed, {without = []} = {}) {
           break;
         case 'special':
           value = specialValueFactories[node.special]();
+          break;
+        case 'text':
+          value = node.text + '🙂'.repeat(400);
           break;
         case 'props':
           if (!propsKeys.has(node.props)) {
@@ -223,6 +267,15 @@ function generateGraph(seed, {without = []} = {}) {
       node[getNodeType(node)].push(item);
     }
   };
+  const createStreamItem = (
+    item = pickFrom(referenceTargets),
+    target = true,
+  ) => {
+    const name = add({array: [item]}, {type: 'item', target});
+    containers.push(name);
+    streamItemNodes.push(name);
+    return name;
+  };
 
   add({value: 'value'});
   add({value: 'other value'});
@@ -234,6 +287,9 @@ function generateGraph(seed, {without = []} = {}) {
   add({value: false});
   add({value: null});
   add({date: 1700000000000 + pick(100000)});
+  add({binary: pick(256)});
+  add({text: 'text-' + pick(1000)});
+  add({blob: 'blob-' + pick(1000)});
   const specials = Object.keys(specialValueFactories).filter(
     name => !without.includes(name),
   );
@@ -310,6 +366,78 @@ function generateGraph(seed, {without = []} = {}) {
       }
       case 'rejected promise': {
         add({promise: addError(), reject: true});
+        break;
+      }
+      case 'stream': {
+        const choice = pick(3);
+        if (choice === 0) {
+          // Reuse one value across both items, which are only in the stream, so a
+          // typed array or a nested stream is re-emitted for each item.
+          const shared = pickFrom(referenceTargets);
+          add({
+            stream: [
+              createStreamItem(shared, false),
+              createStreamItem(shared, false),
+            ],
+          });
+        } else if (choice === 1) {
+          // Reuse a sync iterator across stream items. The items are only in the
+          // stream, so the writer re-reads the iterator for the second item; its
+          // contents must be retained after the first item consumes it.
+          const iterator = add(
+            {
+              iterator: [
+                pickFrom(referenceTargets),
+                pickFrom(referenceTargets),
+              ],
+            },
+            {target: false},
+          );
+          add({
+            stream: [
+              createStreamItem(iterator, false),
+              createStreamItem(iterator, false),
+            ],
+          });
+        } else {
+          add({stream: [createStreamItem(), createStreamItem()]});
+        }
+        break;
+      }
+      case 'failing stream': {
+        // An error can discard queued items before the writer reads them.
+        // Use an empty stream so the expected result is unambiguous.
+        add({stream: [], fail: addError()});
+        break;
+      }
+      case 'canceled stream': {
+        add({stream: [createStreamItem()], cancel: true});
+        break;
+      }
+      case 'byte stream': {
+        add({bytes: 1 + pick(3)});
+        break;
+      }
+      case 'iterable': {
+        add({
+          iterable: [createStreamItem(), createStreamItem()],
+          returns: createStreamItem(),
+          single: pick(2) === 0,
+        });
+        break;
+      }
+      case 'iterator': {
+        singleUseNodes.push(
+          add(
+            {
+              iterator: [
+                pickFrom(referenceTargets),
+                pickFrom(referenceTargets),
+              ],
+            },
+            {target: false},
+          ),
+        );
         break;
       }
       case 'element': {
@@ -392,6 +520,11 @@ function generateGraph(seed, {without = []} = {}) {
     for (let i = before; i < names.length; i++) {
       if (referenceTargets.includes(names[i])) {
         addReference(pickFrom(existing), names[i]);
+      } else if (singleUseNodes.includes(names[i])) {
+        addReference(
+          pickFrom(existing.filter(name => !streamItemNodes.includes(name))),
+          names[i],
+        );
       }
     }
   }
@@ -507,6 +640,9 @@ function* generateReductionCandidates(graph) {
       for (let width = list.length; width > 0; width = Math.floor(width / 2)) {
         for (let start = 0; start < list.length; start += width) {
           const kept = list.slice(0, start).concat(list.slice(start + width));
+          if (type === 'stream' && node.cancel && kept.length === 0) {
+            continue;
+          }
           yield replace({
             ...node,
             [listKey]:
@@ -519,7 +655,16 @@ function* generateReductionCandidates(graph) {
         }
       }
     }
-    const options = ['cause', 'async', 'fail', 'reject', 'throw', 'loaded'];
+    const options = [
+      'cause',
+      'returns',
+      'single',
+      'async',
+      'fail',
+      'reject',
+      'throw',
+      'loaded',
+    ];
     for (let j = 0; j < options.length; j++) {
       const key = options[j];
       if (key in node) {

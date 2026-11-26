@@ -7,13 +7,15 @@
 
 'use strict';
 
-// Compares received values with their source values, and subscribes to every
-// Promise it finds in them. After each source event the test asks which
+// Compares received values with their source values. It also reads every
+// Promise, stream, iterable and byte stream it finds in them, renders elements
+// and calls Server Functions. After each source event the test asks which
 // results are due and have not arrived.
 
 const {
   isObject,
   assertSingleSource,
+  assertBlobContents,
   compareValue,
   throwAtPath,
 } = require('./FlightFuzzCompare');
@@ -26,6 +28,11 @@ const {
   getRootExpectation,
   getPromiseExpectation,
   getRenderExpectation,
+  getStreamExpectations,
+  getIterableExpectation,
+  getCanceledExpectation,
+  getProducedByteCount,
+  getByteReadExpectation,
 } = require('./FlightFuzzReadiness');
 
 function createOracle(
@@ -39,6 +46,7 @@ function createOracle(
     receivedValues: [],
     observedAsyncValues: new WeakSet(),
     thenableResults: new WeakMap(),
+    iteratorItems: new WeakMap(),
     functionCalls: new Map(),
     resultChecks: [],
     failures: [],
@@ -91,8 +99,8 @@ function createOracle(
       );
     },
     // Compare every received value again to catch values that changed after
-    // delivery. Server Functions are called again, and async values must still
-    // be the ones observed.
+    // delivery. Server Functions are called again, and iterators and async
+    // values must still be the ones observed.
     async checkForMutations() {
       state.pendingTasks++;
       try {
@@ -100,8 +108,13 @@ function createOracle(
           observeServerFunction(state, received, call.metadata),
         );
         const visited = new Set();
-        state.receivedValues.forEach(root =>
+        const blobs = state.receivedValues.flatMap(root =>
           traverse(state, root, false, visited),
+        );
+        await Promise.all(
+          blobs.map(({expectedValue, received}) =>
+            assertBlobContents(expectedValue, received),
+          ),
         );
         throwIfFailed(state);
       } finally {
@@ -120,8 +133,10 @@ function observeValue(state, expectedValue, received, path) {
 // With `observe`, this also subscribes to each async value it finds. Without
 // it, finding an async value it has not seen means a delivered value was
 // replaced.
+// Returns the Blobs whose contents the caller reads.
 function traverse(state, root, observe, visited = new Set()) {
   const {fixture} = state;
+  const blobs = [];
   const todo = [root];
   while (todo.length > 0) {
     const pair = todo.pop();
@@ -139,7 +154,15 @@ function traverse(state, root, observe, visited = new Set()) {
       visited.add(received);
       const metadata = fixture.valueMetadata.get(expectedValue);
       if (metadata === undefined) {
-        // There is nothing to subscribe to.
+        if (expectedValue instanceof Blob) {
+          if (observe) {
+            runAsyncTask(state, () =>
+              assertBlobContents(expectedValue, received),
+            );
+          } else {
+            blobs.push(pair);
+          }
+        }
       } else if (metadata.type === 'function') {
         if (observe) {
           observeServerFunction(state, received, metadata);
@@ -153,6 +176,21 @@ function traverse(state, root, observe, visited = new Set()) {
           received: call.result,
           path: path + '()',
         });
+      } else if (metadata.type === 'iterator') {
+        if (observe && !state.iteratorItems.has(received)) {
+          observeIterator(state, metadata, received);
+        }
+        const items = state.iteratorItems.get(received);
+        if (items === undefined) {
+          throw new Error('A received iterator was replaced');
+        }
+        items.forEach((item, i) =>
+          children.push({
+            expectedValue: metadata.items[i],
+            received: item,
+            path: path + '.item' + i,
+          }),
+        );
       } else if (separateResultTypes.includes(metadata.type)) {
         if (!state.observedAsyncValues.has(received)) {
           if (!observe) {
@@ -169,6 +207,7 @@ function traverse(state, root, observe, visited = new Set()) {
       throwAtPath(error, path);
     }
   }
+  return blobs;
 }
 
 function observeAsyncValue(state, metadata, pair) {
@@ -178,6 +217,18 @@ function observeAsyncValue(state, metadata, pair) {
       break;
     case 'element':
       observeElement(state, pair);
+      break;
+    case 'stream':
+      observeStream(state, metadata, pair);
+      break;
+    case 'iterable':
+      observeAsyncIterable(state, metadata, pair);
+      break;
+    case 'bytes':
+      observeByteStream(state, metadata, pair);
+      break;
+    case 'canceled':
+      observeCanceledStream(state, metadata, pair);
       break;
   }
 }
@@ -212,6 +263,171 @@ function observeElement(state, {expectedValue, received, path}) {
   });
 }
 
+function observeStream(state, metadata, {expectedValue, received, path}) {
+  const {items} = metadata;
+  const {getItemExpectation, getEndExpectation} = getStreamExpectations(
+    state.fixture,
+    metadata,
+  );
+  const itemChecks = items.map((item, i) =>
+    registerResultCheck(state, item, path + '.item' + i, findModels =>
+      getItemExpectation(i, findModels),
+    ),
+  );
+  const endCheck = registerResultCheck(
+    state,
+    expectedValue,
+    path + '.end',
+    getEndExpectation,
+  );
+  runAsyncTask(state, async () => {
+    const reader = received.getReader();
+    for (let i = 0; i < items.length; i++) {
+      let item;
+      try {
+        item = await reader.read();
+      } catch (error) {
+        handleResult(state, itemChecks[i], error, true);
+        // No further reads are possible after a stream error.
+        for (let j = i + 1; j < items.length; j++) {
+          itemChecks[j].done = true;
+        }
+        endCheck.done = true;
+        return;
+      }
+      if (item.done) {
+        throw new Error(path + '.item' + i + ': ended early');
+      }
+      handleResult(state, itemChecks[i], item.value);
+    }
+    let last;
+    try {
+      last = await reader.read();
+    } catch (error) {
+      handleResult(state, endCheck, error, true);
+      return;
+    }
+    expect(last.done).toBe(true);
+    handleResult(state, endCheck, last.value);
+  });
+}
+
+function observeAsyncIterable(state, metadata, {received, path}) {
+  // Read once with sequential next() calls and once with concurrent ones. A
+  // single-use iterator can only be read once.
+  const modes = metadata.single ? [true] : [false, true];
+  for (let mode = 0; mode < modes.length; mode++) {
+    const readAhead = modes[mode];
+    const iterator = received[Symbol.asyncIterator]();
+    expect(iterator === received).toBe(metadata.single === true);
+    const items = metadata.items;
+    const consume = async i => {
+      const done = i >= items.length;
+      const value = done
+        ? i === items.length
+          ? metadata.returnValue
+          : undefined
+        : items[i];
+      const check = registerResultCheck(
+        state,
+        value,
+        path + (readAhead ? '.ahead' : '') + '.next' + i,
+        findModels =>
+          getIterableExpectation(state.fixture, metadata, i, value, findModels),
+      );
+      let result;
+      try {
+        result = await iterator.next();
+      } catch (error) {
+        // A rejected result doesn't prevent later next() calls.
+        handleResult(state, check, error, true);
+        return;
+      }
+      expect(result.done).toBe(done);
+      handleResult(state, check, result.value);
+    };
+    // Reads after the return value must keep returning
+    // {done: true, value: undefined}.
+    if (readAhead) {
+      for (let i = 0; i < items.length + 3; i++) {
+        runAsyncTask(state, () => consume(i));
+      }
+    } else {
+      runAsyncTask(state, async () => {
+        for (let i = 0; i < items.length + 3; i++) {
+          await consume(i);
+        }
+      });
+    }
+  }
+}
+
+function observeByteStream(state, metadata, {expectedValue, received, path}) {
+  const expectedBytes = [].concat(...metadata.chunks.map(c => Array.from(c)));
+  runAsyncTask(state, async () => {
+    const reader = received.getReader({mode: 'byob'});
+    const receivedBytes = [];
+    for (;;) {
+      const offset = receivedBytes.length;
+      const check = registerResultCheck(
+        state,
+        expectedValue,
+        path + '.byte' + offset,
+        () => getByteReadExpectation(metadata, offset),
+      );
+      let result;
+      try {
+        result = await reader.read(
+          new Uint8Array(1 + (receivedBytes.length % 3)),
+        );
+      } catch (error) {
+        handleResult(state, check, error, true);
+        return;
+      }
+      const {done, value} = result;
+      if (value) {
+        receivedBytes.push(...value);
+      }
+      expect(receivedBytes).toEqual(
+        expectedBytes.slice(
+          0,
+          Math.min(receivedBytes.length, getProducedByteCount(metadata)),
+        ),
+      );
+      if (done) {
+        expect(areAllEventsReleased(metadata.events)).toBe(true);
+        expect(receivedBytes).toEqual(expectedBytes);
+        handleResult(state, check, undefined);
+        break;
+      }
+      expect(receivedBytes.length).toBeGreaterThan(offset);
+      handleResult(state, check, undefined);
+    }
+  });
+}
+
+function observeCanceledStream(state, metadata, {received, path}) {
+  const check = registerResultCheck(
+    state,
+    metadata.first,
+    path + '.first',
+    findModels => getCanceledExpectation(state.fixture, metadata, findModels),
+  );
+  runAsyncTask(state, async () => {
+    const reader = received.getReader();
+    let item;
+    try {
+      item = await reader.read();
+    } catch (error) {
+      handleResult(state, check, error, true);
+      return;
+    }
+    expect(item.done).toBe(false);
+    await reader.cancel('canceled by the test');
+    handleResult(state, check, item.value);
+  });
+}
+
 // Each call returns a new array of the bound arguments followed by the
 // supplied ones. The bound arguments must stay the same objects.
 function observeServerFunction(state, received, metadata) {
@@ -230,6 +446,19 @@ function observeServerFunction(state, received, metadata) {
     bound = result.slice(0, metadata.bound.length);
   }
   state.functionCalls.set(received, {metadata, result, bound});
+}
+
+function observeIterator(state, metadata, received) {
+  const items = [];
+  for (let i = 0; i < metadata.items.length; i++) {
+    const result = received.next();
+    expect(result.done).toBe(false);
+    items.push(result.value);
+  }
+  const last = received.next();
+  expect(last.done).toBe(true);
+  expect(last.value).toBe(undefined);
+  state.iteratorItems.set(received, items);
 }
 
 function registerResultCheck(state, expectedValue, path, getExpectation) {
