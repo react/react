@@ -2095,6 +2095,151 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(span.className).toBe('hi');
   });
 
+  it('blocks the update to hydrate first if context has changed while a sibling has work in the same lane', async () => {
+    const ref = React.createRef();
+    const Context = React.createContext(null);
+    let setSiblingText;
+
+    function Child() {
+      const {text, className} = React.useContext(Context);
+      Scheduler.log('Child: ' + text);
+      return (
+        <span ref={ref} className={className}>
+          {text}
+        </span>
+      );
+    }
+
+    function Sibling() {
+      const [text, setText] = React.useState('Sibling');
+      setSiblingText = setText;
+      Scheduler.log(text);
+      return text;
+    }
+
+    const App = React.memo(function App() {
+      return (
+        <div>
+          <Suspense fallback="Loading...">
+            <Child />
+          </Suspense>
+          <Sibling />
+        </div>
+      );
+    });
+
+    const finalHTML = ReactDOMServer.renderToString(
+      <Context.Provider value={{text: 'Hello', className: 'hello'}}>
+        <App />
+      </Context.Provider>,
+    );
+    assertLog(['Child: Hello', 'Sibling']);
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+
+    const span = container.getElementsByTagName('span')[0];
+
+    const root = ReactDOMClient.hydrateRoot(
+      container,
+      <Context.Provider value={{text: 'Hello', className: 'hello'}}>
+        <App />
+      </Context.Provider>,
+      {
+        onRecoverableError(error) {
+          Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
+        },
+      },
+    );
+    // Commit the shell. The Suspense boundary is still dehydrated.
+    await waitForPaint(['Sibling']);
+    expect(ref.current).toBe(null);
+
+    // Change the context and, in the same lane, update a sibling of the
+    // boundary. The sibling's pending work makes the parent skip the lazy
+    // context propagation, so the boundary itself has to notice the change.
+    await act(() => {
+      root.render(
+        <Context.Provider value={{text: 'Hi', className: 'hi'}}>
+          <App />
+        </Context.Provider>,
+      );
+      setSiblingText('Sibling updated');
+    });
+
+    // The boundary hydrated with the old value first, then took the update.
+    assertLog(['Child: Hello', 'Child: Hi', 'Sibling updated']);
+    const newSpan = container.getElementsByTagName('span')[0];
+    expect(newSpan).toBe(span);
+    expect(ref.current).toBe(span);
+    expect(span.textContent).toBe('Hi');
+    expect(span.className).toBe('hi');
+  });
+
+  it('blocks the update to hydrate first if context has changed in the parent that renders the boundary', async () => {
+    const ref = React.createRef();
+    const Context = React.createContext(null);
+    let setValue;
+
+    function Child() {
+      const {text, className} = React.useContext(Context);
+      Scheduler.log('Child: ' + text);
+      return (
+        <span ref={ref} className={className}>
+          {text}
+        </span>
+      );
+    }
+
+    function Provider({children}) {
+      const [value, setV] = React.useState({text: 'Hello', className: 'hello'});
+      setValue = setV;
+      return <Context.Provider value={value}>{children}</Context.Provider>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Provider>
+            <Suspense fallback="Loading...">
+              <Child />
+            </Suspense>
+          </Provider>
+        </div>
+      );
+    }
+
+    const finalHTML = ReactDOMServer.renderToString(<App />);
+    assertLog(['Child: Hello']);
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+
+    const span = container.getElementsByTagName('span')[0];
+
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
+      },
+    });
+    // Commit the shell. The Suspense boundary is still dehydrated.
+    await waitForPaint([]);
+    expect(ref.current).toBe(null);
+
+    // The provider renders with a new value but the same children. A parent
+    // that renders does not run the lazy context propagation, so the
+    // boundary itself has to notice the change.
+    await act(() => {
+      setValue({text: 'Hi', className: 'hi'});
+    });
+
+    // The boundary hydrated with the old value first, then took the update.
+    assertLog(['Child: Hello', 'Child: Hi']);
+    const newSpan = container.getElementsByTagName('span')[0];
+    expect(newSpan).toBe(span);
+    expect(ref.current).toBe(span);
+    expect(span.textContent).toBe('Hi');
+    expect(span.className).toBe('hi');
+  });
+
   it('shows the fallback if context has changed before hydration completes and is still suspended', async () => {
     let suspend = false;
     let resolve;
@@ -2181,6 +2326,101 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(span.className).toBe('hi');
     expect(ref.current).toBe(span);
     expect(container.textContent).toBe('Hi');
+  });
+
+  it('shows the fallback if context has changed while a sibling has work in the same lane and the boundary is still suspended', async () => {
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+    const ref = React.createRef();
+    const Context = React.createContext(null);
+    let setSiblingText;
+
+    function Child() {
+      const {text, className} = React.useContext(Context);
+      if (suspend) {
+        throw promise;
+      } else {
+        return (
+          <span ref={ref} className={className}>
+            {text}
+          </span>
+        );
+      }
+    }
+
+    function Sibling() {
+      const [text, setText] = React.useState('Sibling');
+      setSiblingText = setText;
+      return text;
+    }
+
+    const App = React.memo(function App() {
+      return (
+        <div>
+          <Suspense fallback="Loading...">
+            <Child />
+          </Suspense>
+          <Sibling />
+        </div>
+      );
+    });
+
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(
+      <Context.Provider value={{text: 'Hello', className: 'hello'}}>
+        <App />
+      </Context.Provider>,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+
+    // On the client we don't have all data yet but we want to start
+    // hydrating anyway.
+    suspend = true;
+    const root = ReactDOMClient.hydrateRoot(
+      container,
+      <Context.Provider value={{text: 'Hello', className: 'hello'}}>
+        <App />
+      </Context.Provider>,
+      {
+        onRecoverableError(error) {
+          Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
+        },
+      },
+    );
+    await waitForAll([]);
+
+    expect(ref.current).toBe(null);
+
+    // Change the context and, in the same lane, update a sibling of the
+    // boundary, but leave the boundary suspended. Flushing now should delete
+    // the existing content and show the fallback.
+    await act(() => {
+      root.render(
+        <Context.Provider value={{text: 'Hi', className: 'hi'}}>
+          <App />
+        </Context.Provider>,
+      );
+      setSiblingText('Sibling updated');
+    });
+
+    expect(container.getElementsByTagName('span').length).toBe(0);
+    expect(ref.current).toBe(null);
+    expect(container.textContent).toBe('Loading...Sibling updated');
+
+    // Unsuspending shows the content.
+    await act(async () => {
+      suspend = false;
+      resolve();
+      await promise;
+    });
+
+    const span = container.getElementsByTagName('span')[0];
+    expect(span.textContent).toBe('Hi');
+    expect(span.className).toBe('hi');
+    expect(ref.current).toBe(span);
+    expect(container.textContent).toBe('HiSibling updated');
   });
 
   it('commits a transition that gave up hydrating after a throttled retry is interrupted by a ping', async () => {
