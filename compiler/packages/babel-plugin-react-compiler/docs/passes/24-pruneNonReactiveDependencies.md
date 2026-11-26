@@ -25,7 +25,7 @@ The pass complements `PropagateScopeDependencies`, which infers dependencies wit
 The `collectReactiveIdentifiers` helper builds the initial set of reactive identifiers by:
 1. Visiting all places in the ReactiveFunction
 2. Adding any place marked `{reactive: true}` to the set
-3. For pruned scopes, adding declarations that are not primitives and not stable ref types
+3. For pruned scopes, adding declarations that are not primitives, stable ref types, or stable values that a `Destructure` directly in the scope declares (such as a `useState` setter)
 
 ### Phase 2: Propagate Reactivity and Prune Dependencies
 The main `Visitor` class traverses the ReactiveFunction and:
@@ -66,7 +66,7 @@ A value created before a hook call and mutated after cannot be memoized. However
 When `useReducer` returns `[state, dispatch]`, `state` is reactive but `dispatch` is stable. The pass correctly handles this.
 
 ### Pruned Scopes with Reactive Content
-The `CollectReactiveIdentifiers` pass also examines pruned scopes and adds their non-primitive, non-stable-ref declarations to the reactive set.
+The `CollectReactiveIdentifiers` pass also examines pruned scopes and adds their declarations to the reactive set, except primitives, stable refs, and stable values that a `Destructure` directly in the scope declares.
 
 ### Transitive Reactivity Through Scopes
 When a scope retains at least one reactive dependency, ALL its outputs become reactive.
