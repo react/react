@@ -1652,45 +1652,6 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 1" />);
     });
 
-    // @gate !disableLegacyMode
-    it(
-      'in legacy mode, useEffect is deferred and updates finish synchronously ' +
-        '(in a single batch)',
-      async () => {
-        function Counter(props) {
-          const [count, updateCount] = useState('(empty)');
-          useEffect(() => {
-            // Update multiple times. These should all be batched together in
-            // a single render.
-            updateCount(props.count);
-            updateCount(props.count);
-            updateCount(props.count);
-            updateCount(props.count);
-            updateCount(props.count);
-            updateCount(props.count);
-          }, [props.count]);
-          return <Text text={'Count: ' + count} />;
-        }
-        await act(() => {
-          ReactNoop.flushSync(() => {
-            ReactNoop.renderLegacySyncRoot(<Counter count={0} />);
-          });
-
-          // Even in legacy mode, effects are deferred until after paint
-          assertLog(['Count: (empty)']);
-          expect(ReactNoop).toMatchRenderedOutput(
-            <span prop="Count: (empty)" />,
-          );
-        });
-
-        // effects get forced on exiting act()
-        // There were multiple updates, but there should only be a
-        // single render
-        assertLog(['Count: 0']);
-        expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 0" />);
-      },
-    );
-
     it('flushSync is not allowed', async () => {
       function Counter(props) {
         const [count, updateCount] = useState('(empty)');

@@ -65,7 +65,6 @@ describe('StoreStress (Legacy Mode)', () => {
   // It renders different trees that should produce the same output.
   // @reactVersion >= 16.9
   // @reactVersion < 19
-  // @gate !disableLegacyMode
   it('should handle a stress test with different tree operations (Legacy Mode)', () => {
     let setShowX;
     const A = () => 'a';

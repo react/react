@@ -56,10 +56,7 @@ import {checkPropStringCoercion} from 'shared/CheckStringCoercion';
 
 import {getPublicInstance} from './ReactFiberConfigTestHost';
 import {ConcurrentRoot, LegacyRoot} from 'react-reconciler/src/ReactRootTags';
-import {
-  enableReactTestRendererWarning,
-  disableLegacyMode,
-} from 'shared/ReactFeatureFlags';
+import {enableReactTestRendererWarning} from 'shared/ReactFeatureFlags';
 
 import noop from 'shared/noop';
 import type {WorkTag} from 'react-reconciler/src/ReactWorkTags';
@@ -490,9 +487,7 @@ function create(
   }
 
   let createNodeMock = defaultTestOptions.createNodeMock;
-  const isConcurrentOnly =
-    disableLegacyMode === true &&
-    global.IS_REACT_NATIVE_TEST_ENVIRONMENT !== true;
+  const isConcurrentOnly = global.IS_REACT_NATIVE_TEST_ENVIRONMENT !== true;
   let isConcurrent = isConcurrentOnly;
   let isStrictMode = false;
   // $FlowFixMe[invalid-compare]

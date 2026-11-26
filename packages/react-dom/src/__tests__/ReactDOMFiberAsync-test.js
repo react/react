@@ -53,18 +53,6 @@ describe('ReactDOMFiberAsync', () => {
     document.body.removeChild(container);
   });
 
-  // @gate !disableLegacyMode
-  it('renders synchronously by default in legacy mode', () => {
-    const ops = [];
-    ReactDOM.render(<div>Hi</div>, container, () => {
-      ops.push(container.textContent);
-    });
-    ReactDOM.render(<div>Bye</div>, container, () => {
-      ops.push(container.textContent);
-    });
-    expect(ops).toEqual(['Hi', 'Bye']);
-  });
-
   it('flushSync batches sync updates and flushes them at the end of the batch', async () => {
     const ops = [];
     let instance;

@@ -66,6 +66,13 @@ describe('ReactUpdates', () => {
     );
   }
 
+  it('unstable_batchedUpdates should return value from a callback', () => {
+    const result = ReactDOM.unstable_batchedUpdates(function () {
+      return 42;
+    });
+    expect(result).toEqual(42);
+  });
+
   it('should batch state when updating state twice', async () => {
     let componentState;
     let setState;
@@ -1347,6 +1354,128 @@ describe('ReactUpdates', () => {
     expect(container.textContent).toBe('');
   });
 
+  it(
+    'updates in componentWillUpdate and componentDidUpdate ' +
+      'should both flush in the immediately subsequent commit',
+    async () => {
+      const ops = [];
+      class Foo extends React.Component {
+        state = {a: false, b: false};
+        UNSAFE_componentWillUpdate(_, nextState) {
+          if (!nextState.a) {
+            this.setState({a: true});
+          }
+        }
+        componentDidUpdate() {
+          ops.push('Foo updated');
+          if (!this.state.b) {
+            this.setState({b: true});
+          }
+        }
+        render() {
+          ops.push(`a: ${this.state.a}, b: ${this.state.b}`);
+          return null;
+        }
+      }
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      // Mount
+      await act(() => {
+        root.render(<Foo />);
+      });
+      // Root update
+      await act(() => {
+        root.render(<Foo />);
+      });
+      expect(ops).toEqual([
+        // Mount
+        'a: false, b: false',
+        // Root update
+        'a: false, b: false',
+        'Foo updated',
+        // Subsequent update (both a and b should have flushed)
+        'a: true, b: true',
+        'Foo updated',
+        // There should not be any additional updates
+      ]);
+    },
+  );
+
+  it(
+    'updates in componentWillUpdate and componentDidUpdate ' +
+      '(on a sibling) should both flush in the immediately subsequent commit',
+    async () => {
+      const ops = [];
+      class Foo extends React.Component {
+        state = {a: false};
+        UNSAFE_componentWillUpdate(_, nextState) {
+          if (!nextState.a) {
+            this.setState({a: true});
+          }
+        }
+        componentDidUpdate() {
+          ops.push('Foo updated');
+        }
+        render() {
+          ops.push(`a: ${this.state.a}`);
+          return null;
+        }
+      }
+
+      class Bar extends React.Component {
+        state = {b: false};
+        componentDidUpdate() {
+          ops.push('Bar updated');
+          if (!this.state.b) {
+            this.setState({b: true});
+          }
+        }
+        render() {
+          ops.push(`b: ${this.state.b}`);
+          return null;
+        }
+      }
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      // Mount
+      await act(() => {
+        root.render(
+          <div>
+            <Foo />
+            <Bar />
+          </div>,
+        );
+      });
+      // Root update
+      await act(() => {
+        root.render(
+          <div>
+            <Foo />
+            <Bar />
+          </div>,
+        );
+      });
+      expect(ops).toEqual([
+        // Mount
+        'a: false',
+        'b: false',
+        // Root update
+        'a: false',
+        'b: false',
+        'Foo updated',
+        'Bar updated',
+        // Subsequent update (both a and b should have flushed)
+        'a: true',
+        'b: true',
+        'Foo updated',
+        'Bar updated',
+        // There should not be any additional updates
+      ]);
+    },
+  );
+
   it('uses correct base state for setState inside render phase', async () => {
     class Foo extends React.Component {
       state = {step: 0};
@@ -1621,6 +1750,78 @@ describe('ReactUpdates', () => {
         root.render(<NonTerminating />);
       });
     }).rejects.toThrow('Maximum');
+  });
+
+  it('does not fall into an infinite update loop with setState in componentWillUpdate', async () => {
+    let shouldStop = false;
+    // Safety net so the test can't spin if no error is ever reported.
+    let updateCount = 0;
+    const maxUpdates = 1000;
+    class NonTerminating extends React.Component {
+      state = {step: 0};
+      componentDidMount() {
+        this.setState({step: 1});
+      }
+      UNSAFE_componentWillUpdate() {
+        if (!shouldStop && ++updateCount < maxUpdates) {
+          this.setState({step: 2});
+        }
+      }
+      render() {
+        return (
+          <div>
+            Hello {this.props.name}
+            {this.state.step}
+          </div>
+        );
+      }
+    }
+
+    const container = document.createElement('div');
+    const errors = [];
+    const captureError = error => {
+      errors.push(error);
+      // Stop scheduling updates so the recoverable variant can terminate.
+      shouldStop = true;
+    };
+    const root = ReactDOMClient.createRoot(container, {
+      onUncaughtError: captureError,
+      onRecoverableError: captureError,
+      onCaughtError: captureError,
+    });
+
+    await act(() => {
+      root.render(<NonTerminating />);
+    });
+
+    expect(updateCount).toBeLessThan(maxUpdates);
+    expect(errors.length).toBe(1);
+    if (
+      gate(
+        flags =>
+          flags.enableInfiniteRenderLoopDetection &&
+          flags.enableInfiniteRenderLoopDetectionForceThrow,
+      )
+    ) {
+      expect(errors[0].message).toContain(
+        'Maximum update depth exceeded. This could be an infinite loop.',
+      );
+      expect(container.textContent).toBe('');
+    } else {
+      // Unlike legacy roots, concurrent roots retry the render synchronously
+      // after the error, starting from a reset update count, so the error is
+      // only reported as recoverable and the loop resumes until shouldStop.
+      expect(errors[0].message).toContain(
+        'There was an error during concurrent rendering but React was able ' +
+          'to recover by instead synchronously rendering the entire root.',
+      );
+      expect(errors[0].cause.message).toContain(
+        'Maximum update depth exceeded. This can happen when a component ' +
+          'repeatedly calls setState inside componentWillUpdate or ' +
+          'componentDidUpdate.',
+      );
+      expect(container.textContent).toBe('Hello 2');
+    }
   });
 
   it('does not fall into an infinite update loop with useLayoutEffect', async () => {
