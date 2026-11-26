@@ -563,7 +563,7 @@ export function createRenderState(
         rel: 'preload',
         as: 'script',
         fetchPriority: 'low',
-        nonce,
+        nonce: nonceScript,
       } as any;
       if (typeof scriptConfig === 'string') {
         props.href = src = scriptConfig;
