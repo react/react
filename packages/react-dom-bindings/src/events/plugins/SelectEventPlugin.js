@@ -163,7 +163,8 @@ function extractEvents(
     case 'focusin':
       if (
         isTextInputElement(targetNode as any) ||
-        targetNode.contentEditable === 'true'
+        targetNode.contentEditable === 'true' ||
+        targetNode.contentEditable === 'plaintext-only'
       ) {
         activeElement = targetNode;
         activeElementInst = targetInst;

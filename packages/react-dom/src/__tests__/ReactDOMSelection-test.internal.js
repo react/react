@@ -129,6 +129,36 @@ describe('ReactDOMSelection', () => {
     return container.firstChild;
   }
 
+  it.each(['true', 'plaintext-only'])(
+    'captures selection information for contentEditable="%s"',
+    contentEditable => {
+      const {
+        getSelectionInformation,
+      } = require('react-dom-bindings/src/client/ReactInputSelection');
+      const node = document.createElement('div');
+      node.contentEditable = contentEditable;
+      node.tabIndex = 0;
+      node.textContent = 'Editable text';
+      document.body.appendChild(node);
+      try {
+        node.focus();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.setStart(node.firstChild, 2);
+        range.setEnd(node.firstChild, 6);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        expect(getSelectionInformation(document)).toEqual({
+          focusedElem: node,
+          selectionRange: {start: 2, end: 6},
+        });
+      } finally {
+        node.remove();
+      }
+    },
+  );
+
   it('returns correctly for base case', () => {
     const node = document.createElement('div');
     expect(getModernOffsetsFromPoints(node, node, 0, node, 0)).toEqual({

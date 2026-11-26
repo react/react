@@ -195,6 +195,48 @@ describe('SelectEventPlugin', () => {
     expect(select).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['true', 'plaintext-only'])(
+    'should fire onSelect for contentEditable="%s"',
+    async contentEditable => {
+      const onSelect = jest.fn();
+      const onSelectCapture = jest.fn();
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div
+            contentEditable={contentEditable}
+            suppressContentEditableWarning={true}
+            tabIndex={0}
+            onSelect={onSelect}
+            onSelectCapture={onSelectCapture}>
+            Select this text
+          </div>,
+        );
+      });
+      const node = container.firstChild;
+      // JSDOM does not reflect the contenteditable attribute as a property.
+      node.contentEditable = contentEditable;
+      node.focus();
+
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.setStart(node.firstChild, 0);
+      range.setEnd(node.firstChild, 6);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+
+      expect(onSelect).toHaveBeenCalledTimes(1);
+      expect(onSelectCapture).toHaveBeenCalledTimes(1);
+      expect(onSelect.mock.calls[0][0].target).toBe(node);
+
+      document.dispatchEvent(new Event('selectionchange'));
+      expect(onSelect).toHaveBeenCalledTimes(1);
+
+      selection.removeAllRanges();
+    },
+  );
+
   it('should handle selectionchange events', async function () {
     const onSelect = jest.fn();
 
