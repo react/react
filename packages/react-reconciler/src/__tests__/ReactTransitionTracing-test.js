@@ -2031,6 +2031,98 @@ describe('ReactInteractionTracing', () => {
   });
 
   // @gate enableTransitionTracing
+  it('background transitions report in progress boundaries and final markers', async () => {
+    const transitionCallbacks = {
+      onTransitionStart: (name, startTime) => {
+        Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
+      },
+      onTransitionProgress: (name, startTime, endTime, pending) => {
+        const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
+        Scheduler.log(
+          `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
+        );
+      },
+      onTransitionComplete: (name, startTime, endTime) => {
+        Scheduler.log(
+          `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
+        );
+      },
+      onMarkerProgress: (
+        transitionName,
+        markerName,
+        startTime,
+        currentTime,
+        pending,
+      ) => {
+        const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
+        Scheduler.log(
+          `onMarkerProgress(${transitionName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
+        );
+      },
+      onMarkerIncomplete: (
+        transitionName,
+        markerName,
+        startTime,
+        deletions,
+      ) => {
+        Scheduler.log(
+          `onMarkerIncomplete(${transitionName}, ${markerName}, ${startTime}, [${stringifyDeletions(
+            deletions,
+          )}])`,
+        );
+      },
+      onMarkerComplete: (transitionName, markerName, startTime, endTime) => {
+        Scheduler.log(
+          `onMarkerComplete(${transitionName}, ${markerName}, ${startTime}, ${endTime})`,
+        );
+      },
+    };
+
+    function App({text}) {
+      return (
+        <React.unstable_TracingMarker name="parent">
+          <Suspense name="appended child">
+            <AsyncText text={text} />
+            <React.unstable_TracingMarker name="child" />
+          </Suspense>
+        </React.unstable_TracingMarker>
+      );
+    }
+
+    const root = ReactNoop.createRoot({
+      unstable_transitionCallbacks: transitionCallbacks,
+    });
+
+    await act(async () => {
+      root.render(<App text="One" />);
+      ReactNoop.expire(1000);
+      await advanceTimers(1000);
+    });
+
+    assertLog(['Suspend [One]', 'Suspend [One]']);
+    await act(async () => {
+      startTransition(() => root.render(<App text="Two" />), {
+        name: 'transition',
+      });
+    });
+
+    assertLog([
+      'Suspend [Two]',
+      'Suspend [Two]',
+      'onTransitionStart(transition, 1000)',
+      'onTransitionComplete(transition, 1000, 1000)',
+    ]);
+
+    await act(async () => {
+      ReactNoop.expire(2000);
+      await advanceTimers(2000);
+      await resolveText('Two');
+    });
+
+    assertLog(['Two']);
+  });
+
+  // @gate enableTransitionTracing
   it('marker incomplete gets called properly if child suspense marker is not part of it', async () => {
     const transitionCallbacks = {
       onTransitionStart: (name, startTime) => {
