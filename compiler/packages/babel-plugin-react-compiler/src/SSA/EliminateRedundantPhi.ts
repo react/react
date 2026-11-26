@@ -11,6 +11,8 @@ import {
   GeneratedSource,
   HIRFunction,
   Identifier,
+  InstructionKind,
+  Phi,
   Place,
 } from '../HIR/HIR';
 import {
@@ -104,7 +106,10 @@ export function eliminateRedundantPhi(
           reason: 'Expected phis to be non-empty',
           loc: GeneratedSource,
         });
-        rewrites.set(phi.place.identifier, same);
+        rewrites.set(
+          phi.place.identifier,
+          (phi.operands.size === 1 ? storedTemporary(fn, phi) : null) ?? same,
+        );
         block.phis.delete(phi);
       }
 
@@ -164,6 +169,28 @@ export function eliminateRedundantPhi(
       }
     }
   }
+}
+
+/*
+ * A conditional's branches each store their value into one result temporary,
+ * which the join's phi reads. Once only one branch reaches the join, that
+ * temporary is a copy of the branch's value, itself a temporary: read the value
+ * instead, so dead code elimination drops the copy rather than leaving it to be
+ * emitted as a variable.
+ */
+function storedTemporary(fn: HIRFunction, phi: Phi): Identifier | null {
+  const [[pred, operand]] = phi.operands;
+  const store = fn.body.blocks.get(pred)?.instructions.at(-1)?.value;
+  if (
+    store?.kind === 'StoreLocal' &&
+    store.lvalue.kind === InstructionKind.Const &&
+    store.lvalue.place.identifier.id === operand.identifier.id &&
+    operand.identifier.name === null &&
+    store.value.identifier.name === null
+  ) {
+    return store.value.identifier;
+  }
+  return null;
 }
 
 function rewritePlace(
