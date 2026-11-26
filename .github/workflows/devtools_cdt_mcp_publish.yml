@@ -65,7 +65,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           # Modern Node.js ships with npm that supports trusted publishing.
-          node-version: '24'
+          node-version: '26'
           registry-url: https://registry.npmjs.org
       - name: Restore cached node_modules
         uses: actions/cache/restore@v4

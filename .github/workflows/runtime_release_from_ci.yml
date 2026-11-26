@@ -132,7 +132,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           # Using modern Node.js that ships with NPM supporting trusted publishing
-          node-version: "24"
+          node-version: "26"
       # scripts/release is the only thing this job actually needs to run —
       # publish.js and prepare-release-from-ci.js both live there and use its
       # own node_modules. Cache is owned by this workflow (this is the only
