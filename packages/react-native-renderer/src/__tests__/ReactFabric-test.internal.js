@@ -547,33 +547,6 @@ describe('ReactFabric', () => {
     expect(c).toBe(null);
   });
 
-  // @gate !disableLegacyMode
-  it('returns the instance in legacy mode and calls the callback with it', () => {
-    const View = createReactNativeComponentClass('RCTView', () => ({
-      validAttributes: {foo: true},
-      uiViewClassName: 'RCTView',
-    }));
-
-    let a;
-    let b;
-    const c = ReactFabric.render(
-      <View
-        foo="foo"
-        ref={v => {
-          a = v;
-        }}
-      />,
-      11,
-      function () {
-        b = this;
-      },
-    );
-
-    expect(a).toBeTruthy();
-    expect(a).toBe(b);
-    expect(a).toBe(c);
-  });
-
   it('renders and reorders children', async () => {
     const View = createReactNativeComponentClass('RCTView', () => ({
       validAttributes: {title: true},

@@ -25,6 +25,7 @@ import {
   processStringChunk,
   processBinaryChunk,
   close,
+  resolveLedgerTotals,
 } from 'react-client/src/ReactFlightClient';
 
 import {createServerReference as createServerReferenceImpl} from 'react-client/src/ReactFlightReplyClient';
@@ -131,8 +132,12 @@ function createFromNodeStream<T>(
         close(response);
       }
     };
+    const handleMainEnd = () => {
+      resolveLedgerTotals(response);
+      handleEnd();
+    };
     startReadingFromStream(response, options.debugChannel, handleEnd);
-    startReadingFromStream(response, stream, handleEnd);
+    startReadingFromStream(response, stream, handleMainEnd);
   } else {
     startReadingFromStream(response, stream, close.bind(null, response));
   }

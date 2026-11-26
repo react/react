@@ -928,16 +928,6 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     }).not.toThrow();
   });
 
-  // @gate enableLegacyCache && !disableLegacyMode
-  it('in legacy mode, errors when an update suspends without a Suspense boundary during a sync update', async () => {
-    const root = ReactNoop.createLegacyRoot();
-    await expect(async () => {
-      await act(() => root.render(<AsyncText text="Async" />));
-    }).rejects.toThrow(
-      'A component suspended while responding to synchronous input.',
-    );
-  });
-
   // @gate enableLegacyCache
   it('a Suspense component correctly handles more than one suspended child', async () => {
     ReactNoop.render(
@@ -1085,629 +1075,105 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
-  describe('legacy mode mode', () => {
-    // @gate enableLegacyCache && !disableLegacyMode
-    it('times out immediately', async () => {
-      function App() {
-        return (
-          <Suspense fallback={<Text text="Loading..." />}>
-            <AsyncText text="Result" />
-          </Suspense>
-        );
-      }
+  // @gate enableLegacyCache
+  it('hides/unhides suspended children before layout effects fire', async () => {
+    const {useLayoutEffect} = React;
 
-      // Times out immediately, ignoring the specified threshold.
-      ReactNoop.renderLegacySyncRoot(<App />);
-      assertLog(['Suspend! [Result]', 'Loading...']);
-      expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+    // Keep the node outside of the ref, because refs are detached when a
+    // tree is hidden.
+    let node = null;
 
-      await act(() => {
-        resolveText('Result');
+    // A sibling that renders before the boundary. Its layout effect fires
+    // after the boundary's mutation phase, but before the layout phase
+    // reaches the boundary.
+    function Reader({text}) {
+      useLayoutEffect(() => {
+        if (node === null) {
+          // On mount, this runs before the span's ref is attached.
+          return;
+        }
+        if (global.__PERSISTENT__) {
+          Scheduler.log(ReactNoop.getPendingChildrenAsJSX());
+        } else {
+          Scheduler.log('Child is hidden: ' + node.hidden);
+        }
       });
-
-      assertLog(['Result']);
-      expect(ReactNoop).toMatchRenderedOutput(<span prop="Result" />);
-    });
-
-    // @gate enableLegacyCache && !disableLegacyMode
-    it('times out immediately when Suspense is in legacy mode', async () => {
-      class UpdatingText extends React.Component {
-        state = {step: 1};
-        render() {
-          return <AsyncText text={`Step: ${this.state.step}`} />;
-        }
-      }
-
-      function Spinner() {
-        return (
-          <Fragment>
-            <Text text="Loading (1)" />
-            <Text text="Loading (2)" />
-            <Text text="Loading (3)" />
-          </Fragment>
-        );
-      }
-
-      const text = React.createRef(null);
-      function App() {
-        return (
-          <Suspense fallback={<Spinner />}>
-            <UpdatingText ref={text} />
-            <Text text="Sibling" />
-          </Suspense>
-        );
-      }
-
-      // Initial mount.
-      await seedNextTextCache('Step: 1');
-      ReactNoop.renderLegacySyncRoot(<App />);
-      assertLog(['Step: 1', 'Sibling']);
-      expect(ReactNoop).toMatchRenderedOutput(
-        <>
-          <span prop="Step: 1" />
-          <span prop="Sibling" />
-        </>,
-      );
-
-      // Update.
-      text.current.setState({step: 2}, () =>
-        Scheduler.log('Update did commit'),
-      );
-
-      expect(ReactNoop.flushNextYield()).toEqual([
-        'Suspend! [Step: 2]',
-        'Loading (1)',
-        'Loading (2)',
-        'Loading (3)',
-        'Update did commit',
-      ]);
-      expect(ReactNoop).toMatchRenderedOutput(
-        <>
-          <span hidden={true} prop="Step: 1" />
-          <span hidden={true} prop="Sibling" />
-          <span prop="Loading (1)" />
-          <span prop="Loading (2)" />
-          <span prop="Loading (3)" />
-        </>,
-      );
-
-      await act(() => {
-        resolveText('Step: 2');
-      });
-      assertLog(['Step: 2']);
-      expect(ReactNoop).toMatchRenderedOutput(
-        <>
-          <span prop="Step: 2" />
-          <span prop="Sibling" />
-        </>,
-      );
-    });
-
-    // @gate enableLegacyCache && !disableLegacyMode
-    it('does not re-render siblings in loose mode', async () => {
-      class TextWithLifecycle extends React.Component {
-        componentDidMount() {
-          Scheduler.log(`Mount [${this.props.text}]`);
-        }
-        componentDidUpdate() {
-          Scheduler.log(`Update [${this.props.text}]`);
-        }
-        render() {
-          return <Text {...this.props} />;
-        }
-      }
-
-      class AsyncTextWithLifecycle extends React.Component {
-        componentDidMount() {
-          Scheduler.log(`Mount [${this.props.text}]`);
-        }
-        componentDidUpdate() {
-          Scheduler.log(`Update [${this.props.text}]`);
-        }
-        render() {
-          return <AsyncText {...this.props} />;
-        }
-      }
-
-      function App() {
-        return (
-          <Suspense fallback={<TextWithLifecycle text="Loading..." />}>
-            <TextWithLifecycle text="A" />
-            <AsyncTextWithLifecycle text="B" />
-            <TextWithLifecycle text="C" />
-          </Suspense>
-        );
-      }
-
-      ReactNoop.renderLegacySyncRoot(<App />, () =>
-        Scheduler.log('Commit root'),
-      );
-      assertLog([
-        'A',
-        'Suspend! [B]',
-        'C',
-
-        'Loading...',
-        'Mount [A]',
-        'Mount [B]',
-        'Mount [C]',
-        // This should be a mount, not an update.
-        'Mount [Loading...]',
-        'Commit root',
-      ]);
-      expect(ReactNoop).toMatchRenderedOutput(
-        <>
-          <span hidden={true} prop="A" />
-          <span hidden={true} prop="C" />
-
-          <span prop="Loading..." />
-        </>,
-      );
-
-      await act(() => {
-        resolveText('B');
-      });
-
-      assertLog(['B']);
-      expect(ReactNoop).toMatchRenderedOutput(
-        <>
-          <span prop="A" />
-          <span prop="B" />
-          <span prop="C" />
-        </>,
-      );
-    });
-
-    // @gate enableLegacyCache && !disableLegacyMode
-    it('suspends inside constructor', async () => {
-      class AsyncTextInConstructor extends React.Component {
-        constructor(props) {
-          super(props);
-          const text = props.text;
-          Scheduler.log('constructor');
-          readText(text);
-          this.state = {text};
-        }
-        componentDidMount() {
-          Scheduler.log('componentDidMount');
-        }
-        render() {
-          Scheduler.log(this.state.text);
-          return <span prop={this.state.text} />;
-        }
-      }
-
-      ReactNoop.renderLegacySyncRoot(
-        <Suspense fallback={<Text text="Loading..." />}>
-          <AsyncTextInConstructor text="Hi" />
-        </Suspense>,
-      );
-
-      assertLog(['constructor', 'Suspend! [Hi]', 'Loading...']);
-      expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
-
-      await act(() => {
-        resolveText('Hi');
-      });
-
-      assertLog(['constructor', 'Hi', 'componentDidMount']);
-      expect(ReactNoop).toMatchRenderedOutput(<span prop="Hi" />);
-    });
-
-    // @gate enableLegacyCache && !disableLegacyMode
-    it('does not infinite loop if fallback contains lifecycle method', async () => {
-      class Fallback extends React.Component {
-        state = {
-          name: 'foo',
-        };
-        componentDidMount() {
-          this.setState({
-            name: 'bar',
-          });
-        }
-        render() {
-          return <Text text="Loading..." />;
-        }
-      }
-
-      class Demo extends React.Component {
-        render() {
-          return (
-            <Suspense fallback={<Fallback />}>
-              <AsyncText text="Hi" />
-            </Suspense>
-          );
-        }
-      }
-
-      ReactNoop.renderLegacySyncRoot(<Demo />);
-
-      assertLog([
-        'Suspend! [Hi]',
-        'Loading...',
-        // Re-render due to lifecycle update
-        'Loading...',
-      ]);
-      expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
-      await act(() => {
-        resolveText('Hi');
-      });
-      assertLog(['Hi']);
-      expect(ReactNoop).toMatchRenderedOutput(<span prop="Hi" />);
-    });
-
-    if (global.__PERSISTENT__) {
-      // @gate enableLegacyCache && !disableLegacyMode
-      it('hides/unhides suspended children before layout effects fire (persistent)', async () => {
-        const {useRef, useLayoutEffect} = React;
-
-        function Parent() {
-          const child = useRef(null);
-
-          useLayoutEffect(() => {
-            Scheduler.log(ReactNoop.getPendingChildrenAsJSX());
-          });
-
-          return (
-            <span ref={child} hidden={false}>
-              <AsyncText text="Hi" />
-            </span>
-          );
-        }
-
-        function App(props) {
-          return (
-            <Suspense fallback={<Text text="Loading..." />}>
-              <Parent />
-            </Suspense>
-          );
-        }
-
-        ReactNoop.renderLegacySyncRoot(<App middleText="B" />);
-
-        assertLog([
-          'Suspend! [Hi]',
-          'Loading...',
-          // The child should have already been hidden
-          <>
-            <span hidden={true} />
-            <span prop="Loading..." />
-          </>,
-        ]);
-
-        await act(() => {
-          resolveText('Hi');
-        });
-        assertLog(['Hi']);
-      });
-    } else {
-      // @gate enableLegacyCache && !disableLegacyMode
-      it('hides/unhides suspended children before layout effects fire (mutation)', async () => {
-        const {useRef, useLayoutEffect} = React;
-
-        function Parent() {
-          const child = useRef(null);
-
-          useLayoutEffect(() => {
-            Scheduler.log('Child is hidden: ' + child.current.hidden);
-          });
-
-          return (
-            <span ref={child} hidden={false}>
-              <AsyncText text="Hi" />
-            </span>
-          );
-        }
-
-        function App(props) {
-          return (
-            <Suspense fallback={<Text text="Loading..." />}>
-              <Parent />
-            </Suspense>
-          );
-        }
-
-        ReactNoop.renderLegacySyncRoot(<App middleText="B" />);
-
-        assertLog([
-          'Suspend! [Hi]',
-          'Loading...',
-          // The child should have already been hidden
-          'Child is hidden: true',
-        ]);
-
-        await act(() => {
-          resolveText('Hi');
-        });
-
-        assertLog(['Hi']);
-      });
-    }
-
-    // @gate enableLegacyCache && !disableLegacyMode
-    it('handles errors in the return path of a component that suspends', async () => {
-      // Covers an edge case where an error is thrown inside the complete phase
-      // of a component that is in the return path of a component that suspends.
-      // The second error should also be handled (i.e. able to be captured by
-      // an error boundary.
-      class ErrorBoundary extends React.Component {
-        state = {error: null};
-        static getDerivedStateFromError(error, errorInfo) {
-          return {error};
-        }
-        render() {
-          if (this.state.error) {
-            return `Caught an error: ${this.state.error.message}`;
-          }
-          return this.props.children;
-        }
-      }
-
-      ReactNoop.renderLegacySyncRoot(
-        <ErrorBoundary>
-          <Suspense fallback="Loading...">
-            <errorInCompletePhase>
-              <AsyncText text="Async" />
-            </errorInCompletePhase>
-          </Suspense>
-        </ErrorBoundary>,
-      );
-
-      assertLog(['Suspend! [Async]']);
-      expect(ReactNoop).toMatchRenderedOutput(
-        'Caught an error: Error in host config.',
-      );
-    });
-
-    // @gate !disableLegacyMode
-    it('does not drop mounted effects', async () => {
-      const never = {then() {}};
-
-      let setShouldSuspend;
-      function App() {
-        const [shouldSuspend, _setShouldSuspend] = React.useState(0);
-        setShouldSuspend = _setShouldSuspend;
-        return (
-          <Suspense fallback="Loading...">
-            <Child shouldSuspend={shouldSuspend} />
-          </Suspense>
-        );
-      }
-
-      function Child({shouldSuspend}) {
-        if (shouldSuspend) {
-          throw never;
-        }
-
-        React.useEffect(() => {
-          Scheduler.log('Mount');
-          return () => {
-            Scheduler.log('Unmount');
-          };
-        }, []);
-
-        return 'Child';
-      }
-
-      const root = ReactNoop.createLegacyRoot(null);
-      await act(() => {
-        root.render(<App />);
-      });
-      assertLog(['Mount']);
-      expect(root).toMatchRenderedOutput('Child');
-
-      // Suspend the child. This puts it into an inconsistent state.
-      await act(() => {
-        setShouldSuspend(true);
-      });
-      expect(root).toMatchRenderedOutput('Loading...');
-
-      // Unmount everything
-      await act(() => {
-        root.render(null);
-      });
-      assertLog(['Unmount']);
-    });
-  });
-
-  // @gate enableLegacyCache && !disableLegacyMode
-  it('does not call lifecycles of a suspended component', async () => {
-    class TextWithLifecycle extends React.Component {
-      componentDidMount() {
-        Scheduler.log(`Mount [${this.props.text}]`);
-      }
-      componentDidUpdate() {
-        Scheduler.log(`Update [${this.props.text}]`);
-      }
-      componentWillUnmount() {
-        Scheduler.log(`Unmount [${this.props.text}]`);
-      }
-      render() {
-        return <Text {...this.props} />;
-      }
-    }
-
-    class AsyncTextWithLifecycle extends React.Component {
-      componentDidMount() {
-        Scheduler.log(`Mount [${this.props.text}]`);
-      }
-      componentDidUpdate() {
-        Scheduler.log(`Update [${this.props.text}]`);
-      }
-      componentWillUnmount() {
-        Scheduler.log(`Unmount [${this.props.text}]`);
-      }
-      render() {
-        const text = this.props.text;
-        readText(text);
-        Scheduler.log(text);
-        return <span prop={text} />;
-      }
-    }
-
-    function App() {
-      return (
-        <Suspense fallback={<TextWithLifecycle text="Loading..." />}>
-          <TextWithLifecycle text="A" />
-          <AsyncTextWithLifecycle text="B" />
-          <TextWithLifecycle text="C" />
-        </Suspense>
-      );
-    }
-
-    ReactNoop.renderLegacySyncRoot(<App />, () => Scheduler.log('Commit root'));
-    assertLog([
-      'A',
-      'Suspend! [B]',
-      'C',
-      'Loading...',
-
-      'Mount [A]',
-      // B's lifecycle should not fire because it suspended
-      // 'Mount [B]',
-      'Mount [C]',
-      'Mount [Loading...]',
-      'Commit root',
-    ]);
-    expect(ReactNoop).toMatchRenderedOutput(
-      <>
-        <span hidden={true} prop="A" />
-        <span hidden={true} prop="C" />
-        <span prop="Loading..." />
-      </>,
-    );
-  });
-
-  // @gate enableLegacyCache && !disableLegacyMode
-  it('does not call lifecycles of a suspended component (hooks)', async () => {
-    function TextWithLifecycle(props) {
-      React.useLayoutEffect(() => {
-        Scheduler.log(`Layout Effect [${props.text}]`);
-        return () => {
-          Scheduler.log(`Destroy Layout Effect [${props.text}]`);
-        };
-      }, [props.text]);
-      React.useEffect(() => {
-        Scheduler.log(`Effect [${props.text}]`);
-        return () => {
-          Scheduler.log(`Destroy Effect [${props.text}]`);
-        };
-      }, [props.text]);
-      return <Text {...props} />;
-    }
-
-    function AsyncTextWithLifecycle(props) {
-      React.useLayoutEffect(() => {
-        Scheduler.log(`Layout Effect [${props.text}]`);
-        return () => {
-          Scheduler.log(`Destroy Layout Effect [${props.text}]`);
-        };
-      }, [props.text]);
-      React.useEffect(() => {
-        Scheduler.log(`Effect [${props.text}]`);
-        return () => {
-          Scheduler.log(`Destroy Effect [${props.text}]`);
-        };
-      }, [props.text]);
-      const text = props.text;
-      readText(text);
-      Scheduler.log(text);
-      return <span prop={text} />;
+      return null;
     }
 
     function App({text}) {
       return (
-        <Suspense fallback={<TextWithLifecycle text="Loading..." />}>
-          <TextWithLifecycle text="A" />
-          <AsyncTextWithLifecycle text={text} />
-          <TextWithLifecycle text="C" />
-        </Suspense>
+        <>
+          <Reader text={text} />
+          <Suspense fallback={<Text text="Loading..." />}>
+            <span
+              ref={n => {
+                if (n) {
+                  node = n;
+                }
+              }}
+              hidden={false}>
+              <AsyncText text={text} />
+            </span>
+          </Suspense>
+        </>
       );
     }
 
-    ReactNoop.renderLegacySyncRoot(<App text="B" />, () =>
-      Scheduler.log('Commit root'),
-    );
-    assertLog([
-      'A',
-      'Suspend! [B]',
-      'C',
-      'Loading...',
-
-      'Layout Effect [A]',
-      // B's effect should not fire because it suspended
-      // 'Layout Effect [B]',
-      'Layout Effect [C]',
-      'Layout Effect [Loading...]',
-      'Commit root',
-    ]);
-
-    // Flush passive effects.
-    await waitForAll([
-      'Effect [A]',
-      // B's effect should not fire because it suspended
-      // 'Effect [B]',
-      'Effect [C]',
-      'Effect [Loading...]',
-    ]);
-
+    seedNextTextCache('A');
+    await act(() => {
+      ReactNoop.render(<App text="A" />);
+    });
+    assertLog(['A']);
     expect(ReactNoop).toMatchRenderedOutput(
-      <>
-        <span hidden={true} prop="A" />
-        <span hidden={true} prop="C" />
-        <span prop="Loading..." />
-      </>,
+      <span>
+        <span prop="A" />
+      </span>,
     );
 
+    // Suspend without a transition, so the boundary hides its children.
     await act(() => {
-      resolveText('B');
+      ReactNoop.render(<App text="B" />);
     });
-
     assertLog([
-      'B',
-      'Destroy Layout Effect [Loading...]',
-      'Layout Effect [B]',
-      'Destroy Effect [Loading...]',
-      'Effect [B]',
+      'Suspend! [B]',
+      'Loading...',
+      // The child should have already been hidden
+      global.__PERSISTENT__ ? (
+        <>
+          <span hidden={true}>
+            <span prop="A" />
+          </span>
+          <span prop="Loading..." />
+        </>
+      ) : (
+        'Child is hidden: true'
+      ),
+      // pre-warming
+      'Suspend! [B]',
     ]);
 
-    // Update
-    ReactNoop.renderLegacySyncRoot(<App text="B2" />, () =>
-      Scheduler.log('Commit root'),
-    );
-
+    // Switch back to the cached text, so the boundary unhides its children
+    // in the same commit that re-runs the reader's layout effect.
+    await act(() => {
+      ReactNoop.render(<App text="A" />);
+    });
     assertLog([
       'A',
-      'Suspend! [B2]',
-      'C',
-      'Loading...',
-
-      // B2's effect should not fire because it suspended
-      // 'Layout Effect [B2]',
-      'Layout Effect [Loading...]',
-      'Commit root',
+      // The child should have already been unhidden
+      global.__PERSISTENT__ ? (
+        <span>
+          <span prop="A" />
+        </span>
+      ) : (
+        'Child is hidden: false'
+      ),
     ]);
-
-    // Flush passive effects.
-    await waitForAll([
-      // B2's effect should not fire because it suspended
-      // 'Effect [B2]',
-      'Effect [Loading...]',
-    ]);
-
-    await act(() => {
-      resolveText('B2');
-    });
-
-    assertLog([
-      'B2',
-      'Destroy Layout Effect [Loading...]',
-      'Destroy Layout Effect [B]',
-      'Layout Effect [B2]',
-      'Destroy Effect [Loading...]',
-      'Destroy Effect [B]',
-      'Effect [B2]',
-    ]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span>
+        <span prop="A" />
+      </span>,
+    );
   });
 
   // @gate enableLegacyCache
@@ -3931,54 +3397,6 @@ describe('ReactSuspenseWithNoopRenderer', () => {
       // pre-warming
       'Suspend! [Async]',
     ]);
-    expect(root).toMatchRenderedOutput(
-      <>
-        <span hidden={true} prop="Child" />
-        <span prop="Loading..." />
-      </>,
-    );
-
-    await act(() => {
-      root.render(null);
-    });
-    assertLog(['Unmount Child']);
-  });
-
-  // @gate enableLegacyCache && !disableLegacyMode
-  it('should fire effect clean-up when deleting suspended tree (legacy)', async () => {
-    const {useEffect} = React;
-
-    function App({show}) {
-      return (
-        <Suspense fallback={<Text text="Loading..." />}>
-          <Child />
-          {show && <AsyncText text="Async" />}
-        </Suspense>
-      );
-    }
-
-    function Child() {
-      useEffect(() => {
-        Scheduler.log('Mount Child');
-        return () => {
-          Scheduler.log('Unmount Child');
-        };
-      }, []);
-      return <span prop="Child" />;
-    }
-
-    const root = ReactNoop.createLegacyRoot();
-
-    await act(() => {
-      root.render(<App show={false} />);
-    });
-    assertLog(['Mount Child']);
-    expect(root).toMatchRenderedOutput(<span prop="Child" />);
-
-    await act(() => {
-      root.render(<App show={true} />);
-    });
-    assertLog(['Suspend! [Async]', 'Loading...']);
     expect(root).toMatchRenderedOutput(
       <>
         <span hidden={true} prop="Child" />

@@ -184,66 +184,6 @@ describe('ReactFlushSync', () => {
     });
   });
 
-  // @gate !disableLegacyMode
-  it('does not flush passive effects synchronously after render in legacy mode', async () => {
-    function App() {
-      useEffect(() => {
-        Scheduler.log('Effect');
-      }, []);
-      return <Text text="Child" />;
-    }
-
-    const container = document.createElement('div');
-    await act(() => {
-      ReactDOM.flushSync(() => {
-        ReactDOM.render(<App />, container);
-      });
-      assertLog([
-        'Child',
-        // Because we're in legacy mode, we shouldn't have flushed the passive
-        // effects yet.
-      ]);
-      expect(getVisibleChildren(container)).toEqual('Child');
-    });
-    // Effect flushes after paint.
-    assertLog(['Effect']);
-  });
-
-  // @gate !disableLegacyMode
-  it('flushes pending passive effects before scope is called in legacy mode', async () => {
-    let currentStep = 0;
-
-    function App({step}) {
-      useEffect(() => {
-        currentStep = step;
-        Scheduler.log('Effect: ' + step);
-      }, [step]);
-      return <Text text={step} />;
-    }
-
-    const container = document.createElement('div');
-    await act(() => {
-      ReactDOM.flushSync(() => {
-        ReactDOM.render(<App step={1} />, container);
-      });
-      assertLog([
-        1,
-        // Because we're in legacy mode, we shouldn't have flushed the passive
-        // effects yet.
-      ]);
-      expect(getVisibleChildren(container)).toEqual('1');
-
-      ReactDOM.flushSync(() => {
-        // This should render step 2 because the passive effect has already
-        // fired, before the scope function is called.
-        ReactDOM.render(<App step={currentStep + 1} />, container);
-      });
-      assertLog(['Effect: 1', 2]);
-      expect(getVisibleChildren(container)).toEqual('2');
-    });
-    assertLog(['Effect: 2']);
-  });
-
   it("does not flush passive effects synchronously when they aren't the result of a sync render", async () => {
     function App() {
       useEffect(() => {

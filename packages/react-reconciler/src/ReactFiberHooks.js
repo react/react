@@ -39,7 +39,6 @@ import {
   enableSchedulingProfiler,
   enableTransitionTracing,
   enableLegacyCache,
-  disableLegacyMode,
   enableNoCloningMemoCache,
   enableViewTransition,
   enableGestureTransition,
@@ -50,12 +49,7 @@ import {
   REACT_MEMO_CACHE_SENTINEL,
 } from 'shared/ReactSymbols';
 
-import {
-  NoMode,
-  ConcurrentMode,
-  StrictEffectsMode,
-  StrictLegacyMode,
-} from './ReactTypeOfMode';
+import {NoMode, StrictEffectsMode, StrictLegacyMode} from './ReactTypeOfMode';
 import {
   NoLane,
   SyncLane,
@@ -682,13 +676,7 @@ function finishRenderingHooks<Props, SecondArg>(
     if (
       current !== null &&
       (current.flags & StaticMaskEffect) !==
-        (workInProgress.flags & StaticMaskEffect) &&
-      // Disable this warning in legacy mode, because legacy Suspense is weird
-      // and creates false positives. To make this work in legacy mode, we'd
-      // need to mark fibers that commit in an incomplete state, somehow. For
-      // now I'll disable the warning that most of the bugs that would trigger
-      // it are either exclusive to concurrent mode or exist in both.
-      (disableLegacyMode || (current.mode & ConcurrentMode) !== NoMode)
+        (workInProgress.flags & StaticMaskEffect)
     ) {
       console.error(
         'Internal React error: Expected static flag was missing. Please ' +
@@ -3578,7 +3566,6 @@ function updateRefresh(): any {
 }
 
 function refreshCache<T>(fiber: Fiber, seedKey: ?() => T, seedValue: T): void {
-  // TODO: Does Cache work in legacy mode? Should decide and write a test.
   // TODO: Consider warning if the refresh is at discrete priority, or if we
   // otherwise suspect that it wasn't batched properly.
   let provider = fiber.return;
