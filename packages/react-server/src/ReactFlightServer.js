@@ -461,7 +461,7 @@ function patchConsole(consoleInst: typeof console, methodName: string) {
         request === requestEmittingConsoleToTee
       ) {
         // The tee's reader is replaying the log that's being emitted.
-      } else if (request !== null) {
+      } else if (request !== null && hasPendingTask(request)) {
         // Extract the stack. Not all console logs print the full stack but they have at
         // least the line it was called from. We could optimize transfer by keeping just
         // one stack frame but keeping it simple for now and include all frames.
@@ -1116,6 +1116,16 @@ export function createPrerenderRequest(
 
 let currentRequest: null | Request = null;
 
+// Work outside a task, like a weak thenable settling, a hint, a log or a Ledger
+// write, can add to a render only while the render still has a task pending.
+// Once the last task completes, the render's rows are fixed, however long the
+// destination takes to write them. So the rows don't depend on how fast the
+// destination drains, and a tee, which closes once every row is emitted, gets
+// the same rows as the bytes.
+function hasPendingTask(request: Request): boolean {
+  return request.abortableTasks.size > 0;
+}
+
 export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
   // $FlowFixMe[constant-condition]
@@ -1325,8 +1335,9 @@ function writeLedgerEntry(unit: Unit, type: Ledger<empty>, entry: mixed): void {
 // reaches the response may be dropped if no render phase follows it.
 export function addToLedger(type: Ledger<empty>, entry: mixed): void {
   const unit = resolveRunningUnit();
-  if (unit === null) {
-    // Ledger writes outside a Flight render are ignored.
+  if (unit === null || !hasPendingTask(unit.request)) {
+    // Ledger writes outside a Flight render, or after its last task, are
+    // ignored.
     return;
   }
   if (enableTaint && (typeof entry === 'string' || typeof entry === 'bigint')) {
@@ -1710,17 +1721,17 @@ function serializeThenable(
       if (enableFlightWeakThenables) {
         // A weak-pending thenable doesn't block the stream from closing, so
         // we don't create a task for it yet. We only reserve an id for its
-        // reference. If it settles while the stream is still open, we
+        // reference. If it settles while another task is still pending, we
         // create the task at that point, the same as if we had serialized
         // an already settled thenable.
         //
-        // Delivery is driven by the thenable's notification. If the stream
-        // closes before the listeners are notified, the value is dropped
-        // and the reference is left unfulfilled. Since the stream may close
-        // synchronously when the last task completes, a thenable that
-        // notifies its listeners synchronously (unlike a native Promise,
-        // which notifies in a microtask) is guaranteed delivery of any
-        // value it settles with before the stream closes.
+        // Delivery is driven by the thenable's notification. If the last
+        // task completes before the listeners are notified, the value is
+        // dropped and the reference is left unfulfilled, even if the
+        // destination hasn't been written yet. A thenable that notifies its
+        // listeners synchronously (unlike a native Promise, which notifies
+        // in a microtask) is guaranteed delivery of any value it settles
+        // with before the last task completes.
         const id = request.nextChunkId++;
         // The parent task is mutated as serialization continues, so we
         // snapshot the context that the new task needs if it's created
@@ -1738,9 +1749,9 @@ function serializeThenable(
         let settled = false;
         thenable.then(
           (value: any) => {
-            if (settled || request.status > OPEN) {
-              // Too late. The stream already closed (or the request was
-              // aborted), so the reference stays unfulfilled.
+            if (settled || request.status > OPEN || !hasPendingTask(request)) {
+              // Too late. The render's last task completed (or the request
+              // was aborted), so the reference stays unfulfilled.
               return;
             }
             settled = true;
@@ -1762,7 +1773,7 @@ function serializeThenable(
             pingTask(request, newTask);
           },
           (reason: mixed) => {
-            if (settled || request.status > OPEN) {
+            if (settled || request.status > OPEN || !hasPendingTask(request)) {
               return;
             }
             settled = true;
@@ -2131,6 +2142,9 @@ export function emitHint<Code: HintCode>(
   code: Code,
   model: HintModel<Code>,
 ): void {
+  if (!hasPendingTask(request)) {
+    return;
+  }
   emitHintChunk(request, code, model);
   completeWork(request);
   enqueueFlush(request);
