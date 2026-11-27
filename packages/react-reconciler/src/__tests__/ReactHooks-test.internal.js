@@ -589,6 +589,41 @@ describe('ReactHooks', () => {
         'Incoming: [A, B]\n' +
         '    in App (at **)',
     ]);
+    // The effect re-runs because the dependencies changed size.
+    assertLog(['Did commit: A, B']);
+  });
+
+  it('recomputes when the dependencies array grows', async () => {
+    const {useMemo} = React;
+    function App(props) {
+      const text = useMemo(() => {
+        Scheduler.log('Compute: ' + props.deps.join(', '));
+        return props.deps.join(', ');
+      }, props.deps);
+      return text;
+    }
+    let root;
+    await act(() => {
+      root = ReactTestRenderer.create(<App deps={[1]} />, {
+        unstable_isConcurrent: true,
+      });
+    });
+    assertLog(['Compute: 1']);
+    expect(root).toMatchRenderedOutput('1');
+    await act(() => {
+      root.update(<App deps={[1, 2]} />);
+    });
+    assertConsoleErrorDev([
+      'The final argument passed to useMemo changed size ' +
+      'between renders. The order and size of this array must remain ' +
+      'constant.\n' +
+      '\n' +
+      'Previous: [1]\n' +
+      'Incoming: [1, 2]\n' +
+      '    in App (at **)',
+      ]);
+    assertLog(['Compute: 1, 2']);
+    expect(root).toMatchRenderedOutput('1, 2');
   });
 
   it('warns if switching from dependencies to no dependencies', async () => {
