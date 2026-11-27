@@ -1497,7 +1497,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     expect(root).toMatchRenderedOutput(
       <>
         {assets.map((_, index) => (
-          <span key={index} prop={'loading-' + index} />
+          <span prop={'loading-' + index} />
         ))}
       </>,
     );
@@ -1526,7 +1526,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     expect(root).toMatchRenderedOutput(
       <>
         {assets.map((_, index) => (
-          <span key={index} prop={'asset-' + index} />
+          <span prop={'asset-' + index} />
         ))}
       </>,
     );
