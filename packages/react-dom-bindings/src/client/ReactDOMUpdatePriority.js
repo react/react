@@ -37,7 +37,9 @@ export function resolveUpdatePriority(): EventPriority {
   if (updatePriority !== NoEventPriority) {
     return updatePriority;
   }
-  const currentEvent = window.event;
+  // The window global can be gone by the time an update is scheduled, e.g.
+  // after a test runner tears down its DOM environment.
+  const currentEvent = typeof window !== 'undefined' ? window.event : undefined;
   if (currentEvent === undefined) {
     return DefaultEventPriority;
   }
