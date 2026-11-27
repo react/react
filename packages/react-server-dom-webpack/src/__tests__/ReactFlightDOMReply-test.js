@@ -509,6 +509,125 @@ describe('ReactFlightDOMReply', () => {
     expect(response.obj).toBe(obj);
   });
 
+  it('errors with a null-prototype object without temporary references', async () => {
+    const attrs = Object.create(null);
+    attrs.src = 'https://example.com/image.png';
+
+    let error;
+    try {
+      await ReactServerDOMClient.encodeReply({attrs});
+    } catch (x) {
+      error = x;
+    }
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'Classes or null prototypes are not supported.',
+        ),
+      }),
+    );
+  });
+
+  it('errors with a null-prototype object with temporary references', async () => {
+    const attrs = Object.create(null);
+    attrs.src = 'https://example.com/image.png';
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+
+    let error;
+    try {
+      await ReactServerDOMClient.encodeReply(
+        {attrs},
+        {
+          temporaryReferences,
+        },
+      );
+    } catch (x) {
+      error = x;
+    }
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'Classes or null prototypes are not supported.',
+        ),
+      }),
+    );
+  });
+
+  it('errors with a null-prototype object nested in an array with temporary references', async () => {
+    const attrs = Object.create(null);
+    attrs.src = 'https://example.com/image.png';
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+
+    let error;
+    try {
+      await ReactServerDOMClient.encodeReply(
+        {attrs: [attrs]},
+        {
+          temporaryReferences,
+        },
+      );
+    } catch (x) {
+      error = x;
+    }
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'Classes or null prototypes are not supported.',
+        ),
+      }),
+    );
+  });
+
+  it('can still pass a class instance by reference with temporary references', async () => {
+    class Model {
+      constructor() {
+        this.name = 'model';
+      }
+    }
+    const model = new Model();
+
+    const root = {model};
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+    const body = await ReactServerDOMClient.encodeReply(root, {
+      temporaryReferences,
+    });
+
+    const temporaryReferencesServer =
+      ReactServerDOMServer.createTemporaryReferenceSet();
+    const serverPayload = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+      {temporaryReferences: temporaryReferencesServer},
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        {
+          root: serverPayload,
+          model: serverPayload.model,
+        },
+        null,
+        {temporaryReferences: temporaryReferencesServer},
+      ),
+    );
+    const response = await ReactServerDOMClient.createFromReadableStream(
+      stream,
+      {
+        temporaryReferences,
+      },
+    );
+
+    // The class instance was passed by reference, so the server echoes back
+    // the same instance we already saw.
+    expect(response.root).toBe(root);
+    expect(response.model).toBe(model);
+  });
+
   it('can return an opaque object through an async function', async () => {
     function fn() {
       return 'this is a client function';
