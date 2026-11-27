@@ -653,7 +653,7 @@ function processFn(
     };
   }
 
-  let compiledFn: CodegenFunction;
+  let compiledFn: CodegenFunction | null;
   const compileResult = tryCompileFunction(
     fn,
     fnType,
@@ -687,6 +687,10 @@ function processFn(
       reason: `Skipped due to '${directives.optOut.value.value}' directive.`,
       loc: directives.optOut.loc ?? null,
     });
+    return null;
+  }
+  if (compiledFn === null) {
+    // Validated without codegen (see `enableLintFastPath`), nothing to emit
     return null;
   }
   programContext.logEvent({
@@ -724,7 +728,7 @@ function tryCompileFunction(
   programContext: ProgramContext,
   outputMode: CompilerOutputMode,
 ):
-  | {kind: 'compile'; compiledFn: CodegenFunction}
+  | {kind: 'compile'; compiledFn: CodegenFunction | null}
   | {kind: 'error'; error: unknown} {
   /**
    * Note that Babel does not attach comment nodes to nodes; they are dangling off of the

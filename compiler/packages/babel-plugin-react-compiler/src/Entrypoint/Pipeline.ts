@@ -119,7 +119,7 @@ function run(
   logger: Logger | null,
   filename: string | null,
   code: string | null,
-): Result<CodegenFunction, CompilerError> {
+): Result<CodegenFunction | null, CompilerError> {
   const contextIdentifiers = findContextIdentifiers(func);
   const env = new Environment(
     func.scope,
@@ -150,7 +150,7 @@ function runWithEnvironment(
     t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
   >,
   env: Environment,
-): Result<CodegenFunction, CompilerError> {
+): Result<CodegenFunction | null, CompilerError> {
   const log = (value: CompilerPipelineValue): void => {
     env.logger?.debugLogIRs?.(value);
   };
@@ -323,6 +323,22 @@ function runWithEnvironment(
   ) {
     env.logErrors(validateStaticComponents(hir));
     log({kind: 'debug', name: 'ValidateStaticComponents', value: 'ok'});
+  }
+
+  /**
+   * Lint mode discards the compiled output, and the remaining passes can only
+   * report lint errors via ValidatePreservedManualMemoization, which needs
+   * manual memoization to report anything. See `enableLintFastPath`.
+   */
+  if (
+    env.outputMode === 'lint' &&
+    env.config.enableLintFastPath &&
+    !hasManualMemoization(hir)
+  ) {
+    if (env.hasErrors()) {
+      return Err(env.aggregateErrors());
+    }
+    return Ok(null);
   }
 
   if (env.enableMemoization) {
@@ -579,6 +595,21 @@ function runWithEnvironment(
   return Ok(ast);
 }
 
+/**
+ * DropManualMemoization only inserts StartMemoize/FinishMemoize markers into the
+ * function's own body, not into nested function expressions.
+ */
+function hasManualMemoization(fn: HIRFunction): boolean {
+  for (const [, block] of fn.body.blocks) {
+    for (const instr of block.instructions) {
+      if (instr.value.kind === 'StartMemoize') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function compileFn(
   func: NodePath<
     t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
@@ -590,7 +621,7 @@ export function compileFn(
   logger: Logger | null,
   filename: string | null,
   code: string | null,
-): Result<CodegenFunction, CompilerError> {
+): Result<CodegenFunction | null, CompilerError> {
   return run(
     func,
     config,
