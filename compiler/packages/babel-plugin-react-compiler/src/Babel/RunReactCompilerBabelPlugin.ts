@@ -31,7 +31,7 @@ export function runBabelPluginReactCompiler(
     highlightCode: false,
     retainLines: true,
     plugins: [
-      [BabelPluginReactCompiler, options],
+      [BabelPluginReactCompiler, options ?? undefined],
       'babel-plugin-fbt',
       'babel-plugin-fbt-runtime',
     ],

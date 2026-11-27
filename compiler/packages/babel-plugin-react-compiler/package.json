@@ -23,7 +23,7 @@
     "@babel/types": "^7.26.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.2.0",
+    "@babel/core": "^7.29.6",
     "@babel/generator": "7.2.0",
     "@babel/parser": "^7.2.0",
     "@babel/plugin-syntax-typescript": "^7.18.6",
@@ -59,7 +59,7 @@
     "./**/@babel/parser": "7.7.4",
     "./**/@babel/plugin-syntax-flow": "7.7.4",
     "./**/@babel/types": "7.7.4",
-    "@babel/core": "7.2.0",
+    "@babel/core": "7.29.6",
     "@babel/generator": "7.2.0",
     "@babel/traverse": "7.7.4"
   },
