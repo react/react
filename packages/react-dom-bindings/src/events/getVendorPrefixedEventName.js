@@ -67,6 +67,9 @@ if (canUseDOM) {
 
   // Same as above
   if (!('TransitionEvent' in window)) {
+    delete vendorPrefixes.transitionrun.transition;
+    delete vendorPrefixes.transitionstart.transition;
+    delete vendorPrefixes.transitioncancel.transition;
     delete vendorPrefixes.transitionend.transition;
   }
 }
