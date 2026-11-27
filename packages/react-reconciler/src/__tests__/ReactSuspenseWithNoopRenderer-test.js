@@ -1319,6 +1319,64 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
+  // @gate enableLegacyCache && alwaysThrottleRetries
+  it('commits a throttled retry once when another wakeable resolves', async () => {
+    const commits = [];
+    function Content() {
+      React.useLayoutEffect(() => {
+        commits.push('content');
+      }, []);
+      return (
+        <>
+          <AsyncText text="A" />
+          <Suspense fallback={<Text text="Loading more..." />}>
+            <AsyncText text="B" />
+          </Suspense>
+        </>
+      );
+    }
+
+    ReactNoop.render(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <Content />
+      </Suspense>,
+    );
+    await waitForAll([
+      'Suspend! [A]',
+      'Loading...',
+      'Suspend! [A]',
+      'Suspend! [B]',
+      'Loading more...',
+    ]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+
+    await resolveText('A');
+    await waitForAll(['A', 'Suspend! [B]', 'Loading more...']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+    expect(commits).toEqual([]);
+
+    await resolveText('B');
+    await waitForAll(['A', 'B']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+    expect(commits).toEqual([]);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span prop="A" />
+        <span prop="B" />
+      </>,
+    );
+    expect(commits).toEqual(['content']);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(commits).toEqual(['content']);
+  });
+
   // @gate enableLegacyCache
   it('throttles content from appearing if a fallback was filled in recently', async () => {
     function Foo() {
