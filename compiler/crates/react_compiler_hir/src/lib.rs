@@ -162,6 +162,7 @@ pub const OPT_OUT_DIRECTIVES: &[&str] = &["use no forget", "use no memo"];
 pub struct HirFunction {
     pub loc: Option<SourceLocation>,
     pub id: Option<String>,
+    pub self_binding: Option<Place>,
     pub name_hint: Option<String>,
     pub fn_type: ReactFunctionType,
     pub params: Vec<ParamPattern>,
