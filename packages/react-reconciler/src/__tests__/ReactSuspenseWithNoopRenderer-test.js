@@ -1377,6 +1377,53 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     expect(commits).toEqual(['content']);
   });
 
+  // @gate enableLegacyCache && alwaysThrottleRetries
+  it('replaces a pending retry timer after a ping on the same retry lanes', async () => {
+    const {attachPingListener} = require('../ReactFiberWorkLoop');
+    const {includesOnlyRetries} = require('../ReactFiberLane');
+
+    ReactNoop.render(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <AsyncText text="A" />
+      </Suspense>,
+    );
+    await waitForAll(['Suspend! [A]', 'Loading...', 'Suspend! [A]']);
+    await resolveText('A');
+    await waitForAll(['A']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+
+    const root = ReactNoop.getRoot();
+    const lanes = root.pendingLanes & root.suspendedLanes;
+    expect(lanes).not.toBe(0);
+    expect(includesOnlyRetries(lanes)).toBe(true);
+    const firstTimeout = root.timeoutHandle;
+    expect(firstTimeout).not.toBe(-1);
+
+    // Model a listener from an older render whose retry lane has been reused.
+    // Use the real reconciler ping path rather than scheduling a new update.
+    let resolve;
+    const wakeable = new Promise(r => {
+      resolve = r;
+    });
+    attachPingListener(root, wakeable, lanes);
+    resolve();
+    await waitForAll(['A']);
+
+    expect(root.timeoutHandle).not.toBe(-1);
+    expect(root.timeoutHandle).not.toBe(firstTimeout);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
+  });
+
   // @gate enableLegacyCache
   it('throttles content from appearing if a fallback was filled in recently', async () => {
     function Foo() {
