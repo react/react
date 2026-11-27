@@ -485,6 +485,11 @@ function areHookInputsEqual(
       );
     }
   }
+  // If the deps array changed size, the inputs have changed, even if the
+  // overlapping entries are all equal.
+  if (nextDeps.length !== prevDeps.length) {
+    return false;
+  }
   // $FlowFixMe[incompatible-use] found when upgrading Flow
   for (let i = 0; i < prevDeps.length && i < nextDeps.length; i++) {
     // $FlowFixMe[incompatible-use] found when upgrading Flow
