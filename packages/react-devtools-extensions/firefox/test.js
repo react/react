@@ -2,10 +2,13 @@
 
 'use strict';
 
-const {exec} = require('child-process-promise');
+const {exec: execCallback} = require('child_process');
 const {Finder} = require('firefox-profile');
 const {resolve} = require('path');
 const {argv} = require('yargs');
+const {promisify} = require('util');
+
+const exec = promisify(execCallback);
 
 const EXTENSION_PATH = resolve('./firefox/build/unpacked');
 const START_URL = argv.url || 'https://react.dev/';

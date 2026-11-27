@@ -11,7 +11,6 @@ import type {ReactContext, ReactConsumerType} from 'shared/ReactTypes';
 import type {Fiber} from './ReactInternalTypes';
 
 import {
-  disableLegacyMode,
   enableLegacyHidden,
   enableViewTransition,
 } from 'shared/ReactFeatureFlags';
@@ -35,8 +34,6 @@ import {
   MemoComponent,
   SimpleMemoComponent,
   LazyComponent,
-  IncompleteClassComponent,
-  IncompleteFunctionComponent,
   DehydratedFragment,
   SuspenseListComponent,
   ScopeComponent,
@@ -140,14 +137,8 @@ export default function getComponentNameFromFiber(fiber: Fiber): string | null {
       if (enableViewTransition) {
         return 'ViewTransition';
       }
+      break;
     // The display name for these tags come from the user-provided type:
-    // Fallthrough
-    case IncompleteClassComponent:
-    case IncompleteFunctionComponent:
-      if (disableLegacyMode) {
-        break;
-      }
-    // Fallthrough
     case ClassComponent:
     case FunctionComponent:
     case MemoComponent:

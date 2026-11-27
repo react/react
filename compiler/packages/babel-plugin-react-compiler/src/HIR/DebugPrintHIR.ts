@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {getBabelLocation} from './SourceLocation';
+import type * as t from '@babel/types';
 import {assertExhaustive} from '../Utils/utils';
 import type {
   BasicBlock,
@@ -1200,7 +1202,8 @@ export class DebugPrinter {
     }
   }
 
-  formatLoc(loc: SourceLocation): string {
+  formatLoc(source: SourceLocation | t.SourceLocation): string {
+    const loc = getBabelLocation(source);
     if (typeof loc === 'symbol') {
       return 'generated';
     }

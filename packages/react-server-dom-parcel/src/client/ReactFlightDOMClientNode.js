@@ -19,6 +19,7 @@ import {
   processStringChunk,
   processBinaryChunk,
   close,
+  resolveLedgerTotals,
 } from 'react-client/src/ReactFlightClient';
 
 export * from './ReactFlightDOMClientEdge';
@@ -53,6 +54,7 @@ export type Options = {
   unstable_allowPartialStream?: boolean,
   replayConsoleLogs?: boolean,
   environmentName?: string,
+  unstable_requestId?: string,
   startTime?: number,
   endTime?: number,
   // For the Node.js client we only support a single-direction debug channel.
@@ -111,6 +113,7 @@ export function createFromNodeStream<T>(
       : undefined,
     __DEV__ && options && options.endTime != null ? options.endTime : undefined,
     debugChannel,
+    __DEV__ && options ? options.unstable_requestId : undefined,
   );
 
   if (__DEV__ && options && options.debugChannel) {
@@ -120,8 +123,12 @@ export function createFromNodeStream<T>(
         close(response);
       }
     };
+    const handleMainEnd = () => {
+      resolveLedgerTotals(response);
+      handleEnd();
+    };
     startReadingFromStream(response, options.debugChannel, handleEnd);
-    startReadingFromStream(response, stream, handleEnd);
+    startReadingFromStream(response, stream, handleMainEnd);
   } else {
     startReadingFromStream(response, stream, close.bind(null, response));
   }

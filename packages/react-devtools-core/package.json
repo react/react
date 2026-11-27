@@ -25,13 +25,13 @@
     "start:standalone": "cross-env NODE_ENV=development webpack --config webpack.standalone.js --watch"
   },
   "dependencies": {
-    "shell-quote": "^1.6.1",
-    "ws": "^7"
+    "shell-quote": "^1.11.0",
+    "ws": "^7.5.11"
   },
   "devDependencies": {
-    "cross-env": "^3.1.4",
+    "cross-env": "^7.0.3",
     "process": "0.11.10",
-    "webpack": "^5.82.1",
+    "webpack": "^5.104.1",
     "webpack-cli": "^5.1.1",
     "workerize-loader": "^2.0.2"
   }

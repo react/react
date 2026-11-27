@@ -13,7 +13,7 @@
     "@babel/parser": "^7.28.3",
     "@babel/preset-env": "7.26.9",
     "@babel/preset-flow": "^7.10.4",
-    "@babel/runtime": "^7.11.2",
+    "@babel/runtime": "^7.26.10",
     "@babel/traverse": "^7.28.3",
     "@reach/menu-button": "^0.16.1",
     "@reach/tooltip": "^0.16.0",
@@ -21,7 +21,7 @@
     "compare-versions": "^5.0.3",
     "jsc-safe-url": "^0.2.4",
     "json5": "^2.2.3",
-    "local-storage-fallback": "^4.1.1",
+    "local-storage-fallback": "^5.0.0",
     "react-virtualized-auto-sizer": "^1.0.23",
     "react-window": "^1.8.10",
     "rbush": "4.0.1"

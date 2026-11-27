@@ -36,6 +36,7 @@ import {
   reportGlobalError,
   processBinaryChunk,
   close,
+  resolveLedgerTotals,
 } from 'react-client/src/ReactFlightClient';
 
 import {
@@ -80,6 +81,7 @@ export type Options = {
   findSourceMapURL?: FindSourceMapURLCallback,
   replayConsoleLogs?: boolean,
   environmentName?: string,
+  unstable_requestId?: string,
   startTime?: number,
   endTime?: number,
   // For the Edge client we only support a single-direction debug channel.
@@ -120,6 +122,7 @@ function createResponseFromOptions(options: Options) {
       : undefined,
     __DEV__ && options && options.endTime != null ? options.endTime : undefined,
     debugChannel,
+    __DEV__ && options ? options.unstable_requestId : undefined,
   );
 }
 
@@ -170,8 +173,12 @@ function createFromReadableStream<T>(
         close(response);
       }
     };
+    const handleMainDone = () => {
+      resolveLedgerTotals(response);
+      handleDone();
+    };
     startReadingFromStream(response, options.debugChannel.readable, handleDone);
-    startReadingFromStream(response, stream, handleDone, stream);
+    startReadingFromStream(response, stream, handleMainDone, stream);
   } else {
     startReadingFromStream(
       response,
@@ -203,12 +210,16 @@ function createFromFetch<T>(
             close(response);
           }
         };
+        const handleMainDone = () => {
+          resolveLedgerTotals(response);
+          handleDone();
+        };
         startReadingFromStream(
           response,
           options.debugChannel.readable,
           handleDone,
         );
-        startReadingFromStream(response, r.body as any, handleDone, r);
+        startReadingFromStream(response, r.body as any, handleMainDone, r);
       } else {
         startReadingFromStream(
           response,

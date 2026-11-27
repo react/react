@@ -50,7 +50,7 @@ function ignoreListStack(str) {
   return ignoreListedStack;
 }
 
-const currentTask = new AsyncLocalStorage({defaultValue: null});
+const currentTask = new AsyncLocalStorage();
 
 describe('ReactServer', () => {
   beforeEach(() => {

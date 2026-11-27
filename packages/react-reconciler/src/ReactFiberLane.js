@@ -26,13 +26,11 @@ import {
   syncLaneExpirationMs,
   transitionLaneExpirationMs,
   retryLaneExpirationMs,
-  disableLegacyMode,
   enableDefaultTransitionIndicator,
   enableGestureTransition,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {clz32} from './clz32';
-import {LegacyRoot} from './ReactRootTags';
 
 // Lane values below should be kept in sync with getLabelForLane(), used by react-devtools-timeline.
 // If those values are changed that package should be rebuilt and redeployed.
@@ -847,6 +845,7 @@ export function markRootUpdated(root: FiberRoot, updateLane: Lane) {
 export function markRootSuspended(
   root: FiberRoot,
   suspendedLanes: Lanes,
+  prewarmedLanes: Lanes,
   spawnedLane: Lane,
   didAttemptEntireTree: boolean,
 ) {
@@ -857,7 +856,7 @@ export function markRootSuspended(
 
   if (didAttemptEntireTree) {
     // Mark these lanes as warm so we know there's nothing else to work on.
-    root.warmLanes |= suspendedLanes;
+    root.warmLanes |= suspendedLanes | prewarmedLanes;
   } else {
     // Render unwound without attempting all the siblings. Do no mark the lanes
     // as warm. This will cause a prewarm render to be scheduled.
@@ -875,7 +874,16 @@ export function markRootSuspended(
     lanes &= ~lane;
   }
 
-  if (spawnedLane !== NoLane) {
+  if (
+    spawnedLane !== NoLane &&
+    // A suspended attempt commits nothing. If it carried updates, the spawned
+    // task is entangled with them below and retries them together. If it
+    // carried none (hydration, a Suspense retry), the spawned task would
+    // render nothing and commit, and that commit clears the suspended lanes,
+    // so the suspended work would be retried at once, in a loop, until its
+    // data arrives. The deferred values are requested again by that retry.
+    includesSomeLane(suspendedLanes, UpdateLanes)
+  ) {
     markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
   }
 }
@@ -975,8 +983,7 @@ export function markRootFinished(
     // Note that we only do this if there were no updates since we started
     // rendering. This mirrors the logic in markRootUpdated — whenever we
     // receive an update, we reset all the suspended and pinged lanes.
-    updatedLanes === NoLanes &&
-    !(disableLegacyMode && root.tag === LegacyRoot)
+    updatedLanes === NoLanes
   ) {
     // We also need to avoid marking a retry lane as suspended if it was already
     // pending before this render. We can't say these are now suspended if they

@@ -1348,5 +1348,80 @@ describe('ReactDOMViewTransition', () => {
 
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
+
+    describe('skipped transitions', () => {
+      async function renderWithSkippedTransition(message) {
+        const startViewTransitionSpy = jest.fn(({update}) => {
+          update();
+          return {
+            ready: Promise.reject(
+              new DOMException(message, 'InvalidStateError'),
+            ),
+            finished: Promise.resolve(),
+            skipTransition() {},
+          };
+        });
+        document.startViewTransition = startViewTransitionSpy;
+
+        function App({show}) {
+          if (!show) {
+            return null;
+          }
+          return (
+            <ViewTransition>
+              <div>Hello</div>
+            </ViewTransition>
+          );
+        }
+
+        const onRecoverableError = jest.fn();
+        const root = ReactDOMClient.createRoot(container, {onRecoverableError});
+        await act(() => {
+          root.render(<App show={false} />);
+        });
+        await act(() => {
+          startTransition(() => {
+            root.render(<App show={true} />);
+          });
+        });
+        expect(startViewTransitionSpy).toHaveBeenCalled();
+        expect(container.textContent).toBe('Hello');
+        return onRecoverableError.mock.calls.map(args => args[0]);
+      }
+
+      // @gate enableViewTransition
+      it('ignores transitions skipped because the document is hidden', async () => {
+        const errors = await renderWithSkippedTransition(
+          'Transition was aborted because of invalid state. Document hidden',
+        );
+        expect(errors).toEqual([]);
+      });
+
+      // @gate enableViewTransition
+      it('reports transitions skipped for other reasons', async () => {
+        const message =
+          'Transition was aborted because of invalid state. Unsupported layout or style';
+        const errors = await renderWithSkippedTransition(message);
+        expect(errors.length).toBe(1);
+        expect(errors[0].message).toBe(message);
+      });
+
+      // @gate enableViewTransition
+      it('adds a hint in DEV when capturing a snapshot fails', async () => {
+        const message =
+          'Transition was aborted because of invalid state. Snapshot capture failed';
+        const errors = await renderWithSkippedTransition(message);
+        expect(errors.length).toBe(1);
+        if (__DEV__) {
+          expect(errors[0].message).toContain(
+            'This usually means that two elements have the same ' +
+              'view-transition-name at the same time.',
+          );
+          expect(errors[0].cause.message).toBe(message);
+        } else {
+          expect(errors[0].message).toBe(message);
+        }
+      });
+    });
   });
 });

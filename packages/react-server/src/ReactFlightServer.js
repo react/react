@@ -17,6 +17,7 @@ import {
   enableComponentPerformanceTrack,
   enableFlightWeakThenables,
   enableFlightObjectReferences,
+  enableFlightLedgers,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -108,11 +109,10 @@ import {
 
 import {
   HooksDispatcher,
-  prepareToUseHooksForRequest,
+  switchHooksRequest,
   prepareToUseHooksForComponent,
   getThenableStateAfterSuspending,
   getTrackedThenablesAfterRendering,
-  resetHooksForRequest,
 } from './ReactFlightHooks';
 import {DefaultAsyncDispatcher} from './flight/ReactFlightAsyncDispatcher';
 
@@ -139,7 +139,30 @@ import {
   REACT_MEMO_TYPE,
   ASYNC_ITERATOR,
   REACT_OPTIMISTIC_KEY,
+  REACT_LEDGER_TOTAL_TYPE,
+  REACT_LEDGER_DATA_TYPE,
 } from 'shared/ReactSymbols';
+
+import type {
+  Ledger,
+  LedgerCell,
+  LedgerTotal,
+  LedgerDataObject,
+  LedgerTotalRecord,
+  LedgerEntryWireForm,
+  LedgerDelta,
+  LedgerDeltaRow,
+  DecodedLedgerTotal,
+} from 'react-server/src/ReactFlightLedgers';
+import type {UnitCacheHooks} from 'react-reconciler/src/ReactInternalTypes';
+import {
+  BIT_LEDGER,
+  MASK_LEDGER,
+  MIN_LEDGER,
+  MAX_LEDGER,
+  createLedgerCell,
+  readLedgerTotal,
+} from 'react-server/src/ReactFlightLedgers';
 
 import {
   describeObjectForErrorMessage,
@@ -554,6 +577,7 @@ type Task = {
   implicitSlot: boolean, // true if the root server component of this sequence had a null key
   formatContext: FormatContext, // an approximate parent context from host components
   thenableState: ThenableState | null,
+  unit: null | Unit,
   timed: boolean, // Profiling-only. Whether we need to track the completion time of this task.
   time: number, // Profiling-only. The last time stamp emitted for this task.
   environmentName: string, // DEV-only. Used to track if the environment for this task changed.
@@ -562,7 +586,53 @@ type Task = {
   debugTask: null | ConsoleTask, // DEV-only
 };
 
+// Units track reusable work, such as Flight tasks and cache entries.
+// We associate ledger writes with these units so reusing a result also reuses
+// the writes made while producing it.
+//
+// Units form a graph through their creators and reuse references. The client
+// uses this graph to determine which writes belong to each captured ledger.
+// Capturing an existing result creates a unit for its new position, even
+// though the underlying work is reused.
+type Unit = {
+  request: Request,
+  // Shares the task's row ID when the unit belongs to a Flight task.
+  id: number,
+  creator: null | Unit,
+  // Ledger totals captured at this unit. These shadow enclosing captures
+  // of the same ledger.
+  totals: null | Array<number>,
+  declared: boolean,
+  dirtyDeltas: null | Map<Ledger<empty>, LedgerCell>,
+  dirtyReferences: null | number | Set<number>,
+};
+
+// A source total, the unit carrying its entries into this response, and what
+// has been emitted so far: a scalar cell, or a position in the source's Set
+// entries.
+type ForwardedTotal = {
+  source: LedgerTotalRecord,
+  carrier: Unit,
+  emitted: LedgerCell,
+  emittedEntries: number,
+};
+
+type RequestLedgers = {
+  dirtyUnits: Array<Unit>,
+  // Maps ledger types and total handles to their declaration row IDs.
+  declarations: null | Map<Ledger<empty> | LedgerTotal, number>,
+  // Totals that may still receive entries from their source responses.
+  forwardedTotals: null | Array<ForwardedTotal>,
+};
+
 interface Reference {}
+
+// An object's reference may include a path within a row. We also keep the
+// containing row's ID so that reusing the object can reuse its ledger entries.
+type WrittenObjectEntry = {
+  id: number,
+  reference: string,
+};
 
 type ReactClientReference = Reference & ReactClientValue;
 
@@ -604,6 +674,7 @@ export type Request = {
   pingedTasks: Array<Task>,
   completedImportChunks: Array<Chunk>,
   completedHintChunks: Array<Chunk>,
+  completedLedgerChunks: Array<Chunk>,
   // Text and TypedArray rows are pushed as a NEXT_TWO_CHUNKS_ARE_ATOMIC
   // sentinel followed by their [headerChunk, contentChunk] pair, so that
   // flushCompletedChunks can write the pair atomically and never strand the
@@ -615,7 +686,7 @@ export type Request = {
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
-  writtenObjects: WeakMap<Reference, string>,
+  writtenObjects: WeakMap<Reference, WrittenObjectEntry>,
   writtenImportStrings: Map<string, string>,
   // The combined length of the keys in writtenImportStrings.
   writtenImportStringsSize: number,
@@ -623,6 +694,8 @@ export type Request = {
   identifierPrefix: string,
   identifierCount: number,
   taintCleanupQueue: Array<string | bigint>,
+  ledgers: null | RequestLedgers,
+  rootUnit: null | Unit,
   onError: (error: mixed) => ?string,
   onAllReady: () => void,
   onFatalError: mixed => void,
@@ -659,6 +732,20 @@ const {
 function throwTaintViolation(message: string) {
   // eslint-disable-next-line react-internal/prod-error-codes
   throw new Error(message);
+}
+
+function throwIfTaintedObject(value: Object) {
+  const tainted = TaintRegistryObjects.get(value);
+  if (tainted !== undefined) {
+    throwTaintViolation(tainted);
+  }
+}
+
+function throwIfTaintedValue(value: string | bigint) {
+  const tainted = TaintRegistryValues.get(value);
+  if (tainted !== undefined) {
+    throwTaintViolation(tainted.message);
+  }
 }
 
 function cleanupTaintQueue(request: Request): void {
@@ -707,6 +794,12 @@ function RequestInstance(
     );
   }
   ReactSharedInternals.A = DefaultAsyncDispatcher;
+  if (enableFlightLedgers) {
+    // $FlowFixMe[constant-condition]
+    if (supportsRequestStorage) {
+      DefaultAsyncDispatcher.units = DefaultUnitCacheHooks;
+    }
+  }
   if (__DEV__) {
     // Unlike Fizz or Fiber, we don't reset this and just keep it on permanently.
     // This lets it act more like the AsyncDispatcher so that we can get the
@@ -736,6 +829,9 @@ function RequestInstance(
   this.pingedTasks = pingedTasks;
   this.completedImportChunks = [] as Array<Chunk>;
   this.completedHintChunks = [] as Array<Chunk>;
+  if (enableFlightLedgers) {
+    this.completedLedgerChunks = [] as Array<Chunk>;
+  }
   this.completedRegularChunks = [] as Array<
     Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
   >;
@@ -750,6 +846,8 @@ function RequestInstance(
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
   this.taintCleanupQueue = cleanupQueue;
+  this.ledgers = null;
+  this.rootUnit = null;
   this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.onAllReady = onAllReady;
   this.onFatalError = onFatalError;
@@ -895,10 +993,358 @@ export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
   // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
-    const store = requestStorage.getStore();
-    if (store) return store;
+    if (enableFlightLedgers) {
+      const store = unitStorage.getStore();
+      if (store !== undefined) {
+        return store.request;
+      }
+    } else {
+      const store = requestStorage.getStore();
+      if (store) return store;
+    }
   }
   return null;
+}
+
+function runWithRequest<A, R>(
+  request: Request,
+  callback: (Request, A) => R,
+  argument: A,
+): R {
+  const previousDispatcher = ReactSharedInternals.H;
+  const previousRequest = currentRequest;
+  const previousHooksRequest = switchHooksRequest(request);
+  ReactSharedInternals.H = HooksDispatcher;
+  currentRequest = request;
+  try {
+    return callback(request, argument);
+  } finally {
+    ReactSharedInternals.H = previousDispatcher;
+    currentRequest = previousRequest;
+    switchHooksRequest(previousHooksRequest);
+  }
+}
+
+// With Ledgers enabled, the async context carries a unit so writes after an
+// await can be attributed to the work that started them.
+// TODO: Update the host config's storage type when removing the feature flag.
+const unitStorage: AsyncLocalStorage<Unit | void> = requestStorage as any;
+
+// Avoid reading async storage during synchronous work.
+let currentUnit: null | Unit = null;
+
+function resolveRunningUnit(): null | Unit {
+  if (currentUnit !== null) {
+    return currentUnit;
+  }
+  // $FlowFixMe[constant-condition]
+  if (supportsRequestStorage) {
+    const store = unitStorage.getStore();
+    if (store !== undefined) {
+      return store;
+    }
+  }
+  return null;
+}
+
+function currentUnitForRequest(request: Request): null | Unit {
+  const unit = resolveRunningUnit();
+  if (unit !== null && unit.request === request) {
+    return unit;
+  }
+  // A nested request must not inherit the outer request's unit.
+  return request.rootUnit;
+}
+
+function ensureRequestLedgers(request: Request): RequestLedgers {
+  const ledgers = request.ledgers;
+  if (ledgers !== null) {
+    return ledgers;
+  }
+  return (request.ledgers = createRequestLedgers());
+}
+
+// Returns whether the entry changed the accumulated value.
+function accumulateLedgerEntry(cell: LedgerCell, entry: mixed): boolean {
+  switch (cell.kind) {
+    case BIT_LEDGER: {
+      if (cell.state) {
+        return false;
+      }
+      cell.state = true;
+      return true;
+    }
+    case MASK_LEDGER: {
+      if (typeof entry !== 'number') {
+        return false;
+      }
+      const state = cell.state;
+      const next = (state | entry) >>> 0;
+      if (next === state) {
+        return false;
+      }
+      cell.state = next;
+      return true;
+    }
+    case MIN_LEDGER: {
+      if (typeof entry !== 'number') {
+        return false;
+      }
+      const state = cell.state;
+      if (state !== null && state <= entry) {
+        return false;
+      }
+      cell.state = entry;
+      return true;
+    }
+    case MAX_LEDGER: {
+      if (typeof entry !== 'number') {
+        return false;
+      }
+      const state = cell.state;
+      if (state !== null && state >= entry) {
+        return false;
+      }
+      cell.state = entry;
+      return true;
+    }
+    default: {
+      const state = cell.state;
+      if (state.has(entry)) {
+        return false;
+      }
+      state.add(entry);
+      return true;
+    }
+  }
+}
+
+function createUnit(request: Request, creator: null | Unit, id: number): Unit {
+  return {
+    request,
+    id,
+    creator,
+    totals: null,
+    declared: false,
+    dirtyDeltas: null,
+    dirtyReferences: null,
+  };
+}
+
+// The reused row may receive more ledger writes later. Record the reference
+// now so captures can include those writes without rerunning the work.
+function recordUnitReference(unit: null | Unit, row: number): void {
+  if (unit === null) {
+    return;
+  }
+  if (row === unit.id) {
+    return;
+  }
+  const ledgers = ensureRequestLedgers(unit.request);
+  // Avoid allocating a Set when only one row is reused within a work batch.
+  const pending = unit.dirtyReferences;
+  if (pending === null) {
+    if (unit.dirtyDeltas === null) {
+      ledgers.dirtyUnits.push(unit);
+    }
+    unit.dirtyReferences = row;
+  } else if (typeof pending === 'number') {
+    if (pending === row) {
+      return;
+    }
+    const references: Set<number> = new Set();
+    references.add(pending);
+    references.add(row);
+    unit.dirtyReferences = references;
+  } else {
+    if (pending.has(row)) {
+      return;
+    }
+    pending.add(row);
+  }
+}
+
+function writeLedgerEntry(unit: Unit, type: Ledger<empty>, entry: mixed): void {
+  // Record writes even if no capture exists yet, or if the request is aborting.
+  // Captures and reused values may still be serialized; the client determines
+  // which writes contribute from the records that reach it.
+  const ledgers = ensureRequestLedgers(unit.request);
+  let dirty = unit.dirtyDeltas;
+  let cell = dirty === null ? undefined : dirty.get(type);
+  if (cell === undefined) {
+    cell = createLedgerCell(type);
+    if (!accumulateLedgerEntry(cell, entry)) {
+      // A no-op first entry leaves nothing pending.
+      return;
+    }
+    if (dirty === null) {
+      // A unit is in dirtyUnits exactly when it has pending deltas or references.
+      if (unit.dirtyReferences === null) {
+        ledgers.dirtyUnits.push(unit);
+      }
+      unit.dirtyDeltas = dirty = new Map();
+    }
+    dirty.set(type, cell);
+    return;
+  }
+  accumulateLedgerEntry(cell, entry);
+}
+
+// A write is emitted when the render phase that follows it completes. Any data
+// that depends on the write is serialized by a task that completes after it, so
+// the write always precedes that data. A late write from work whose output never
+// reaches the response may be dropped if no render phase follows it.
+export function addToLedger(type: Ledger<empty>, entry: mixed): void {
+  const unit = resolveRunningUnit();
+  if (unit === null) {
+    // Ledger writes outside a Flight render are ignored.
+    return;
+  }
+  if (enableTaint && (typeof entry === 'string' || typeof entry === 'bigint')) {
+    // Throw to the writer, the way a tainted prop errors the component that
+    // renders it. Completion checks again before the entry is emitted.
+    throwIfTaintedValue(entry);
+  }
+  writeLedgerEntry(unit, type, entry);
+}
+
+function createRequestLedgers(): RequestLedgers {
+  return {
+    dirtyUnits: [],
+    declarations: null,
+    forwardedTotals: null,
+  };
+}
+
+// Give the captured input its own unit so its writes can be distinguished
+// from the surrounding render. The wrapper itself is omitted from the output.
+function outlineLedgerData(
+  request: Request,
+  task: Task,
+  data: LedgerDataObject<ReactClientValue>,
+): ReactJSONValue {
+  const ledgers = ensureRequestLedgers(request);
+  const totals = [];
+  for (let i = 0; i < data.totals.length; i++) {
+    totals.push(ensureLedgerTotalDeclared(request, ledgers, data.totals[i]));
+  }
+  const input = data.input;
+  if (
+    input !== null &&
+    typeof input === 'object' &&
+    // Reuse is only safe when the surrounding component keys don't affect
+    // how the input is serialized.
+    task.keyPath === null &&
+    !task.implicitSlot
+  ) {
+    const existingEntry = request.writtenObjects.get(input);
+    if (existingEntry !== undefined) {
+      // The data is already serialized, but this capture still needs a unit
+      // to associate the reused work's ledger writes with this position.
+      const reuseUnit = createUnit(
+        request,
+        currentUnitForRequest(request),
+        request.nextChunkId++,
+      );
+      reuseUnit.totals = totals;
+      recordUnitReference(reuseUnit, existingEntry.id);
+      return existingEntry.reference;
+    }
+  }
+  const newTask = createTask(
+    request,
+    input,
+    task.keyPath,
+    task.implicitSlot,
+    task.formatContext,
+    request.abortableTasks,
+    enableProfilerTimer ? task.time : 0,
+    __DEV__ ? task.debugOwner : null,
+    __DEV__ ? task.debugStack : null,
+    __DEV__ ? task.debugTask : null,
+  );
+  const unit = newTask.unit;
+  if (unit !== null) {
+    // Establish the capture before rendering starts, since rendering may
+    // flush this unit's declaration.
+    unit.totals = totals;
+  }
+  retryTask(request, newTask);
+  if (newTask.status === COMPLETED) {
+    // Preserve the input's synchronous availability when it didn't suspend.
+    return serializeByValueID(newTask.id);
+  }
+  // Match renderModel: only a React node can be reduced to a lazy reference
+  // that errors or suspends where it's rendered. Any other value refers to the
+  // row directly, so an error rejects the containing model, as it would if the
+  // input were passed without a capture.
+  const wasReactNode =
+    typeof input === 'object' &&
+    input !== null &&
+    ((input as any).$$typeof === REACT_ELEMENT_TYPE ||
+      (input as any).$$typeof === REACT_LAZY_TYPE);
+  if (wasReactNode) {
+    return serializeLazyID(newTask.id);
+  }
+  return serializeByValueID(newTask.id);
+}
+
+function readEntryUnit(u: mixed): Unit {
+  return u as any;
+}
+
+const DefaultUnitCacheHooks: UnitCacheHooks = {
+  hit(unit: mixed): void {
+    const entryUnit = readEntryUnit(unit);
+    const running = resolveRunningUnit();
+    if (running === null) {
+      return;
+    }
+    if (running.request !== entryUnit.request) {
+      return;
+    }
+    recordUnitReference(running, entryUnit.id);
+  },
+  miss<T>(
+    cacheEntry: {u: mixed, ...},
+    fn: (...Array<mixed>) => T,
+    args: Array<mixed>,
+  ): T {
+    const outer = resolveRunningUnit();
+    if (outer === null) {
+      return applyCachedFunction(fn, args);
+    }
+    const request = outer.request;
+    let entryUnit: Unit;
+    if (cacheEntry.u === null) {
+      cacheEntry.u = entryUnit = createUnit(
+        request,
+        outer,
+        request.nextChunkId++,
+      );
+    } else {
+      // A recursive call can reach this entry before the first call returns.
+      // Both calls must record their writes on the same unit.
+      entryUnit = readEntryUnit(cacheEntry.u);
+      // The reentrant call's writes land on the existing unit, but its result
+      // feeds the caller, so the caller must reference that unit.
+      recordUnitReference(outer, entryUnit.id);
+    }
+    const prevUnit = currentUnit;
+    currentUnit = entryUnit;
+    try {
+      return unitStorage.run(entryUnit, applyCachedFunction, fn, args);
+    } finally {
+      currentUnit = prevUnit;
+    }
+  },
+};
+
+function applyCachedFunction<T>(
+  fn: (...Array<mixed>) => T,
+  args: Array<mixed>,
+): T {
+  return fn.apply(null, args);
 }
 
 function isTypedArray(value: any): boolean {
@@ -998,6 +1444,7 @@ function serializeDebugThenable(
       cancelled = true;
       if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
@@ -1009,10 +1456,12 @@ function serializeDebugThenable(
         // it would get omitted. We can't omit outlined models but we can avoid
         // resolving the Promise at all by halting it.
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
       emitOutlinedDebugModelChunk(request, id, counter, value);
+      completeWork(request);
       enqueueFlush(request);
     },
     reason => {
@@ -1022,12 +1471,14 @@ function serializeDebugThenable(
       cancelled = true;
       if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
       // We don't log these errors since they didn't actually throw into Flight.
       const digest = '';
       emitErrorChunk(request, id, digest, reason, true, null);
+      completeWork(request);
       enqueueFlush(request);
     },
   );
@@ -1042,6 +1493,7 @@ function serializeDebugThenable(
     }
     cancelled = true;
     emitDebugHaltChunk(request, id);
+    completeWork(request);
     enqueueFlush(request);
     // Clean up the request so we don't leak this forever.
     request = null as any;
@@ -1061,21 +1513,25 @@ function emitRequestedDebugThenable(
     value => {
       if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
       emitOutlinedDebugModelChunk(request, id, counter, value);
+      completeWork(request);
       enqueueFlush(request);
     },
     reason => {
       if (request.status === ABORTING) {
         emitDebugHaltChunk(request, id);
+        completeWork(request);
         enqueueFlush(request);
         return;
       }
       // We don't log these errors since they didn't actually throw into Flight.
       const digest = '';
       emitErrorChunk(request, id, digest, reason, true, null);
+      completeWork(request);
       enqueueFlush(request);
     },
   );
@@ -1147,6 +1603,9 @@ function serializeThenable(
         const debugOwner = __DEV__ ? task.debugOwner : null;
         const debugStack = __DEV__ ? task.debugStack : null;
         const debugTask = __DEV__ ? task.debugTask : null;
+        // The thenable may be settled by unrelated work, so the new task's
+        // unit must descend from the unit that serialized the reference.
+        const creatorUnit = resolveCreatorUnit(request);
         let settled = false;
         thenable.then(
           (value: any) => {
@@ -1168,6 +1627,7 @@ function serializeThenable(
               debugOwner,
               debugStack,
               debugTask,
+              creatorUnit,
             );
             forwardDebugInfoFromCurrentContext(request, newTask, thenable);
             pingTask(request, newTask);
@@ -1189,12 +1649,14 @@ function serializeThenable(
               debugOwner,
               debugStack,
               debugTask,
+              creatorUnit,
             );
             if (enableProfilerTimer) {
               // If this is async we need to time when this task finishes.
               newTask.timed = true;
             }
             erroredTask(request, newTask, reason);
+            completeWork(request);
             enqueueFlush(request);
           },
         );
@@ -1257,6 +1719,7 @@ function serializeThenable(
             // When we abort we emit chunks in each pending task slot and don't need
             // to do so again here.
             erroredTask(request, newTask, reason);
+            completeWork(request);
             enqueueFlush(request);
           }
         },
@@ -1322,6 +1785,7 @@ function serializeReadableStream(
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
       request.abortableTasks.delete(streamTask);
       request.cacheController.signal.removeEventListener('abort', abortStream);
+      completeWork(request);
       enqueueFlush(request);
       callOnAllReadyIfReady(request);
     } else {
@@ -1335,6 +1799,7 @@ function serializeReadableStream(
         } else {
           tryStreamTask(request, streamTask);
         }
+        completeWork(request);
         enqueueFlush(request);
         reader.read().then(progress, error);
       } catch (x) {
@@ -1348,6 +1813,7 @@ function serializeReadableStream(
     }
     request.cacheController.signal.removeEventListener('abort', abortStream);
     erroredTask(request, streamTask, reason);
+    completeWork(request);
     enqueueFlush(request);
 
     // $FlowFixMe[incompatible-type] should be able to pass mixed
@@ -1368,14 +1834,19 @@ function serializeReadableStream(
     } else {
       // TODO: Make this use abortTask() instead.
       erroredTask(request, streamTask, reason);
+      completeWork(request);
       enqueueFlush(request);
     }
     // $FlowFixMe[incompatible-use] should be able to pass mixed
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortStream);
-  reader.read().then(progress, error);
+  if (request.cacheController.signal.aborted) {
+    abortStream();
+  } else {
+    request.cacheController.signal.addEventListener('abort', abortStream);
+    reader.read().then(progress, error);
+  }
   return serializeByValueID(streamTask.id);
 }
 
@@ -1453,6 +1924,7 @@ function serializeAsyncIterable(
         'abort',
         abortIterable,
       );
+      completeWork(request);
       enqueueFlush(request);
       callOnAllReadyIfReady(request);
     } else {
@@ -1460,6 +1932,7 @@ function serializeAsyncIterable(
         streamTask.model = entry.value;
         request.pendingChunks++;
         tryStreamTask(request, streamTask);
+        completeWork(request);
         enqueueFlush(request);
         if (__DEV__) {
           callIteratorInDEV(iterator, progress, error);
@@ -1478,6 +1951,7 @@ function serializeAsyncIterable(
     }
     request.cacheController.signal.removeEventListener('abort', abortIterable);
     erroredTask(request, streamTask, reason);
+    completeWork(request);
     enqueueFlush(request);
     if (typeof (iterator as any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
@@ -1499,6 +1973,7 @@ function serializeAsyncIterable(
     } else {
       // TODO: Make this use abortTask() instead.
       erroredTask(request, streamTask, signal.reason);
+      completeWork(request);
       enqueueFlush(request);
     }
     if (typeof (iterator as any).throw === 'function') {
@@ -1509,11 +1984,15 @@ function serializeAsyncIterable(
       iterator.throw(reason).then(noop, noop);
     }
   }
-  request.cacheController.signal.addEventListener('abort', abortIterable);
-  if (__DEV__) {
-    callIteratorInDEV(iterator, progress, error);
+  if (request.cacheController.signal.aborted) {
+    abortIterable();
   } else {
-    iterator.next().then(progress, error);
+    request.cacheController.signal.addEventListener('abort', abortIterable);
+    if (__DEV__) {
+      callIteratorInDEV(iterator, progress, error);
+    } else {
+      iterator.next().then(progress, error);
+    }
   }
   return serializeByValueID(streamTask.id);
 }
@@ -1524,6 +2003,7 @@ export function emitHint<Code: HintCode>(
   model: HintModel<Code>,
 ): void {
   emitHintChunk(request, code, model);
+  completeWork(request);
   enqueueFlush(request);
 }
 
@@ -2198,7 +2678,7 @@ function renderClientElement(
         debugStack,
       );
       // We also store this in the main dedupe set so that it can be referenced by inline React Elements.
-      request.writtenObjects.set(debugStack, serializeByValueID(id));
+      writeToDedupeMap(request, debugStack, id, serializeByValueID(id));
     }
   }
   const element = __DEV__
@@ -2848,7 +3328,16 @@ function createTask(
     debugOwner,
     debugStack,
     debugTask,
+    resolveCreatorUnit(request),
   );
+}
+
+function resolveCreatorUnit(request: Request): null | Unit {
+  // $FlowFixMe[constant-condition]
+  if (enableFlightLedgers && supportsRequestStorage) {
+    return currentUnitForRequest(request);
+  }
+  return null;
 }
 
 function createTaskWithID(
@@ -2863,6 +3352,7 @@ function createTaskWithID(
   debugOwner: null | ReactComponentInfo, // DEV-only
   debugStack: null | Error, // DEV-only
   debugTask: null | ConsoleTask, // DEV-only
+  creatorUnit: null | Unit,
 ): Task {
   request.pendingChunks++;
   if (typeof model === 'object' && model !== null) {
@@ -2872,7 +3362,17 @@ function createTaskWithID(
       // If we're in some kind of context we can't necessarily reuse this object depending
       // what parent components are used.
     } else {
-      request.writtenObjects.set(model, serializeByValueID(id));
+      writeToDedupeMap(request, model, id, serializeByValueID(id));
+    }
+  }
+  let unit = null;
+  // $FlowFixMe[constant-condition]
+  if (enableFlightLedgers && supportsRequestStorage) {
+    if (request.rootUnit === null) {
+      // The request's first task is its root.
+      unit = request.rootUnit = createUnit(request, null, id);
+    } else {
+      unit = createUnit(request, creatorUnit, id);
     }
   }
   const task: Task = {
@@ -2884,6 +3384,7 @@ function createTaskWithID(
     formatContext: formatContext,
     ping: () => pingTask(request, task),
     thenableState: null,
+    unit,
   } as Omit<
     Task,
     | 'timed'
@@ -3029,6 +3530,17 @@ function resolveModel(
     }
   }
   return resolved;
+}
+
+function writeToDedupeMap(
+  request: Request,
+  value: Reference,
+  id: number,
+  reference: string,
+): WrittenObjectEntry {
+  const entry = {id, reference};
+  request.writtenObjects.set(value, entry);
+  return entry;
 }
 
 function serializeByValueID(id: number): string {
@@ -3495,6 +4007,7 @@ function serializeDebugBlob(request: Request, blob: Blob): string {
         {objectLimit: model.length + 2},
         model,
       );
+      completeWork(request);
       enqueueFlush(request);
       return;
     }
@@ -3506,6 +4019,7 @@ function serializeDebugBlob(request: Request, blob: Blob): string {
   function error(reason: mixed) {
     const digest = '';
     emitErrorChunk(request, id, digest, reason, true, null);
+    completeWork(request);
     enqueueFlush(request);
     // $FlowFixMe[incompatible-type] should be able to pass mixed
     reader.cancel(reason).then(noop, noop);
@@ -3556,6 +4070,7 @@ function serializeBlob(request: Request, blob: Blob): string {
     }
     request.cacheController.signal.removeEventListener('abort', abortBlob);
     erroredTask(request, newTask, reason);
+    completeWork(request);
     enqueueFlush(request);
     // $FlowFixMe[incompatible-type] should be able to pass mixed
     // $FlowFixMe[incompatible-use]
@@ -3575,16 +4090,21 @@ function serializeBlob(request: Request, blob: Blob): string {
     } else {
       // TODO: Make this use abortTask() instead.
       erroredTask(request, newTask, reason);
+      completeWork(request);
       enqueueFlush(request);
     }
     // $FlowFixMe[incompatible-use] should be able to pass mixed
     reader.cancel(reason).then(error, error);
   }
 
-  request.cacheController.signal.addEventListener('abort', abortBlob);
+  if (request.cacheController.signal.aborted) {
+    abortBlob();
+  } else {
+    request.cacheController.signal.addEventListener('abort', abortBlob);
 
-  // $FlowFixMe[incompatible-type]
-  reader.read().then(progress).catch(error);
+    // $FlowFixMe[incompatible-type]
+    reader.read().then(progress).catch(error);
+  }
 
   return '$B' + newTask.id.toString(16);
 }
@@ -3782,15 +4302,15 @@ function renderModelDestructive(
   if (typeof value === 'object') {
     switch ((value as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
-        let elementReference = null;
+        let elementEntry = null;
         const writtenObjects = request.writtenObjects;
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
           // previous renders of this element. We only reuse elements if they're not wrapped
           // by another Server Component.
         } else {
-          const existingReference = writtenObjects.get(value);
-          if (existingReference !== undefined) {
+          const existingEntry = writtenObjects.get(value);
+          if (existingEntry !== undefined) {
             if (modelRoot === value) {
               // This is the ID we're currently emitting so we need to write it
               // once but if we discover it again, we refer to it by id.
@@ -3803,16 +4323,23 @@ function renderModelDestructive(
               // detect whether this already was emitted and synchronously available. In that
               // case we can refer to it synchronously and only make it lazy otherwise.
               // We currently don't have a data structure that lets us see that though.
-              return existingReference;
+              if (enableFlightLedgers) {
+                recordUnitReference(resolveRunningUnit(), existingEntry.id);
+              }
+              return existingEntry.reference;
             }
           } else if (parentPropertyName.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-            const parentReference = writtenObjects.get(parent);
-            if (parentReference !== undefined) {
+            const parentEntry = writtenObjects.get(parent);
+            if (parentEntry !== undefined) {
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
-              elementReference = parentReference + ':' + parentPropertyName;
-              writtenObjects.set(value, elementReference);
+              elementEntry = writeToDedupeMap(
+                request,
+                value,
+                parentEntry.id,
+                parentEntry.reference + ':' + parentPropertyName,
+              );
             }
           }
         }
@@ -3891,12 +4418,12 @@ function renderModelDestructive(
         if (
           typeof newChild === 'object' &&
           newChild !== null &&
-          elementReference !== null
+          elementEntry !== null
         ) {
           // If this element renders another object, we can now refer to that object through
           // the same location as this element.
           if (!writtenObjects.has(newChild)) {
-            writtenObjects.set(newChild, elementReference);
+            writtenObjects.set(newChild, elementEntry);
           }
         }
         return newChild;
@@ -3950,6 +4477,20 @@ function renderModelDestructive(
           resolvedModel,
         );
       }
+      case REACT_LEDGER_DATA_TYPE: {
+        if (enableFlightLedgers) {
+          return outlineLedgerData(request, task, value as any);
+        }
+        break;
+      }
+      // Handle ledger totals before the generic thenable path, which would
+      // try to unwrap them on the server.
+      case REACT_LEDGER_TOTAL_TYPE: {
+        if (enableFlightLedgers) {
+          return serializeLedgerTotal(request, value as any);
+        }
+        break;
+      }
       case REACT_LEGACY_ELEMENT_TYPE: {
         throw new Error(
           'A React Element from an older version of React was rendered. ' +
@@ -3988,21 +4529,18 @@ function renderModelDestructive(
     }
 
     if (enableTaint) {
-      const tainted = TaintRegistryObjects.get(value);
-      if (tainted !== undefined) {
-        throwTaintViolation(tainted);
-      }
+      throwIfTaintedObject(value);
     }
 
     const writtenObjects = request.writtenObjects;
-    const existingReference = writtenObjects.get(value);
+    const existingEntry = writtenObjects.get(value);
     // $FlowFixMe[method-unbinding]
     if (typeof value.then === 'function') {
       // A weak-pending thenable may never emit, so its reference is marked
       // on the wire ($w instead of $@). That way the client knows to leave
       // it forever pending, instead of erroring it, if the stream closes
       // first.
-      if (existingReference !== undefined) {
+      if (existingEntry !== undefined) {
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
           // previous renders of this element. We only reuse Promises if they're not wrapped
@@ -4018,7 +4556,10 @@ function renderModelDestructive(
           modelRoot = null;
         } else {
           // We've seen this promise before, so we can just refer to the same result.
-          return existingReference;
+          if (enableFlightLedgers) {
+            recordUnitReference(resolveRunningUnit(), existingEntry.id);
+          }
+          return existingEntry.reference;
         }
       }
       // We assume that any object with a .then property is a "Thenable" type,
@@ -4028,16 +4569,19 @@ function renderModelDestructive(
         enableFlightWeakThenables && (value as any).status === 'pending_weak'
           ? serializeWeakPromiseID(promiseId)
           : serializePromiseID(promiseId);
-      writtenObjects.set(value, promiseReference);
+      writeToDedupeMap(request, value, promiseId, promiseReference);
       return promiseReference;
     }
 
-    if (existingReference !== undefined) {
+    if (existingEntry !== undefined) {
       if (modelRoot === value) {
-        if (existingReference !== serializeByValueID(task.id)) {
+        if (existingEntry.reference !== serializeByValueID(task.id)) {
           // Turns out that we already have this root at a different reference.
           // Use that after all.
-          return existingReference;
+          if (enableFlightLedgers) {
+            recordUnitReference(resolveRunningUnit(), existingEntry.id);
+          }
+          return existingEntry.reference;
         }
         // This is the ID we're currently emitting so we need to write it
         // once but if we discover it again, we refer to it by id.
@@ -4045,12 +4589,15 @@ function renderModelDestructive(
       } else {
         // We've already emitted this as an outlined object, so we can
         // just refer to that by its existing ID.
-        return existingReference;
+        if (enableFlightLedgers) {
+          recordUnitReference(resolveRunningUnit(), existingEntry.id);
+        }
+        return existingEntry.reference;
       }
     } else if (parentPropertyName.indexOf(':') === -1) {
       // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-      const parentReference = writtenObjects.get(parent);
-      if (parentReference !== undefined) {
+      const parentEntry = writtenObjects.get(parent);
+      if (parentEntry !== undefined) {
         // If the parent has a reference, we can refer to this object indirectly
         // through the property name inside that parent.
         let propertyName = parentPropertyName;
@@ -4073,7 +4620,12 @@ function renderModelDestructive(
               break;
           }
         }
-        writtenObjects.set(value, parentReference + ':' + propertyName);
+        writeToDedupeMap(
+          request,
+          value,
+          parentEntry.id,
+          parentEntry.reference + ':' + propertyName,
+        );
       }
     }
 
@@ -4235,10 +4787,7 @@ function renderModelDestructive(
 
   if (typeof value === 'string') {
     if (enableTaint) {
-      const tainted = TaintRegistryValues.get(value);
-      if (tainted !== undefined) {
-        throwTaintViolation(tainted.message);
-      }
+      throwIfTaintedValue(value);
     }
     serializedSize += value.length;
     // TODO: Maybe too clever. If we support URL there's no similar trick.
@@ -4295,10 +4844,7 @@ function renderModelDestructive(
     }
 
     if (enableTaint) {
-      const tainted = TaintRegistryObjects.get(value);
-      if (tainted !== undefined) {
-        throwTaintViolation(tainted);
-      }
+      throwIfTaintedObject(value);
     }
 
     if (isOpaqueTemporaryReference(value)) {
@@ -4368,10 +4914,7 @@ function renderModelDestructive(
 
   if (typeof value === 'bigint') {
     if (enableTaint) {
-      const tainted = TaintRegistryValues.get(value);
-      if (tainted !== undefined) {
-        throwTaintViolation(tainted.message);
-      }
+      throwIfTaintedValue(value);
     }
     return serializeBigInt(value);
   }
@@ -4388,9 +4931,11 @@ function logRecoverableError(
   task: Task | null, // DEV-only
 ): string {
   const prevRequest = currentRequest;
+  const prevUnit = currentUnit;
   // We clear the request context so that console.logs inside the callback doesn't
   // get forwarded to the client.
   currentRequest = null;
+  currentUnit = null;
   let errorDigest;
   try {
     const onError = request.onError;
@@ -4417,6 +4962,7 @@ function logRecoverableError(
     }
   } finally {
     currentRequest = prevRequest;
+    currentUnit = prevUnit;
   }
   if (errorDigest != null && typeof errorDigest !== 'string') {
     // eslint-disable-next-line react-internal/prod-error-codes
@@ -4784,6 +5330,349 @@ function emitHintChunk<Code: HintCode>(
   request.completedHintChunks.push(processedChunk);
 }
 
+function emitLedgerChunk(request: Request, row: string): void {
+  request.completedLedgerChunks.push(stringToChunk(row));
+}
+
+function ensureLedgerDeclared(
+  request: Request,
+  ledgers: RequestLedgers,
+  type: Ledger<empty>,
+): number {
+  let declarations = ledgers.declarations;
+  if (declarations === null) {
+    ledgers.declarations = declarations = new Map();
+  }
+  let id = declarations.get(type);
+  if (id === undefined) {
+    id = request.nextChunkId++;
+    declarations.set(type, id);
+    emitLedgerChunk(request, serializeRowHeader('K', id) + type.kind + '\n');
+  }
+  return id;
+}
+
+// Declare totals before the model or unit rows that refer to them.
+function declareLedgerTotal(
+  request: Request,
+  ledgers: RequestLedgers,
+  type: Ledger<empty>,
+): number {
+  const typeId = ensureLedgerDeclared(request, ledgers, type);
+  const id = request.nextChunkId++;
+  emitLedgerChunk(
+    request,
+    serializeRowHeader('Y', id) + typeId.toString(16) + '\n',
+  );
+  return id;
+}
+
+function ensureLedgerTotalDeclared(
+  request: Request,
+  ledgers: RequestLedgers,
+  total: LedgerTotal,
+): number {
+  // $FlowFixMe[constant-condition]
+  if (!supportsRequestStorage) {
+    throw new Error(
+      'Cannot render captured ledgers because this Server Components ' +
+        'renderer has no async context. Use a Node or Edge Server ' +
+        'Components entry point.',
+    );
+  }
+  let declarations = ledgers.declarations;
+  if (declarations === null) {
+    ledgers.declarations = declarations = new Map();
+  }
+  let id = declarations.get(total);
+  if (id === undefined) {
+    id = declareLedgerTotal(request, ledgers, total.type);
+    declarations.set(total, id);
+  }
+  return id;
+}
+
+// Use the model's scalar encoding so values like undefined and NaN survive
+// serialization.
+function serializeLedgerEntry(entry: mixed): LedgerEntryWireForm {
+  switch (typeof entry) {
+    case 'string':
+      if (enableTaint) {
+        throwIfTaintedValue(entry);
+      }
+      return escapeStringValue(entry);
+    case 'number':
+      return serializeNumber(entry);
+    case 'bigint':
+      if (enableTaint) {
+        throwIfTaintedValue(entry);
+      }
+      return serializeBigInt(entry);
+    case 'symbol': {
+      const name = Symbol.keyFor(entry);
+      if (name != null) {
+        return serializeSymbolReference(name);
+      }
+    }
+    // Fallthrough
+    case 'undefined':
+      return serializeUndefined();
+    case 'boolean':
+      return entry;
+    default:
+      return null;
+  }
+}
+
+function emitUnitDeclaration(request: Request, unit: Unit): void {
+  unit.declared = true;
+  const creator = unit.creator;
+  let totalIds = '';
+  const totals = unit.totals;
+  if (totals !== null) {
+    for (let i = 0; i < totals.length; i++) {
+      totalIds += ',"' + totals[i].toString(16) + '"';
+    }
+  }
+  emitLedgerChunk(
+    request,
+    serializeRowHeader('Q', unit.id) +
+      (creator === null ? '[null,[' : '["' + creator.id.toString(16) + '",[') +
+      totalIds.slice(1) +
+      ']]\n',
+  );
+}
+
+// Declare ancestors even when they have no writes: the client needs their
+// child links to collect writes downward from each capture. Declare ancestors
+// first so each unit can be linked to its creator as it arrives.
+function declareUnit(request: Request, unit: Unit): void {
+  if (unit.declared) {
+    return;
+  }
+  const undeclared: Array<Unit> = [unit];
+  let ancestor = unit.creator;
+  while (ancestor !== null && !ancestor.declared) {
+    undeclared.push(ancestor);
+    ancestor = ancestor.creator;
+  }
+  for (let i = undeclared.length - 1; i >= 0; i--) {
+    emitUnitDeclaration(request, undeclared[i]);
+  }
+}
+
+function emitLedgerDeltas(
+  request: Request,
+  ledgers: RequestLedgers,
+  unit: Unit,
+  dirtyDeltas: Map<Ledger<empty>, LedgerCell>,
+): void {
+  dirtyDeltas.forEach((cell, type) => {
+    let delta: LedgerDelta;
+    switch (cell.kind) {
+      case BIT_LEDGER:
+        delta = 1;
+        break;
+      case MASK_LEDGER:
+        delta = serializeNumber(cell.state);
+        break;
+      case MIN_LEDGER:
+      case MAX_LEDGER: {
+        const state = cell.state;
+        if (state === null) {
+          // A cell is created by its first entry, so Min and Max cells cannot
+          // be empty when emitted. This check only refines the state type.
+          return;
+        }
+        delta = serializeNumber(state);
+        break;
+      }
+      default: {
+        const entries: Array<LedgerEntryWireForm> = [];
+        cell.state.forEach(entry => {
+          entries.push(serializeLedgerEntry(entry));
+        });
+        delta = entries;
+      }
+    }
+    const typeId = ensureLedgerDeclared(request, ledgers, type);
+    const row: LedgerDeltaRow = [typeId.toString(16), delta];
+    emitLedgerChunk(
+      request,
+      serializeRowHeader('Z', unit.id) + stringify(row) + '\n',
+    );
+  });
+}
+
+function emitUnitReferences(
+  request: Request,
+  unit: Unit,
+  pending: number | Set<number>,
+): void {
+  let references;
+  if (typeof pending === 'number') {
+    references = '"' + pending.toString(16) + '"';
+  } else {
+    references = '';
+    pending.forEach(row => {
+      references += ',"' + row.toString(16) + '"';
+    });
+    references = references.slice(1);
+  }
+  emitLedgerChunk(
+    request,
+    serializeRowHeader('F', unit.id) + '[' + references + ']\n',
+  );
+}
+
+// A destination can skip intermediate source updates. Joining the current
+// reduction accounts for them; emitted only suppresses redundant wire entries.
+function completeForwardedLedgerTotal(forwarded: ForwardedTotal): void {
+  const source = forwarded.source;
+  const reduced = readLedgerTotal(source);
+  const carrier = forwarded.carrier;
+  const emitted = forwarded.emitted;
+  switch (reduced.kind) {
+    case BIT_LEDGER:
+      if (reduced.state && accumulateLedgerEntry(emitted, true)) {
+        writeLedgerEntry(carrier, source.type, true);
+      }
+      break;
+    case MASK_LEDGER:
+      if (accumulateLedgerEntry(emitted, reduced.state)) {
+        writeLedgerEntry(carrier, source.type, reduced.state);
+      }
+      break;
+    case MIN_LEDGER:
+    case MAX_LEDGER: {
+      const state = reduced.state;
+      if (state !== null && accumulateLedgerEntry(emitted, state)) {
+        writeLedgerEntry(carrier, source.type, state);
+      }
+      break;
+    }
+    default: {
+      // Set entries are only ever appended, so resume after the last one this
+      // destination emitted instead of scanning the whole total each time.
+      let entries = source.entries;
+      if (entries === null) {
+        source.entries = entries = Array.from(reduced.state);
+      }
+      // These writes accumulate in the carrier's dirty cell. Completion emits
+      // all new Set entries together in one Ledger row.
+      for (let i = forwarded.emittedEntries; i < entries.length; i++) {
+        writeLedgerEntry(carrier, source.type, entries[i]);
+      }
+      forwarded.emittedEntries = entries.length;
+    }
+  }
+}
+
+function completeLedgerWork(request: Request): void {
+  // Prepare Ledger chunks alongside newly completed model output. This runs
+  // once at the end of each render phase, instead of upon each addToLedger
+  // call, so we can batch multiple ledger writes together.
+  const ledgers = request.ledgers;
+  if (ledgers === null) {
+    return;
+  }
+  if (ledgers.declarations === null) {
+    // Wait until a capture is used before sending ledger records. Earlier work
+    // may still be reused by a capture that is rendered later.
+    return;
+  }
+  const forwardedTotals = ledgers.forwardedTotals;
+  if (forwardedTotals !== null) {
+    let pending = 0;
+    for (let i = 0; i < forwardedTotals.length; i++) {
+      const forwarded = forwardedTotals[i];
+      completeForwardedLedgerTotal(forwarded);
+      if (forwarded.source.graph !== null) {
+        forwardedTotals[pending++] = forwarded;
+      }
+    }
+    forwardedTotals.length = pending;
+    if (pending === 0) {
+      ledgers.forwardedTotals = null;
+    }
+  }
+  const dirtyUnits = ledgers.dirtyUnits;
+  try {
+    for (let i = 0; i < dirtyUnits.length; i++) {
+      const unit = dirtyUnits[i];
+      declareUnit(request, unit);
+      const dirtyDeltas = unit.dirtyDeltas;
+      if (dirtyDeltas !== null) {
+        emitLedgerDeltas(request, ledgers, unit, dirtyDeltas);
+        unit.dirtyDeltas = null;
+      }
+      const dirtyReferences = unit.dirtyReferences;
+      if (dirtyReferences !== null) {
+        emitUnitReferences(request, unit, dirtyReferences);
+        unit.dirtyReferences = null;
+      }
+    }
+  } catch (error) {
+    // A forwarded entry, or a value tainted after it was written. Completion
+    // runs outside any task, and many of its callers can't handle a throw, so
+    // fail the request here.
+    dirtyUnits.length = 0;
+    logRecoverableError(request, error, null);
+    fatalError(request, error);
+    return;
+  }
+  dirtyUnits.length = 0;
+}
+
+function serializeLedgerTotal(
+  request: Request,
+  total: LedgerTotal | DecodedLedgerTotal,
+): ReactJSONValue {
+  if (enableTaint) {
+    // Totals are serialized before the model path's object taint check.
+    throwIfTaintedObject(total);
+  }
+  // Decoded totals forward work from their source response. Fresh handles
+  // describe a capture in this response, even if another response used them.
+  const decoded: DecodedLedgerTotal = total as any;
+  const source = decoded.total;
+  if (source === undefined) {
+    const ledgers = ensureRequestLedgers(request);
+    const id = ensureLedgerTotalDeclared(request, ledgers, total as any);
+    return '$y' + id.toString(16);
+  }
+  // A render may have assigned the object a model location already. Only
+  // reuse an established Ledger reference here.
+  const existing = request.writtenObjects.get(decoded);
+  if (existing !== undefined && existing.reference[1] === 'y') {
+    return existing.reference;
+  }
+  // Forward it as a total of this request, carried by one rowless unit.
+  const ledgers = ensureRequestLedgers(request);
+  let forwardedTotals = ledgers.forwardedTotals;
+  if (forwardedTotals === null) {
+    ledgers.forwardedTotals = forwardedTotals = [];
+  }
+  const id = declareLedgerTotal(request, ledgers, source.type);
+  const unit = createUnit(
+    request,
+    currentUnitForRequest(request),
+    request.nextChunkId++,
+  );
+  unit.totals = [id];
+  declareUnit(request, unit);
+  forwardedTotals.push({
+    source,
+    carrier: unit,
+    emitted: createLedgerCell(source.type),
+    emittedEntries: 0,
+  });
+  const reference = '$y' + id.toString(16);
+  // Keep identity after the source closes and active forwarding is discarded.
+  writeToDedupeMap(request, decoded, unit.id, reference);
+  return reference;
+}
+
 function emitSymbolChunk(request: Request, id: number, name: string): void {
   const symbolReference = serializeSymbolReference(name);
   const processedChunk = encodeReferenceChunk(request, id, symbolReference);
@@ -4916,7 +5805,7 @@ function outlineComponentInfo(
   const ref = serializeByValueID(id);
   request.writtenDebugObjects.set(componentInfo, ref);
   // We also store this in the main dedupe set so that it can be referenced by inline React Elements.
-  request.writtenObjects.set(componentInfo, ref);
+  writeToDedupeMap(request, componentInfo, id, ref);
   return ref;
 }
 
@@ -5223,6 +6112,12 @@ function renderDebugModel(
   }
 
   if (typeof value === 'object') {
+    if (enableFlightLedgers && value.$$typeof === REACT_LEDGER_TOTAL_TYPE) {
+      // Totals can only be read after the response closes. Debug inspection
+      // must not unwrap them or forward their effects into this response.
+      return '$Y';
+    }
+
     if (isClientReference(value)) {
       // We actually have this value on the client so we could import it.
       // This might be confusing though because on the Server it won't actually
@@ -5315,11 +6210,11 @@ function renderDebugModel(
     }
 
     const writtenObjects = request.writtenObjects;
-    const existingReference = writtenObjects.get(value);
-    if (existingReference !== undefined) {
+    const existingEntry = writtenObjects.get(value);
+    if (existingEntry !== undefined) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
-      return existingReference;
+      return existingEntry.reference;
     }
 
     if (counter.objectLimit <= 0 && !doNotLimit.has(value)) {
@@ -6138,10 +7033,7 @@ function emitChunk(
   // $FlowFixMe[invalid-compare]
   if (typeof value === 'string' && byteLengthOfChunk !== null) {
     if (enableTaint) {
-      const tainted = TaintRegistryValues.get(value);
-      if (tainted !== undefined) {
-        throwTaintViolation(tainted.message);
-      }
+      throwIfTaintedValue(value);
     }
     emitTextChunk(request, id, value, false);
     return;
@@ -6254,11 +7146,34 @@ function erroredTask(request: Request, task: Task, error: mixed): void {
 const emptyRoot = {};
 
 function retryTask(request: Request, task: Task): void {
+  if (enableFlightLedgers) {
+    const unit = task.unit;
+    if (unit !== null) {
+      // Restore the task's unit when it resumes so subsequent async work
+      // inherits the same attribution.
+      const prevUnit = currentUnit;
+      currentUnit = unit;
+      try {
+        unitStorage.run(unit, retryTaskImpl, request, task);
+      } finally {
+        currentUnit = prevUnit;
+      }
+      return;
+    }
+  }
+  retryTaskImpl(request, task);
+}
+
+function retryTaskImpl(request: Request, task: Task): void {
   if (task.status !== PENDING) {
     // We completed this by other means before we had a chance to retry it.
     return;
   }
 
+  runWithRequest(request, retryTaskWithRequest, task);
+}
+
+function retryTaskWithRequest(request: Request, task: Task): void {
   const prevCanEmitDebugInfo = canEmitDebugInfo;
   task.status = RENDERING;
 
@@ -6320,7 +7235,12 @@ function retryTask(request: Request, task: Task): void {
     if (typeof resolvedModel === 'object' && resolvedModel !== null) {
       // We're not in a contextual place here so we can refer to this object by this ID for
       // any future references.
-      request.writtenObjects.set(resolvedModel, serializeByValueID(task.id));
+      writeToDedupeMap(
+        request,
+        resolvedModel,
+        task.id,
+        serializeByValueID(task.id),
+      );
 
       // Object might contain unresolved values like additional elements.
       // This is simulating what the JSON loop would do if this was part of it.
@@ -6385,6 +7305,10 @@ function retryTask(request: Request, task: Task): void {
 }
 
 function tryStreamTask(request: Request, task: Task): void {
+  runWithRequest(request, tryStreamTaskWithRequest, task);
+}
+
+function tryStreamTaskWithRequest(request: Request, task: Task): void {
   // This is used to try to emit something synchronously but if it suspends,
   // we emit a reference to a new outlined task immediately instead.
   const prevCanEmitDebugInfo = canEmitDebugInfo;
@@ -6406,13 +7330,10 @@ function tryStreamTask(request: Request, task: Task): void {
 
 function performWork(request: Request): void {
   markAsyncSequenceRootTask();
+  runWithRequest(request, performWorkWithRequest, undefined);
+}
 
-  const prevDispatcher = ReactSharedInternals.H;
-  ReactSharedInternals.H = HooksDispatcher;
-  const prevRequest = currentRequest;
-  currentRequest = request;
-  prepareToUseHooksForRequest(request);
-
+function performWorkWithRequest(request: Request): void {
   try {
     const pingedTasks = request.pingedTasks;
     request.pingedTasks = [];
@@ -6420,14 +7341,40 @@ function performWork(request: Request): void {
       const task = pingedTasks[i];
       retryTask(request, task);
     }
+    completeWork(request);
     flushCompletedChunks(request);
   } catch (error) {
     logRecoverableError(request, error, null);
     fatalError(request, error);
-  } finally {
-    ReactSharedInternals.H = prevDispatcher;
-    resetHooksForRequest();
-    currentRequest = prevRequest;
+  }
+}
+
+function completeWork(request: Request): void {
+  // Called right before exiting the render phase of performWork. This lets us
+  // batch certain kinds of serialization work that might be spread across
+  // multiple functions, components, or tasks, but without waiting for the
+  // flushing phase (which could be blocked by backpressure). Other output
+  // producers call this before scheduling a flush as well.
+  //
+  // For example, if the same ledger is written to multiple times in the same
+  // task, we can combine the writes into a single row describing the delta,
+  // rather than a separate row per addToLedger call.
+  //
+  // Call this before requesting a flush, even if one is already scheduled or
+  // no destination is attached. Once prepared, the chunks can wait for the
+  // destination without needing more render work when it resumes.
+  //
+  // Also complete before notifying onAllReady. The last task can report
+  // readiness while performWork is still running, and the callback can make
+  // the output available before performWork reaches its completion call.
+  // Abort and prerender halt paths need the same ordering.
+  //
+  // More than one of these paths can run for a batch. Completion consumes the
+  // pending writes, so another call without new work emits no additional rows.
+  // Starting or resuming a destination only drains chunks; it doesn't complete
+  // work or sample forwarded totals again.
+  if (enableFlightLedgers) {
+    completeLedgerWork(request);
   }
 }
 
@@ -6557,6 +7504,28 @@ function flushCompletedChunks(request: Request): void {
       }
       hintChunks.splice(0, i);
 
+      if (enableFlightLedgers) {
+        // Ledger rows must precede the model data they describe so a partial
+        // response cannot include data without its corresponding ledger entries.
+        // If backpressure interrupts this queue, stop before writing model rows.
+        const ledgerChunks = request.completedLedgerChunks;
+        i = 0;
+        for (; i < ledgerChunks.length; i++) {
+          const chunk = ledgerChunks[i];
+          const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
+          if (!keepWriting) {
+            request.destination = null;
+            i++;
+            ledgerChunks.splice(0, i);
+            // A break would let model rows flush ahead of pending ledger entries.
+            // The finally block still flushes buffered bytes, and startFlowing
+            // resumes this queue when the destination is ready again.
+            return;
+          }
+        }
+        ledgerChunks.splice(0, i);
+      }
+
       // Debug meta data comes before the model data because it will often end up blocking the model from
       // completing since the JSX will reference the debug data.
       if (__DEV__ && request.debugDestination === null) {
@@ -6653,8 +7622,9 @@ function flushCompletedChunks(request: Request): void {
     } finally {
       request.flushScheduled = false;
       completeWriting(destination);
+      // Flush on ledger backpressure returns, and on throws for bytes already buffered.
+      flushBuffered(destination);
     }
-    flushBuffered(destination);
   }
   if (request.pendingChunks === 0) {
     // There are no pending chunks left, so the render is complete and its cache
@@ -6723,7 +7693,18 @@ export function startWork(request: Request): void {
   // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     scheduleMicrotask(() => {
-      requestStorage.run(request, performWork, request);
+      const rootUnit = request.rootUnit;
+      if (rootUnit !== null) {
+        const prevUnit = currentUnit;
+        currentUnit = rootUnit;
+        try {
+          unitStorage.run(rootUnit, performWork, request);
+        } finally {
+          currentUnit = prevUnit;
+        }
+      } else {
+        requestStorage.run(request, performWork, request);
+      }
     });
   } else {
     scheduleMicrotask(() => performWork(request));
@@ -6757,6 +7738,8 @@ function enqueueFlush(request: Request): void {
 
 function callOnAllReadyIfReady(request: Request): void {
   if (request.abortableTasks.size === 0) {
+    // A prerender's callback can expose its output before performWork returns.
+    completeWork(request);
     const onAllReady = request.onAllReady;
     onAllReady();
   }
@@ -6816,6 +7799,7 @@ export function stopFlowing(request: Request): void {
 function finishHalt(request: Request, abortedTasks: Set<Task>): void {
   try {
     abortedTasks.forEach(task => finishHaltedTask(task, request));
+    completeWork(request);
     const onAllReady = request.onAllReady;
     onAllReady();
     flushCompletedChunks(request);
@@ -6832,6 +7816,7 @@ function finishAbort(
 ): void {
   try {
     abortedTasks.forEach(task => finishAbortedTask(task, request, errorId));
+    completeWork(request);
     const onAllReady = request.onAllReady;
     onAllReady();
     flushCompletedChunks(request);
@@ -6911,6 +7896,7 @@ export function abort(request: Request, reason: mixed): void {
         scheduleWork(() => finishAbort(request, abortableTasks, errorId));
       }
     } else {
+      completeWork(request);
       const onAllReady = request.onAllReady;
       onAllReady();
       flushCompletedChunks(request);
@@ -6957,6 +7943,7 @@ export function resolveDebugMessage(request: Request, message: string): void {
           request.pendingDebugChunks--;
           deferredDebugObjects.retained.delete(id);
           deferredDebugObjects.existing.delete(retainedValue);
+          completeWork(request);
           enqueueFlush(request);
         }
       }
@@ -6972,6 +7959,7 @@ export function resolveDebugMessage(request: Request, message: string): void {
           deferredDebugObjects.retained.delete(id);
           deferredDebugObjects.existing.delete(retainedValue);
           emitOutlinedDebugModelChunk(request, id, counter, retainedValue);
+          completeWork(request);
           enqueueFlush(request);
         }
       }
@@ -7022,5 +8010,6 @@ export function closeDebugChannel(request: Request): void {
     deferredDebugObjects.retained.delete(id);
     deferredDebugObjects.existing.delete(value);
   });
+  completeWork(request);
   enqueueFlush(request);
 }

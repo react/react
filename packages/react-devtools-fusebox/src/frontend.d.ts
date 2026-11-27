@@ -81,3 +81,7 @@ export function initializeProfiler(
   node: Element | Document,
   options: InitializationOptions,
 ): void;
+export function initializeSuspense(
+  node: Element | Document,
+  options: InitializationOptions,
+): void;

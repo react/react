@@ -26,6 +26,7 @@ import {
   processBinaryChunk,
   processStringChunk,
   close,
+  resolveLedgerTotals,
   injectIntoDevTools,
 } from 'react-client/src/ReactFlightClient';
 
@@ -53,6 +54,7 @@ export type Options = {
   findSourceMapURL?: FindSourceMapURLCallback,
   replayConsoleLogs?: boolean,
   environmentName?: string,
+  unstable_requestId?: string,
   startTime?: number,
   endTime?: number,
 };
@@ -114,6 +116,7 @@ function createResponseFromOptions(options: void | Options) {
       : undefined,
     __DEV__ && options && options.endTime != null ? options.endTime : undefined,
     debugChannel,
+    __DEV__ && options ? options.unstable_requestId : undefined,
   );
 }
 
@@ -200,12 +203,16 @@ function createFromReadableStream<T>(
         close(response);
       }
     };
+    const handleMainDone = () => {
+      resolveLedgerTotals(response);
+      handleDone();
+    };
     startReadingFromUniversalStream(
       response,
       options.debugChannel.readable,
       handleDone,
     );
-    startReadingFromStream(response, stream, handleDone, stream);
+    startReadingFromStream(response, stream, handleMainDone, stream);
   } else {
     startReadingFromStream(
       response,
@@ -236,12 +243,16 @@ function createFromFetch<T>(
             close(response);
           }
         };
+        const handleMainDone = () => {
+          resolveLedgerTotals(response);
+          handleDone();
+        };
         startReadingFromUniversalStream(
           response,
           options.debugChannel.readable,
           handleDone,
         );
-        startReadingFromStream(response, r.body as any, handleDone, r);
+        startReadingFromStream(response, r.body as any, handleMainDone, r);
       } else {
         startReadingFromStream(
           response,

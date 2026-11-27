@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {areSourceLocationsEqual} from '../HIR/SourceLocation';
 import {
   CompilerDiagnostic,
   CompilerError,
@@ -199,7 +200,9 @@ function tyEqual(a: RefAccessType, b: RefAccessType): boolean {
         reason: 'Expected ref value',
         loc: GeneratedSource,
       });
-      return a.loc == b.loc;
+      return a.loc === undefined || b.loc === undefined
+        ? a.loc === b.loc
+        : areSourceLocationsEqual(a.loc, b.loc);
     case 'Structure': {
       CompilerError.invariant(b.kind === 'Structure', {
         reason: 'Expected structure',

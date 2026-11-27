@@ -5,6 +5,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {getBabelLocation} from './SourceLocation';
+import type * as t from '@babel/types';
+
 import {CompilerError} from '../CompilerError';
 import {printReactiveScopeSummary} from '../ReactiveScopes/PrintReactiveFunction';
 import DisjointSet from '../Utils/DisjointSet';
@@ -891,7 +894,10 @@ export function printType(type: Type): string {
   }
 }
 
-export function printSourceLocation(loc: SourceLocation): string {
+export function printSourceLocation(
+  source: SourceLocation | t.SourceLocation,
+): string {
+  const loc = getBabelLocation(source);
   if (typeof loc === 'symbol') {
     return 'generated';
   } else {
@@ -899,7 +905,10 @@ export function printSourceLocation(loc: SourceLocation): string {
   }
 }
 
-export function printSourceLocationLine(loc: SourceLocation): string {
+export function printSourceLocationLine(
+  source: SourceLocation | t.SourceLocation,
+): string {
+  const loc = getBabelLocation(source);
   if (typeof loc === 'symbol') {
     return 'generated';
   } else {

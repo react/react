@@ -52,7 +52,6 @@ import {
   alwaysThrottleRetries,
   enableInfiniteRenderLoopDetection,
   enableInfiniteRenderLoopDetectionForceThrow,
-  disableLegacyMode,
   enableComponentPerformanceTrack,
   enableYieldingBeforePassive,
   enableThrottledScheduling,
@@ -62,6 +61,7 @@ import {
 } from 'shared/ReactFeatureFlags';
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
+import noop from 'shared/noop';
 import is from 'shared/objectIs';
 
 import reportGlobalError from 'shared/reportGlobalError';
@@ -135,7 +135,6 @@ import {
 import {
   NoMode,
   ProfileMode,
-  ConcurrentMode,
   StrictLegacyMode,
   StrictEffectsMode,
 } from './ReactTypeOfMode';
@@ -154,8 +153,6 @@ import {
   HostHoistable,
   HostSingleton,
 } from './ReactWorkTags';
-import {ConcurrentRoot, LegacyRoot} from './ReactRootTags';
-import type {Flags} from './ReactFiberFlags';
 import {
   NoFlags,
   Incomplete,
@@ -168,8 +165,6 @@ import {
   PassiveMask,
   PlacementDEV,
   Visibility,
-  MountPassiveDev,
-  MountLayoutDev,
   DidDefer,
   ShouldSuspendCommit,
   MaySuspendCommit,
@@ -196,6 +191,7 @@ import {
   includesExpiredLane,
   getNextLanes,
   getEntangledLanes,
+  DeferredLane,
   getLanesToRetrySynchronouslyOnError,
   upgradePendingLanesToSync,
   markRootSuspended as _markRootSuspended,
@@ -252,10 +248,6 @@ import {
   reconnectPassiveEffects,
   reappearLayoutEffectsForDEVValidation,
   disconnectPassiveEffect,
-  invokeLayoutEffectMountInDEV,
-  invokePassiveEffectMountInDEV,
-  invokeLayoutEffectUnmountInDEV,
-  invokePassiveEffectUnmountInDEV,
   accumulateSuspenseyCommit,
 } from './ReactFiberCommitWork';
 import {resetShouldStartViewTransition} from './ReactFiberCommitViewTransitions';
@@ -380,10 +372,7 @@ import {
 } from './ReactFiberDevToolsHook';
 import {onCommitRoot as onCommitRootTestSelector} from './ReactTestSelectors';
 import {releaseCache} from './ReactFiberCacheComponent';
-import {
-  isLegacyActEnvironment,
-  isConcurrentActEnvironment,
-} from './ReactFiberAct';
+import {isConcurrentActEnvironment} from './ReactFiberAct';
 import {processTransitionCallbacks} from './ReactFiberTracingMarkerComponent';
 import {
   SuspenseException,
@@ -403,7 +392,6 @@ import {resetChildReconcilerOnUnwind} from './ReactChildFiber';
 import {
   ensureRootIsScheduled,
   flushSyncWorkOnAllRoots,
-  flushSyncWorkOnLegacyRootsOnly,
   requestTransitionLane,
 } from './ReactFiberRootScheduler';
 import {getMaskedContext, getUnmaskedContext} from './ReactFiberLegacyContext';
@@ -810,10 +798,7 @@ export function getCurrentTime(): number {
 
 export function requestUpdateLane(fiber: Fiber): Lane {
   // Special cases
-  const mode = fiber.mode;
-  if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
-    return SyncLane as Lane;
-  } else if (
+  if (
     (executionContext & RenderContext) !== NoContext &&
     workInProgressRootRenderLanes !== NoLanes
   ) {
@@ -864,20 +849,6 @@ export function requestUpdateLane(fiber: Fiber): Lane {
     clearUseWarnings();
   }
   return eventPriorityToLane(priority);
-}
-
-function requestRetryLane(fiber: Fiber) {
-  // This is a fork of `requestUpdateLane` designed specifically for Suspense
-  // "retries" — a special update that attempts to flip a Suspense boundary
-  // from its placeholder state to its primary/resolved state.
-
-  // Special cases
-  const mode = fiber.mode;
-  if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
-    return SyncLane as Lane;
-  }
-
-  return claimNextRetryLane();
 }
 
 export function requestDeferredLane(): Lane {
@@ -1090,24 +1061,6 @@ export function scheduleUpdateOnFiber(
     }
 
     ensureRootIsScheduled(root);
-    if (
-      lane === SyncLane &&
-      executionContext === NoContext &&
-      !disableLegacyMode &&
-      (fiber.mode & ConcurrentMode) === NoMode
-    ) {
-      if (__DEV__ && ReactSharedInternals.isBatchingLegacy) {
-        // Treat `act` as if it's inside `batchedUpdates`, even in legacy mode.
-      } else {
-        // Flush the synchronous work now, unless we're already working or inside
-        // a batch. This is intentionally inside scheduleUpdateOnFiber instead of
-        // scheduleCallbackForFiber to preserve the ability to schedule a callback
-        // without immediately flushing it. We only do this for user-initiated
-        // updates, to preserve historical behavior of legacy mode.
-        resetRenderTimer();
-        flushSyncWorkOnLegacyRootsOnly();
-      }
-    }
   }
 }
 
@@ -1243,10 +1196,7 @@ export function performWorkOnRoot(
       }
 
       // Check if something threw
-      if (
-        (disableLegacyMode || root.tag !== LegacyRoot) &&
-        exitStatus === RootErrored
-      ) {
+      if (exitStatus === RootErrored) {
         const lanesThatJustErrored = lanes;
         const errorRetryLanes = getLanesToRetrySynchronouslyOnError(
           root,
@@ -1817,16 +1767,34 @@ function markRootSuspended(
   didAttemptEntireTree: boolean,
 ) {
   // When suspending, we should always mark the entangled lanes as suspended.
-  suspendedLanes = getEntangledLanes(root, suspendedLanes);
+  const entangledLanes = getEntangledLanes(root, suspendedLanes);
+  let prewarmedLanes = NoLanes;
+  if (!includesSomeLane(entangledLanes, DeferredLane)) {
+    suspendedLanes = entangledLanes;
+  } else {
+    // Except for a deferred render. It's entangled with the lanes that spawned
+    // it, so that it includes their updates. But it renders the final values
+    // instead of the initial ones, so its suspending doesn't mean those lanes
+    // are blocked. It only counts as having prewarmed them.
+    prewarmedLanes = removeLanes(
+      entangledLanes,
+      mergeLanes(suspendedLanes, DeferredLane),
+    );
+  }
 
   // When suspending, we should always exclude lanes that were pinged or (more
   // rarely, since we try to avoid it) updated during the render phase.
-  suspendedLanes = removeLanes(suspendedLanes, workInProgressRootPingedLanes);
-  suspendedLanes = removeLanes(
-    suspendedLanes,
+  const excludedLanes = mergeLanes(
+    workInProgressRootPingedLanes,
     workInProgressRootInterleavedUpdatedLanes,
   );
-  _markRootSuspended(root, suspendedLanes, spawnedLane, didAttemptEntireTree);
+  _markRootSuspended(
+    root,
+    removeLanes(suspendedLanes, excludedLanes),
+    removeLanes(prewarmedLanes, excludedLanes),
+    spawnedLane,
+    didAttemptEntireTree,
+  );
 }
 
 export function flushRoot(root: FiberRoot, lanes: Lanes) {
@@ -1861,29 +1829,9 @@ export function deferredUpdates<A>(fn: () => A): A {
 }
 
 export function batchedUpdates<A, R>(fn: A => R, a: A): R {
-  if (disableLegacyMode) {
-    // batchedUpdates is a no-op now, but there's still some internal react-dom
-    // code calling it, that we can't remove until we remove legacy mode.
-    return fn(a);
-  } else {
-    const prevExecutionContext = executionContext;
-    executionContext |= BatchedContext;
-    try {
-      return fn(a);
-    } finally {
-      executionContext = prevExecutionContext;
-      // If there were legacy sync updates, flush them at the end of the outer
-      // most batchedUpdates-like method.
-      if (
-        executionContext === NoContext &&
-        // Treat `act` as if it's inside `batchedUpdates`, even in legacy mode.
-        !(__DEV__ && ReactSharedInternals.isBatchingLegacy)
-      ) {
-        resetRenderTimer();
-        flushSyncWorkOnLegacyRootsOnly();
-      }
-    }
-  }
+  // batchedUpdates is a no-op now, but there's still some internal react-dom
+  // code calling it.
+  return fn(a);
 }
 
 export function discreteUpdates<A, B, C, D, R>(
@@ -1913,17 +1861,6 @@ export function discreteUpdates<A, B, C, D, R>(
 declare function flushSyncFromReconciler<R>(fn: () => R): R;
 declare function flushSyncFromReconciler(void): void;
 export function flushSyncFromReconciler<R>(fn: (() => R) | void): R | void {
-  // In legacy mode, we flush pending passive effects at the beginning of the
-  // next event, not at the end of the previous one.
-  if (
-    pendingEffectsStatus !== NO_PENDING_EFFECTS &&
-    !disableLegacyMode &&
-    pendingEffectsRoot.tag === LegacyRoot &&
-    (executionContext & (RenderContext | CommitContext)) === NoContext
-  ) {
-    flushPendingEffects();
-  }
-
   const prevExecutionContext = executionContext;
   executionContext |= BatchedContext;
 
@@ -2251,6 +2188,10 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
     root.timeoutHandle = noTimeout;
     // $FlowFixMe[incompatible-call] Complains noTimeout is not a TimeoutID, despite the check above
     cancelTimeout(timeoutHandle);
+    // The timeout was holding back a throttled retry, whose data has already
+    // resolved, so nothing else will ping it. Ping it now so that it renders
+    // again once this render finishes or suspends.
+    markRootPinged(root, pendingEffectsLanes);
   }
   const cancelPendingCommit = root.cancelPendingCommit;
   if (cancelPendingCommit !== null) {
@@ -4250,7 +4191,7 @@ function flushSpawnedWork(): void {
 
   if (__DEV__) {
     if (!rootDidHavePassiveEffects) {
-      commitDoubleInvokeEffectsInDEV(root, false);
+      commitDoubleInvokeEffectsInDEV(root);
     }
   }
 
@@ -4330,10 +4271,7 @@ function flushSpawnedWork(): void {
   // TODO: We can optimize this by not scheduling the callback earlier. Since we
   // currently schedule the callback in multiple places, will wait until those
   // are consolidated.
-  if (
-    includesSyncLane(pendingEffectsLanes) &&
-    (disableLegacyMode || root.tag !== LegacyRoot)
-  ) {
+  if (includesSyncLane(pendingEffectsLanes)) {
     flushPendingEffects();
   }
 
@@ -4807,7 +4745,7 @@ function flushPassiveEffectsImpl() {
   }
 
   if (__DEV__) {
-    commitDoubleInvokeEffectsInDEV(root, true);
+    commitDoubleInvokeEffectsInDEV(root);
   }
 
   executionContext = prevExecutionContext;
@@ -5017,8 +4955,43 @@ export function attachPingListener(
         restorePendingUpdaters(root, lanes);
       }
     }
-    wakeable.then(ping, ping);
+    attachContextPreservingListener(wakeable, ping);
   }
+}
+
+// Attaches a listener that runs in the async context of the caller, not the
+// context of whoever settles the wakeable. Custom thenables, like Flight's
+// ReactPromise, often call their listeners synchronously from wherever the
+// data arrives. That drops the context of the render that suspended, which
+// browsers use to attribute work to a user interaction (e.g. Chrome's soft
+// navigation detection). A native promise reaction captures the current
+// context when `.then` is called, so route the listener through one.
+export function attachContextPreservingListener(
+  wakeable: Wakeable,
+  listener: () => void,
+): void {
+  if (
+    // Without native promises there's no context to preserve.
+    typeof Promise !== 'function' ||
+    // Tests that use act expect the listener to run synchronously, inside the
+    // act scope that settled the wakeable. They don't need the async context.
+    // Checking actQueue first avoids the misconfigured-environment warning
+    // that isConcurrentActEnvironment logs inside an act scope.
+    (__DEV__ &&
+      (ReactSharedInternals.actQueue !== null || isConcurrentActEnvironment()))
+  ) {
+    wakeable.then(listener, listener);
+    return;
+  }
+  let resolve: () => void = noop;
+  const nativePromise = new Promise<void>(r => {
+    resolve = r;
+  });
+  nativePromise.then(listener);
+  // Settle without forwarding the value. Forwarding it would make the native
+  // promise adopt it if it were itself a thenable.
+  const settle = () => resolve();
+  wakeable.then(settle, settle);
 }
 
 function pingSuspendedRoot(
@@ -5150,7 +5123,7 @@ function retryTimedOutBoundary(boundaryFiber: Fiber, retryLane: Lane) {
   if (retryLane === NoLane) {
     // TODO: Assign this to `suspenseState.retryLane`? to avoid
     // unnecessary entanglement?
-    retryLane = requestRetryLane(boundaryFiber);
+    retryLane = claimNextRetryLane();
   }
   // TODO: Special case idle priority?
   const root = enqueueConcurrentRenderForLane(boundaryFiber, retryLane);
@@ -5186,7 +5159,12 @@ export function resolveRetryWakeable(boundaryFiber: Fiber, wakeable: Wakeable) {
       retryCache = boundaryFiber.stateNode;
       break;
     case OffscreenComponent: {
-      const instance: OffscreenInstance = boundaryFiber.stateNode;
+      const instance: OffscreenInstance | null = boundaryFiber.stateNode;
+      if (instance === null) {
+        // The boundary was deleted before the wakeable resolved. Deletion
+        // detaches the stateNode, so there's nothing to retry.
+        return;
+      }
       retryCache = instance._retryCache;
       break;
     }
@@ -5395,82 +5373,15 @@ function doubleInvokeEffectsInDEVIfNecessary(
   }
 }
 
-function commitDoubleInvokeEffectsInDEV(
-  root: FiberRoot,
-  hasPassiveEffects: boolean,
-) {
+function commitDoubleInvokeEffectsInDEV(root: FiberRoot) {
   if (__DEV__) {
-    if (disableLegacyMode || root.tag !== LegacyRoot) {
-      let doubleInvokeEffects = true;
-
-      if (
-        (disableLegacyMode || root.tag === ConcurrentRoot) &&
-        !(root.current.mode & (StrictLegacyMode | StrictEffectsMode))
-      ) {
-        doubleInvokeEffects = false;
-      }
-      recursivelyTraverseAndDoubleInvokeEffectsInDEV(
-        root,
-        root.current,
-        doubleInvokeEffects,
-      );
-    } else {
-      // TODO: Is this runWithFiberInDEV needed since the other effect functions do it too?
-      runWithFiberInDEV(
-        root.current,
-        legacyCommitDoubleInvokeEffectsInDEV,
-        root.current,
-        hasPassiveEffects,
-      );
-    }
-  }
-}
-
-function legacyCommitDoubleInvokeEffectsInDEV(
-  fiber: Fiber,
-  hasPassiveEffects: boolean,
-) {
-  // TODO (StrictEffects) Should we set a marker on the root if it contains strict effects
-  // so we don't traverse unnecessarily? similar to subtreeFlags but just at the root level.
-  // Maybe not a big deal since this is DEV only behavior.
-
-  invokeEffectsInDev(fiber, MountLayoutDev, invokeLayoutEffectUnmountInDEV);
-  if (hasPassiveEffects) {
-    invokeEffectsInDev(fiber, MountPassiveDev, invokePassiveEffectUnmountInDEV);
-  }
-
-  invokeEffectsInDev(fiber, MountLayoutDev, invokeLayoutEffectMountInDEV);
-  if (hasPassiveEffects) {
-    invokeEffectsInDev(fiber, MountPassiveDev, invokePassiveEffectMountInDEV);
-  }
-}
-
-function invokeEffectsInDev(
-  firstChild: Fiber,
-  fiberFlags: Flags,
-  invokeEffectFn: (fiber: Fiber) => void,
-) {
-  let current: null | Fiber = firstChild;
-  let subtreeRoot = null;
-  while (current != null) {
-    const primarySubtreeFlag = current.subtreeFlags & fiberFlags;
-    if (
-      current !== subtreeRoot &&
-      current.child != null &&
-      primarySubtreeFlag !== NoFlags
-    ) {
-      current = current.child;
-    } else {
-      if ((current.flags & fiberFlags) !== NoFlags) {
-        invokeEffectFn(current);
-      }
-
-      if (current.sibling !== null) {
-        current = current.sibling;
-      } else {
-        current = subtreeRoot = current.return;
-      }
-    }
+    const doubleInvokeEffects =
+      (root.current.mode & (StrictLegacyMode | StrictEffectsMode)) !== NoMode;
+    recursivelyTraverseAndDoubleInvokeEffectsInDEV(
+      root,
+      root.current,
+      doubleInvokeEffects,
+    );
   }
 }
 
@@ -5479,10 +5390,6 @@ export function warnAboutUpdateOnNotYetMountedFiberInDEV(fiber: Fiber) {
   if (__DEV__) {
     if ((executionContext & RenderContext) !== NoContext) {
       // We let the other warning about render phase updates deal with this one.
-      return;
-    }
-
-    if (!disableLegacyMode && !(fiber.mode & ConcurrentMode)) {
       return;
     }
 
@@ -5613,31 +5520,9 @@ function shouldForceFlushFallbacksInDEV() {
 
 function warnIfUpdatesNotWrappedWithActDEV(fiber: Fiber): void {
   if (__DEV__) {
-    if (disableLegacyMode || fiber.mode & ConcurrentMode) {
-      if (!isConcurrentActEnvironment()) {
-        // Not in an act environment. No need to warn.
-        return;
-      }
-    } else {
-      // Legacy mode has additional cases where we suppress a warning.
-      if (!isLegacyActEnvironment(fiber)) {
-        // Not in an act environment. No need to warn.
-        return;
-      }
-      if (executionContext !== NoContext) {
-        // Legacy mode doesn't warn if the update is batched, i.e.
-        // batchedUpdates or flushSync.
-        return;
-      }
-      if (
-        fiber.tag !== FunctionComponent &&
-        fiber.tag !== ForwardRef &&
-        fiber.tag !== SimpleMemoComponent
-      ) {
-        // For backwards compatibility with pre-hooks code, legacy mode only
-        // warns for updates that originate from a hook.
-        return;
-      }
+    if (!isConcurrentActEnvironment()) {
+      // Not in an act environment. No need to warn.
+      return;
     }
 
     if (ReactSharedInternals.actQueue === null) {
@@ -5663,7 +5548,6 @@ function warnIfUpdatesNotWrappedWithActDEV(fiber: Fiber): void {
 function warnIfSuspenseResolutionNotWrappedWithActDEV(root: FiberRoot): void {
   if (__DEV__) {
     if (
-      (disableLegacyMode || root.tag !== LegacyRoot) &&
       isConcurrentActEnvironment() &&
       ReactSharedInternals.actQueue === null
     ) {

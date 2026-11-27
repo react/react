@@ -448,56 +448,6 @@ describe('ReactSuspenseEffectsSemanticsDOM', () => {
     expect(container.innerHTML).toBe('<h1>Hello</h1>');
   });
 
-  // @gate !disableLegacyMode
-  it('regression: unmount hidden tree, in legacy mode', async () => {
-    // In legacy mode, when a tree suspends and switches to a fallback, the
-    // effects are not unmounted. So we have to unmount them during a deletion.
-
-    function Child() {
-      React.useLayoutEffect(() => {
-        Scheduler.log('Mount');
-        return () => {
-          Scheduler.log('Unmount');
-        };
-      }, []);
-      return <Text text="Child" />;
-    }
-
-    function Sibling() {
-      return <Text text="Sibling" />;
-    }
-    const LazySibling = React.lazy(() => fakeImport(Sibling));
-
-    function App({showMore}) {
-      return (
-        <React.Suspense fallback={<Text text="Loading..." />}>
-          <Child />
-          {showMore ? <LazySibling /> : null}
-        </React.Suspense>
-      );
-    }
-
-    // Initial render
-    ReactDOM.render(<App showMore={false} />, container);
-    assertLog(['Child', 'Mount']);
-
-    // Update that suspends, causing the existing tree to switches it to
-    // a fallback.
-    ReactDOM.render(<App showMore={true} />, container);
-    assertLog([
-      'Child',
-      'Loading...',
-
-      // In a concurrent root, the effect would unmount here. But this is legacy
-      // mode, so it doesn't.
-      // Unmount
-    ]);
-
-    // Delete the tree and unmount the effect
-    ReactDOM.render(null, container);
-    assertLog(['Unmount']);
-  });
-
   it('does not call cleanup effects twice after a bailout', async () => {
     const never = new Promise(resolve => {});
     function Never() {

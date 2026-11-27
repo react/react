@@ -38,6 +38,15 @@ import {forwardRef} from './ReactForwardRef';
 import {lazy} from './ReactLazy';
 import {memo} from './ReactMemo';
 import {cache, cacheSignal} from './ReactCacheServer';
+import {
+  createBitLedger,
+  createMaskLedger,
+  createMinLedger,
+  createMaxLedger,
+  createSetLedger,
+  addToLedger,
+  captureLedgers,
+} from './ReactLedgers';
 import {startTransition} from './ReactStartTransition';
 import version from 'shared/ReactVersion';
 
@@ -73,6 +82,13 @@ export {
   memo,
   cache,
   cacheSignal,
+  createBitLedger,
+  createMaskLedger,
+  createMinLedger,
+  createMaxLedger,
+  createSetLedger,
+  addToLedger,
+  captureLedgers,
   startTransition,
   getCacheForType as unstable_getCacheForType,
   useId,

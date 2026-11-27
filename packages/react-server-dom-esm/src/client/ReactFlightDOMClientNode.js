@@ -25,6 +25,7 @@ import {
   processStringChunk,
   processBinaryChunk,
   close,
+  resolveLedgerTotals,
 } from 'react-client/src/ReactFlightClient';
 
 import {createServerReference as createServerReferenceImpl} from 'react-client/src/ReactFlightReplyClient';
@@ -58,6 +59,7 @@ export type Options = {
   findSourceMapURL?: FindSourceMapURLCallback,
   replayConsoleLogs?: boolean,
   environmentName?: string,
+  unstable_requestId?: string,
   startTime?: number,
   endTime?: number,
   // For the Node.js client we only support a single-direction debug channel.
@@ -120,6 +122,7 @@ function createFromNodeStream<T>(
       : undefined,
     __DEV__ && options && options.endTime != null ? options.endTime : undefined,
     debugChannel,
+    __DEV__ && options ? options.unstable_requestId : undefined,
   );
 
   if (__DEV__ && options && options.debugChannel) {
@@ -129,8 +132,12 @@ function createFromNodeStream<T>(
         close(response);
       }
     };
+    const handleMainEnd = () => {
+      resolveLedgerTotals(response);
+      handleEnd();
+    };
     startReadingFromStream(response, options.debugChannel, handleEnd);
-    startReadingFromStream(response, stream, handleEnd);
+    startReadingFromStream(response, stream, handleMainEnd);
   } else {
     startReadingFromStream(response, stream, close.bind(null, response));
   }

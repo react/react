@@ -301,6 +301,8 @@ pub fn validate_restricted_imports(
                         column: loc.end.column,
                         index: loc.end.index,
                     },
+                    start_offset: import.base.start,
+                    end_offset: import.base.end,
                 });
                 error.push_error_detail(detail);
             }

@@ -21,6 +21,7 @@ export const enableLegacyCache: boolean = __EXPERIMENTAL__;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
 export const enableFlightObjectReferences: boolean = false;
+export const enableFlightLedgers: boolean = false;
 export const enableTaint: boolean = true;
 export const disableCommentsAsDOMContainers: boolean = true;
 export const disableInputAttributeSyncing: boolean = false;
@@ -79,7 +80,6 @@ export const enableInternalInstanceMap: boolean = false;
 // We really need to get rid of this whole module. Any test renderer specific
 // flags should be handled by the Fiber config.
 // const __NEXT_MAJOR__ = __EXPERIMENTAL__;
-export const disableLegacyMode: boolean = true;
 export const disableLegacyContext: boolean = true;
 export const disableLegacyContextForFunctionComponents: boolean = true;
 export const enableReactTestRendererWarning: boolean = true;

@@ -124,7 +124,6 @@ import {
 import {
   enableCreateEventHandleAPI,
   enableScopeAPI,
-  disableLegacyMode,
   enableMoveBefore,
   disableCommentsAsDOMContainers,
   enableSuspenseyImages,
@@ -2124,22 +2123,40 @@ function customizeViewTransitionError(
         break;
       }
       case 'InvalidStateError': {
-        if (
-          error.message ===
-            'View transition was skipped because document visibility state is hidden.' ||
-          error.message ===
-            'Skipping view transition because document visibility state has become hidden.' ||
-          error.message ===
-            'Skipping view transition because viewport size changed.' ||
-          // Chrome uses a generic error message instead of specific reasons. It will log a
-          // more specific reason in the console but the user might not look there.
-          // Some of these errors are important to surface like duplicate name errors but
-          // it's too noisy for unactionable cases like the document was hidden. Therefore,
-          // we hide all of them and hopefully it surfaces in another browser.
-          error.message === 'Transition was aborted because of invalid state'
-        ) {
-          // Skip logging this. This is not considered an error.
-          return null;
+        // Skip unactionable cases like the document being hidden or the viewport
+        // being resized.
+        switch (error.message) {
+          // Chrome 152 and earlier use a generic error message instead of specific
+          // reasons. Some of these errors are important to surface like duplicate name
+          // errors but it's too noisy for the unactionable cases. Therefore, we hide
+          // all of them and hopefully it surfaces in another browser.
+          case 'Transition was aborted because of invalid state':
+          case 'Transition was aborted because of invalid state.': // Chrome 153+
+          case 'Transition was aborted because of invalid state. Document hidden': // Chrome 153+
+          case 'Transition was aborted because of invalid state. Viewport size changed': // Chrome 153+
+          case 'Skipped ViewTransition due to document being hidden': // Firefox
+          case 'Skipped view transition due to viewport resize': // Firefox
+          case 'View transition was skipped because document visibility state is hidden.': // Safari
+          case 'Skipping view transition because document visibility state has become hidden.': // Safari
+          case 'Skipping view transition because viewport size changed.': // Safari
+            // Skip logging this. This is not considered an error.
+            return null;
+          // Chrome 153+ reports these when verifying the transition names fails while
+          // capturing the old or new state. The specific reason is only logged to
+          // the console.
+          case 'Transition was aborted because of invalid state. Snapshot capture failed':
+          case 'Transition was aborted because of invalid state. Animation start failed': {
+            if (__DEV__) {
+              // eslint-disable-next-line react-internal/prod-error-codes
+              return new Error(
+                'A ViewTransition could not start. This usually means that two elements ' +
+                  'have the same view-transition-name at the same time. ' +
+                  'Check the console for details.',
+                {cause: error},
+              );
+            }
+            break;
+          }
         }
         break;
       }
@@ -5181,9 +5198,7 @@ function getDocumentFromRoot(root: HoistableRoot): Document {
 const previousDispatcher =
   ReactDOMSharedInternals.d; /* ReactDOMCurrentDispatcher */
 ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */ = {
-  f /* flushSyncWork */: disableLegacyMode
-    ? flushSyncWork
-    : previousDispatcher.f /* flushSyncWork */,
+  f /* flushSyncWork */: flushSyncWork,
   r: requestFormReset,
   D /* prefetchDNS */: prefetchDNS,
   C /* preconnect */: preconnect,
@@ -5195,17 +5210,11 @@ ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */ = {
 };
 
 function flushSyncWork() {
-  if (disableLegacyMode) {
-    const previousWasRendering = previousDispatcher.f(); /* flushSyncWork */
-    const wasRendering = flushSyncWorkOnAllRoots();
-    // Since multiple dispatchers can flush sync work during a single flushSync call
-    // we need to return true if any of them were rendering.
-    return previousWasRendering || wasRendering;
-  } else {
-    throw new Error(
-      'flushSyncWork should not be called from builds that support legacy mode. This is a bug in React.',
-    );
-  }
+  const previousWasRendering = previousDispatcher.f(); /* flushSyncWork */
+  const wasRendering = flushSyncWorkOnAllRoots();
+  // Since multiple dispatchers can flush sync work during a single flushSync call
+  // we need to return true if any of them were rendering.
+  return previousWasRendering || wasRendering;
 }
 
 function requestFormReset(form: HTMLFormElement) {

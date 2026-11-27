@@ -3435,6 +3435,120 @@ describe('ReactFlightDOMBrowser', () => {
     );
   });
 
+  // The element is blocked on a client module that hasn't loaded yet, so the
+  // row it's outlined into holds a lazy node. The client component reads a
+  // Promise whose value is an object inside that row, which initializes the row
+  // before the element is passed on as a child. The client component then gets
+  // a lazy node that's already fulfilled, and whose value is another lazy node.
+  async function renderOutlinedElementHoldingALazyNode(ClientComponent) {
+    let loadDependency;
+    const dependencyLoaded = new Promise(resolve => (loadDependency = resolve));
+    const Dependency = clientExports(
+      function Dependency() {
+        return null;
+      },
+      '1',
+      '/dependency.js',
+      dependencyLoaded,
+    );
+    const Inner = clientExports(function Inner({shared}) {
+      return <span>{shared.text}</span>;
+    });
+
+    const shared = {text: 'Hello'};
+    let resolveData;
+    const data = new Promise(resolve => (resolveData = resolve));
+
+    const stream = await serverAct(async () => {
+      const result = ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent
+          text={longText}
+          element={<Inner dependency={Dependency} shared={shared} />}
+          data={data}
+        />,
+        webpackMap,
+      );
+      // Resolve the Promise once the element's row is written, so that its
+      // value refers to the object in that row.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      resolveData(shared);
+      return result;
+    });
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    // The element can only be rendered, and therefore validated, after the
+    // client module it depends on has loaded.
+    await act(() => {
+      loadDependency();
+    });
+
+    return container;
+  }
+
+  it('should not have missing key warnings when an outlined static child is a lazy node holding a lazy node', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+      data,
+    }) {
+      use(data);
+      return (
+        <div>
+          <span>{text.length}</span>
+          {element}
+        </div>
+      );
+    });
+
+    const container =
+      await renderOutlinedElementHoldingALazyNode(ClientComponent);
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
+  it('should have missing key warnings when an outlined element that is a lazy node holding a lazy node is used in an array', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+      data,
+    }) {
+      use(data);
+      return (
+        <div>
+          <span>{text.length}</span>
+          {[element]}
+        </div>
+      );
+    });
+
+    const container =
+      await renderOutlinedElementHoldingALazyNode(ClientComponent);
+
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique "key" prop.\n\n' +
+        'Check the render method of `div`. ' +
+        'See https://react.dev/link/warning-keys for more information.',
+    ]);
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
   it('should not exponentially accumulate debug info when deduplicated references are blocked', async () => {
     // Regression test for debug info that grows exponentially, along the path
     // that resolves a reference asynchronously. A form streams its field groups

@@ -103,3 +103,10 @@ export function initializeProfiler(
 ): void {
   initializeTab('profiler', contentWindow, options);
 }
+
+export function initializeSuspense(
+  contentWindow: Element | Document,
+  options: InitializationOptions,
+): void {
+  initializeTab('suspense', contentWindow, options);
+}

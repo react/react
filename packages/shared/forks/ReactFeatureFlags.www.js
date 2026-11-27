@@ -68,6 +68,7 @@ export const enableLegacyCache: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableFlightWeakThenables: boolean = false;
 export const enableFlightObjectReferences: boolean = false;
+export const enableFlightLedgers: boolean = false;
 
 export const enableTaint: boolean = false;
 
@@ -92,8 +93,6 @@ export const passChildrenWhenCloningPersistedNodes: boolean = false;
 export const disableClientCache: boolean = true;
 
 export const enableReactTestRendererWarning: boolean = false;
-
-export const disableLegacyMode: boolean = true;
 
 export const enableViewTransitionForPersistenceMode: boolean = false;
 

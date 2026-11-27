@@ -1,24 +1,27 @@
 # Status
 
-Overall: 1724/1724 passing, 0 failed. All passes ported through ValidatePreservedManualMemoization (#48). Codegen (#49) fully ported. Code comparison: 1724/1724.
+Overall: 1831/1831 passing, 0 failed. Rust/TypeScript comparison through PruneHoistedContexts; frontier: none. Code comparison: 1831/1831, 0 failed.
 
-Snap (end-to-end): 1725/1725 passed, 0 failed
+Snap (end-to-end): 1832/1832 passed, 0 failed for both Rust and TypeScript.
 
 ## Transformation passes
 
-HIR: partial (1651/1653, 2 failures — block ID ordering)
-PruneMaybeThrows: complete (1651/1651, includes 2nd call)
-DropManualMemoization: complete
-MergeConsecutiveBlocks: complete
-SSA: complete (1650/1650)
+HIR: complete (1737/1737, 0 failures)
+PruneMaybeThrows: complete (1737/1737, 0 failures)
+ValidateUseMemo: complete (1736/1736, 0 failures)
+DropManualMemoization: complete (1736/1736, 0 failures)
+MergeConsecutiveBlocks: complete (1736/1736, 0 failures)
+SSA: complete (1735/1735, 0 failures)
 EliminateRedundantPhi: complete
-ConstantPropagation: complete
-InferTypes: complete
+ConstantPropagation: complete (1735/1735, 0 failures)
+InferTypes: complete (1735/1735, 0 failures)
+ValidateHooksUsage: complete (1735/1735, 0 failures)
 OptimizePropsMethodCalls: complete
-AnalyseFunctions: complete (1649/1649)
+AnalyseFunctions: complete
+AnalyseFunction (inner): complete (585/585, 0 failures)
 InferMutationAliasingEffects: complete (1643/1643)
-OptimizeForSSR: complete (5/5, conditional, outputMode === 'ssr')
-DeadCodeElimination: complete
+OptimizeForSSR: complete (5/5, 0 failures)
+DeadCodeElimination: complete (1724/1724, 0 failures)
 InferMutationAliasingRanges: complete
 InferReactivePlaces: complete
 ValidateExhaustiveDependencies: complete
@@ -27,8 +30,8 @@ InferReactiveScopeVariables: complete
 MemoizeFbtAndMacroOperandsInSameScope: complete
 outlineJSX: complete (conditional on enableJsxOutlining)
 NameAnonymousFunctions: complete (2/2, conditional)
-OutlineFunctions: complete
-AlignMethodCallScopes: complete
+OutlineFunctions: complete (1723/1723, 0 failures)
+AlignMethodCallScopes: complete (1723/1723, 0 failures)
 AlignObjectMethodScopes: complete
 PruneUnusedLabelsHIR: complete
 AlignReactiveScopesToBlockScopesHIR: complete
@@ -37,26 +40,54 @@ BuildReactiveScopeTerminalsHIR: complete
 FlattenReactiveLoopsHIR: complete
 FlattenScopesWithHooksOrUseHIR: complete
 PropagateScopeDependenciesHIR: complete
-BuildReactiveFunction: complete
+BuildReactiveFunction: complete (1722/1722, 0 failures)
 AssertWellFormedBreakTargets: complete
 PruneUnusedLabels: complete
 AssertScopeInstructionsWithinScopes: complete
-PruneNonEscapingScopes: complete
+PruneNonEscapingScopes: complete (1722/1722, 0 failures)
 PruneNonReactiveDependencies: complete
 PruneUnusedScopes: complete
 MergeReactiveScopesThatInvalidateTogether: complete
 PruneAlwaysInvalidatingScopes: complete
-PropagateEarlyReturns: complete
+PropagateEarlyReturns: complete (1722/1722, 0 failures)
 PruneUnusedLValues: complete
-PromoteUsedTemporaries: complete
+PromoteUsedTemporaries: complete (1722/1722, 0 failures)
 ExtractScopeDeclarationsFromDestructuring: complete
-StabilizeBlockIds: complete
-RenameVariables: complete
-PruneHoistedContexts: complete
+StabilizeBlockIds: complete (1722/1722, 0 failures)
+RenameVariables: complete (1722/1722, 0 failures)
+PruneHoistedContexts: complete (1720/1720, 0 failures)
 ValidatePreservedManualMemoization: complete
-Codegen: complete (1717/1717 code comparison)
+Codegen: complete (1831/1831 code comparison)
 
 # Logs
+
+## 20261012-143847 Traverse outlined JSX in place
+
+Move owned codegen function fields into the outlined declaration without an empty
+body placeholder. Share a mutable JSX element traversal across expressions,
+attribute values, and children, eliminating subtree clones. Add binding-identity
+regressions for colliding and absent source offsets, including local references
+and nested JSX member roots. Both regressions fail against the pre-offset-fix
+scope helper and pass with the current implementation.
+
+Rust workspace tests pass 62/62. AST round-trip, scope round-trip, and rename
+fixtures pass 1811/1811, 1812/1812, and 1797/1797 respectively. Rust/TypeScript
+comparison passes 1831/1831 through PruneHoistedContexts, including code output;
+Rust snap passes 1832/1832. Formatting passes, and Clippy reports no diagnostics
+in the changed code.
+
+Allocation profiling of the scope helper with 4/16/64 nested JSX wrappers,
+alternating attribute values and children, reduces allocation calls from
+75/897/13545 to 9 at each depth. Nine runs per case produce identical counts.
+Measurements exclude AST construction and other compilation stages.
+
+## 20261012-135949 Preserve outlined and top-level function offsets
+
+Use node-ID maps for outlined-function scope and binding identities without
+overwriting identifier source offsets. Preserve the original start/end offsets
+when rebuilding TypeScript function declarations, expressions, and arrows.
+Add regression coverage for original, shifted, and absent offsets. Rust/TypeScript
+comparison passes 1831/1831 fixtures, and both snap backends pass 1832/1832.
 
 ## 20260401-120000 Extend test-e2e with event comparison and fix bugs
 
