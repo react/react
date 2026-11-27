@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {ReactStackTrace} from 'shared/ReactTypes';
+import type {ReactComponentInfo, ReactStackTrace} from 'shared/ReactTypes';
 
 import type {
   AsyncSequence,
@@ -26,7 +26,11 @@ import {
   UNRESOLVED_AWAIT_NODE,
 } from './ReactFlightAsyncSequence';
 import {resolveOwner} from './flight/ReactFlightCurrentOwner';
-import {resolveRequest, isAwaitInUserspace} from './ReactFlightServer';
+import {
+  resolveRequest,
+  isAwaitInUserspace,
+  retainAsyncOwner,
+} from './ReactFlightServer';
 import {createHook, executionAsyncId, AsyncResource} from 'async_hooks';
 import {parseStackTracePrivate} from './ReactFlightServerConfig';
 
@@ -53,6 +57,25 @@ function resolvePromiseOrAwaitNode(
 }
 
 const emptyStack: ReactStackTrace = [];
+
+// The nodes outlive the render that created them, for as long as their Promise
+// or anything that awaited it is alive. Hold the owner weakly so that a node
+// doesn't keep a component and its props alive after its request is done. The
+// request holds on to the owner instead.
+let lastOwnerRef: null | WeakRef<ReactComponentInfo> = null;
+function createOwnerRef(
+  owner: null | ReactComponentInfo,
+): null | WeakRef<ReactComponentInfo> {
+  if (owner === null) {
+    return null;
+  }
+  if (lastOwnerRef === null || lastOwnerRef.deref() !== owner) {
+    // Consecutive nodes typically have the same owner so we reuse the WeakRef.
+    lastOwnerRef = new WeakRef(owner);
+    retainAsyncOwner(owner);
+  }
+  return lastOwnerRef;
+}
 
 // Initialize the tracing of async operations.
 // We do this globally since the async work can potentially eagerly
@@ -116,7 +139,7 @@ export function initAsyncDebugInfo(): void {
             const current = pendingOperations.get(currentAsyncId);
             node = {
               tag: UNRESOLVED_AWAIT_NODE,
-              owner: resolveOwner(),
+              owner: createOwnerRef(resolveOwner()),
               stack: stack,
               start: performance.now(),
               end: -1.1, // set when resolved.
@@ -128,7 +151,7 @@ export function initAsyncDebugInfo(): void {
             const owner = resolveOwner();
             node = {
               tag: UNRESOLVED_PROMISE_NODE,
-              owner: owner,
+              owner: createOwnerRef(owner),
               stack:
                 owner === null ? null : parseStackTracePrivate(new Error(), 5),
               start: performance.now(),
@@ -169,7 +192,7 @@ export function initAsyncDebugInfo(): void {
             const owner = resolveOwner();
             node = {
               tag: IO_NODE,
-              owner: owner,
+              owner: createOwnerRef(owner),
               stack:
                 owner === null ? parseStackTracePrivate(new Error(), 3) : null,
               start: performance.now(),
@@ -186,7 +209,7 @@ export function initAsyncDebugInfo(): void {
             const owner = resolveOwner();
             node = {
               tag: IO_NODE,
-              owner: owner,
+              owner: createOwnerRef(owner),
               stack:
                 owner === null ? parseStackTracePrivate(new Error(), 3) : null,
               start: performance.now(),

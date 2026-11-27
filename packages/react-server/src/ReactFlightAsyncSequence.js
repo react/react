@@ -25,7 +25,7 @@ type PromiseWithDebugInfo = interface extends Promise<any> {
 
 export type IONode = {
   tag: 0,
-  owner: null | ReactComponentInfo,
+  owner: null | WeakRef<ReactComponentInfo>, // the component that was running. held weakly so that it can be collected
   stack: null | ReactStackTrace, // callsite that spawned the I/O
   start: number, // start time when the first part of the I/O sequence started
   end: number, // we typically don't use this. only when there's no promise intermediate.
@@ -36,7 +36,7 @@ export type IONode = {
 
 export type PromiseNode = {
   tag: 1,
-  owner: null | ReactComponentInfo,
+  owner: null | WeakRef<ReactComponentInfo>, // the component that was running. held weakly so that it can be collected
   stack: null | ReactStackTrace, // callsite that created the Promise
   start: number, // start time when the Promise was created
   end: number, // end time when the Promise was resolved.
@@ -47,7 +47,7 @@ export type PromiseNode = {
 
 export type AwaitNode = {
   tag: 2,
-  owner: null | ReactComponentInfo,
+  owner: null | WeakRef<ReactComponentInfo>, // the component that was running. held weakly so that it can be collected
   stack: null | ReactStackTrace, // callsite that awaited (using await, .then(), Promise.all(), ...)
   start: number, // when we started blocking. This might be later than the I/O started.
   end: number, // when we unblocked. This might be later than the I/O resolved if there's CPU time.
@@ -58,7 +58,7 @@ export type AwaitNode = {
 
 export type UnresolvedPromiseNode = {
   tag: 3,
-  owner: null | ReactComponentInfo,
+  owner: null | WeakRef<ReactComponentInfo>, // the component that was running. held weakly so that it can be collected
   stack: null | ReactStackTrace, // callsite that created the Promise
   start: number, // start time when the Promise was created
   end: -1.1, // set when we resolve.
@@ -69,7 +69,7 @@ export type UnresolvedPromiseNode = {
 
 export type UnresolvedAwaitNode = {
   tag: 4,
-  owner: null | ReactComponentInfo,
+  owner: null | WeakRef<ReactComponentInfo>, // the component that was running. held weakly so that it can be collected
   stack: null | ReactStackTrace, // callsite that awaited (using await, .then(), Promise.all(), ...)
   start: number, // when we started blocking. This might be later than the I/O started.
   end: -1.1, // set when we resolve.
