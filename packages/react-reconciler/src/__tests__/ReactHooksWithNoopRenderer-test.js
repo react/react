@@ -787,6 +787,77 @@ describe('ReactHooksWithNoopRenderer', () => {
       },
     );
 
+    async function mountSuspendedCounter() {
+      let setValue;
+      function Field({page, label}) {
+        const [value, updateValue] = useState(0);
+        setValue = updateValue;
+        if (page === 1) {
+          if (value === 0) {
+            updateValue(1);
+          } else {
+            readText('Next page');
+          }
+        }
+        return label + ': ' + value;
+      }
+
+      let setPage;
+      function App({label}) {
+        const [page, updatePage] = useState(0);
+        setPage = updatePage;
+        return (
+          <Suspense fallback="Loading">
+            <Field page={page} label={label} />
+          </Suspense>
+        );
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<App label="Initial" />));
+      await act(() => React.startTransition(() => setPage(1)));
+      expect(root).toMatchRenderedOutput('Initial: 0');
+      return {
+        root,
+        setPage,
+        setValue,
+        renderUrgent: () => root.render(<App label="Urgent" />),
+      };
+    }
+
+    it('keeps uncommitted state out of an urgent render after an eager bailout', async () => {
+      const {root, setPage, setValue, renderUrgent} =
+        await mountSuspendedCounter();
+      await act(() => {
+        React.startTransition(() => setValue(value => value));
+        ReactNoop.flushSync(renderUrgent);
+        expect(root).toMatchRenderedOutput('Urgent: 0');
+        // Cancel the suspended page before the identity update is processed.
+        ReactNoop.flushSync(() => setPage(0));
+      });
+      expect(root).toMatchRenderedOutput('Urgent: 0');
+
+      await act(() => React.startTransition(() => setPage(1)));
+      await act(() => resolveText('Next page'));
+      assertLog(['Promise resolved [Next page]']);
+      expect(root).toMatchRenderedOutput('Urgent: 1');
+    });
+
+    it('rebases an eager increment after a suspended render is cancelled', async () => {
+      const {root, setPage, setValue, renderUrgent} =
+        await mountSuspendedCounter();
+      await act(() => {
+        // The suspended render reached 1, but the committed value is still 0.
+        React.startTransition(() => setValue(value => value + 1));
+        ReactNoop.discreteUpdates(() => setValue(value => value));
+        ReactNoop.flushSync(() => {
+          setPage(0);
+          renderUrgent();
+        });
+      });
+      expect(root).toMatchRenderedOutput('Urgent: 1');
+    });
+
     it('regression: render phase updates cause lower pri work to be dropped', async () => {
       let setRow;
       function ScrollView() {
@@ -822,6 +893,30 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
       assertLog(['Up', 'Down']);
       expect(root).toMatchRenderedOutput(<span prop="Down" />);
+    });
+
+    it('preserves a render phase update after an eager bailout', async () => {
+      let setMessage;
+      function Form({response}) {
+        const [seen, setSeen] = useState(0);
+        const [message, updateMessage] = useState('');
+        setMessage = updateMessage;
+        if (response !== seen) {
+          setSeen(response);
+          updateMessage('Required');
+        }
+        return seen + ':' + message;
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => root.render(<Form response={0} />));
+      expect(root).toMatchRenderedOutput('0:');
+
+      ReactNoop.discreteUpdates(() => setMessage(current => current));
+      await act(() => {
+        React.startTransition(() => root.render(<Form response={1} />));
+      });
+      expect(root).toMatchRenderedOutput('1:Required');
     });
 
     // TODO: This should probably warn

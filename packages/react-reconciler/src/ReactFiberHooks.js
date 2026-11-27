@@ -163,6 +163,7 @@ export type Update<S, A> = {
   revertLane: Lane,
   action: A,
   hasEagerState: boolean,
+  eagerBaseState: S | null,
   eagerState: S | null,
   next: Update<S, A>,
   gesture: null | ScheduledGesture, // enableGestureTransition
@@ -1405,6 +1406,19 @@ function updateReducerImpl<S, A>(
       }
 
       if (shouldSkipUpdate) {
+        // Drop an eager no-op only if its input still matches and no earlier
+        // update can change that input during a rebase. Keep entangled actions
+        // so they can suspend at their original priority.
+        if (
+          newBaseQueueLast === null &&
+          update.hasEagerState &&
+          is(update.eagerBaseState, newState) &&
+          is(update.eagerState, newState) &&
+          updateLane !== peekEntangledActionLane()
+        ) {
+          update = update.next;
+          continue;
+        }
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
         // update/state.
@@ -1414,6 +1428,7 @@ function updateReducerImpl<S, A>(
           gesture: update.gesture,
           action: update.action,
           hasEagerState: update.hasEagerState,
+          eagerBaseState: update.eagerBaseState,
           eagerState: update.eagerState,
           next: null as any,
         };
@@ -1450,6 +1465,7 @@ function updateReducerImpl<S, A>(
               gesture: null,
               action: update.action,
               hasEagerState: update.hasEagerState,
+              eagerBaseState: update.eagerBaseState,
               eagerState: update.eagerState,
               next: null as any,
             };
@@ -1494,6 +1510,7 @@ function updateReducerImpl<S, A>(
               gesture: null, // If it commits, it's no longer a gesture update.
               action: update.action,
               hasEagerState: update.hasEagerState,
+              eagerBaseState: update.eagerBaseState,
               eagerState: update.eagerState,
               next: null as any,
             };
@@ -1519,9 +1536,9 @@ function updateReducerImpl<S, A>(
         if (shouldDoubleInvokeUserFnsInHooksDEV) {
           reducer(newState, action);
         }
-        if (update.hasEagerState) {
-          // If this update is a state update (not a reducer) and was processed eagerly,
-          // we can use the eagerly computed state
+        // The eager calculation may have read state from an abandoned render.
+        // Reuse its result only if the update has the same input here.
+        if (update.hasEagerState && is(update.eagerBaseState, newState)) {
           newState = update.eagerState as any as S;
         } else {
           newState = reducer(newState, action);
@@ -3638,6 +3655,7 @@ function dispatchReducerAction<S, A>(
     gesture: null,
     action,
     hasEagerState: false,
+    eagerBaseState: null,
     eagerState: null,
     next: null as any,
   };
@@ -3698,6 +3716,7 @@ function dispatchSetStateInternal<S, A>(
     gesture: null,
     action,
     hasEagerState: false,
+    eagerBaseState: null,
     eagerState: null,
     next: null as any,
   };
@@ -3723,11 +3742,9 @@ function dispatchSetStateInternal<S, A>(
         try {
           const currentState: S = queue.lastRenderedState as any;
           const eagerState = lastRenderedReducer(currentState, action);
-          // Stash the eagerly computed state, and the reducer used to compute
-          // it, on the update object. If the reducer hasn't changed by the
-          // time we enter the render phase, then the eager state can be used
-          // without calling the reducer again.
+          // Save the input as well so a later render can validate the result.
           update.hasEagerState = true;
+          update.eagerBaseState = currentState;
           update.eagerState = eagerState;
           if (is(eagerState, currentState)) {
             // Fast path. We can bail out without scheduling React to re-render.
@@ -3817,6 +3834,7 @@ function dispatchOptimisticSetState<S, A>(
     gesture: null,
     action,
     hasEagerState: false,
+    eagerBaseState: null,
     eagerState: null,
     next: null as any,
   };
