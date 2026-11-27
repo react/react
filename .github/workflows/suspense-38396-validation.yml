@@ -1,0 +1,32 @@
+name: Suspense retry investigation
+on:
+  push:
+    branches:
+      - fix/suspense-retry-38396
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        implementation: [baseline, candidate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - run: yarn install --frozen-lockfile
+      - name: Restore baseline implementation, keeping the new test
+        if: matrix.implementation == 'baseline'
+        run: git restore --source=edae846a9a17442c00429f2b15375afbfa0376c9 -- packages/react-reconciler/src/ReactFiberWorkLoop.js
+      - name: Run targeted Suspense tests
+        run: |
+          yarn test -r=experimental --runInBand ReactSuspenseWithNoopRenderer-test
+          yarn test -r=www-modern --variant=true --runInBand ReactSuspenseWithNoopRenderer-test
