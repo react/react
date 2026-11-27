@@ -1424,6 +1424,46 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
   });
 
+  // @gate enableLegacyCache && alwaysThrottleRetries
+  it('cancels a pending retry timer when a same-lane ping commits immediately', async () => {
+    const {attachPingListener} = require('../ReactFiberWorkLoop');
+    const {includesOnlyRetries} = require('../ReactFiberLane');
+
+    ReactNoop.render(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <AsyncText text="A" />
+      </Suspense>,
+    );
+    await waitForAll(['Suspend! [A]', 'Loading...', 'Suspend! [A]']);
+    await resolveText('A');
+    await waitForAll(['A']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+
+    const root = ReactNoop.getRoot();
+    const lanes = root.pendingLanes & root.suspendedLanes;
+    expect(lanes).not.toBe(0);
+    expect(includesOnlyRetries(lanes)).toBe(true);
+    expect(root.timeoutHandle).not.toBe(-1);
+
+    let resolve;
+    const wakeable = new Promise(r => {
+      resolve = r;
+    });
+    attachPingListener(root, wakeable, lanes);
+
+    // Advance the scheduler clock without firing the host timer.
+    Scheduler.unstable_advanceTime(500);
+    resolve();
+    await waitForAll(['A']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
+    expect(root.timeoutHandle).toBe(-1);
+
+    // A superseded timer must not commit the tree a second time.
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
+  });
+
   // @gate enableLegacyCache
   it('throttles content from appearing if a fallback was filled in recently', async () => {
     function Foo() {
