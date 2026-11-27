@@ -1319,6 +1319,227 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
+  // @gate enableLegacyCache && alwaysThrottleRetries
+  it('commits a throttled retry once when another wakeable resolves', async () => {
+    const commits = [];
+    function Content() {
+      React.useLayoutEffect(() => {
+        commits.push('content');
+      }, []);
+      return (
+        <>
+          <AsyncText text="A" />
+          <Suspense fallback={<Text text="Loading more..." />}>
+            <AsyncText text="B" />
+          </Suspense>
+        </>
+      );
+    }
+
+    ReactNoop.render(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <Content />
+      </Suspense>,
+    );
+    await waitForAll([
+      'Suspend! [A]',
+      'Loading...',
+      'Suspend! [A]',
+      'Suspend! [B]',
+      'Loading more...',
+    ]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+
+    await resolveText('A');
+    await waitForAll(['A', 'Suspend! [B]', 'Loading more...']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+    expect(commits).toEqual([]);
+
+    await resolveText('B');
+    await waitForAll(['A', 'B']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+    expect(commits).toEqual([]);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span prop="A" />
+        <span prop="B" />
+      </>,
+    );
+    expect(commits).toEqual(['content']);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(commits).toEqual(['content']);
+  });
+
+  // @gate enableLegacyCache && alwaysThrottleRetries
+  it('replaces a pending retry timer after a ping on the same retry lanes', async () => {
+    const {attachPingListener} = require('../ReactFiberWorkLoop');
+    const {includesOnlyRetries} = require('../ReactFiberLane');
+
+    ReactNoop.render(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <AsyncText text="A" />
+      </Suspense>,
+    );
+    await waitForAll(['Suspend! [A]', 'Loading...', 'Suspend! [A]']);
+    await resolveText('A');
+    await waitForAll(['A']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+
+    const root = ReactNoop.getRoot();
+    const lanes = root.pendingLanes & root.suspendedLanes;
+    expect(lanes).not.toBe(0);
+    expect(includesOnlyRetries(lanes)).toBe(true);
+    const firstTimeout = root.timeoutHandle;
+    expect(firstTimeout).not.toBe(-1);
+
+    // Model a listener from an older render whose retry lane has been reused.
+    // Use the real reconciler ping path rather than scheduling a new update.
+    let resolve;
+    const wakeable = new Promise(r => {
+      resolve = r;
+    });
+    attachPingListener(root, wakeable, lanes);
+    resolve();
+    await waitForAll(['A']);
+
+    expect(root.timeoutHandle).not.toBe(-1);
+    expect(root.timeoutHandle).not.toBe(firstTimeout);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
+  });
+
+  // @gate enableLegacyCache && alwaysThrottleRetries
+  it('cancels a pending retry timer when a same-lane ping commits immediately', async () => {
+    const {attachPingListener} = require('../ReactFiberWorkLoop');
+    const {includesOnlyRetries} = require('../ReactFiberLane');
+
+    ReactNoop.render(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <AsyncText text="A" />
+      </Suspense>,
+    );
+    await waitForAll(['Suspend! [A]', 'Loading...', 'Suspend! [A]']);
+    await resolveText('A');
+    await waitForAll(['A']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
+
+    const root = ReactNoop.getRoot();
+    const lanes = root.pendingLanes & root.suspendedLanes;
+    expect(lanes).not.toBe(0);
+    expect(includesOnlyRetries(lanes)).toBe(true);
+    expect(root.timeoutHandle).not.toBe(-1);
+
+    let resolve;
+    const wakeable = new Promise(r => {
+      resolve = r;
+    });
+    attachPingListener(root, wakeable, lanes);
+
+    // Advance the scheduler clock without firing the host timer.
+    Scheduler.unstable_advanceTime(500);
+    resolve();
+    await waitForAll(['A']);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
+    expect(root.timeoutHandle).toBe(-1);
+
+    // A superseded timer must not commit the tree a second time.
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="A" />);
+  });
+
+  it('settles staggered asset loads across twenty independent Suspense boundaries', async () => {
+    const root = ReactNoop.createRoot();
+    const commits = [];
+    const assets = Array.from({length: 20}, (_, index) => {
+      let resolve;
+      const promise = new Promise(r => {
+        resolve = r;
+      });
+      function Asset() {
+        React.useLayoutEffect(() => {
+          commits.push(index);
+        }, []);
+        return <span prop={'asset-' + index} />;
+      }
+      return {
+        Component: React.lazy(() => promise),
+        resolve: () => resolve({default: Asset}),
+      };
+    });
+
+    root.render(
+      <>
+        {assets.map(({Component}, index) => (
+          <Suspense key={index} fallback={<span prop={'loading-' + index} />}>
+            <Component />
+          </Suspense>
+        ))}
+      </>,
+    );
+    await waitForAll([]);
+    expect(root).toMatchRenderedOutput(
+      <>
+        {assets.map((_, index) => (
+          <span prop={'loading-' + index} />
+        ))}
+      </>,
+    );
+    expect(commits).toEqual([]);
+
+    // Resolve assets in staggered batches, allowing retry lanes to wrap
+    // around. Vary scheduler time independently of host timer execution.
+    for (let index = 0; index < assets.length; index++) {
+      assets[(index * 7) % assets.length].resolve();
+      await waitForAll([]);
+      Scheduler.unstable_advanceTime(25);
+      if (index % 4 === 3) {
+        jest.advanceTimersByTime(100);
+        await waitForAll([]);
+      }
+    }
+
+    // Allow all throttled reveals to settle, including any retries spawned
+    // by a previous reveal.
+    for (let index = 0; index < 20; index++) {
+      Scheduler.unstable_advanceTime(500);
+      jest.runAllTimers();
+      await waitForAll([]);
+    }
+
+    expect(root).toMatchRenderedOutput(
+      <>
+        {assets.map((_, index) => (
+          <span prop={'asset-' + index} />
+        ))}
+      </>,
+    );
+    expect(commits.slice().sort((a, b) => a - b)).toEqual(
+      assets.map((_, index) => index),
+    );
+
+    Scheduler.unstable_advanceTime(500);
+    jest.runAllTimers();
+    await waitForAll([]);
+    expect(commits).toHaveLength(assets.length);
+  });
+
   // @gate enableLegacyCache
   it('throttles content from appearing if a fallback was filled in recently', async () => {
     function Foo() {

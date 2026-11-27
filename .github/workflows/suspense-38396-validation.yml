@@ -1,0 +1,71 @@
+name: Suspense retry investigation
+on:
+  push:
+    branches:
+      - fix/suspense-retry-38396
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        implementation: [baseline, candidate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - run: yarn install --frozen-lockfile
+      - name: Restore baseline implementation, keeping the new test
+        if: matrix.implementation == 'baseline'
+        run: git restore --source=edae846a9a17442c00429f2b15375afbfa0376c9 -- packages/react-reconciler/src/ReactFiberWorkLoop.js
+      - name: Run targeted Suspense tests
+        run: |
+          yarn test -r=experimental --runInBand ReactSuspenseWithNoopRenderer-test
+          yarn test -r=www-modern --variant=true --runInBand ReactSuspenseWithNoopRenderer-test
+  release-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: investigation
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: react/react
+          ref: v19.2.4
+          path: release
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: release/.nvmrc
+      - name: Port investigation tests to the reported release
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = 'packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js'
+          source = (Path('investigation') / path).read_text()
+          target = Path('release') / path
+          start = "  // @gate enableLegacyCache && alwaysThrottleRetries\n  it('commits a throttled retry once when another wakeable resolves'"
+          end = "  // @gate enableLegacyCache\n  it('throttles content from appearing if a fallback was filled in recently'"
+          assert source.count(start) == 1 and source.count(end) == 1
+          tests = source[source.index(start):source.index(end)]
+          original = target.read_text()
+          assert original.count(end) == 1
+          target.write_text(original.replace(end, tests + end))
+          PY
+      - run: yarn install --frozen-lockfile
+        working-directory: release
+      - name: Run reported release Suspense tests
+        working-directory: release
+        run: |
+          yarn test -r=experimental --runInBand ReactSuspenseWithNoopRenderer-test
+          yarn test -r=www-modern --variant=true --runInBand ReactSuspenseWithNoopRenderer-test

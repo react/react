@@ -1,0 +1,100 @@
+name: R3F browser reproduction
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/suspense-retry-38396]
+    paths: ['.github/workflows/suspense-r3f-repro.yml']
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated reproduction dependencies
+        run: |
+          npm init -y
+          npm install --save-exact react@19.2.4 react-dom@19.2.4 @react-three/fiber@9.5.0 three@0.180.0 esbuild@0.25.12 playwright@1.56.1
+          npm ls react react-dom react-reconciler @react-three/fiber
+          npx playwright install --with-deps chromium
+      - name: Build scene
+        run: |
+          cat > scene.jsx <<'EOF'
+          import React, {Suspense} from 'react';
+          import {createRoot} from 'react-dom/client';
+          import {Canvas, useLoader} from '@react-three/fiber';
+          import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
+          const seed = Number(new URLSearchParams(location.search).get('seed') || 1);
+          function Asset({id}) {
+            const gltf = useLoader(GLTFLoader, '/asset.glb?id=' + id + '&seed=' + seed);
+            React.useLayoutEffect(() => { window.loaded.add(id); }, [id]);
+            return <group position={[id % 5, Math.floor(id / 5), 0]}><primitive object={gltf.scene}/></group>;
+          }
+          window.loaded = new Set();
+          createRoot(document.getElementById('root')).render(
+            <Canvas frameloop="demand">
+              {Array.from({length:20}, (_,id) => <Suspense key={id} fallback={null}><Asset id={id}/></Suspense>)}
+            </Canvas>
+          );
+          EOF
+          echo '<div id="root" style="width:320px;height:240px"></div><script src="/bundle.js"></script>' > index.html
+          npx esbuild scene.jsx --bundle --outfile=bundle.js --define:process.env.NODE_ENV='"production"'
+      - name: Run seeded Chromium trials
+        run: |
+          cat > run.cjs <<'EOF'
+          const {chromium} = require('playwright');
+          const http = require('node:http');
+          const fs = require('node:fs');
+          const json = Buffer.from(JSON.stringify({asset:{version:'2.0'},scene:0,scenes:[{nodes:[0]}],nodes:[{}]}));
+          const size = Math.ceil(json.length / 4) * 4;
+          const glb = Buffer.alloc(20 + size, 32);
+          glb.writeUInt32LE(0x46546c67,0); glb.writeUInt32LE(2,4); glb.writeUInt32LE(glb.length,8);
+          glb.writeUInt32LE(size,12); glb.writeUInt32LE(0x4e4f534a,16); json.copy(glb,20);
+          const server = http.createServer((req,res) => {
+            const url = new URL(req.url,'http://localhost');
+            if (url.pathname === '/asset.glb') {
+              const id = Number(url.searchParams.get('id')), seed = Number(url.searchParams.get('seed'));
+              res.setHeader('Cache-Control','no-store');
+              setTimeout(() => {res.setHeader('Content-Type','model/gltf-binary');res.end(glb);}, 20 + ((id * 71 + seed * 137) % 450));
+            } else if (url.pathname === '/bundle.js') {
+              res.setHeader('Content-Type','application/javascript');res.end(fs.readFileSync('bundle.js'));
+            } else {res.setHeader('Content-Type','text/html');res.end(fs.readFileSync('index.html'));}
+          });
+          (async () => {
+            await new Promise(r => server.listen(0,'127.0.0.1',r));
+            const browser = await chromium.launch({args:['--enable-unsafe-swiftshader','--use-angle=swiftshader']});
+            const results = [];
+            try {
+              for (const rate of [1,6]) {
+                for(let seed=1;seed<=15;seed++){
+                  const page = await browser.newPage();
+                  const errors = [];
+                  page.on('pageerror', e => errors.push(e.stack || e.message));
+                  const cdp = await page.context().newCDPSession(page);
+                  await cdp.send('Emulation.setCPUThrottlingRate',{rate});
+                  let complete = true;
+                  try {
+                    await page.goto('http://127.0.0.1:'+server.address().port+'/?seed='+seed);
+                    await page.waitForFunction(()=>window.loaded?.size===20,{},{timeout:20000});
+                    await page.waitForTimeout(700);
+                  } catch(e) {complete=false;errors.push(e.message);}
+                  const result={rate,seed,complete,errors};
+                  results.push(result);console.log(JSON.stringify(result));
+                  await page.close();
+                }
+              }
+            } finally {await browser.close();server.close();fs.writeFileSync('results.json',JSON.stringify(results,null,2));}
+            const target = results.filter(r=>r.errors.some(e=>/Cannot commit the same tree|Minified React error #177/.test(e)));
+            console.log('SUMMARY '+JSON.stringify({trials:results.length,completed:results.filter(r=>r.complete).length,targetErrors:target.length,otherErrors:results.filter(r=>r.errors.length&&!target.includes(r)).length}));
+            if(results.some(r=>!r.complete||r.errors.length)) process.exitCode=1;
+          })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
+          EOF
+          node run.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-repro-results
+          path: results.json

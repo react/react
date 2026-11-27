@@ -1493,6 +1493,11 @@ function finishConcurrentRender(
         // immediately, wait for more data to arrive.
         // TODO: Combine retry throttling with Suspensey commits. Right now they
         // run one after the other.
+        const timeoutHandle = root.timeoutHandle;
+        if (timeoutHandle !== noTimeout) {
+          // $FlowFixMe[incompatible-call]
+          cancelTimeout(timeoutHandle);
+        }
         pendingEffectsLanes = lanes;
         root.timeoutHandle = scheduleTimeout(
           completeRootWhenReady.bind(
@@ -1552,7 +1557,12 @@ function completeRootWhenReady(
   completedRenderStartTime: number, // Profiling-only
   completedRenderEndTime: number, // Profiling-only
 ) {
-  root.timeoutHandle = noTimeout;
+  const timeoutHandle = root.timeoutHandle;
+  if (timeoutHandle !== noTimeout) {
+    // $FlowFixMe[incompatible-call]
+    cancelTimeout(timeoutHandle);
+    root.timeoutHandle = noTimeout;
+  }
 
   // TODO: Combine retry throttling with Suspensey commits. Right now they run
   // one after the other.
