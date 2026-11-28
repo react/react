@@ -42,6 +42,7 @@ const unitlessNumbers = new Set([
   'opacity',
   'order',
   'orphans',
+  'readingOrder',
   'scale',
   'tabSize',
   'widows',
