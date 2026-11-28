@@ -4101,8 +4101,10 @@ export function canHydrateInstance(
           checkAttributeStringCoercion(anyProps.name, 'name');
         }
         const name = anyProps.name == null ? null : '' + anyProps.name;
+        const inputType = anyProps.type;
         if (
-          anyProps.type !== 'hidden' ||
+          typeof inputType !== 'string' ||
+          inputType.toLowerCase() !== 'hidden' ||
           element.getAttribute('name') !== name
         ) {
           // Skip past hidden inputs unless that's what we're looking for. This allows us
