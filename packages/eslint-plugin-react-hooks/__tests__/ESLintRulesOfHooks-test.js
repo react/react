@@ -249,6 +249,17 @@ const allTests = {
     },
     {
       code: normalizeIndent`
+        const Memoized = React.memo(
+          props => {
+            useHook();
+            return <button {...props} />;
+          },
+          (previous, next) => previous.id === next.id,
+        );
+      `,
+    },
+    {
+      code: normalizeIndent`
         // Valid because classes can call functions.
         // We don't consider these to be hooks.
         class C {
@@ -1470,6 +1481,24 @@ const allTests = {
     },
     {
       code: normalizeIndent`
+        const InvalidMemoComparison = React.memo(Button, () => {
+          useState(0);
+          return true;
+        });
+      `,
+      errors: [memoComparisonError('useState')],
+    },
+    {
+      code: normalizeIndent`
+        const InvalidMemoComparison = memo(Button, function Compare() {
+          React.use(context);
+          return true;
+        });
+      `,
+      errors: [memoComparisonError('React.use')],
+    },
+    {
+      code: normalizeIndent`
         // This is invalid because "use"-prefixed functions used in named
         // functions are assumed to be hooks.
         React.unknownFunction(function notAComponent(foo, bar) {
@@ -2022,6 +2051,14 @@ const allTests = {
     },
   ],
 };
+
+function memoComparisonError(hook) {
+  return {
+    message:
+      `React Hook "${hook}" cannot be called inside a memo comparison function. ` +
+      'React Hooks must be called in a React function component or a custom React Hook function.',
+  };
+}
 
 function conditionalError(hook, hasPreviousFinalizer = false) {
   return {
