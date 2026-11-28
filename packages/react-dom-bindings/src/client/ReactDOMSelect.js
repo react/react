@@ -60,6 +60,30 @@ function checkSelectPropTypes(props: any) {
   }
 }
 
+function isOptionDisabled(option: HTMLOptionElement): boolean {
+  if (option.disabled) {
+    return true;
+  }
+  // An option also inherits disabledness from its enclosing optgroup.
+  // https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
+  for (
+    let parent = option.parentElement;
+    parent;
+    parent = parent.parentElement
+  ) {
+    switch (parent.localName) {
+      case 'optgroup':
+        return parent.hasAttribute('disabled');
+      case 'select':
+      case 'hr':
+      case 'datalist':
+      case 'option':
+        return false;
+    }
+  }
+  return false;
+}
+
 function updateOptions(
   node: HTMLSelectElement,
   multiple: boolean,
@@ -97,7 +121,7 @@ function updateOptions(
         }
         return;
       }
-      if (defaultSelected === null && !options[i].disabled) {
+      if (defaultSelected === null && !isOptionDisabled(options[i])) {
         defaultSelected = options[i];
       }
     }
@@ -193,7 +217,7 @@ export function hydrateSelect(
     let selectedValue =
       propValue == null ? null : toString(getToStringValue(propValue));
     for (let i = 0; i < options.length; i++) {
-      if (selectedValue == null && !options[i].disabled) {
+      if (selectedValue == null && !isOptionDisabled(options[i])) {
         // We expect the first non-disabled option to be selected if the selected is null.
         selectedValue = options[i].value;
       }

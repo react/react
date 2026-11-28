@@ -364,6 +364,31 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       expect(changeCount).toBe(1);
     });
 
+    // @gate enableHydrationChangeEvent
+    it('does not replay a select change when the browser skips a disabled optgroup', async () => {
+      const onChange = jest.fn();
+      const element = (
+        <select onChange={onChange}>
+          <optgroup label="Unavailable" disabled={true}>
+            <option value="unavailable">Unavailable</option>
+          </optgroup>
+          <option value="available">Available</option>
+        </select>
+      );
+      const field = await serverRender(element);
+      expect(field.value).toBe('available');
+
+      resetModules();
+      const hydratedField = await renderIntoDom(
+        element,
+        field.parentNode,
+        true,
+      );
+      expect(hydratedField).toBe(field);
+      expect(hydratedField.value).toBe('available');
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('should not blow away user-selected value on successful reconnect to an uncontrolled select', () =>
       testUserInteractionBeforeClientRender(
         <select defaultValue="Hello">
