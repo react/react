@@ -57,6 +57,7 @@ describe('Result', () => {
     expect(addMax10(10, 10).andThen(n => Ok(n * 2))).toEqual(
       Err('20 is too high'),
     );
+    expect(Ok(2).andThen(() => Err('failed'))).toEqual(Err('failed'));
   });
 
   test('.and', () => {
@@ -64,6 +65,7 @@ describe('Result', () => {
     expect(addMax10(10, 10).and(Ok(4))).toEqual(Err('20 is too high'));
     expect(addMax10(1, 1).and(Err('hehe'))).toEqual(Err('hehe'));
     expect(addMax10(10, 10).and(Err('hehe'))).toEqual(Err('20 is too high'));
+    expect(Ok(2).and(Err('failed'))).toEqual(Err('failed'));
   });
 
   test('.or', () => {
@@ -71,6 +73,7 @@ describe('Result', () => {
     expect(addMax10(10, 10).or(Ok(4))).toEqual(Ok(4));
     expect(addMax10(1, 1).or(Err('hehe'))).toEqual(Ok(2));
     expect(addMax10(10, 10).or(Err('hehe'))).toEqual(Err('hehe'));
+    expect(Err('failed').or(Ok(4))).toEqual(Ok(4));
   });
 
   test('.orElse', () => {
@@ -78,6 +81,7 @@ describe('Result', () => {
     expect(addMax10(10, 10).orElse(str => Err(str.toUpperCase()))).toEqual(
       Err('20 IS TOO HIGH'),
     );
+    expect(Err('failed').orElse(() => Ok(4))).toEqual(Ok(4));
   });
 
   test('.isOk', () => {
