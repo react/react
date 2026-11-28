@@ -44,10 +44,11 @@ describe('CSSPropertyOperations', () => {
     const styles = {
       flex: 0,
       opacity: 0.5,
+      readingOrder: -2,
     };
     const div = <div style={styles} />;
     const html = ReactDOMServer.renderToString(div);
-    expect(html).toContain('"flex:0;opacity:0.5"');
+    expect(html).toContain('"flex:0;opacity:0.5;reading-order:-2"');
   });
 
   it('should create vendor-prefixed markup correctly', () => {
