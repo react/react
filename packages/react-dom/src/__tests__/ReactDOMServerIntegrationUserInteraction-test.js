@@ -352,6 +352,25 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
     });
 
     // @gate enableHydrationChangeEvent
+    it('does not replay a textarea change for normalized line endings', async () => {
+      const onChange = jest.fn();
+      const element = (
+        <textarea value={'Hello\r\nthere\rworld'} onChange={onChange} />
+      );
+      const field = await serverRender(element);
+      expect(field.value).toBe('Hello\nthere\nworld');
+
+      resetModules();
+      const hydratedField = await renderIntoDom(
+        element,
+        field.parentNode,
+        true,
+      );
+      expect(hydratedField).toBe(field);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    // @gate enableHydrationChangeEvent
     it('should not blow away user-entered text on successful reconnect to an uncontrolled textarea', () =>
       testUserInteractionBeforeClientRender(<textarea defaultValue="Hello" />));
 
