@@ -57,6 +57,16 @@ describe('DisjointSet', () => {
     expect(identifiers.size).toBe(2);
   });
 
+  it('.union - does not modify the input array', () => {
+    const identifiers = new DisjointSet<TestIdentifier>();
+    const [x, y] = makeIdentifiers('x', 'y');
+    const input = [x, y];
+
+    identifiers.union(input);
+
+    expect(input).toEqual([x, y]);
+  });
+
   it('.buildSets - returns non-overlapping sets', () => {
     const identifiers = new DisjointSet<TestIdentifier>();
     const [a, b, c, x, y, z] = makeIdentifiers('a', 'b', 'c', 'x', 'y', 'z');
