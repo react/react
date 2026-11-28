@@ -962,6 +962,7 @@ function truncateForDisplay(
 export function formatDataForPreview(
   data: any,
   showFormattedValue: boolean,
+  iterableAncestors: Set<any> | null = null,
 ): string {
   if (data != null && hasOwnProperty.call(data, meta.type)) {
     return showFormattedValue
@@ -1094,6 +1095,12 @@ export function formatDataForPreview(
       const name = data.constructor.name;
 
       if (showFormattedValue) {
+        const ancestors = iterableAncestors ?? new Set();
+        if (ancestors.has(data)) {
+          return `${name}(${data.size})`;
+        }
+        ancestors.add(data);
+
         // TRICKY
         // Don't use [...spread] syntax for this purpose.
         // This project uses @babel/plugin-transform-spread in "loose" mode which only works with Array values.
@@ -1114,7 +1121,12 @@ export function formatDataForPreview(
           //   Map(2) {"abc" => 123, "def" => 123}
           //   Set(2) {"abc", 123}
           if (isArray(entryOrEntries)) {
-            const key = formatDataForPreview(entryOrEntries[0], true);
+            // An iterable can be its own key, directly or through another key.
+            const key = formatDataForPreview(
+              entryOrEntries[0],
+              true,
+              ancestors,
+            );
             const value = formatDataForPreview(entryOrEntries[1], false);
             formatted += `${key} => ${value}`;
           } else {
@@ -1127,6 +1139,7 @@ export function formatDataForPreview(
           }
         }
 
+        ancestors.delete(data);
         return `${name}(${data.size}) {${truncateForDisplay(formatted)}}`;
       } else {
         return `${name}(${data.size})`;
