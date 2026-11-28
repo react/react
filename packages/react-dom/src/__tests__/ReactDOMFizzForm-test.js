@@ -703,6 +703,46 @@ describe('ReactDOMFizzForm', () => {
     expect(foo).toBe('bar');
   });
 
+  it.each(['HIDDEN', 'Hidden'])(
+    'hydrates a hidden input with type %s without replacing the form',
+    async type => {
+      const errors = [];
+      function App() {
+        return (
+          <form>
+            <input type={type} name="token" defaultValue="token" />
+            <input name="message" defaultValue="" />
+          </form>
+        );
+      }
+
+      const stream = await serverAct(() =>
+        ReactDOMServer.renderToReadableStream(<App />),
+      );
+      await readIntoContainer(stream);
+
+      const tokenField = container.querySelector('[name=token]');
+      const messageField = container.querySelector('[name=message]');
+      const extraField = document.createElement('input');
+      extraField.type = 'hidden';
+      extraField.name = 'extra';
+      tokenField.before(extraField);
+      messageField.value = 'Typed before hydration';
+
+      await act(async () => {
+        ReactDOMClient.hydrateRoot(container, <App />, {
+          onRecoverableError: error => errors.push(error),
+        });
+      });
+
+      expect(errors).toEqual([]);
+      expect(container.querySelector('[name=extra]')).toBe(extraField);
+      expect(container.querySelector('[name=token]')).toBe(tokenField);
+      expect(container.querySelector('[name=message]')).toBe(messageField);
+      expect(messageField.value).toBe('Typed before hydration');
+    },
+  );
+
   it('can hydrate hidden fields in the beginning of a form', async () => {
     const hiddenRef = React.createRef();
 
