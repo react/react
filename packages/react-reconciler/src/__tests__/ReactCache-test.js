@@ -171,6 +171,31 @@ describe('ReactCache', () => {
     ).toEqual('number number true false false false ');
   });
 
+  it('uses a separate cache for each wrapper around the same function', async () => {
+    function getValue(key) {
+      return {key};
+    }
+
+    const first = cache(getValue);
+    const second = cache(getValue);
+
+    function Test() {
+      const firstValue = first('key');
+      const secondValue = second('key');
+
+      return [
+        first('key') === firstValue,
+        second('key') === secondValue,
+        firstValue === secondValue,
+      ].join(' ');
+    }
+
+    const result = await ReactNoopFlightClient.read(
+      ReactNoopFlightServer.render(<Test />),
+    );
+    expect(result).toBe('true true false');
+  });
+
   it('cached functions that throw should cache the error', async () => {
     const throws = cache(v => {
       throw new Error(v);

@@ -59,6 +59,7 @@ function createCacheNode<T>(): CacheNode<T> {
 }
 
 export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
+  const cacheKey = {};
   return function () {
     const dispatcher = ReactSharedInternals.A;
     if (!dispatcher) {
@@ -66,16 +67,16 @@ export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
       // $FlowFixMe[incompatible-type]: We don't want to use rest arguments since we transpile the code.
       return fn.apply(null, arguments);
     }
-    const fnMap: WeakMap<any, CacheNode<T>> = dispatcher.getCacheForType(
+    const cacheMap: WeakMap<any, CacheNode<T>> = dispatcher.getCacheForType(
       createCacheRoot,
     );
-    const fnNode = fnMap.get(fn);
+    const wrapperNode = cacheMap.get(cacheKey);
     let cacheNode: CacheNode<T>;
-    if (fnNode === undefined) {
+    if (wrapperNode === undefined) {
       cacheNode = createCacheNode();
-      fnMap.set(fn, cacheNode);
+      cacheMap.set(cacheKey, cacheNode);
     } else {
-      cacheNode = fnNode;
+      cacheNode = wrapperNode;
     }
     for (let i = 0, l = arguments.length; i < l; i++) {
       const arg = arguments[i];
