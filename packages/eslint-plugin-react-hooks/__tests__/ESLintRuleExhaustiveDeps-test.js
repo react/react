@@ -26,6 +26,109 @@ function normalizeIndent(strings) {
 }
 
 // ***************************************************
+// These cases require a parser that supports TypeScript's satisfies operator.
+const testsTypescriptSatisfies = {
+  valid: [
+    {
+      code: normalizeIndent`
+        function App({value}) {
+          useEffect((() => {
+            console.log(value);
+          }) satisfies () => void, [value] satisfies readonly unknown[]);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function App() {
+          const ref = useRef(null) satisfies {current: null};
+          useEffect(() => {
+            console.log(ref.current);
+          }, []);
+        }
+      `,
+    },
+  ],
+  invalid: [
+    {
+      code: normalizeIndent`
+        function App({value}) {
+          useEffect((() => {
+            console.log(value);
+          }) satisfies () => void, [] satisfies readonly unknown[]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has a missing dependency: 'value'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [value]',
+              output: normalizeIndent`
+                function App({value}) {
+                  useEffect((() => {
+                    console.log(value);
+                  }) satisfies () => void, [value] satisfies readonly unknown[]);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function App({value}) {
+          const callback = (() => {
+            console.log(value);
+          }) satisfies () => void;
+          useEffect(callback, []);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has a missing dependency: 'value'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [value]',
+              output: normalizeIndent`
+                function App({value}) {
+                  const callback = (() => {
+                    console.log(value);
+                  }) satisfies () => void;
+                  useEffect(callback, [value]);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function App() {
+          const items = [] satisfies unknown[];
+          useMemo(() => {
+            console.log(items);
+          }, [items]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "The 'items' array makes the dependencies of useMemo Hook (at line 6) change on every render. " +
+            "Move it inside the useMemo callback. Alternatively, wrap the initialization of 'items' in its own useMemo() Hook.",
+          suggestions: undefined,
+        },
+      ],
+    },
+  ],
+};
+
 // For easier local testing, you can add to any case:
 // {
 //   skip: true,
@@ -8554,6 +8657,8 @@ if (!process.env.CI) {
     ...testsTypescript.invalid,
     ...testsTypescriptEslintParserV4.valid,
     ...testsTypescriptEslintParserV4.invalid,
+    ...testsTypescriptSatisfies.valid,
+    ...testsTypescriptSatisfies.invalid,
   ].forEach(t => {
     if (t.skip) {
       delete t.skip;
@@ -8583,6 +8688,10 @@ if (!process.env.CI) {
     testsTypescriptEslintParserV4.valid.filter(predicate);
   testsTypescriptEslintParserV4.invalid =
     testsTypescriptEslintParserV4.invalid.filter(predicate);
+  testsTypescriptSatisfies.valid =
+    testsTypescriptSatisfies.valid.filter(predicate);
+  testsTypescriptSatisfies.invalid =
+    testsTypescriptSatisfies.invalid.filter(predicate);
 }
 
 describe('rules-of-hooks/exhaustive-deps', () => {
@@ -8750,10 +8859,12 @@ describe('rules-of-hooks/exhaustive-deps', () => {
     {
       valid: [
         ...testsTypescriptEslintParserV4.valid,
+        ...testsTypescriptSatisfies.valid,
         ...testsTypescriptEslintParser.valid,
       ],
       invalid: [
         ...testsTypescriptEslintParserV4.invalid,
+        ...testsTypescriptSatisfies.invalid,
         ...testsTypescriptEslintParser.invalid,
       ],
     }
@@ -8770,10 +8881,12 @@ describe('rules-of-hooks/exhaustive-deps', () => {
     {
       valid: [
         ...testsTypescriptEslintParserV4.valid,
+        ...testsTypescriptSatisfies.valid,
         ...testsTypescriptEslintParser.valid,
       ],
       invalid: [
         ...testsTypescriptEslintParserV4.invalid,
+        ...testsTypescriptSatisfies.invalid,
         ...testsTypescriptEslintParser.invalid,
       ],
     }

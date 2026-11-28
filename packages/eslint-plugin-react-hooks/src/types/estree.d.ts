@@ -35,6 +35,11 @@ declare module 'estree' {
     expression: Expression | Identifier;
   }
 
+  interface TSSatisfiesExpression extends BaseExpression {
+    type: 'TSSatisfiesExpression';
+    expression: Expression | Identifier;
+  }
+
   interface TSTypeQuery extends BaseNode {
     type: 'TSTypeQuery';
     exprName: Identifier;
@@ -56,6 +61,7 @@ declare module 'estree' {
     OptionalCallExpression: OptionalCallExpression;
     OptionalMemberExpression: OptionalMemberExpression;
     TSAsExpression: TSAsExpression;
+    TSSatisfiesExpression: TSSatisfiesExpression;
     TypeCastExpression: TypeCastExpression;
   }
 
@@ -65,6 +71,7 @@ declare module 'estree' {
     OptionalCallExpression: OptionalCallExpression;
     OptionalMemberExpression: OptionalMemberExpression;
     TSAsExpression: TSAsExpression;
+    TSSatisfiesExpression: TSSatisfiesExpression;
     TSTypeQuery: TSTypeQuery;
     TSTypeReference: TSTypeReference;
     TypeCastExpression: TypeCastExpression;

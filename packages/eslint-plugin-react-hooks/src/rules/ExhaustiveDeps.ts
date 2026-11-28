@@ -7,7 +7,6 @@
 /* eslint-disable no-for-of-loops/no-for-of-loops */
 import type {Rule, Scope} from 'eslint';
 import type {
-  ArrayExpression,
   ArrowFunctionExpression,
   CallExpression,
   Expression,
@@ -276,13 +275,10 @@ const rule = {
         if (defNode.type !== 'VariableDeclarator') {
           return false;
         }
-        let init = defNode.init;
-        if (init == null) {
+        if (defNode.init == null) {
           return false;
         }
-        while (init.type === 'TSAsExpression' || init.type === 'AsExpression') {
-          init = init.expression;
-        }
+        const init = unwrapTypeAssertions(defNode.init);
         // Detect primitive constants
         // const foo = 42
         let declaration = defNode.parent;
@@ -751,13 +747,7 @@ const rule = {
 
       const declaredDependencies: Array<DeclaredDependency> = [];
       const externalDependencies = new Set<string>();
-      const isArrayExpression =
-        declaredDependenciesNode.type === 'ArrayExpression';
-      const isTSAsArrayExpression =
-        declaredDependenciesNode.type === 'TSAsExpression' &&
-        declaredDependenciesNode.expression.type === 'ArrayExpression';
-
-      if (!isArrayExpression && !isTSAsArrayExpression) {
+      if (declaredDependenciesNode.type !== 'ArrayExpression') {
         // If the declared dependencies are not an array expression then we
         // can't verify that the user provided the correct dependencies. Tell
         // the user this in an error.
@@ -770,11 +760,8 @@ const rule = {
             'dependencies.',
         });
       } else {
-        const arrayExpression = isTSAsArrayExpression
-          ? declaredDependenciesNode.expression
-          : declaredDependenciesNode;
-
-        (arrayExpression as ArrayExpression).elements.forEach(
+        declaredDependenciesNode.elements.forEach(
+          // Use the original AST elements for diagnostic and suggestion ranges.
           declaredDependencyNode => {
             // Skip elided elements.
             if (declaredDependencyNode === null) {
@@ -1329,23 +1316,19 @@ const rule = {
         // Not a React Hook call that needs deps.
         return;
       }
-      let callback = node.arguments[callbackIndex];
+      const callbackArgument = node.arguments[callbackIndex];
       const reactiveHook = node.callee;
       const nodeWithoutNamespace = getNodeWithoutReactNamespace(reactiveHook);
       const reactiveHookName =
         'name' in nodeWithoutNamespace ? nodeWithoutNamespace.name : '';
       const maybeNode = node.arguments[callbackIndex + 1];
-      const declaredDependenciesNode =
-        maybeNode &&
-        !(maybeNode.type === 'Identifier' && maybeNode.name === 'undefined')
-          ? maybeNode
-          : undefined;
+      const declaredDependenciesNode = getDeclaredDependenciesNode(maybeNode);
       const isEffect = /Effect($|[^a-z])/g.test(reactiveHookName);
 
       // Check whether a callback is supplied. If there is no callback supplied
       // then the hook will not work and React will throw a TypeError.
       // So no need to check for dependency inclusion.
-      if (!callback) {
+      if (!callbackArgument) {
         reportProblem({
           node: reactiveHook,
           message:
@@ -1394,13 +1377,7 @@ const rule = {
         return;
       }
 
-      while (
-        callback.type === 'TSAsExpression' ||
-        callback.type === 'AsExpression'
-      ) {
-        callback = callback.expression;
-      }
-
+      const callback = unwrapTypeAssertions(callbackArgument);
       switch (callback.type) {
         case 'FunctionExpression':
         case 'ArrowFunctionExpression':
@@ -1473,10 +1450,10 @@ const rule = {
               );
               return; // Handled
             case 'VariableDeclarator':
-              const init = def.node.init;
-              if (!init) {
+              if (!def.node.init) {
                 break; // Unhandled
               }
+              const init = unwrapTypeAssertions(def.node.init);
               switch (init.type) {
                 // const effectBody = () => {...};
                 // useEffect(effectBody, []);
@@ -1709,6 +1686,26 @@ function collectRecommendations({
   };
 }
 
+function unwrapTypeAssertions(node: Node): Node {
+  while (
+    node.type === 'TSAsExpression' ||
+    node.type === 'TSSatisfiesExpression' ||
+    node.type === 'AsExpression'
+  ) {
+    node = node.expression;
+  }
+  return node;
+}
+
+function getDeclaredDependenciesNode(node: Node | undefined): Node | undefined {
+  if (!node || (node.type === 'Identifier' && node.name === 'undefined')) {
+    return undefined;
+  }
+  // Restrict suggestions to the array itself so that type checks are preserved.
+  const expression = unwrapTypeAssertions(node);
+  return expression.type === 'ArrayExpression' ? expression : node;
+}
+
 // If the node will result in constructing a referentially unique value, return
 // its human readable type name, else return null.
 function getConstructionExpressionType(node: Node): string | null {
@@ -1757,6 +1754,7 @@ function getConstructionExpressionType(node: Node): string | null {
     case 'TypeCastExpression':
     case 'AsExpression':
     case 'TSAsExpression':
+    case 'TSSatisfiesExpression':
       return getConstructionExpressionType(node.expression);
   }
   return null;
