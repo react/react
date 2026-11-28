@@ -189,6 +189,40 @@ describe('ReactDOMSelect', () => {
     expect(node.options[2].selected).toBe(true);
   });
 
+  it('skips disabled optgroups when falling back to another option', async () => {
+    function App({value}) {
+      return (
+        <form>
+          <select name="plan" value={value} onChange={noop}>
+            <optgroup label="Unavailable" disabled={true}>
+              <option value="unavailable">Unavailable</option>
+            </optgroup>
+            <option value="available">Available</option>
+          </select>
+        </form>
+      );
+    }
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<App value="available" />);
+    });
+    await act(() => {
+      root.render(<App value="removed" />);
+    });
+
+    const form = container.firstChild;
+    expect(form.elements.plan.value).toBe('available');
+    expect(new FormData(form).get('plan')).toBe('available');
+
+    // Explicit selection can still choose a disabled option.
+    await act(() => {
+      root.render(<App value="unavailable" />);
+    });
+    expect(form.elements.plan.value).toBe('unavailable');
+  });
+
   it('should allow setting `value` to __proto__', async () => {
     const stub = (
       <select value="__proto__" onChange={noop}>
