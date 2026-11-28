@@ -827,6 +827,20 @@ describe('InspectedElement', () => {
     `);
   });
 
+  it('should inspect a Map with a circular key', async () => {
+    const {meta} = require('react-devtools-shared/src/hydration');
+    const circular = new Map();
+    circular.set(circular, 'value');
+
+    const Example = () => null;
+    await utils.actAsync(() => render(<Example circular={circular} />));
+
+    const inspectedElement = await inspectElementAtIndex(0);
+    expect(inspectedElement.props.circular[meta.preview_long]).toBe(
+      'Map(1) {Map(1) => "value"}',
+    );
+  });
+
   it('should support Thenables in React 19', async () => {
     const Example = () => null;
 
