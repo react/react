@@ -83,15 +83,14 @@ function isForwardRefCallback(node: Node): boolean {
 }
 
 /**
- * Checks if the node is a callback argument of React.memo. This anonymous
- * functional component should follow the rules of hooks.
+ * Checks if the node is an argument of React.memo.
  */
-function isMemoCallback(node: Node): boolean {
-  return !!(
-    node.parent &&
-    'callee' in node.parent &&
-    node.parent.callee &&
-    isReactFunction(node.parent.callee, 'memo')
+function isMemoArgument(node: Node, index?: number): boolean {
+  const parent = node.parent;
+  return (
+    parent?.type === 'CallExpression' &&
+    (index === undefined || parent.arguments[index] === node) &&
+    isReactFunction(parent.callee, 'memo')
   );
 }
 
@@ -103,7 +102,7 @@ function isInsideComponentOrHook(node: Node | undefined): boolean {
         return true;
       }
     }
-    if (isForwardRefCallback(node) || isMemoCallback(node)) {
+    if (isForwardRefCallback(node) || isMemoArgument(node)) {
       return true;
     }
     node = node.parent;
@@ -534,7 +533,9 @@ const rule = {
         const isDirectlyInsideComponentOrHook = codePathFunctionName
           ? isComponentName(codePathFunctionName) ||
             isHook(codePathFunctionName)
-          : isForwardRefCallback(codePathNode) || isMemoCallback(codePathNode);
+          : isForwardRefCallback(codePathNode) ||
+            isMemoArgument(codePathNode, 0);
+        const isMemoComparisonFunction = isMemoArgument(codePathNode, 1);
 
         // Compute the earliest finalizer level using information from the
         // cache. We expect all reachable final segments to have a cache entry
@@ -614,6 +615,17 @@ const rule = {
           for (const hook of reactHooks) {
             // Skip reporting if this hook already has a relevant flow suppression.
             if (hasFlowSuppression(hook, 'react-rule-hook')) {
+              continue;
+            }
+
+            if (isMemoComparisonFunction) {
+              context.report({
+                node: hook,
+                message:
+                  `React Hook "${getSourceCode().getText(hook)}" cannot be called ` +
+                  'inside a memo comparison function. React Hooks must be called in a ' +
+                  'React function component or a custom React Hook function.',
+              });
               continue;
             }
 
