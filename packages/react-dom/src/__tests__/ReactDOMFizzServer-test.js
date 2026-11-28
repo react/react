@@ -3518,10 +3518,6 @@ describe('ReactDOMFizzServer', () => {
     },
   );
 
-  // Disabled because of a WWW late mutations regression.
-  // We may want to re-enable this if we figure out why.
-
-  // @gate FIXME
   it('does not recreate the fallback if server errors and hydration suspends', async () => {
     let isClient = false;
 
@@ -3571,8 +3567,16 @@ describe('ReactDOMFizzServer', () => {
         }
       },
     });
-    // This should not report any errors yet.
-    await waitForAll([]);
+    // The server error is reported right away, even though we keep showing
+    // the server fallback.
+    await waitForAll([
+      __DEV__
+        ? 'onRecoverableError: Switched to client rendering because the ' +
+          'server rendering errored:\n\nOops.'
+        : 'onRecoverableError: The server could not finish this Suspense ' +
+          'boundary, likely due to an error during server rendering. ' +
+          'Switched to client rendering.',
+    ]);
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <p>Loading...</p>
@@ -3586,16 +3590,13 @@ describe('ReactDOMFizzServer', () => {
     const clientFallback = container.getElementsByTagName('p')[0];
     expect(serverFallback).toBe(clientFallback);
 
-    // When we're able to fully hydrate, we expect a clean client render.
+    // When we're able to fully hydrate, we expect a clean client render. The
+    // error isn't reported again.
     await act(() => {
       resolveText('Yay!');
     });
-    await waitForAll([
-      'Yay!',
-      'onRecoverableError: The server could not finish this Suspense boundary, ' +
-        'likely due to an error during server rendering. ' +
-        'Switched to client rendering.',
-    ]);
+    await waitForAll(['Yay!']);
+    jest.runAllTimers();
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>Yay!</span>
@@ -3603,9 +3604,10 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
-  // Disabled because of a WWW late mutations regression.
-  // We may want to re-enable this if we figure out why.
-
+  // A transition that gives the boundary new props recreates the fallback, like
+  // any other update. Keeping the server fallback would mean holding the whole
+  // transition until the data resolves, which this test expects but we don't
+  // do yet.
   // @gate FIXME
   it(
     'does not recreate the fallback if server errors and hydration suspends ' +
@@ -3702,10 +3704,6 @@ describe('ReactDOMFizzServer', () => {
     },
   );
 
-  // Disabled because of a WWW late mutations regression.
-  // We may want to re-enable this if we figure out why.
-
-  // @gate FIXME
   it(
     'recreates the fallback if server errors and hydration suspends but ' +
       'client receives new props',
@@ -3766,8 +3764,16 @@ describe('ReactDOMFizzServer', () => {
           },
         },
       );
-      // This should not report any errors yet.
-      await waitForAll([]);
+      // The server error is reported right away, even though we keep showing
+      // the server fallback.
+      await waitForAll([
+        __DEV__
+          ? 'onRecoverableError: Switched to client rendering because the ' +
+            'server rendering errored:\n\nOops.'
+          : 'onRecoverableError: The server could not finish this Suspense ' +
+            'boundary, likely due to an error during server rendering. ' +
+            'Switched to client rendering.',
+      ]);
       expect(getVisibleChildren(container)).toEqual(
         <div>
           <p>Loading...</p>
@@ -3783,14 +3789,10 @@ describe('ReactDOMFizzServer', () => {
 
       // However, an update may have changed the fallback props. In that case we have to
       // actually force it to re-render on the client and throw away the server one.
+      // The error was already reported, so it isn't reported again.
       root.render(<App fallbackText="More loading..." />);
       await waitForAll([]);
       jest.runAllTimers();
-      assertLog([
-        'onRecoverableError: The server could not finish this Suspense boundary, ' +
-          'likely due to an error during server rendering. ' +
-          'Switched to client rendering.',
-      ]);
       expect(getVisibleChildren(container)).toEqual(
         <div>
           <p>More loading...</p>
@@ -3805,6 +3807,7 @@ describe('ReactDOMFizzServer', () => {
         resolveText('Yay!');
       });
       await waitForAll(['Yay!']);
+      jest.runAllTimers();
       expect(getVisibleChildren(container)).toEqual(
         <div>
           <span>Yay!</span>
@@ -3812,6 +3815,150 @@ describe('ReactDOMFizzServer', () => {
       );
     },
   );
+
+  // Same shape as the server error case above, but the boundary was left in
+  // its fallback state by browser(). See
+  // https://github.com/react/react/issues/37620
+
+  it('does not recreate the fallback if browser() bails out and hydration suspends', async () => {
+    function Child() {
+      use(ReactDOM.browser());
+      const text = readText('Yay!');
+      Scheduler.log(text);
+      return text;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<p>Loading...</p>}>
+            <span>
+              <Child />
+            </span>
+          </Suspense>
+        </div>
+      );
+    }
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onBrowserBailout(error) {
+          Scheduler.log('[s!] ' + error.message);
+        },
+      });
+      pipe(writable);
+    });
+    assertLog(['[s!] Browser-only rendering was requested by `browser()`.']);
+
+    const serverFallback = container.getElementsByTagName('p')[0];
+    expect(serverFallback.innerHTML).toBe('Loading...');
+
+    // Hydrate the tree. This will suspend.
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        Scheduler.log('onRecoverableError: ' + error.message);
+      },
+    });
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p>Loading...</p>
+      </div>,
+    );
+
+    // The client render suspended, so at best we'd get the same fallback.
+    // Recreating it would restart animations etc. Check we don't do that.
+    const clientFallback = container.getElementsByTagName('p')[0];
+    expect(clientFallback).toBe(serverFallback);
+
+    await act(() => {
+      resolveText('Yay!');
+    });
+    await waitForAll(['Yay!']);
+    jest.runAllTimers();
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Yay!</span>
+      </div>,
+    );
+  });
+
+  it('recreates the fallback if browser() bails out and hydration suspends but client receives new props', async () => {
+    function Child() {
+      use(ReactDOM.browser());
+      const text = readText('Yay!');
+      Scheduler.log(text);
+      return text;
+    }
+
+    function App({fallbackText}) {
+      return (
+        <div>
+          <Suspense fallback={<p>{fallbackText}</p>}>
+            <span>
+              <Child />
+            </span>
+          </Suspense>
+        </div>
+      );
+    }
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App fallbackText="Loading..." />, {
+        onBrowserBailout(error) {
+          Scheduler.log('[s!] ' + error.message);
+        },
+      });
+      pipe(writable);
+    });
+    assertLog(['[s!] Browser-only rendering was requested by `browser()`.']);
+
+    const serverFallback = container.getElementsByTagName('p')[0];
+    expect(serverFallback.innerHTML).toBe('Loading...');
+
+    // Hydrate the tree. This will suspend.
+    const root = ReactDOMClient.hydrateRoot(
+      container,
+      <App fallbackText="Loading..." />,
+      {
+        onRecoverableError(error) {
+          Scheduler.log('onRecoverableError: ' + error.message);
+        },
+      },
+    );
+    await waitForAll([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p>Loading...</p>
+      </div>,
+    );
+
+    // The client render suspended, so we keep showing the server fallback.
+    const clientFallback1 = container.getElementsByTagName('p')[0];
+    expect(clientFallback1).toBe(serverFallback);
+
+    // An update changes the fallback, so we have to render a new one.
+    root.render(<App fallbackText="More loading..." />);
+    await waitForAll([]);
+    jest.runAllTimers();
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <p>More loading...</p>
+      </div>,
+    );
+    const clientFallback2 = container.getElementsByTagName('p')[0];
+    expect(clientFallback2).not.toBe(clientFallback1);
+
+    // Verify we can still do a clean content render after.
+    await act(() => {
+      resolveText('Yay!');
+    });
+    await waitForAll(['Yay!']);
+    jest.runAllTimers();
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Yay!</span>
+      </div>,
+    );
+  });
 
   it(
     'errors during hydration force a client render at the nearest Suspense ' +
