@@ -185,6 +185,7 @@ const rule = {
       reactiveHookName: string,
       isEffect: boolean,
       isAutoDepsHook: boolean,
+      innerHookScope?: Scope.Scope,
     ): void {
       if (isEffect && node.async) {
         reportProblem({
@@ -226,13 +227,7 @@ const rule = {
         let currentScope = scope.upper;
         while (currentScope) {
           pureScopes.add(currentScope);
-          if (
-            currentScope.type === 'function' ||
-            // @ts-expect-error incorrect TS types
-            currentScope.type === 'hook' ||
-            // @ts-expect-error incorrect TS types
-            currentScope.type === 'component'
-          ) {
+          if (isComponentOrHookScope(currentScope)) {
             break;
           }
           currentScope = currentScope.upper;
@@ -501,6 +496,29 @@ const rule = {
       const dependencies = new Map<string, Dependency>();
       const optionalChains = new Map<string, boolean>();
       gatherDependenciesRecursively(scope);
+
+      // An inner block can shadow a reactive value that the callback captures.
+      // In that case, the dependency array cannot refer to that value by name.
+      if (
+        innerHookScope !== undefined &&
+        Array.from(dependencies.values()).some(
+          ({isStable, references}) =>
+            !isStable &&
+            references.some(
+              reference =>
+                findVariableInRenderScope(
+                  innerHookScope,
+                  reference.identifier.name,
+                ) !== reference.resolved,
+            ),
+        )
+      ) {
+        reportProblem({
+          node: reactiveHook,
+          message: getUnknownDependenciesMessage(reactiveHookName),
+        });
+        return;
+      }
 
       function gatherDependenciesRecursively(currentScope: Scope.Scope): void {
         for (const reference of currentScope.references) {
@@ -1437,7 +1455,8 @@ const rule = {
             return; // Handled
           }
           // We'll do our best effort to find it, complain otherwise.
-          const variable = getScope(callback).set.get(callback.name);
+          const hookScope = getScope(callback);
+          const variable = findVariableInRenderScope(hookScope, callback.name);
           if (variable == null || variable.defs == null) {
             // If it's not in scope, we don't care.
             return; // Handled
@@ -1460,6 +1479,8 @@ const rule = {
             // Parameter or an unusual pattern. Bail out.
             break; // Unhandled
           }
+          const innerHookScope =
+            variable.scope !== hookScope ? hookScope : undefined;
           switch (def.node.type) {
             case 'FunctionDeclaration':
               // useEffect(() => { ... }, []);
@@ -1470,6 +1491,7 @@ const rule = {
                 reactiveHookName,
                 isEffect,
                 isAutoDepsHook,
+                innerHookScope,
               );
               return; // Handled
             case 'VariableDeclarator':
@@ -1490,6 +1512,7 @@ const rule = {
                     reactiveHookName,
                     isEffect,
                     isAutoDepsHook,
+                    innerHookScope,
                   );
                   return; // Handled
               }
@@ -2126,6 +2149,38 @@ function isAncestorNodeOf(a: Node, b: Node): boolean {
 
 function isUseEffectEventIdentifier(node: Node): boolean {
   return node.type === 'Identifier' && node.name === 'useEffectEvent';
+}
+
+function isComponentOrHookScope(scope: Scope.Scope): boolean {
+  // Hermes also represents Flow hooks and components as distinct scope types.
+  const type: string = scope.type;
+  return type === 'function' || type === 'hook' || type === 'component';
+}
+
+function findVariableInRenderScope(
+  startingScope: Scope.Scope,
+  name: string,
+): Scope.Variable | undefined {
+  for (
+    let scope: Scope.Scope | null = startingScope;
+    scope;
+    scope = scope.upper
+  ) {
+    if (
+      scope !== startingScope &&
+      (scope.type === 'module' || scope.type === 'global')
+    ) {
+      break;
+    }
+    const variable = scope.set.get(name);
+    if (variable !== undefined) {
+      return variable;
+    }
+    if (scope === scope.variableScope || isComponentOrHookScope(scope)) {
+      break;
+    }
+  }
+  return undefined;
 }
 
 function getUnknownDependenciesMessage(reactiveHookName: string): string {

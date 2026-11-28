@@ -493,6 +493,29 @@ const tests = {
     },
     {
       code: normalizeIndent`
+        function MyComponent() {
+          const [value, setValue] = useState(0);
+          const myEffect = () => setValue(1);
+          {
+            const setValue = otherFunction;
+            useEffect(myEffect, []);
+          }
+          return value;
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        const myEffect = debounce(() => {}, 100);
+        function MyComponent() {
+          {
+            useEffect(myEffect, []);
+          }
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
         function MyComponent({myEffect}) {
           useEffect(myEffect, [myEffect]);
         }
@@ -7040,6 +7063,65 @@ const tests = {
               `,
             },
           ],
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent({outer, inner}) {
+          const myEffect = () => console.log(outer);
+          {
+            const myEffect = function namedEffect() {
+              console.log(inner);
+            };
+            {
+              useEffect(myEffect, []);
+            }
+          }
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has a missing dependency: 'inner'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [inner]',
+              output: normalizeIndent`
+                function MyComponent({outer, inner}) {
+                  const myEffect = () => console.log(outer);
+                  {
+                    const myEffect = function namedEffect() {
+                      console.log(inner);
+                    };
+                    {
+                      useEffect(myEffect, [inner]);
+                    }
+                  }
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent({value}) {
+          const myEffect = () => console.log(value);
+          {
+            const value = 0;
+            useEffect(myEffect, [value]);
+          }
+        }
+      `,
+      errors: [
+        {
+          message:
+            'React Hook useEffect received a function whose dependencies ' +
+            'are unknown. Pass an inline function instead.',
+          suggestions: [],
         },
       ],
     },
