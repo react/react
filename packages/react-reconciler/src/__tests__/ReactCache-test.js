@@ -32,6 +32,24 @@ describe('ReactCache', () => {
     __unmockReact();
   });
 
+  it('distinguishes negative zero from positive zero', async () => {
+    const reciprocal = cache(value => 1 / value);
+
+    function Test() {
+      return [
+        reciprocal(0),
+        reciprocal(-0),
+        reciprocal(0),
+        reciprocal(-0),
+      ].join(' ');
+    }
+
+    const result = await ReactNoopFlightClient.read(
+      ReactNoopFlightServer.render(<Test />),
+    );
+    expect(result).toBe('Infinity -Infinity Infinity -Infinity');
+  });
+
   it('cache objects and primitive arguments and a mix of them', async () => {
     const types = cache((a, b) => ({a: typeof a, b: typeof b}));
     function Print({a, b}) {
