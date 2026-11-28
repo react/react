@@ -615,6 +615,18 @@ describe('InspectedElement', () => {
     `);
   });
 
+  it('should inspect typed array subclasses as typed arrays', async () => {
+    class ByteArray extends Uint8Array {}
+    const typedArray = new ByteArray([12, 34]);
+    const Example = () => null;
+
+    await utils.actAsync(() => render(<Example typedArray={typedArray} />));
+
+    const inspectedElement = await inspectElementAtIndex(0);
+    expect(inspectedElement.props.typedArray[0]).toBe(12);
+    expect(inspectedElement.props.typedArray[1]).toBe(34);
+  });
+
   it('should support complex data types', async () => {
     const Immutable = require('immutable');
 

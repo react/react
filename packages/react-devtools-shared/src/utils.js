@@ -84,6 +84,11 @@ import {isSynchronousXHRSupported} from './backend/utils';
 // $FlowFixMe[method-unbinding]
 const hasOwnProperty = Object.prototype.hasOwnProperty;
 
+const getTypedArrayTag = Object.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype),
+  Symbol.toStringTag,
+)?.get;
+
 const cachedDisplayNames: WeakMap<Function, string> = new WeakMap();
 
 // On large trees, encoding takes significant time.
@@ -780,7 +785,9 @@ export function getDataType(data: Object): DataType {
       if (isArray(data)) {
         return 'array';
       } else if (ArrayBuffer.isView(data)) {
-        return hasOwnProperty.call(data.constructor, 'BYTES_PER_ELEMENT')
+        // The intrinsic getter recognizes typed array subclasses and views
+        // created in another realm without relying on their constructors.
+        return getTypedArrayTag?.call(data) !== undefined
           ? 'typed_array'
           : 'data_view';
       } else if (data.constructor && data.constructor.name === 'ArrayBuffer') {
