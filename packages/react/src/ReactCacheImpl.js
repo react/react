@@ -15,6 +15,8 @@ const UNTERMINATED = 0;
 const TERMINATED = 1;
 const ERRORED = 2;
 
+const NEGATIVE_ZERO = Symbol();
+
 type UnterminatedCacheNode<T> = {
   s: 0,
   v: void,
@@ -102,10 +104,12 @@ export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
         if (primitiveCache === null) {
           cacheNode.p = primitiveCache = new Map();
         }
-        const primitiveNode = primitiveCache.get(arg);
+        // Map considers signed zeros equal, but cache arguments use Object.is.
+        const key = arg === 0 && 1 / arg === -Infinity ? NEGATIVE_ZERO : arg;
+        const primitiveNode = primitiveCache.get(key);
         if (primitiveNode === undefined) {
           cacheNode = createCacheNode();
-          primitiveCache.set(arg, cacheNode);
+          primitiveCache.set(key, cacheNode);
         } else {
           cacheNode = primitiveNode;
         }
